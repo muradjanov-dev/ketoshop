@@ -1,0 +1,8 @@
+__MACOSX/
+*.dump
+.railway/
+__pycache__/
+*.pyc
+webapp/index.html.bak-preredesign
+.restore_secret_tmp
+scratch_*

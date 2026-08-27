@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ketoshop — Boshqaruv paneli</title>
+<script>(function(){try{var t=localStorage.getItem('ketoshop_admin_theme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){}})();</script>
+<style>
+  :root{
+    /* dark palette — default */
+    --bg:#17140F; --panel:#211D15; --line:#34301F;
+    --ink:#F3EFE4; --ink-2:#C9C1AC; --ink-3:#8C8570;
+    --accent:#E48A3D; --accent-2:#D97A28;
+    --green:#8BAE5B; --green-wash:#26301A;
+    --red:#E8746B; --red-wash:#3A1E1B;
+    --honey-wash:#3A2E16;
+    --amber:#E0AA55; --amber-wash:#3A2E12;
+    --chip-bg:#2A2519; --surface-2:#241F16; --input-bg:#211D15;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6);
+  }
+  [data-theme="light"]{
+    --bg:#F6F3EC; --panel:#FFFFFF; --line:#E5DFD2;
+    --ink:#2E2617; --ink-2:#6E634D; --ink-3:#A2977E;
+    --accent:#C05A24; --accent-2:#A54A1B;
+    --green:#5F7E33; --green-wash:#EDF2DE;
+    --red:#B3261E; --red-wash:#FBEAE8;
+    --honey-wash:#FAF0DC;
+    --amber:#C9932E; --amber-wash:#FBF1DE;
+    --chip-bg:#EDE8DC; --surface-2:#FBF9F4; --input-bg:#FFFFFF;
+    --shadow:0 1px 2px rgba(60,45,20,.05),0 8px 24px -12px rgba(60,45,20,.18);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased}
+  .tnum{font-variant-numeric:tabular-nums}
+  button{font-family:inherit;cursor:pointer}
+  input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink);background:var(--input-bg);border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;width:100%}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-2);margin:12px 0 5px}
+  :focus-visible{outline:2.5px solid var(--accent);outline-offset:2px}
+
+  /* ===== login ===== */
+  .login-wrap{min-height:100dvh;display:grid;place-items:center;padding:20px}
+  .login-card{background:var(--panel);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:36px;width:100%;max-width:380px;text-align:center}
+  .login-card .logo{width:54px;height:54px;margin:0 auto 14px;border-radius:16px;background:linear-gradient(150deg,#E7A33A,#6E8B3D);display:grid;place-items:center;font-size:26px}
+  .login-card h1{font-size:20px;margin-bottom:4px}
+  .login-card p{font-size:13.5px;color:var(--ink-2);margin-bottom:20px}
+  .err{display:none;background:var(--red-wash);color:var(--red);font-size:13px;font-weight:600;border-radius:10px;padding:9px 12px;margin-top:12px}
+  .err.show{display:block}
+
+  /* ===== buttons ===== */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:none;border-radius:11px;font-weight:700;font-size:14px;padding:10px 18px;transition:.15s}
+  .btn-p{background:var(--accent);color:#fff}
+  .btn-p:hover{background:var(--accent-2)}
+  .btn-o{background:var(--panel);color:var(--ink);border:1.5px solid var(--line)}
+  .btn-o:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-danger{background:var(--red-wash);color:var(--red)}
+  .btn-sm{padding:6px 12px;font-size:12.5px;border-radius:9px}
+  .btn:disabled{opacity:.55;cursor:not-allowed}
+
+  /* ===== shell ===== */
+  .shell{display:none;max-width:1200px;margin:0 auto;padding:0 18px 60px}
+  header.top{display:flex;align-items:center;gap:14px;padding:18px 0;flex-wrap:wrap}
+  .top .logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(150deg,#E7A33A,#6E8B3D);display:grid;place-items:center;font-size:21px}
+  .top h1{font-size:19px}
+  .top .sub{font-size:12.5px;color:var(--ink-2)}
+  .top .spacer{margin-left:auto}
+  .tabs{display:flex;gap:6px;background:var(--chip-bg);padding:5px;border-radius:13px;margin-bottom:22px;width:max-content}
+  .tab{border:none;background:transparent;font-weight:700;font-size:14px;color:var(--ink-2);padding:9px 20px;border-radius:9px;transition:.15s}
+  .tab.active{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+  .view{display:none}.view.active{display:block}
+
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+  .toolbar input[type=search]{max-width:300px}
+  .count-pill{font-size:12.5px;font-weight:700;color:var(--ink-2);background:var(--chip-bg);border-radius:20px;padding:5px 12px}
+
+  /* ===== product table ===== */
+  .tbl-wrap{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:760px}
+  th{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:var(--surface-2)}
+  .pthumb{width:44px;height:44px;border-radius:10px;background:var(--honey-wash);display:grid;place-items:center;font-size:20px;overflow:hidden;flex:0 0 auto}
+  .pthumb img{width:100%;height:100%;object-fit:cover}
+  .pname{display:flex;align-items:center;gap:11px;font-weight:600}
+  .pill{display:inline-block;font-size:11.5px;font-weight:700;border-radius:20px;padding:3px 10px}
+  .pill.on{background:var(--green-wash);color:var(--green)}
+  .pill.off{background:var(--chip-bg);color:var(--ink-3)}
+  .pill.disc{background:var(--red-wash);color:var(--red)}
+  .row-actions{display:flex;gap:6px;justify-content:flex-end}
+
+  /* ===== sets ===== */
+  .sets-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}
+  .set-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;display:flex;flex-direction:column;gap:12px}
+  .set-card.inactive{opacity:.6}
+  .set-head{display:flex;align-items:flex-start;gap:12px}
+  .set-head .pthumb{width:52px;height:52px;font-size:24px}
+  .set-head h3{font-size:16px;line-height:1.25}
+  .set-head .muted{font-size:12px;color:var(--ink-3);font-weight:600}
+  .set-items-list{display:flex;flex-direction:column;gap:6px;font-size:13px;background:var(--surface-2);border-radius:10px;padding:10px 12px}
+  .set-items-list .row{display:flex;justify-content:space-between;gap:10px}
+  .set-items-list .row .q{color:var(--ink-2)}
+  .set-price-block{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  /* the requested red strikethrough on the combined individual price */
+  .strike-red{position:relative;color:var(--ink-3);font-weight:600;font-size:14px;white-space:nowrap}
+  .strike-red::after{content:"";position:absolute;left:-2px;right:-2px;top:52%;height:2px;background:var(--red);transform:rotate(-4deg);border-radius:2px}
+  .set-now{font-size:22px;font-weight:800;color:var(--accent)}
+  .save-badge{background:var(--green-wash);color:var(--green);font-size:12px;font-weight:800;border-radius:20px;padding:4px 11px}
+  .set-actions{display:flex;gap:8px;margin-top:auto}
+
+  .empty{padding:48px 20px;text-align:center;color:var(--ink-3);font-size:14px}
+
+  /* ===== modal ===== */
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(40,30,12,.45);z-index:100;padding:20px;overflow-y:auto}
+  .modal-bg.open{display:grid;place-items:start center}
+  .modal{background:var(--panel);border-radius:18px;box-shadow:0 24px 60px -12px rgba(0,0,0,.35);width:100%;max-width:560px;padding:26px;margin:4vh 0}
+  .modal h2{font-size:18px;margin-bottom:4px}
+  .modal .hint{font-size:12.5px;color:var(--ink-2);margin-bottom:6px}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+  .form-grid .full{grid-column:1/-1}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
+  .img-drop{margin-top:5px;border:2px dashed var(--line);border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:.15s}
+  .img-drop:hover{border-color:var(--accent)}
+  .img-drop .prev{width:56px;height:56px;border-radius:10px;background:var(--honey-wash);display:grid;place-items:center;font-size:24px;overflow:hidden}
+  .img-drop .prev img{width:100%;height:100%;object-fit:cover}
+  .img-drop .txt{font-size:13px;color:var(--ink-2)}
+  .img-drop input{display:none}
+
+  /* set builder rows */
+  .builder-list{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+  .b-row{display:grid;grid-template-columns:1fr 84px 34px;gap:8px;align-items:center}
+  .b-row .del{border:none;background:var(--red-wash);color:var(--red);border-radius:9px;height:34px;font-weight:800}
+  .calc{margin-top:14px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+  .calc .line{display:flex;justify-content:space-between;gap:10px}
+  .calc .line .lab{color:var(--ink-2)}
+  .calc .save-line{color:var(--green);font-weight:800}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1F1B14;color:#fff;font-size:13.5px;font-weight:600;border-radius:12px;padding:11px 20px;z-index:200;opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1}
+
+  @media (max-width:640px){
+    .form-grid{grid-template-columns:1fr}
+    .top .sub{display:none}
+    table{min-width:640px}
+    /* 6 tabs no longer fit a phone: let the strip scroll instead of dragging
+       the whole page sideways. */
+    .tabs{width:auto;max-width:100%;overflow-x:auto;scrollbar-width:none}
+    .tabs::-webkit-scrollbar{display:none}
+    .tab{flex:0 0 auto}
+  }
+
+  /* ===== dashboard ===== */
+  .period-switch{display:flex;gap:4px;background:var(--chip-bg);padding:4px;border-radius:11px;width:max-content;margin-bottom:18px}
+  .period-switch button{border:none;background:transparent;font-weight:700;font-size:12.5px;color:var(--ink-2);padding:7px 14px;border-radius:8px}
+  .period-switch button.active{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .kpi-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:15px 17px}
+  .kpi-card .lab{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px}
+  .kpi-card .val{font-size:22px;font-weight:800;color:var(--ink)}
+  .kpi-card .sub{font-size:11.5px;color:var(--ink-2);margin-top:4px}
+  .dash-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:16px}
+  .dash-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px}
+  .dash-card h3{font-size:14px;margin-bottom:16px}
+  @media (max-width:900px){.dash-grid{grid-template-columns:1fr}}
+
+  .trend-wrap{display:flex;align-items:flex-end;gap:10px;height:140px;padding:0 2px}
+  .trend-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:7px}
+  .trend-bar{width:100%;max-width:36px;background:var(--accent);border-radius:4px 4px 2px 2px;min-height:3px;transition:background .15s}
+  .trend-col:hover .trend-bar{background:var(--accent-2)}
+  .trend-lab{font-size:10.5px;color:var(--ink-3);font-weight:700;text-align:center}
+
+  .hbar-list{display:flex;flex-direction:column;gap:11px}
+  .hbar-row{display:flex;align-items:center;gap:10px}
+  .hbar-row .hb-lab{width:112px;flex:0 0 auto;font-size:12.5px;font-weight:700;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hbar-row .hb-track{flex:1;background:var(--chip-bg);border-radius:4px;height:13px;overflow:hidden}
+  .hbar-row .hb-fill{height:100%;border-radius:4px;min-width:3px}
+  .hbar-row .hb-val{flex:0 0 auto;font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap}
+
+  .chart-tip{position:fixed;pointer-events:none;background:#1F1B14;color:#fff;font-size:12px;font-weight:600;border-radius:8px;padding:6px 10px;z-index:300;opacity:0;transition:opacity .1s;white-space:nowrap}
+  .chart-tip.show{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- ===== LOGIN ===== -->
+<div class="login-wrap" id="loginView">
+  <form class="login-card" id="loginForm">
+    <div class="logo">🌿</div>
+    <h1>Ketoshop boshqaruvi</h1>
+    <p>Davom etish uchun admin parolini kiriting</p>
+    <input type="password" id="pw" placeholder="Parol" autocomplete="current-password" required>
+    <div class="err" id="loginErr">Parol noto'g'ri. Qayta urinib ko'ring.</div>
+    <button class="btn btn-p" type="submit" style="width:100%;margin-top:14px">Kirish</button>
+  </form>
+</div>
+
+<!-- ===== SHELL ===== -->
+<div class="shell" id="shell">
+  <header class="top">
+    <div class="logo">🌿</div>
+    <div>
+      <h1>Ketoshop — Boshqaruv paneli</h1>
+      <div class="sub">Mahsulotlar va to'plamlarni boshqarish</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn btn-o btn-sm" id="themeToggleBtn" type="button"></button>
+    <button class="btn btn-o btn-sm" id="logoutBtn">Chiqish</button>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-view="dashboard">📊 Dashboard</button>
+    <button class="tab" data-view="products">📦 Mahsulotlar</button>
+    <button class="tab" data-view="sets">🎁 To'plamlar (Set)</button>
+    <button class="tab" data-view="contest">🏆 Musobaqa</button>
+    <button class="tab" data-view="keto">🥑 Keto</button>
+    <button class="tab" data-view="reklama">📣 Reklama</button>
+    <button class="tab" data-view="expenses">📉 Chiqimlar</button>
+  </div>
+
+  <!-- ===== DASHBOARD VIEW ===== -->
+  <section class="view active" id="view-dashboard">
+    <div class="period-switch" id="dashPeriod" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <button data-period="today">Bugun</button>
+      <button data-period="7d">7 kun</button>
+      <button class="active" data-period="30d">30 kun</button>
+      <button data-period="all">Hammasi</button>
+      <div style="display: flex; align-items: center; gap: 6px; margin-left: 10px;">
+        <input type="date" id="dashStartDate" style="border: 1px solid var(--border); border-radius: 4px; padding: 4px; outline: none;">
+        <span style="color: var(--ink-2); font-weight: 500;">—</span>
+        <input type="date" id="dashEndDate" style="border: 1px solid var(--border); border-radius: 4px; padding: 4px; outline: none;">
+        <button id="dashCustomDateBtn" class="btn btn-o btn-sm">Ko'rish</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3>📈 Oylik daromad (so'nggi 6 oy)</h3>
+        <div class="trend-wrap" id="trendChart"></div>
+      </div>
+      <div class="dash-card">
+        <h3>📊 Buyurtmalar holati</h3>
+        <div class="hbar-list" id="statusChart"></div>
+      </div>
+    </div>
+
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3>🏆 Eng ko'p sotilgan mahsulotlar</h3>
+        <div class="hbar-list" id="topProductsChart" style="margin-top:15px;"></div>
+      </div>
+      <div class="dash-card">
+        <h3>📊 ABC Tahlili (Sotuvlar bo'yicha)</h3>
+        <table class="data-table" style="margin-top:15px; font-size:13.5px">
+          <thead><tr><th style="text-align:left">Mahsulot</th><th style="text-align:center">Toifa</th><th style="text-align:right">Ulish</th></tr></thead>
+          <tbody id="abcTbody"></tbody>
+        </table>
+      </div>
+    </div>
+      <div class="dash-card">
+        <h3>🥑 Keto dasturi</h3>
+        <div class="kpi-grid" id="ketoStatsGrid" style="margin-bottom:0"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== PRODUCTS VIEW ===== -->
+  <section class="view" id="view-products">
+    <div class="toolbar">
+      <input type="search" id="prodSearch" placeholder="🔍 Mahsulot qidirish…">
+      <span class="count-pill" id="prodCount"></span>
+      <div class="spacer" style="margin-left:auto"></div>
+      <button class="btn btn-p" id="newProdBtn">＋ Yangi mahsulot</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Mahsulot</th><th>Kategoriya</th><th style="text-align:right">Narx</th>
+          <th style="text-align:right">Qoldiq</th><th>Chegirma</th><th>Holat</th><th></th>
+        </tr></thead>
+        <tbody id="prodRows"></tbody>
+      </table>
+      <div class="empty" id="prodEmpty" style="display:none">Mahsulotlar topilmadi</div>
+    </div>
+  </section>
+
+  <!-- ===== SETS VIEW ===== -->
+  <section class="view" id="view-sets">
+    <div class="toolbar">
+      <span class="count-pill" id="setCount"></span>
+      <div class="spacer" style="margin-left:auto"></div>
+      <button class="btn btn-p" id="newSetBtn">＋ Yangi to'plam</button>
+    </div>
+    <div class="sets-grid" id="setsGrid"></div>
+    <div class="empty" id="setsEmpty" style="display:none">
+      Hozircha to'plamlar yo'q. Bir nechta mahsulotni jamlab, chegirmali to'plam yarating —
+      alohida narxlar yig'indisi qizil chiziq bilan o'chirilgan holda ko'rsatiladi.
+    </div>
+  </section>
+
+  <!-- ===== KETO MUSOBAQASI (referral contest) VIEW ===== -->
+  <section class="view" id="view-contest">
+    <div class="toolbar">
+      <span class="count-pill" id="contestStatusPill"></span>
+    </div>
+    <div class="tbl-wrap" style="padding:20px;display:flex;flex-direction:column;gap:6px">
+      <p class="hint" style="margin-bottom:8px">
+        Har bir foydalanuvchiga o'z referal havolasi beriladi (bosh menyudagi "🏆 Keto musobaqasi" tugmasi orqali).
+        Boshlashdan oldin sovg'alarni to'ldiring — bitta o'rinda bir nechta sovg'a bo'lishi mumkin (har birini alohida qatorga yozing).
+      </p>
+      <label>Musobaqa surati</label>
+      <p class="hint" style="margin:2px 0 8px">Bu rasm har kunlik eslatma yuborilganda foydalanuvchilarga rasm bilan birga boradi. Video yuklansa, video ustunlik qiladi (rasm o'rniga video boradi).</p>
+      <div class="img-drop" id="contestImgDrop">
+        <div class="prev" id="contestImgPrev">🏆</div>
+        <div class="txt"><b>Rasm yuklash</b> — bosing yoki tashlang<br>JPG / PNG / WebP, 5 MB gacha</div>
+        <input type="file" id="contestImgFile" accept="image/jpeg,image/png,image/webp">
+      </div>
+      <input type="hidden" id="contestImgUrl">
+
+      <label style="margin-top:10px">Musobaqa videosi (ixtiyoriy)</label>
+      <p class="hint" style="margin:2px 0 8px">Video bot orqali Telegramga yuboriladi va faqat uning havolasi (file_id) saqlanadi — serverda hech qanday video fayl saqlanmaydi, shuning uchun bu bepul/arzon usul.</p>
+      <div class="img-drop" id="contestVidDrop">
+        <div class="prev" id="contestVidPrev">🎬</div>
+        <div class="txt"><b>Video yuklash</b> — bosing yoki tashlang<br>MP4 / MOV / WebM, 45 MB gacha</div>
+        <input type="file" id="contestVidFile" accept="video/mp4,video/quicktime,video/webm">
+      </div>
+      <input type="hidden" id="contestVidFileId">
+
+      <div class="form-grid">
+        <div><label>Davomiyligi (kun)</label><input type="number" id="contestDays" min="1" step="1" value="10"></div>
+        <div class="full"><label>🥇 1-o'rin sovg'asi</label><textarea id="contestPrize1" rows="2" maxlength="500" placeholder="Har bir sovg'ani alohida qatorga yozing"></textarea></div>
+        <div class="full"><label>🥈 2-o'rin sovg'asi</label><textarea id="contestPrize2" rows="2" maxlength="500"></textarea></div>
+        <div class="full"><label>🥉 3-o'rin sovg'asi</label><textarea id="contestPrize3" rows="2" maxlength="500"></textarea></div>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button class="btn btn-p" id="contestStartBtn" type="button">🚀 Musobaqani boshlash</button>
+        <button class="btn btn-danger" id="contestStopBtn" type="button">⏹ To'xtatish</button>
+      </div>
+    </div>
+
+    <h3 style="margin:22px 0 10px;font-size:15px">📊 Reyting (jonli)</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Foydalanuvchi</th><th style="text-align:right">Taklif qilgan</th></tr></thead>
+        <tbody id="contestRows"></tbody>
+      </table>
+      <div class="empty" id="contestEmpty" style="display:none">Hozircha ishtirokchilar yo'q</div>
+    </div>
+  </section>
+
+  <!-- ===== KETO-AS-DISCOUNT VIEW ===== -->
+  <section class="view" id="view-keto">
+    <div class="toolbar">
+      <span class="count-pill" id="ketoStatusPill"></span>
+      <div class="spacer" style="margin-left:auto"></div>
+      <button class="btn btn-p" id="ketoToggleBtn" type="button"></button>
+    </div>
+    <p class="hint" style="margin:-6px 0 16px">
+      Xaridorlar Ketochalarini xarid chegirmasi sifatida ishlatishlari mumkin (1 Keto = 1 so'm).
+      Yoqilgunga qadar bu imkoniyat hech kimga ko'rinmaydi — tugma faqat shu yerda.
+    </p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Foydalanuvchi</th><th style="text-align:right">Balans</th><th style="text-align:right">Jami to'plangan</th></tr></thead>
+        <tbody id="ketoRows"></tbody>
+      </table>
+      <div class="empty" id="ketoEmpty" style="display:none">Hozircha hech kimda Keto yo'q</div>
+    </div>
+  </section>
+
+  <!-- ===== REKLAMA (Meta Ads) VIEW ===== -->
+  <section class="view" id="view-reklama">
+    <div class="toolbar">
+      <span class="count-pill" id="adsLeadPill">📋 Leadlar: —</span>
+      <div class="spacer" style="margin-left:auto"></div>
+      <button class="btn btn-o btn-sm" id="adsRefreshBtn" type="button">🔄 Yangilash</button>
+    </div>
+
+    <!-- shown only when the server has no META_PAGE_TOKEN -->
+    <div class="dash-card" id="adsDisabled" style="display:none">
+      <h3>📣 Reklama bo'limi o'chiq</h3>
+      <p style="font-size:13.5px;color:var(--ink-2)">
+        Serverda <code>META_PAGE_TOKEN</code> o'rnatilmagan, shuning uchun Meta reklama
+        statistikasi va leadlar olinmaydi. Railway → Variables ga tokenni qo'shib qayta
+        deploy qilsangiz, bu bo'lim o'zi ishlay boshlaydi — boshqa hech narsa o'zgarmaydi.
+      </p>
+    </div>
+
+    <div id="adsBody">
+      <div class="period-switch" id="adsPeriod">
+        <button class="active" data-period="today">Bugun</button>
+        <button data-period="yesterday">Kecha</button>
+        <button data-period="last_7d">7 kun</button>
+        <button data-period="last_30d">30 kun</button>
+        <button data-period="maximum">Hammasi</button>
+      </div>
+
+      <div class="dash-card" id="adsError" style="display:none;border-color:var(--red);background:var(--red-wash);margin-bottom:16px">
+        <h3 style="color:var(--red);margin-bottom:8px">⚠️ Meta bilan bog'lanishda xato</h3>
+        <div style="font-size:13.5px;color:var(--ink)" id="adsErrorMsg"></div>
+      </div>
+
+      <div class="kpi-grid" id="adsKpi" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr))"></div>
+
+      <div class="dash-grid">
+        <div class="dash-card">
+          <h3>📢 Kampaniyalar bo'yicha sarf</h3>
+          <div class="hbar-list" id="adsCampaigns"></div>
+        </div>
+        <div class="dash-card">
+          <h3>🔍 Hisob holati</h3>
+          <div id="adsStatusCard"></div>
+        </div>
+      </div>
+
+      <h3 style="margin:22px 0 10px;font-size:15px">🎯 Reklamalar bo'yicha</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Reklama nomi</th>
+            <th style="text-align:right">Sarf</th>
+            <th style="text-align:right">Ko'rsatishlar</th>
+            <th style="text-align:right">Kliklar</th>
+            <th style="text-align:right">CTR</th>
+            <th style="text-align:right">Leadlar</th>
+            <th style="text-align:right">Lead narxi</th>
+          </tr></thead>
+          <tbody id="adsRows"></tbody>
+        </table>
+        <div class="empty" id="adsEmpty" style="display:none">Bu davrda reklama ma'lumoti yo'q</div>
+      </div>
+
+      <h3 style="margin:22px 0 10px;font-size:15px">📋 Leadlar (formani to'ldirganlar)</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Vaqt</th><th>Ism</th><th>Telefon</th><th>Kampaniya</th><th>Holat</th>
+          </tr></thead>
+          <tbody id="adsLeadRows"></tbody>
+        </table>
+        <div class="empty" id="adsLeadEmpty" style="display:none">Hozircha lead yo'q</div>
+      </div>
+      <p style="font-size:12.5px;color:var(--ink-3);margin-top:10px">
+        Telefon raqamiga bosing — nusxalanadi. Har bir yangi lead shu yerga tushishi bilan
+        Telegramga ham to'liq ma'lumoti bilan yuboriladi.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===== EXPENSES VIEW ===== -->
+  <section class="view" id="view-expenses">
+    <div class="toolbar">
+      <span class="count-pill" id="expCount"></span>
+      <div class="spacer" style="margin-left:auto"></div>
+      <button class="btn btn-p" id="newExpBtn">＋ Yangi chiqim</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Vaqt</th><th>Chiqim nomi</th><th style="text-align:right">Miqdor (so'm)</th>
+        </tr></thead>
+        <tbody id="expRows"></tbody>
+      </table>
+      <div class="empty" id="expEmpty" style="display:none">Chiqimlar topilmadi</div>
+    </div>
+  </section>
+</div>
+
+<!-- ===== EXPENSE MODAL ===== -->
+<div class="modal-bg" id="expModal">
+  <form class="modal" id="expForm">
+    <h2 id="expModalTitle">Yangi chiqim kiritish</h2>
+    <div class="form-grid">
+      <div class="full"><label>Chiqim nomi *</label><input name="name" required maxlength="200" placeholder="Masalan: Yandex yetkazib berish"></div>
+      <div class="full"><label>Miqdor (so'm) *</label><input name="amount" type="number" min="0" step="any" required></div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-o" data-close>Bekor qilish</button>
+      <button type="submit" class="btn btn-p" id="expSaveBtn">Saqlash</button>
+    </div>
+  </form>
+</div>
+
+<!-- ===== PRODUCT MODAL ===== -->
+<div class="modal-bg" id="prodModal">
+  <form class="modal" id="prodForm">
+    <h2 id="prodModalTitle">Yangi mahsulot</h2>
+    <div class="form-grid">
+      <div class="full"><label>Nomi (UZ) *</label><input name="name" required maxlength="200"></div>
+      <div class="full"><label>Nomi (RU)</label><input name="name_ru" maxlength="200"></div>
+      <div><label>Kategoriya *</label><select name="category" id="prodCat"></select></div>
+      <div><label>O'lchov birligi</label>
+        <select name="unit">
+          <option value="kg">kg (dona sifatida)</option><option value="piece">dona</option>
+          <option value="liter">litr</option><option value="bundle">bog'lam</option><option value="jar">banka</option>
+        </select>
+      </div>
+      <div><label>Narx (so'm) *</label><input name="price" type="number" min="0" step="any" required></div>
+      <div><label>Tannarx (so'm)</label><input name="cost_price" type="number" min="0" step="any" value="0"></div>
+      <div><label>Qoldiq (miqdor)</label><input name="quantity" type="number" min="0" step="any" value="0"></div>
+      <div><label>Chegirma (%)</label><input name="discount_percent" type="number" min="0" max="100" step="1" value="0"></div>
+      <div class="full"><label>Tavsif (UZ)</label><textarea name="description" rows="2" maxlength="2000"></textarea></div>
+      <div class="full"><label>Rasm</label>
+        <div class="img-drop" id="prodImgDrop">
+          <div class="prev" id="prodImgPrev">📷</div>
+          <div class="txt"><b>Rasm yuklash</b> — bosing yoki tashlang<br>JPG / PNG / WebP, 5 MB gacha</div>
+          <input type="file" id="prodImgFile" accept="image/jpeg,image/png,image/webp">
+        </div>
+        <input type="hidden" name="image_url" id="prodImgUrl">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-o" data-close>Bekor qilish</button>
+      <button type="submit" class="btn btn-p" id="prodSaveBtn">Saqlash</button>
+    </div>
+  </form>
+</div>
+
+<!-- ===== SET MODAL ===== -->
+<div class="modal-bg" id="setModal">
+  <form class="modal" id="setForm">
+    <h2 id="setModalTitle">Yangi to'plam</h2>
+    <p class="hint">Bir nechta mahsulotni jamlang. Alohida narxlar yig'indisi avtomatik hisoblanadi va mijozga qizil chiziq bilan o'chirilgan holda ko'rsatiladi.</p>
+    <div class="form-grid">
+      <div class="full"><label>To'plam nomi (UZ) *</label><input name="name" required maxlength="200" placeholder="Masalan: Keto Start to'plami"></div>
+      <div class="full"><label>To'plam nomi (RU)</label><input name="name_ru" maxlength="200"></div>
+      <div class="full"><label>Tavsif (UZ)</label><textarea name="description" rows="2" maxlength="2000"></textarea></div>
+    </div>
+
+    <label>Mahsulotlar *</label>
+    <div class="builder-list" id="builderList"></div>
+    <button type="button" class="btn btn-o btn-sm" id="addRowBtn" style="margin-top:8px">＋ Mahsulot qo'shish</button>
+
+    <div class="calc">
+      <div class="line"><span class="lab">Alohida olinganda:</span>
+        <span class="strike-red tnum" id="calcOriginal">0 so'm</span></div>
+      <div class="line"><span class="lab"><b>To'plam narxi (so'm) *</b></span>
+        <span style="max-width:170px"><input name="set_price" id="setPriceInput" type="number" min="0" step="any" required></span></div>
+      <div class="line save-line"><span>Mijoz tejaydi:</span><span class="tnum" id="calcSave">0 so'm (0%)</span></div>
+    </div>
+
+    <div class="full"><label>To'plam rasmi</label>
+      <div class="img-drop" id="setImgDrop">
+        <div class="prev" id="setImgPrev">🎁</div>
+        <div class="txt"><b>Rasm yuklash</b> — bosing yoki tashlang</div>
+        <input type="file" id="setImgFile" accept="image/jpeg,image/png,image/webp">
+      </div>
+      <input type="hidden" name="image_url" id="setImgUrl">
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-o" data-close>Bekor qilish</button>
+      <button type="submit" class="btn btn-p" id="setSaveBtn">Saqlash</button>
+    </div>
+  </form>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="chart-tip" id="chartTip"></div>
+
+<script>
+"use strict";
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const fmt=n=>Math.round(+n).toLocaleString('ru-RU').replace(/,/g,' ')+" so'm";
+let PRODUCTS=[], SETS=[], CATEGORIES=[], CONTEST=null, editingProdId=null, editingSetId=null;
+
+// Categories used to be a fixed client-side list; now admin-added ones come
+// from /admin/api/session (see database.categories), so the label map is
+// built dynamically instead of hardcoded.
+let CAT_MAP={};
+const catLabel=c=>CAT_MAP[c]||c;
+let lastCatValue=null;
+function renderCatOptions(){
+  $('#prodCat').innerHTML=CATEGORIES.map(c=>`<option value="${c.key}">${esc(c.name_uz)}</option>`).join('')
+    +'<option value="__new__">➕ Yangi kategoriya qo\'shish…</option>';
+}
+$('#prodCat').addEventListener('change',async()=>{
+  const sel=$('#prodCat');
+  if(sel.value!=='__new__'){lastCatValue=sel.value;return;}
+  const name_uz=(prompt("Yangi kategoriya nomi (UZ):")||'').trim();
+  if(!name_uz){sel.value=lastCatValue||CATEGORIES[0]?.key||'';return;}
+  const name_ru=(prompt("Yangi kategoriya nomi (RU) — ixtiyoriy, bo'sh qoldirish mumkin:")||'').trim();
+  try{
+    const res=await api('/admin/api/categories',{method:'POST',body:JSON.stringify({name_uz,name_ru:name_ru||null})});
+    CATEGORIES.push(res.category);
+    CAT_MAP[res.category.key]=res.category.name_uz;
+    renderCatOptions();
+    sel.value=res.category.key;
+    lastCatValue=res.category.key;
+    toast("✅ Kategoriya qo'shildi: "+res.category.name_uz);
+  }catch(err){
+    toast('⚠️ '+err.message);
+    sel.value=lastCatValue||CATEGORIES[0]?.key||'';
+  }
+});
+
+function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
+
+async function api(path,opts={}){
+  const r=await fetch(path,{headers:{'Content-Type':'application/json'},credentials:'same-origin',...opts});
+  if(r.status===401){showLogin();throw new Error('unauthorized');}
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
+  return data;
+}
+
+/* ===== auth ===== */
+function showLogin(){$('#loginView').style.display='grid';$('#shell').style.display='none';}
+function showShell(){$('#loginView').style.display='none';$('#shell').style.display='block';}
+$('#loginForm').addEventListener('submit',async e=>{
+  e.preventDefault();$('#loginErr').classList.remove('show');
+  try{
+    await api('/admin/api/login',{method:'POST',body:JSON.stringify({password:$('#pw').value})});
+    $('#pw').value='';await boot();
+  }catch(err){$('#loginErr').textContent=err.message==='wrong password'?"Parol noto'g'ri. Qayta urinib ko'ring.":err.message;$('#loginErr').classList.add('show');}
+});
+/* ===== theme ===== */
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme',t);
+  try{localStorage.setItem('ketoshop_admin_theme',t);}catch(e){}
+  $('#themeToggleBtn').textContent=t==='dark'?'☀️ Kunduzgi rejim':'🌙 Tungi rejim';
+}
+applyTheme(document.documentElement.getAttribute('data-theme')==='light'?'light':'dark');
+$('#themeToggleBtn').addEventListener('click',()=>{
+  applyTheme(document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark');
+});
+
+$('#logoutBtn').addEventListener('click',async()=>{await api('/admin/api/logout',{method:'POST'});showLogin();});
+
+async function boot(){
+  const s=await api('/admin/api/session');
+  CATEGORIES=s.categories||[];
+  CAT_MAP={};CATEGORIES.forEach(c=>CAT_MAP[c.key]=c.name_uz);
+  renderCatOptions();
+  lastCatValue=CATEGORIES[0]?.key||null;
+  showShell();await Promise.all([loadDashboard(),loadProducts(),loadSets(),loadContest(),loadKeto()]);
+}
+
+/* ===== dashboard ===== */
+let DASH_PERIOD='30d';
+const MONTH_UZ=['','Yan','Fev','Mar','Apr','May','Iyun','Iyul','Avg','Sen','Okt','Noy','Dek'];
+function fmtSom(n){return Math.round(n).toLocaleString('ru-RU')+" so'm";}
+
+function bindTips(sel){
+  const tip=$('#chartTip');
+  $$(sel).forEach(el=>{
+    if(!el.dataset.tip)return;
+    el.addEventListener('mouseenter',()=>{tip.textContent=el.dataset.tip;tip.classList.add('show');});
+    el.addEventListener('mousemove',e=>{tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY+12)+'px';});
+    el.addEventListener('mouseleave',()=>tip.classList.remove('show'));
+  });
+}
+
+async function loadDashboard(){
+  let url = '/admin/api/dashboard';
+  let activeBtn = $('#dashPeriod button.active');
+  if(activeBtn && activeBtn.dataset.period) {
+    url += '?period=' + activeBtn.dataset.period;
+  } else {
+    // Custom date case
+    let sd = $('#dashStartDate').value;
+    let ed = $('#dashEndDate').value;
+    if(sd && ed) {
+      url += '?period=custom&start=' + sd + '&end=' + ed;
+    } else {
+      url += '?period=30d'; // fallback
+    }
+  }
+  const d=await api(url);
+  renderKpis(d.stats);
+  renderTrend(d.monthly);
+  renderStatusChart(d.stats);
+  renderTopProducts(d.top_products);
+  renderAbcAnalysis(d.abc_analysis);
+  renderKetoStats(d.keto);
+}
+
+function renderDashKpiCard(lab,val,sub){
+  return `<div class="kpi-card"><div class="lab">${esc(lab)}</div><div class="val tnum">${esc(val)}</div><div class="sub">${esc(sub)}</div></div>`;
+}
+
+function renderKpis(st){
+  const cards=[
+    renderDashKpiCard('Jami Tushum', fmt(st.revenue), 'Yetkazilgan buyurtmalardan'),
+    renderDashKpiCard('B2B Tushum (optom)', fmt(st.b2b_revenue), st.b2b_orders+' ta savdo'),
+    renderDashKpiCard('Maxsulot tannarxi', fmt(st.product_cost), 'Sotilganlar bo\'yicha'),
+    renderDashKpiCard('Jami Chiqimlar', fmt(st.expenses), 'Barcha xarajatlar'),
+    renderDashKpiCard('Foyda (sof)', fmt(st.profit), 'Tushum - Tannarx - Chiqimlar'),
+    renderDashKpiCard('O\'rtacha Chek', fmt(st.aov), 'Buyurtma boshiga'),
+    renderDashKpiCard('Yangi mijozlar',st.users_new+' ta','Jami ro\'yxatdan o\'tganlar: '+st.users_total),
+    renderDashKpiCard('Jami Buyurtmalar',st.orders_total+' ta','Yangi: '+st.orders_pending+' / Tasdiqlangan: '+st.orders_confirmed),
+  ].join('');
+  $('#kpiGrid').innerHTML=cards;
+}
+
+function renderTrend(monthly){
+  const rows=[...monthly].reverse();
+  const max=Math.max(1,...rows.map(r=>r.revenue));
+  $('#trendChart').innerHTML=rows.map(r=>{
+    const h=Math.max(3,Math.round(r.revenue/max*100));
+    const lab=MONTH_UZ[r.month]+(r.is_current?' (joriy)':'');
+    const tip=`${lab}: ${fmtSom(r.revenue)} — ${r.orders} buyurtma`;
+    return `<div class="trend-col" data-tip="${esc(tip)}"><div class="trend-bar" style="height:${h}%"></div><div class="trend-lab">${esc(MONTH_UZ[r.month])}</div></div>`;
+  }).join('');
+  bindTips('#trendChart .trend-col');
+}
+
+function renderStatusChart(s){
+  const rows=[
+    {lab:'⏳ Kutilmoqda', val:s.orders_pending, color:'var(--amber)'},
+    {lab:'✅ Tasdiqlangan', val:s.orders_confirmed, color:'var(--ink-3)'},
+    {lab:'🚚 Yetkazildi', val:s.orders_delivered, color:'var(--green)'},
+    {lab:'❌ Bekor qilindi', val:s.orders_cancelled, color:'var(--red)'},
+  ];
+  const max=Math.max(1,...rows.map(r=>r.val));
+  $('#statusChart').innerHTML=rows.map(r=>{
+    const w=Math.max(2,Math.round(r.val/max*100));
+    return `<div class="hbar-row" data-tip="${esc(r.lab)}: ${r.val} ta">
+      <div class="hb-lab">${esc(r.lab)}</div>
+      <div class="hb-track"><div class="hb-fill" style="width:${w}%;background:${r.color}"></div></div>
+      <div class="hb-val tnum">${r.val}</div>
+    </div>`;
+  }).join('');
+  bindTips('#statusChart .hbar-row');
+}
+
+function renderTopProducts(list){
+  if(!list||!list.length){$('#topProductsChart').innerHTML='<div class="empty" style="padding:20px">Bu davrda sotuv yo\'q</div>';return;}
+  const max=Math.max(1,...list.map(p=>p.revenue));
+  $('#topProductsChart').innerHTML=list.map(p=>{
+    const w=Math.max(2,Math.round(p.revenue/max*100));
+    const qty=Number(p.qty);
+    const qtyStr=Number.isInteger(qty)?qty:qty.toFixed(2);
+    const tip=`${p.name}: ${fmtSom(p.revenue)} — ${qtyStr} dona`;
+    return `<div class="hbar-row" data-tip="${esc(tip)}">
+      <div class="hb-lab" title="${esc(p.name)}">${esc(p.name)}</div>
+      <div class="hb-track"><div class="hb-fill" style="width:${w}%;background:var(--accent)"></div></div>
+      <div class="hb-val tnum">${fmtSom(p.revenue)}</div>
+    </div>`;
+  }).join('');
+  bindTips('#topProductsChart .hbar-row');
+}
+
+function renderKetoStats(k){
+  const cards=[
+    {lab:'Keto egalari', val:k.users_with_keto},
+    {lab:'Jami berilgan', val:k.total_awarded.toLocaleString('ru-RU')+' 🥑'},
+    {lab:'Ochilgan yutuqlar', val:k.achievements_unlocked},
+  ];
+  $('#ketoStatsGrid').innerHTML=cards.map(c=>
+    `<div class="kpi-card"><div class="lab">${esc(c.lab)}</div><div class="val tnum">${esc(String(c.val))}</div></div>`
+  ).join('');
+}
+
+$('#dashPeriod').addEventListener('click',e=>{
+  if(e.target.tagName==='BUTTON' && e.target.dataset.period){
+    $$('#dashPeriod button[data-period]').forEach(b=>b.classList.remove('active'));
+    e.target.classList.add('active');
+    loadDashboard();
+  }
+});
+$('#dashCustomDateBtn').addEventListener('click', () => {
+  let sd = $('#dashStartDate').value;
+  let ed = $('#dashEndDate').value;
+  if(!sd || !ed) {
+    toast('⚠️ Iltimos, boshlanish va tugash sanalarini kiriting.');
+    return;
+  }
+  $$('#dashPeriod button[data-period]').forEach(b=>b.classList.remove('active'));
+  loadDashboard();
+});
+
+/* ===== tabs ===== */
+const VIEWS=['dashboard','products','sets','contest','keto','reklama','expenses'];
+function switchView(v){
+  if(!VIEWS.includes(v))v='dashboard';
+  localStorage.setItem('ketoshop_admin_view',v);
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  document.querySelectorAll('.view').forEach(s=>s.classList.toggle('active',s.id==='view-'+v));
+  if(v==='dashboard')loadDashboard();
+  if(v==='products')loadProducts();
+  if(v==='sets')loadSets();
+  if(v==='contest')loadContest();
+  if(v==='keto')loadKeto();
+  if(v==='reklama')loadAds();
+  if(v==='expenses')loadExpenses();
+}
+$$('.tab').forEach(t=>t.addEventListener('click',()=>switchView(t.dataset.view)));
+
+/* ===== products ===== */
+async function loadProducts(){
+  const d=await api('/admin/api/products');PRODUCTS=d.products||[];renderProducts();
+}
+function renderProducts(){
+  const q=($('#prodSearch').value||'').toLowerCase();
+  const list=PRODUCTS.filter(p=>!q||(p.name||'').toLowerCase().includes(q)||(p.name_ru||'').toLowerCase().includes(q));
+  $('#prodCount').textContent=list.length+' ta mahsulot';
+  $('#prodEmpty').style.display=list.length?'none':'block';
+  $('#prodRows').innerHTML=list.map(p=>{
+    const img=p.image_url?`<img src="${p.image_url}" alt="">`:'📦';
+    const disc=p.discount_percent>0?`<span class="pill disc">−${p.discount_percent}%</span>`:'—';
+    const st=p.is_active?`<span class="pill on">Faol</span>`:`<span class="pill off">Arxiv</span>`;
+    return `<tr>
+      <td><div class="pname"><div class="pthumb">${img}</div><div>${esc(p.name)}<div style="font-size:11.5px;color:var(--ink-3)">#${p.id}</div></div></div></td>
+      <td>${catLabel(p.category)}</td>
+      <td class="tnum" style="text-align:right;font-weight:700">${fmt(p.price)}</td>
+      <td class="tnum" style="text-align:right">${(+p.quantity).toLocaleString()}</td>
+      <td>${disc}</td><td>${st}</td>
+      <td><div class="row-actions">
+        <button class="btn btn-o btn-sm" onclick="openProdModal(${p.id})">✏️ Tahrirlash</button>
+        ${p.is_active?`<button class="btn btn-danger btn-sm" onclick="archiveProd(${p.id})">Arxivlash</button>`
+                     :`<button class="btn btn-o btn-sm" onclick="restoreProd(${p.id})">Tiklash</button>`}
+      </div></td></tr>`;
+  }).join('');
+}
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+$('#prodSearch').addEventListener('input',renderProducts);
+
+window.openProdModal=function(id){
+  editingProdId=id||null;
+  const f=$('#prodForm');f.reset();
+  $('#prodImgUrl').value='';$('#prodImgPrev').innerHTML='📷';
+  $('#prodModalTitle').textContent=id?'Mahsulotni tahrirlash':'Yangi mahsulot';
+  if(id){
+    const p=PRODUCTS.find(x=>x.id===id);if(!p)return;
+    for(const k of['name','name_ru','category','unit','price','cost_price','quantity','discount_percent','description'])
+      if(f[k]!==undefined&&p[k]!=null)f[k].value=p[k];
+    if(p.image_url){$('#prodImgUrl').value=p.image_url;$('#prodImgPrev').innerHTML=`<img src="${p.image_url}">`;}
+  }
+  lastCatValue=f.category.value;
+  $('#prodModal').classList.add('open');
+};
+$('#newProdBtn').addEventListener('click',()=>openProdModal(null));
+
+$('#prodForm').addEventListener('submit',async e=>{
+  e.preventDefault();const f=e.target,btn=$('#prodSaveBtn');btn.disabled=true;
+  const body={name:f.name.value,name_ru:f.name_ru.value,category:f.category.value,unit:f.unit.value,
+    price:+f.price.value,cost_price:+f.cost_price.value||0,quantity:+f.quantity.value||0,
+    discount_percent:+f.discount_percent.value||0,description:f.description.value,image_url:$('#prodImgUrl').value||null};
+  try{
+    if(editingProdId)await api('/admin/api/products/'+editingProdId,{method:'POST',body:JSON.stringify(body)});
+    else await api('/admin/api/products',{method:'POST',body:JSON.stringify(body)});
+    closeModals();toast('✅ Saqlandi');await loadProducts();
+  }catch(err){toast('⚠️ '+err.message);}finally{btn.disabled=false;}
+});
+window.archiveProd=async id=>{if(!confirm('Mahsulot arxivlansinmi? (katalogdan yashiriladi)'))return;
+  await api('/admin/api/products/'+id+'/delete',{method:'POST'});toast('Arxivlandi');await loadProducts();};
+window.restoreProd=async id=>{await api('/admin/api/products/'+id,{method:'POST',body:JSON.stringify({is_active:true})});toast('Tiklandi');await loadProducts();};
+
+/* ===== image upload (shared) ===== */
+function bindUpload(dropId,fileId,urlId,prevId){
+  const drop=$(dropId),file=$(fileId);
+  drop.addEventListener('click',()=>file.click());
+  drop.addEventListener('dragover',e=>{e.preventDefault();});
+  drop.addEventListener('drop',e=>{e.preventDefault();if(e.dataTransfer.files[0])upload(e.dataTransfer.files[0]);});
+  file.addEventListener('change',()=>{if(file.files[0])upload(file.files[0]);});
+  async function upload(f){
+    if(f.size>5*1024*1024){toast('⚠️ Rasm 5 MB dan katta');return;}
+    const fd=new FormData();fd.append('file',f);
+    $(prevId).innerHTML='⏳';
+    const r=await fetch('/admin/api/upload',{method:'POST',body:fd,credentials:'same-origin'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){toast('⚠️ '+(d.error||'Yuklash xatosi'));$(prevId).innerHTML='📷';return;}
+    $(urlId).value=d.url;$(prevId).innerHTML=`<img src="${d.url}">`;toast('🖼 Rasm yuklandi');
+  }
+}
+bindUpload('#prodImgDrop','#prodImgFile','#prodImgUrl','#prodImgPrev');
+bindUpload('#setImgDrop','#setImgFile','#setImgUrl','#setImgPrev');
+
+/* ===== sets ===== */
+async function loadSets(){const d=await api('/admin/api/sets');SETS=d.sets||[];renderSets();}
+function renderSets(){
+  $('#setCount').textContent=SETS.length+" ta to'plam";
+  $('#setsEmpty').style.display=SETS.length?'none':'block';
+  $('#setsGrid').innerHTML=SETS.map(s=>{
+    const img=s.image_url?`<img src="${s.image_url}">`:'🎁';
+    const pct=s.original_total>0?Math.round(s.savings/s.original_total*100):0;
+    return `<div class="set-card ${s.is_active?'':'inactive'}">
+      <div class="set-head">
+        <div class="pthumb">${img}</div>
+        <div><h3>${esc(s.name)}</h3><div class="muted">#${s.id} · ${s.items.length} ta mahsulot ${s.is_active?'':'· 🚫 o’chirilgan'}</div></div>
+      </div>
+      <div class="set-items-list">${s.items.map(i=>
+        `<div class="row"><span>${esc(i.name)}</span><span class="q tnum">×${+i.quantity} · ${fmt(i.price*i.quantity)}</span></div>`).join('')}
+      </div>
+      <div class="set-price-block">
+        <span class="set-now tnum">${fmt(s.set_price)}</span>
+        <span class="strike-red tnum">${fmt(s.original_total)}</span>
+        ${s.savings>0?`<span class="save-badge tnum">−${fmt(s.savings)} (${pct}%)</span>`:''}
+      </div>
+      <div class="set-actions">
+        <button class="btn btn-o btn-sm" onclick="openSetModal(${s.id})">✏️ Tahrirlash</button>
+        <button class="btn btn-o btn-sm" onclick="toggleSet(${s.id},${s.is_active?'false':'true'})">${s.is_active?'⏸ O’chirish':'▶️ Yoqish'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteSet(${s.id})">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function builderRow(item){
+  const row=document.createElement('div');row.className='b-row';
+  const activeProds=PRODUCTS.filter(p=>p.is_active);
+  row.innerHTML=`<select class="b-prod">${activeProds.map(p=>
+      `<option value="${p.id}" data-price="${p.price}" ${item&&item.product_id===p.id?'selected':''}>${esc(p.name)} — ${fmt(p.price)}</option>`).join('')}
+    </select>
+    <input class="b-qty" type="number" min="0.5" step="0.5" value="${item?+item.quantity:1}">
+    <button type="button" class="del" title="O'chirish">×</button>`;
+  row.querySelector('.del').addEventListener('click',()=>{row.remove();recalcSet();});
+  row.querySelector('.b-prod').addEventListener('change',recalcSet);
+  row.querySelector('.b-qty').addEventListener('input',recalcSet);
+  return row;
+}
+function recalcSet(){
+  let total=0;
+  $$('#builderList .b-row').forEach(r=>{
+    const sel=r.querySelector('.b-prod'),opt=sel.selectedOptions[0];
+    total+=(+opt?.dataset.price||0)*(+r.querySelector('.b-qty').value||0);
+  });
+  $('#calcOriginal').textContent=fmt(total);
+  const sp=+$('#setPriceInput').value||0,save=Math.max(0,total-sp);
+  const pct=total>0?Math.round(save/total*100):0;
+  $('#calcSave').textContent=`${fmt(save)} (${pct}%)`;
+}
+$('#setPriceInput').addEventListener('input',recalcSet);
+$('#addRowBtn').addEventListener('click',()=>{$('#builderList').appendChild(builderRow());recalcSet();});
+
+window.openSetModal=function(id){
+  editingSetId=id||null;
+  const f=$('#setForm');f.reset();
+  $('#builderList').innerHTML='';$('#setImgUrl').value='';$('#setImgPrev').innerHTML='🎁';
+  $('#setModalTitle').textContent=id?"To'plamni tahrirlash":"Yangi to'plam";
+  if(id){
+    const s=SETS.find(x=>x.id===id);if(!s)return;
+    f.name.value=s.name||'';f.name_ru.value=s.name_ru||'';f.description.value=s.description||'';
+    f.set_price.value=s.set_price;
+    if(s.image_url){$('#setImgUrl').value=s.image_url;$('#setImgPrev').innerHTML=`<img src="${s.image_url}">`;}
+    s.items.forEach(i=>$('#builderList').appendChild(builderRow(i)));
+  }else{
+    $('#builderList').appendChild(builderRow());
+  }
+  recalcSet();
+  $('#setModal').classList.add('open');
+};
+$('#newSetBtn').addEventListener('click',()=>openSetModal(null));
+
+$('#setForm').addEventListener('submit',async e=>{
+  e.preventDefault();const f=e.target,btn=$('#setSaveBtn');
+  const items=$$('#builderList .b-row').map(r=>({
+    product_id:+r.querySelector('.b-prod').value,
+    quantity:+r.querySelector('.b-qty').value||1,
+  }));
+  if(!items.length){toast("⚠️ Kamida bitta mahsulot qo'shing");return;}
+  btn.disabled=true;
+  const body={name:f.name.value,name_ru:f.name_ru.value,description:f.description.value,
+    set_price:+f.set_price.value,items,image_url:$('#setImgUrl').value||null};
+  try{
+    if(editingSetId)await api('/admin/api/sets/'+editingSetId,{method:'POST',body:JSON.stringify(body)});
+    else await api('/admin/api/sets',{method:'POST',body:JSON.stringify(body)});
+    closeModals();toast('✅ To’plam saqlandi');await loadSets();
+  }catch(err){toast('⚠️ '+err.message);}finally{btn.disabled=false;}
+});
+window.toggleSet=async(id,on)=>{await api('/admin/api/sets/'+id,{method:'POST',body:JSON.stringify({is_active:on==='true'||on===true})});await loadSets();};
+window.deleteSet=async id=>{if(!confirm("To'plam butunlay o'chirilsinmi?"))return;
+  await api('/admin/api/sets/'+id+'/delete',{method:'POST'});toast('O’chirildi');await loadSets();};
+
+/* ===== Keto musobaqasi (referral contest) ===== */
+async function loadContest(){CONTEST=await api('/admin/api/contest/status');renderContest();}
+function renderContest(){
+  const c=CONTEST;
+  if(!c.started_at){$('#contestStatusPill').textContent='⚪ Hali boshlanmagan';}
+  else if(c.active){$('#contestStatusPill').textContent='🟢 Faol — tugaydi: '+new Date(c.ends_at).toLocaleString('ru-RU');}
+  else{$('#contestStatusPill').textContent='⚪ Yakunlangan / to\'xtatilgan';}
+  $('#contestStopBtn').style.display=c.active?'':'none';
+  $('#contestPrize1').value=c.prize_1||'';
+  $('#contestPrize2').value=c.prize_2||'';
+  $('#contestPrize3').value=c.prize_3||'';
+  if(c.image_url){$('#contestImgUrl').value=c.image_url;$('#contestImgPrev').innerHTML=`<img src="${c.image_url}">`;}
+  if(c.video_file_id){$('#contestVidFileId').value=c.video_file_id;$('#contestVidPrev').textContent='✅';}
+  const rows=c.leaderboard||[];
+  $('#contestEmpty').style.display=rows.length?'none':'block';
+  $('#contestRows').innerHTML=rows.map((r,i)=>{
+    const name=r.username?'@'+esc(r.username):(r.full_name?esc(r.full_name):('ID '+r.user_id));
+    const rank=i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
+    return `<tr><td>${rank}</td><td>${name}</td><td style="text-align:right" class="tnum">${r.invites}</td></tr>`;
+  }).join('');
+}
+
+function renderAbcAnalysis(list){
+  if(!list||!list.length){
+    $('#abcTbody').innerHTML='<tr><td colspan="3" style="text-align:center;color:var(--ink-3);padding:20px">Ma\'lumot yo\'q</td></tr>';
+    return;
+  }
+  $('#abcTbody').innerHTML=list.map(r=>{
+    let col = r.category === 'A' ? 'var(--green)' : (r.category === 'B' ? 'var(--amber)' : 'var(--red)');
+    let bg = r.category === 'A' ? 'var(--green-wash)' : (r.category === 'B' ? 'var(--amber-wash)' : 'var(--red-wash)');
+    return `<tr>
+      <td>${esc(r.name)}</td>
+      <td style="text-align:center"><span style="display:inline-block;padding:2px 8px;border-radius:6px;font-weight:700;color:${col};background:${bg}">${r.category}</span></td>
+      <td class="tnum" style="text-align:right">${r.contribution.toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderKetoStats(k){bindUpload('#contestImgDrop','#contestImgFile','#contestImgUrl','#contestImgPrev');}
+
+/* Video upload relays through the bot (no file storage on our side) — see
+   admin_web.py's api_contest_upload_video. Response is {file_id}, not a
+   URL, so there's nothing to preview beyond a checkmark. */
+(function bindVideoUpload(){
+  const drop=$('#contestVidDrop'),file=$('#contestVidFile'),prev=$('#contestVidPrev'),out=$('#contestVidFileId');
+  drop.addEventListener('click',()=>file.click());
+  drop.addEventListener('dragover',e=>{e.preventDefault();});
+  drop.addEventListener('drop',e=>{e.preventDefault();if(e.dataTransfer.files[0])upload(e.dataTransfer.files[0]);});
+  file.addEventListener('change',()=>{if(file.files[0])upload(file.files[0]);});
+  async function upload(f){
+    if(f.size>45*1024*1024){toast('⚠️ Video 45 MB dan katta');return;}
+    const fd=new FormData();fd.append('file',f);
+    prev.textContent='⏳';
+    const r=await fetch('/admin/api/contest/upload-video',{method:'POST',body:fd,credentials:'same-origin'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){toast('⚠️ '+(d.error||'Yuklash xatosi'));prev.textContent='🎬';return;}
+    out.value=d.file_id;prev.textContent='✅';toast('🎬 Video yuklandi');
+  }
+})();
+
+$('#contestStartBtn').addEventListener('click',async()=>{
+  if(!confirm("Musobaqani hoziroq boshlash kerakmi? Bosh menyudagi \"Keto musobaqasi\" tugmasi barcha foydalanuvchilarga to'liq shartlar+reyting bilan ochiladi va kunlik eslatmalar yuborila boshlaydi. Davom etamizmi?"))return;
+  const btn=$('#contestStartBtn');btn.disabled=true;
+  const body={
+    days:+$('#contestDays').value||10,
+    image_url:$('#contestImgUrl').value||null,
+    video_file_id:$('#contestVidFileId').value||null,
+    prize_1:$('#contestPrize1').value||null,
+    prize_2:$('#contestPrize2').value||null,
+    prize_3:$('#contestPrize3').value||null,
+  };
+  try{await api('/admin/api/contest/start',{method:'POST',body:JSON.stringify(body)});toast('🚀 Musobaqa boshlandi');await loadContest();}
+  catch(err){toast('⚠️ '+err.message);}finally{btn.disabled=false;}
+});
+$('#contestStopBtn').addEventListener('click',async()=>{
+  if(!confirm("Musobaqa hoziroq to'xtatilsinmi?"))return;
+  await api('/admin/api/contest/stop',{method:'POST'});toast("To'xtatildi");await loadContest();
+});
+
+/* ===== Keto-as-discount at checkout ===== */
+let KETO={redemption_enabled:false,balances:[]};
+async function loadKeto(){KETO=await api('/admin/api/keto/status');renderKeto();}
+function renderKeto(){
+  const on=KETO.redemption_enabled;
+  $('#ketoStatusPill').textContent=on?'🟢 Yoqilgan — xaridorlar chegirma sifatida ishlata oladi':'⚪ O\'chirilgan — hech kimga ko\'rinmaydi';
+  const btn=$('#ketoToggleBtn');
+  btn.textContent=on?'⏹ O\'chirish':'🚀 Yoqish';
+  btn.className='btn '+(on?'btn-danger':'btn-p');
+  const rows=KETO.balances||[];
+  $('#ketoEmpty').style.display=rows.length?'none':'block';
+  $('#ketoRows').innerHTML=rows.map((r,i)=>{
+    const name=r.username?'@'+esc(r.username):(r.full_name?esc(r.full_name):('ID '+r.user_id));
+    return `<tr><td>${i+1}</td><td>${name}</td><td style="text-align:right" class="tnum">${r.keto_balance}</td><td style="text-align:right" class="tnum">${r.keto_lifetime}</td></tr>`;
+  }).join('');
+}
+$('#ketoToggleBtn').addEventListener('click',async()=>{
+  const next=!KETO.redemption_enabled;
+  const msg=next
+    ? "Keto-chegirmasini yoqish kerakmi? Shundan so'ng barcha xaridorlar checkout paytida Ketochalarini chegirma sifatida ishlata olishadi."
+    : "Keto-chegirmasi o'chirilsinmi? Xaridorlar endi checkout paytida bu imkoniyatni ko'rmaydi.";
+  if(!confirm(msg))return;
+  const btn=$('#ketoToggleBtn');btn.disabled=true;
+  try{await api('/admin/api/keto/redemption',{method:'POST',body:JSON.stringify({enabled:next})});toast(next?'🚀 Yoqildi':"To'xtatildi");await loadKeto();}
+  catch(err){toast('⚠️ '+err.message);}finally{btn.disabled=false;}
+});
+
+/* ===== Reklama (Meta Ads) =====
+   Loaded on the first tab click, not inside boot()'s Promise.all: these three
+   endpoints go out to Meta's Graph API, and a slow or dead Graph must never
+   hold the whole panel hostage at login. Money here is USD (the ad account's
+   currency) — fmtSom is deliberately not used. */
+let ADS_PERIOD='today', adsLoaded=false;
+
+const adsInt=v=>(v==null||v==='')?'—':Math.round(Number(v)).toLocaleString('ru-RU').replace(/\u00A0/g,' ');
+const adsUsd=v=>(v==null||v==='')?'—':'$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const adsPct=v=>(v==null||v==='')?'—':Number(v).toFixed(2)+'%';
+
+/* Always Tashkent time, whatever timezone the browser happens to sit in. */
+function adsTime(iso){
+  if(!iso)return '—';
+  const d=new Date(iso);
+  if(isNaN(d.getTime()))return '—';
+  try{return d.toLocaleString('ru-RU',{timeZone:'Asia/Tashkent',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
+  catch(e){return d.toLocaleString('ru-RU');}
+}
+
+async function loadAds(){
+  await Promise.all([loadAdsMain(),loadAdsStatus(),loadAdsLeads()]);
+}
+
+async function loadAdsMain(){
+  try{
+    renderAdsMain(await api('/admin/api/ads?period='+ADS_PERIOD));
+  }catch(err){
+    if(err.message==='unauthorized')return;
+    showAdsError(err.message);
+  }
+}
+
+function showAdsError(msg){
+  $('#adsErrorMsg').textContent=msg||'Noma\'lum xato';
+  $('#adsError').style.display='';
+}
+
+function renderAdsMain(d){
+  /* Token missing on the server — one explanatory card, nothing else. */
+  $('#adsDisabled').style.display=d.enabled?'none':'';
+  $('#adsBody').style.display=d.enabled?'':'none';
+  if(!d.enabled)return;
+
+  if(d.error){showAdsError(d.error);}else{$('#adsError').style.display='none';}
+
+  const L=d.leads||{};
+  $('#adsLeadPill').textContent='📋 Leadlar: '+(L.total??0)+' · bugun '+(L.today??0)+' · javobsiz '+(L.unhandled??0);
+
+  const a=d.account;
+  const cards=[
+    {lab:'Sarflandi',      val:adsUsd(a?a.spend:null),        sub:esc(d.label||'')},
+    {lab:"Ko'rsatishlar",  val:adsInt(a?a.impressions:null),  sub:a&&a.frequency?('chastota '+Number(a.frequency).toFixed(2)):''},
+    {lab:'Qamrov',         val:adsInt(a?a.reach:null),        sub:'noyob odamlar'},
+    {lab:'Kliklar',        val:adsInt(a?a.clicks:null),       sub:a&&a.cpc?('CPC '+adsUsd(a.cpc)):''},
+    {lab:'CTR',            val:adsPct(a?a.ctr:null),          sub:'klik / ko\'rsatish'},
+    {lab:'CPM',            val:adsUsd(a?a.cpm:null),          sub:'1000 ko\'rsatish narxi'},
+    {lab:'Leadlar',        val:a?String(a.leads):'—',         sub:'shu davrda'},
+    {lab:'Lead narxi',     val:adsUsd(a?a.cost_per_lead:null),sub:'bitta lead uchun'},
+  ];
+  $('#adsKpi').innerHTML=cards.map(c=>
+    `<div class="kpi-card"><div class="lab">${esc(c.lab)}</div><div class="val tnum">${esc(c.val)}</div>`
+    +(c.sub?`<div class="sub">${esc(c.sub)}</div>`:'')+`</div>`
+  ).join('');
+
+  renderAdsCampaigns(d.campaigns||[]);
+  renderAdsTable(d.ads||[]);
+}
+
+function renderAdsCampaigns(list){
+  if(!list.length){$('#adsCampaigns').innerHTML='<div class="empty" style="padding:20px">Bu davrda sarf yo\'q</div>';return;}
+  const max=Math.max(1,...list.map(c=>c.spend||0));
+  $('#adsCampaigns').innerHTML=list.slice(0,6).map(c=>{
+    const w=Math.max(2,Math.round((c.spend||0)/max*100));
+    const tip=`${c.name}: ${adsUsd(c.spend)} — ${c.leads} lead`;
+    return `<div class="hbar-row" data-tip="${esc(tip)}">
+      <div class="hb-lab" title="${esc(c.name)}">${esc(c.name)}</div>
+      <div class="hb-track"><div class="hb-fill" style="width:${w}%;background:var(--accent)"></div></div>
+      <div class="hb-val tnum">${esc(adsUsd(c.spend))}</div>
+    </div>`;
+  }).join('');
+  bindTips('#adsCampaigns .hbar-row');
+}
+
+function renderAdsTable(list){
+  $('#adsEmpty').style.display=list.length?'none':'block';
+  $('#adsRows').innerHTML=list.map(r=>
+    `<tr>
+      <td style="font-weight:600">${esc(r.name)}</td>
+      <td style="text-align:right" class="tnum">${esc(adsUsd(r.spend))}</td>
+      <td style="text-align:right" class="tnum">${esc(adsInt(r.impressions))}</td>
+      <td style="text-align:right" class="tnum">${esc(adsInt(r.clicks))}</td>
+      <td style="text-align:right" class="tnum">${esc(adsPct(r.ctr))}</td>
+      <td style="text-align:right" class="tnum">${esc(String(r.leads))}</td>
+      <td style="text-align:right" class="tnum">${esc(adsUsd(r.cost_per_lead))}</td>
+    </tr>`
+  ).join('');
+}
+
+/* Account health — the one place that explains why delivery stopped. */
+async function loadAdsStatus(){
+  const box=$('#adsStatusCard');
+  try{
+    const d=await api('/admin/api/ads/status');
+    if(!d.enabled){box.innerHTML='<div class="empty" style="padding:20px">O\'chiq</div>';return;}
+    if(d.error){box.innerHTML=`<div style="font-size:13px;color:var(--red);font-weight:600">⚠️ ${esc(d.error)}</div>`;return;}
+    const a=d.account||{}, cur=a.currency||'USD';
+    const money=v=>v==null?'—':Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+' '+cur;
+    const line=(lab,val)=>`<div style="display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:3px 0">
+        <span style="color:var(--ink-2)">${esc(lab)}</span><span class="tnum" style="font-weight:700">${esc(val)}</span></div>`;
+
+    let h=`<div style="font-size:15px;font-weight:800;margin-bottom:8px">${esc(a.status_emoji||'')} ${esc(a.status_label||'')}</div>`;
+    if(a.name)h+=line('Hisob',a.name);
+    if(a.disable_reason)h+=line('Sabab kodi',String(a.disable_reason));
+    h+=line('Qarz',money(a.balance));
+    h+=line('Jami sarflangan',money(a.amount_spent));
+    if(a.spend_cap)h+=line('Sarf limiti',money(a.spend_cap));
+
+    const ads=d.ads||[];
+    h+=`<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">`;
+    if(!ads.length){
+      h+=`<div style="font-size:13px;color:var(--ink-3)">Reklama topilmadi.</div>`;
+    }else{
+      h+=ads.slice(0,12).map(ad=>{
+        const st=ad.effective_status;
+        const mark=st==='ACTIVE'?'🟢':(/PAUSED/.test(st)?'⚪':'🔴');
+        const issues=(ad.issues||[]).map(m=>
+          `<div style="font-size:12px;color:var(--red);margin:2px 0 0 20px">⚠️ ${esc(m)}</div>`).join('');
+        return `<div style="padding:5px 0">
+            <div style="font-size:13px;font-weight:600">${mark} ${esc(ad.name)}
+              <span style="font-weight:600;color:var(--ink-3);font-size:11.5px">${esc(st)}</span></div>
+            ${issues}
+          </div>`;
+      }).join('');
+    }
+    h+=`</div>`;
+    box.innerHTML=h;
+  }catch(err){
+    if(err.message==='unauthorized')return;
+    box.innerHTML=`<div style="font-size:13px;color:var(--red);font-weight:600">⚠️ ${esc(err.message)}</div>`;
+  }
+}
+
+async function loadAdsLeads(){
+  try{
+    const d=await api('/admin/api/ads/leads?limit=50');
+    const rows=d.leads||[];
+    $('#adsLeadEmpty').style.display=rows.length?'none':'block';
+    $('#adsLeadRows').innerHTML=rows.map(r=>{
+      const phone=r.phone||'';
+      const phoneCell=phone
+        ? `<code data-phone="${esc(phone)}" onclick="adsCopyPhone(this)" title="Nusxalash uchun bosing"
+             style="cursor:pointer;background:var(--chip-bg);border-radius:7px;padding:3px 8px;font-size:13px">${esc(phone)}</code>`
+        : '<span style="color:var(--ink-3)">—</span>';
+      const trail=[r.campaign_name,r.ad_name].filter(Boolean).join(' › ')||r.form_name||'—';
+      const status=r.handled_by
+        ? `<span style="color:var(--green);font-weight:700;font-size:12.5px" title="${esc(adsTime(r.handled_at))}">✅ ID ${esc(String(r.handled_by))}</span>`
+        : `<button class="btn btn-o btn-sm" data-id="${esc(r.lead_id)}" onclick="adsMarkLead(this)">✅ Bog'landim</button>`;
+      return `<tr>
+        <td class="tnum" style="white-space:nowrap">${esc(adsTime(r.created_time||r.received_at))}</td>
+        <td style="font-weight:600">${esc(r.full_name||'—')}</td>
+        <td>${phoneCell}</td>
+        <td style="color:var(--ink-2);font-size:12.5px">${esc(trail)}</td>
+        <td>${status}</td>
+      </tr>`;
+    }).join('');
+  }catch(err){
+    if(err.message!=='unauthorized')toast('⚠️ '+err.message);
+  }
+}
+
+window.adsCopyPhone=async function(el){
+  const v=el.dataset.phone||'';
+  if(!v)return;
+  try{await navigator.clipboard.writeText(v);toast('📋 Nusxalandi');}
+  catch(e){toast('⚠️ Nusxalab bo\'lmadi — qo\'lda belgilang');}
+};
+
+/* Same claim as the Telegram "Bog'landim" button; ok:false means another
+   admin got there first. The lead counters live in the pill, so refresh both. */
+window.adsMarkLead=async function(btn){
+  const id=btn.dataset.id;
+  btn.disabled=true;
+  try{
+    const r=await api('/admin/api/ads/leads/'+encodeURIComponent(id)+'/handled',{method:'POST'});
+    toast(r.ok?'✅ Belgilandi':'⚠️ Bu leadni boshqa admin allaqachon olgan');
+    await Promise.all([loadAdsLeads(),loadAdsMain()]);
+  }catch(err){
+    toast('⚠️ '+err.message);btn.disabled=false;
+  }
+};
+
+$$('#adsPeriod button').forEach(b=>b.addEventListener('click',()=>{
+  $$('#adsPeriod button').forEach(x=>x.classList.toggle('active',x===b));
+  ADS_PERIOD=b.dataset.period;
+  loadAdsMain();   // status and leads don't depend on the period
+}));
+$('#adsRefreshBtn').addEventListener('click',()=>{adsLoaded=true;loadAds();});
+(function bindAdsTab(){
+  const t=document.querySelector('.tab[data-view="reklama"]');
+  if(t)t.addEventListener('click',()=>{if(!adsLoaded){adsLoaded=true;loadAds();}});
+})();
+
+/* ===== expenses ===== */
+let EXPENSES=[];
+async function loadExpenses(){
+  const d=await api('/admin/api/expenses');
+  EXPENSES=d.expenses||[];
+  renderExpenses();
+}
+function renderExpenses(){
+  $('#expCount').textContent=EXPENSES.length+" ta chiqim";
+  $('#expEmpty').style.display=EXPENSES.length?'none':'block';
+  $('#expRows').innerHTML=EXPENSES.map(e=>{
+    let dt = new Date(e.created_at);
+    let dstr = isNaN(dt.getTime()) ? e.created_at : dt.toLocaleString('uz-UZ');
+    return `<tr>
+      <td>${esc(dstr)}</td>
+      <td>${esc(e.name)}</td>
+      <td class="tnum" style="text-align:right;font-weight:700">${fmt(e.amount)}</td>
+    </tr>`;
+  }).join('');
+}
+
+$('#newExpBtn').addEventListener('click', () => {
+  $('#expForm').reset();
+  $('#expModal').classList.add('open');
+});
+
+$('#expForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f=e.target, btn=$('#expSaveBtn');
+  btn.disabled=true;
+  const body = {
+    name: f.name.value,
+    amount: +f.amount.value
+  };
+  try {
+    await api('/admin/api/expenses', {method:'POST', body:JSON.stringify(body)});
+    closeModals();
+    toast('✅ Chiqim qo\'shildi');
+    await loadExpenses();
+    if(localStorage.getItem('ketoshop_admin_view') === 'dashboard') {
+        loadDashboard();
+    }
+  } catch(err) {
+    toast('⚠️ '+err.message);
+  } finally {
+    btn.disabled=false;
+  }
+});
+
+/* ===== modals ===== */
+function closeModals(){$$('.modal-bg').forEach(m=>m.classList.remove('open'));}
+$$('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)closeModals();}));
+$$('[data-close]').forEach(b=>b.addEventListener('click',closeModals));
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModals();});
+
+/* ===== start ===== */
+(async()=>{try{await boot();}catch(e){showLogin();}})();
+</script>
+</body>
+</html>
