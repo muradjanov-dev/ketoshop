@@ -25,11 +25,13 @@ Routes (all mounted by setup_admin_routes):
   POST /admin/api/sets/{id}/delete
   POST /admin/api/upload          — multipart image -> {url: "/img/N"}
   GET  /img/{id}                  — serve an uploaded image (public, cached)
-  GET  /admin/api/contest/status  — Keto musobaqasi state + live leaderboard
-  POST /admin/api/contest/upload-video — multipart video -> {file_id} (relayed through the
-                                    bot to get a Telegram file_id; bytes are never stored)
-  POST /admin/api/contest/start   — {days, image_url, video_file_id, prize_1, prize_2, prize_3} -> launch/relaunch
-  POST /admin/api/contest/stop    — deactivate the contest early
+  GET  /admin/api/promos          — every aksiya (campaign) with its bonus rules
+  POST /admin/api/promos          — create {name, days, conditions, image_url, bonuses:[…]}
+  POST /admin/api/promos/{id}     — update (partial; bonuses replace when supplied)
+  POST /admin/api/promos/{id}/delete
+  POST /admin/api/promos/{id}/start    — {days?} -> go live (stops any other running one)
+  POST /admin/api/promos/{id}/stop     — end it early
+  POST /admin/api/promos/{id}/announce — one-time "yangi aksiya" broadcast to all users
   GET  /admin/api/keto/status     — redemption on/off + every user's Keto balance
   POST /admin/api/keto/redemption — {enabled} -> toggle Keto-as-discount at checkout
   GET  /admin/api/dashboard       — {period} -> KPI/trend/best-sellers/Keto snapshot for the Dashboard tab
@@ -61,9 +63,7 @@ logger = logging.getLogger(__name__)
 SESSION_COOKIE = "safran_admin"
 SESSION_TTL = 7 * 24 * 3600          # 7 days
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024   # 5 MB per image
-MAX_VIDEO_BYTES = 45 * 1024 * 1024   # 45 MB — under Telegram's 50 MB bot-upload cap; never stored, just relayed
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
-ALLOWED_VIDEO_TYPES = {"video/mp4", "video/quicktime", "video/webm"}
 
 # Owner of products created through the website. Any admin id works — products
 # are shared in this marketplace (admins are the sellers).
@@ -421,111 +421,221 @@ async def api_reco_backfill(request: web.Request):
     return web.json_response({"ok": True, "cycle": cycle, "marked": marked})
 
 
-# ───────────────────────── Keto musobaqasi (referral contest) ───────────────
-
-@require_auth
-async def api_contest_status(request: web.Request):
-    state = await database.get_referral_contest_state()
-    excluded = set(ADMIN_IDS) | database.LEADERBOARD_EXCLUDED_USER_IDS
-    leaderboard = []
-    if state.get("started_at"):
-        rows = await database.get_contest_leaderboard(
-            state["started_at"], state["ends_at"], excluded, limit=20
-        )
-        leaderboard = [
-            {"user_id": r["user_id"], "username": r["username"], "full_name": r["full_name"], "invites": r["invites"]}
-            for r in rows
-        ]
-    out = dict(state)
-    for k in ("started_at", "ends_at"):
-        if out.get(k):
-            out[k] = out[k].isoformat()
-    if out.get("last_reminder_date"):
-        out["last_reminder_date"] = out["last_reminder_date"].isoformat()
-    out["leaderboard"] = leaderboard
-    return web.json_response(out)
+# ─────────────────────────── Aksiya / Bonus ─────────────────────────────────
+# The owner writes a campaign here (name, kun, shartlar + bonus rules) and
+# presses Boshlash to put it live. See promotions.py for how the rules turn
+# into free order lines at checkout.
 
 
-@require_auth
-async def api_contest_upload_video(request: web.Request):
-    """Relays the admin's video through the bot once, purely to get back a
-    Telegram file_id — the bytes are never written to Postgres. Telegram's
-    own CDN hosts the file from then on, so re-sending it in reminders costs
-    nothing on our side. Mirrors how products already use a Telegram
-    photo_id alongside the web-hosted image_url (see database.py)."""
-    from aiogram.types import BufferedInputFile
+def _promo_json(promo: dict) -> dict:
+    """Datetime columns -> ISO strings so the panel's JS can format them."""
+    out = dict(promo)
+    for key in ("started_at", "ends_at", "announced_at", "created_at"):
+        if out.get(key):
+            out[key] = out[key].isoformat()
+    for bonus in out.get("bonuses") or []:
+        if bonus.get("created_at"):
+            bonus["created_at"] = bonus["created_at"].isoformat()
+    return out
 
-    reader = await request.multipart()
-    field = await reader.next()
-    if field is None or field.name != "file":
-        return web.json_response({"error": "send multipart field named 'file'"}, status=400)
 
-    content_type = (field.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-    if content_type not in ALLOWED_VIDEO_TYPES:
-        return web.json_response({"error": f"unsupported video type: {content_type or 'unknown'} (mp4/mov/webm only)"}, status=400)
+async def _parse_bonus_rules(raw) -> list[dict]:
+    """Validate the submitted rule rows and pre-compute each one's stock
+    quantity. The admin types a human amount ("100 gr"); products.quantity is
+    kept in the bonus product's own unit ("0.1" when it is stocked in kg), so
+    the conversion happens once here rather than at every checkout.
 
-    data = bytearray()
-    while True:
-        chunk = await field.read_chunk(64 * 1024)
-        if not chunk:
-            break
-        data.extend(chunk)
-        if len(data) > MAX_VIDEO_BYTES:
-            return web.json_response({"error": f"video too large (max {MAX_VIDEO_BYTES // (1024 * 1024)} MB)"}, status=413)
+    Raises ValueError with a Uzbek message the panel shows verbatim."""
+    import promotions
 
-    if not data:
-        return web.json_response({"error": "empty file"}, status=400)
+    if not isinstance(raw, list):
+        raise ValueError("bonuslar ro'yxati noto'g'ri")
+    rules = []
+    for row in raw:
+        try:
+            trigger_id = int(row["trigger_product_id"])
+            bonus_id = int(row["bonus_product_id"])
+            trigger_qty = float(row.get("trigger_quantity") or 1)
+            bonus_amount = float(row.get("bonus_amount") or 0)
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("bonus qatorida mahsulot yoki miqdor to'ldirilmagan")
+        if trigger_qty <= 0 or bonus_amount <= 0:
+            raise ValueError("miqdorlar 0 dan katta bo'lishi kerak")
 
-    bot = request.app["bot"]
-    try:
-        sent = await bot.send_video(
-            WEB_SELLER_ID, BufferedInputFile(bytes(data), filename="contest_video.mp4"),
-            caption="🏆 Keto musobaqasi videosi (admin panel orqali yuklandi)",
-        )
-    except Exception:
-        logger.exception("Contest video relay-upload failed")
-        return web.json_response({"error": "video yuklab bo'lmadi"}, status=502)
+        bonus_product = await database.get_product(bonus_id)
+        trigger_product = await database.get_product(trigger_id)
+        if not bonus_product or not trigger_product:
+            raise ValueError("tanlangan mahsulot topilmadi")
 
-    file_id = sent.video.file_id
-    try:
-        await sent.delete()  # cleanup only — the file_id stays valid regardless
-    except Exception:
-        pass
+        bonus_unit = (_clean_str(row.get("bonus_unit"), 20) or "dona").lower()
+        max_amount = row.get("max_bonus_amount")
+        try:
+            max_amount = float(max_amount) if max_amount not in (None, "", 0) else None
+        except (TypeError, ValueError):
+            max_amount = None
 
-    return web.json_response({"ok": True, "file_id": file_id})
+        rules.append({
+            "trigger_product_id": trigger_id,
+            "trigger_quantity": trigger_qty,
+            "bonus_product_id": bonus_id,
+            "bonus_amount": bonus_amount,
+            "bonus_unit": bonus_unit,
+            "bonus_stock_qty": promotions.to_stock_qty(bonus_amount, bonus_unit, bonus_product.get("unit") or "kg"),
+            "max_bonus_amount": max_amount,
+        })
+    return rules
 
 
 @require_auth
-async def api_contest_start(request: web.Request):
+async def api_promos_list(request: web.Request):
+    promos = await database.list_promotions()
+    return web.json_response({"promos": [_promo_json(p) for p in promos]})
+
+
+@require_auth
+async def api_promos_create(request: web.Request):
+    b = await request.json()
+    name = _clean_str(b.get("name"), 200)
+    if not name:
+        return web.json_response({"error": "aksiya nomi kiritilmagan"}, status=400)
+    # `or 7` would swallow an explicit 0 and silently run the campaign for a
+    # week the admin never asked for — only an ABSENT/blank days field falls
+    # back to the default; a supplied one has to be valid.
+    raw_days = b.get("days")
     try:
-        b = await request.json()
-        days = int(b.get("days") or 10)
+        days = 7 if raw_days in (None, "") else int(raw_days)
         if days <= 0:
             raise ValueError
-    except Exception:
-        return web.json_response({"error": "days must be a positive integer"}, status=400)
+    except (TypeError, ValueError):
+        return web.json_response({"error": "kunlar soni musbat butun son bo'lishi kerak"}, status=400)
 
-    # image_file_id is the bot admin panel's own media slot (a bot-uploaded
-    # photo) — this form doesn't manage it, so carry the current value
-    # through unchanged rather than wiping it out.
-    current = await database.get_referral_contest_state()
-    state = await database.start_referral_contest(
+    try:
+        rules = await _parse_bonus_rules(b.get("bonuses") or [])
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+    promo_id = await database.create_promotion(
+        name=name,
+        name_ru=_clean_str(b.get("name_ru"), 200),
+        conditions=_clean_str(b.get("conditions"), 2000),
+        conditions_ru=_clean_str(b.get("conditions_ru"), 2000),
         days=days,
         image_url=_clean_str(b.get("image_url"), 300),
-        prize_1=_clean_str(b.get("prize_1"), 500),
-        prize_2=_clean_str(b.get("prize_2"), 500),
-        prize_3=_clean_str(b.get("prize_3"), 500),
-        video_file_id=_clean_str(b.get("video_file_id"), 300),
-        image_file_id=current.get("image_file_id"),
     )
-    state["started_at"] = state["started_at"].isoformat()
-    state["ends_at"] = state["ends_at"].isoformat()
-    return web.json_response({"ok": True, "state": state})
+    await database.set_promotion_bonuses(promo_id, rules)
+    return web.json_response({"ok": True, "id": promo_id})
 
 
 @require_auth
-async def api_contest_stop(request: web.Request):
-    await database.stop_referral_contest()
+async def api_promos_update(request: web.Request):
+    promo_id = int(request.match_info["id"])
+    b = await request.json()
+
+    fields = {}
+    if "name" in b:
+        name = _clean_str(b.get("name"), 200)
+        if not name:
+            return web.json_response({"error": "aksiya nomi kiritilmagan"}, status=400)
+        fields["name"] = name
+    for key, limit in (("name_ru", 200), ("conditions", 2000), ("conditions_ru", 2000), ("image_url", 300)):
+        if key in b:
+            fields[key] = _clean_str(b.get(key), limit)
+    if "days" in b:
+        try:
+            days = int(b.get("days") or 0)
+            if days <= 0:
+                raise ValueError
+            fields["days"] = days
+        except (TypeError, ValueError):
+            return web.json_response({"error": "kunlar soni musbat butun son bo'lishi kerak"}, status=400)
+
+    if fields:
+        await database.update_promotion(promo_id, **fields)
+    if "bonuses" in b:
+        try:
+            rules = await _parse_bonus_rules(b.get("bonuses") or [])
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        await database.set_promotion_bonuses(promo_id, rules)
+
+    import promotions
+    await promotions.refresh()   # an edit to the running campaign shows up at once
+    return web.json_response({"ok": True})
+
+
+@require_auth
+async def api_promos_delete(request: web.Request):
+    import promotions
+    await database.delete_promotion(int(request.match_info["id"]))
+    await promotions.refresh()
+    return web.json_response({"ok": True})
+
+
+@require_auth
+async def api_promos_start(request: web.Request):
+    import promotions
+
+    promo_id = int(request.match_info["id"])
+    body = await request.json() if request.can_read_body else {}
+    days = body.get("days")
+    if days is not None:
+        try:
+            days = int(days)
+            if days <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return web.json_response({"error": "kunlar soni musbat butun son bo'lishi kerak"}, status=400)
+
+    promo = await database.start_promotion(promo_id, days)
+    if promo is None:
+        return web.json_response({"error": "aksiya topilmadi"}, status=404)
+    await promotions.refresh()
+    return web.json_response({"ok": True, "promo": _promo_json(promo)})
+
+
+@require_auth
+async def api_promos_stop(request: web.Request):
+    import promotions
+    await database.stop_promotion(int(request.match_info["id"]))
+    await promotions.refresh()
+    return web.json_response({"ok": True})
+
+
+@require_auth
+async def api_promos_announce(request: web.Request):
+    """Fire the one-time "yangi aksiya" broadcast. Runs in the background —
+    fanning out to every user takes minutes at Telegram's rate limits, far
+    longer than an HTTP request should hold open, so this returns straight
+    away and the panel re-reads announced_at to see it landed."""
+    import promotions
+
+    promo_id = int(request.match_info["id"])
+    promo = await database.get_promotion(promo_id)
+    if promo is None:
+        return web.json_response({"error": "aksiya topilmadi"}, status=404)
+    if not promo.get("active"):
+        return web.json_response({"error": "avval aksiyani boshlang"}, status=400)
+
+    bot = request.app["bot"]
+
+    async def _run():
+        try:
+            sent, failed = await promotions.announce(bot, promo)
+            logger.info("Aksiya #%s announced: %d ok, %d failed", promo_id, sent, failed)
+            for admin_id in ADMIN_IDS:
+                try:
+                    await bot.send_message(
+                        admin_id,
+                        f"📤 Aksiya e'lon qilindi: <b>{promo.get('name')}</b>\n"
+                        f"✅ {sent} ta yetkazildi, ⚠️ {failed} ta yetmadi.",
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            logger.exception("Aksiya announcement failed")
+
+    asyncio.create_task(_run())
     return web.json_response({"ok": True})
 
 
@@ -902,10 +1012,13 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/expenses", api_expenses_list)
     app.router.add_post("/admin/api/expenses", api_expenses_add)
     app.router.add_get("/admin/api/dashboard", api_dashboard)
-    app.router.add_get("/admin/api/contest/status", api_contest_status)
-    app.router.add_post("/admin/api/contest/upload-video", api_contest_upload_video)
-    app.router.add_post("/admin/api/contest/start", api_contest_start)
-    app.router.add_post("/admin/api/contest/stop", api_contest_stop)
+    app.router.add_get("/admin/api/promos", api_promos_list)
+    app.router.add_post("/admin/api/promos", api_promos_create)
+    app.router.add_post("/admin/api/promos/{id:\\d+}", api_promos_update)
+    app.router.add_post("/admin/api/promos/{id:\\d+}/delete", api_promos_delete)
+    app.router.add_post("/admin/api/promos/{id:\\d+}/start", api_promos_start)
+    app.router.add_post("/admin/api/promos/{id:\\d+}/stop", api_promos_stop)
+    app.router.add_post("/admin/api/promos/{id:\\d+}/announce", api_promos_announce)
     app.router.add_get("/admin/api/keto/status", api_keto_status)
     app.router.add_post("/admin/api/keto/redemption", api_keto_redemption_toggle)
     app.router.add_get("/admin/api/ads", api_ads)

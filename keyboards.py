@@ -3,9 +3,35 @@ Inline keyboard builders
 """
 from datetime import datetime, timezone, timedelta
 
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import (
+    InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo,
+    ReplyKeyboardMarkup, KeyboardButton,
+)
 from locales import get_text, get_category_name, get_unit_name, get_month_name, CATEGORIES, UNITS
 from config import WEBAPP_URL, SUPPORT_USERNAME
+import promotions
+
+
+def persistent_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
+    """The always-there keyboard under the text input.
+
+    Every other keyboard in this bot is inline: it lives on one message and
+    scrolls away with it, so a buyer who lost the thread had no way back
+    except typing /start — which most people never discover (owner report,
+    2026-08-31). The chat's menu button can't help either, it's taken by the
+    Mini App. A reply keyboard is the one surface Telegram keeps pinned above
+    the input box across every message, so that's where the way home goes.
+
+    Sent once per user (see handlers/start.ensure_menu_keyboard) and persists
+    from then on — is_persistent keeps it open even after someone collapses it."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[
+            KeyboardButton(text=get_text("btn_kb_menu", lang)),
+            KeyboardButton(text=get_text("btn_kb_cart", lang)),
+        ]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
 
 
 def _current_month_label(lang: str) -> str:
@@ -32,11 +58,18 @@ def main_menu_keyboard(lang: str, is_admin: bool = False) -> InlineKeyboardMarku
             text=get_text("btn_store", lang),
             web_app=WebAppInfo(url=WEBAPP_URL)
         )])
+    # Aksiya entry, 2nd from the top — only while a campaign is actually
+    # running, and labelled with its name so the menu itself advertises it.
+    # cached_active() is a plain dict read (no await, no query), which is what
+    # lets this stay synchronous across all 25 main_menu_keyboard call sites.
+    promo = promotions.cached_active()
+    if promo:
+        buttons.append([InlineKeyboardButton(
+            text=f"🎁 {promotions.promo_name(promo, lang)}",
+            callback_data="promo",
+        )])
+
     buttons += [
-        # 2nd from the top (owner request 2026-07-30) — always visible; the
-        # contest itself is dormant until an admin starts it via the admin
-        # panel, so pressing this before launch just shows a "coming soon".
-        [InlineKeyboardButton(text=get_text("btn_keto_contest", lang), callback_data="keto_contest")],
         [InlineKeyboardButton(text=get_text("btn_catalog", lang), callback_data="catalog")],
         # Chegirmalar removed for now (owner request 2026-07-27) — Qidirish
         # gets the full row to itself until it's back.
@@ -511,7 +544,7 @@ def admin_marketing_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=get_text("btn_admin_keto", lang), callback_data="admin:keto")
         ],
         [
-            InlineKeyboardButton(text=get_text("btn_admin_contest", lang), callback_data="admin:contest"),
+            InlineKeyboardButton(text=get_text("btn_admin_promo", lang), callback_data="admin:promo"),
         ],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")],
     ])

@@ -4,7 +4,7 @@ Catalog browsing and product viewing
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
-from database import get_active_sets_for_catalog, get_set
+from database import get_active_sets_for_catalog, get_set, get_bonus_trigger_product_ids
 from database import (
     get_user_language, get_products_by_category, get_discounted_products,
     get_product, get_product_rating, add_product_view,
@@ -117,6 +117,13 @@ async def _render_product_detail(callback: CallbackQuery, product_id: int,
     out_of_stock = product["quantity"] <= 0
     if out_of_stock:
         text += "\n\n" + get_text("product_out_of_stock", lang)
+
+    # Aksiya bonus this exact product triggers — right on the card, so the
+    # buyer sees the gift before deciding, not only once it lands in the cart.
+    import promotions
+    hint = promotions.bonus_hint(await promotions.get_active(), product["id"], lang)
+    if hint:
+        text += "\n\n" + hint
 
     # Add rating
     avg_rating, review_count = await get_product_rating(product["id"])
@@ -297,11 +304,17 @@ async def _show_product_list(callback: CallbackQuery, category: str, page: int):
         await callback.answer()
         return
 
+    import promotions
+    banner = await promotions.banner(lang)
     if is_discounts:
-        text = f"{get_text('discounts_title', lang)}\n\n{get_text('products_list_title', lang)}"
+        text = f"{banner}{get_text('discounts_title', lang)}\n\n{get_text('products_list_title', lang)}"
     else:
         cat_name = get_category_name(category, lang)
-        text = f"{cat_name}\n\n{get_text('products_list_title', lang)}"
+        text = f"{banner}{cat_name}\n\n{get_text('products_list_title', lang)}"
+
+    # A 🎁 in front of the name marks the products that earn a bonus right
+    # now — one cheap set lookup for the whole page, not one per row.
+    bonus_ids = await get_bonus_trigger_product_ids() if banner else set()
 
     buttons = []
     for p in products:
@@ -323,8 +336,9 @@ async def _show_product_list(callback: CallbackQuery, category: str, page: int):
                 du = p.get("discount_until")
                 if du:
                     badge += f" ⏳{du.strftime('%d.%m')}"
+            gift = "🎁 " if p["id"] in bonus_ids else ""
             buttons.append([InlineKeyboardButton(
-                text=f"{prod_name} — {price_str} so'm{badge}",
+                text=f"{gift}{prod_name} — {price_str} so'm{badge}",
                 callback_data=f"product:{p['id']}:{category}:{page}"
             )])
 

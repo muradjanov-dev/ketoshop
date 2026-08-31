@@ -211,6 +211,103 @@
   }
 
   /* ===== HOME PAGE ===== */
+  /* ===== Aksiya / Bonus (2026-08-31) ===== */
+  .promo-banner {
+    display: flex; align-items: center; gap: 10px; cursor: pointer;
+    margin: 0 14px 12px; padding: 12px 14px; border-radius: 16px;
+    background: linear-gradient(120deg, #F4A340, #E8722C);
+    color: #fff; box-shadow: 0 6px 18px rgba(232,114,44,0.28);
+    border: none; width: calc(100% - 28px); text-align: left; font: inherit;
+  }
+  .promo-banner:active { opacity: 0.88; }
+  .promo-banner .pb-icon { font-size: 22px; flex-shrink: 0; }
+  .promo-banner .pb-body { flex: 1; min-width: 0; }
+  .promo-banner .pb-title {
+    font-size: 14.5px; font-weight: 800; line-height: 1.25;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .promo-banner .pb-sub { font-size: 12px; opacity: 0.92; margin-top: 2px; }
+  .promo-banner .pb-arrow { font-size: 18px; opacity: 0.85; flex-shrink: 0; }
+  /* Slim strip for the catalog/cart, where the full banner would crowd things */
+  .promo-strip {
+    margin: 0 14px 10px; padding: 8px 12px; border-radius: 12px;
+    background: rgba(232,114,44,0.12); color: #C4571B;
+    font-size: 12.5px; font-weight: 700; cursor: pointer;
+    border: 1px solid rgba(232,114,44,0.28); width: calc(100% - 28px);
+    text-align: left; font-family: inherit;
+  }
+  /* 🎁 pill on a product card / in the detail sheet */
+  .bonus-badge {
+    display: inline-block; margin-top: 5px; padding: 3px 8px; border-radius: 8px;
+    background: rgba(232,114,44,0.14); color: #C4571B;
+    font-size: 11px; font-weight: 700; line-height: 1.35;
+  }
+  .detail-bonus {
+    margin-top: 8px; padding: 10px 12px; border-radius: 12px;
+    background: rgba(232,114,44,0.12); color: #C4571B;
+    font-size: 13px; font-weight: 700; line-height: 1.4;
+  }
+  /* Gift section in the cart — its own titled block under the paid items,
+     so "what I bought" and "what I'm getting free" read as two clear lists. */
+  .cart-gifts {
+    margin: 14px 0 4px; padding: 12px; border-radius: 16px;
+    background: rgba(232,114,44,0.08); border: 1px solid rgba(232,114,44,0.28);
+  }
+  .cart-gifts-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    font-size: 13px; font-weight: 800; color: #C4571B; margin-bottom: 8px;
+  }
+  .cart-gifts-total { font-size: 12px; font-weight: 800; color: var(--leaf, #4A7C2F); }
+  .cart-bonus {
+    display: flex; align-items: center; gap: 10px;
+    margin: 6px 0; padding: 8px 10px; border-radius: 12px;
+    /* --surface is theme-aware (white by day, charcoal at night). A literal
+       #fff here painted a white card under light --text in night mode, which
+       left the gift line all but invisible. */
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+  }
+  .cart-bonus img, .cart-bonus .cb-icon {
+    width: 42px; height: 42px; border-radius: 10px; object-fit: cover; flex-shrink: 0;
+  }
+  .cart-bonus .cb-icon {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; background: rgba(232,114,44,0.14);
+  }
+  .cart-bonus .cb-body { flex: 1; min-width: 0; }
+  .cart-bonus .cb-name { font-size: 13.5px; font-weight: 700; color: var(--text); }
+  .cart-bonus .cb-tag { font-size: 11px; font-weight: 800; color: #C4571B; margin-top: 2px; }
+  .cart-bonus .cb-price { text-align: right; flex-shrink: 0; }
+  .cart-bonus .cb-was {
+    display: block; font-size: 12px; color: var(--muted, #8A8A8A); text-decoration: line-through;
+  }
+  .cart-bonus .cb-free { font-size: 13px; font-weight: 800; color: var(--leaf, #4A7C2F); }
+  /* "One more and the gift is yours" nudge */
+  .cart-nudge {
+    margin: 10px 0 0; padding: 10px 12px; border-radius: 14px;
+    background: rgba(74,124,47,0.10); border: 1px dashed rgba(74,124,47,0.45);
+    font-size: 12.5px; line-height: 1.5; color: var(--text);
+  }
+  .cart-nudge-head { font-weight: 800; color: var(--leaf, #4A7C2F); margin-bottom: 4px; }
+  .cart-nudge-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 5px 0;
+  }
+  .cart-nudge-add {
+    border: none; border-radius: 9px; padding: 5px 10px; flex-shrink: 0;
+    background: var(--leaf, #4A7C2F); color: #fff; font-size: 11.5px; font-weight: 800;
+    font-family: inherit; cursor: pointer;
+  }
+  .promo-sheet-rules { margin: 10px 0 0; padding: 0; list-style: none; }
+  .promo-sheet-rules li {
+    padding: 8px 10px; margin-bottom: 6px; border-radius: 10px;
+    background: rgba(232,114,44,0.10); font-size: 13px; font-weight: 600;
+  }
+  .promo-sheet-terms { white-space: pre-wrap; font-size: 13.5px; line-height: 1.55; margin-top: 10px; }
+  /* The rules heading was butting straight up against the terms paragraph. */
+  #promo-sheet-rules-wrap { margin-top: 18px; }
+  .promo-sheet-img { width: 100%; border-radius: 14px; margin-bottom: 12px; }
+
   /* Compact brand banner — a toned-down version of the approved hero
      (no floating fruit/torn-paper edge, which suit a one-time landing
      page, not a tab reopened many times a day). */
@@ -1646,6 +1743,367 @@
     0% { transform: translateX(-100%); }
     100% { transform: translateX(100%); }
   }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     AESTHETIC REFINEMENT LAYER (2026-08-31)
+     Owner brief: "har bir tugmada ijod va nafislik ko'rinib tursin — nozik,
+     yoqimli, va hammasi ishlasin."
+
+     Deliberately additive and last in the file: it restyles the existing
+     classes rather than renaming anything, so every JS selector, handler and
+     markup path above keeps working untouched. Nothing here changes layout
+     structure — only depth, motion, and finish.
+
+     Light and dark are both first-class: the old shadows were hardcoded warm
+     brown (rgba(150,105,20,…)), which turned to mud on the night palette.
+     They are tokens now, redefined per theme below.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  :root {
+    /* Layered elevation — two shadows per level (a tight contact shadow plus
+       a wide soft one) is what separates "flat box" from "sits on a surface". */
+    --elev-1: 0 1px 2px rgba(120,84,20,.06), 0 2px 8px -2px rgba(120,84,20,.10);
+    --elev-2: 0 2px 4px rgba(120,84,20,.07), 0 8px 20px -6px rgba(120,84,20,.16);
+    --elev-3: 0 4px 8px rgba(120,84,20,.08), 0 18px 38px -10px rgba(120,84,20,.22);
+    --elev-btn: 0 2px 6px -1px rgba(210,112,31,.35), 0 8px 18px -6px rgba(210,112,31,.30);
+    --hairline: rgba(120,84,20,.10);
+    --surface: #fff;
+    --surface-2: rgba(255,255,255,.66);
+    --sheen: rgba(255,255,255,.55);
+    --ease: cubic-bezier(.22,.61,.36,1);      /* ease-out-quart: quick, then settles */
+    --ease-spring: cubic-bezier(.34,1.4,.64,1); /* slight overshoot for "alive" presses */
+    --r-sm: 10px;
+    --r-md: 14px;
+    --r-lg: 20px;
+  }
+
+  :root[data-site-theme="night"] {
+    /* Dark UI reads depth from LIGHT, not shadow: a hairline top highlight
+       plus a deep ambient shadow. Pure-black shadows alone look like holes. */
+    --elev-1: 0 1px 1px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.045);
+    --elev-2: 0 4px 14px -4px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.055);
+    --elev-3: 0 10px 34px -10px rgba(0,0,0,.68), inset 0 1px 0 rgba(255,255,255,.07);
+    --elev-btn: 0 4px 14px -4px rgba(232,137,46,.48), inset 0 1px 0 rgba(255,255,255,.16);
+    --hairline: rgba(255,255,255,.09);
+    --surface: #202123;
+    --surface-2: rgba(255,255,255,.05);
+    --sheen: rgba(255,255,255,.10);
+  }
+
+  :root[data-site-theme="organic"] {
+    --elev-1: 0 1px 2px rgba(40,80,25,.07), 0 2px 8px -2px rgba(40,80,25,.12);
+    --elev-2: 0 2px 4px rgba(40,80,25,.08), 0 8px 20px -6px rgba(40,80,25,.18);
+    --elev-3: 0 4px 8px rgba(40,80,25,.09), 0 18px 38px -10px rgba(40,80,25,.24);
+    --elev-btn: 0 2px 6px -1px rgba(76,140,43,.36), 0 8px 18px -6px rgba(76,140,43,.32);
+    --hairline: rgba(40,80,25,.12);
+    --surface: rgba(255,255,255,.82);
+    --surface-2: rgba(255,255,255,.55);
+    --sheen: rgba(255,255,255,.6);
+  }
+
+  /* ── Typography polish ─────────────────────────────────────────────────
+     Serif headings get slightly tighter tracking (they're set large, where
+     default spacing reads loose), and every price uses tabular figures so
+     digits line up column-wise instead of jittering as amounts change. */
+  .section-title, .home-hero-title, .modal-header h2,
+  .cart-page-header, .checkout-header, .orders-header, .fav-header {
+    letter-spacing: -.015em;
+  }
+  .card-price, .detail-price, .item-price, .price-old, .price-new,
+  .cart-total-value, .cheque-total, .cb-was, .cb-free, .cart-gifts-total {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* ── Universal press feedback ──────────────────────────────────────────
+     Replaces the flat `opacity:.85` presses with a physical scale-down. The
+     spring easing on release is what makes a tap feel answered rather than
+     merely registered. */
+  .home-hero-cta, .cat-tab, .add-to-cart-btn, .qty-btn, .btn-clear,
+  .btn-checkout, .card-fav-btn, .detail-fav-btn, .checkout-back-btn,
+  .checkout-submit-btn, .cheque-pay-later-btn, .cheque-pick-btn,
+  .location-btn, .order-cancel-btn, .remove-btn, .review-submit-btn,
+  .review-del-btn, .qty-step, .promo-banner, .promo-strip, .cart-nudge-add,
+  .modal-close, .lang-btn {
+    transition:
+      transform .34s var(--ease-spring),
+      box-shadow .28s var(--ease),
+      background-color .22s var(--ease),
+      color .22s var(--ease),
+      opacity .22s var(--ease);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .home-hero-cta:active, .add-to-cart-btn:active, .btn-checkout:active,
+  .checkout-submit-btn:active, .cheque-pick-btn:active, .promo-banner:active,
+  .review-submit-btn:active, .cart-nudge-add:active {
+    transform: scale(.965);
+    transition-duration: .09s;
+  }
+  .cat-tab:active, .qty-btn:active, .btn-clear:active, .qty-step:active,
+  .checkout-back-btn:active, .cheque-pay-later-btn:active, .location-btn:active,
+  .order-cancel-btn:active, .review-del-btn:active, .promo-strip:active,
+  .modal-close:active, .lang-btn:active {
+    transform: scale(.93);
+    transition-duration: .09s;
+  }
+  /* Favourite hearts get a bounce instead of a shrink — a "like" should feel
+     rewarding, and shrinking a heart reads like the opposite of adding one. */
+  .card-fav-btn:active, .detail-fav-btn:active {
+    transform: scale(1.22);
+    transition-duration: .12s;
+  }
+  .remove-btn:active { transform: scale(.85) rotate(90deg); transition-duration: .12s; }
+
+  /* ── Primary actions: gradient + light sweep ───────────────────────────
+     A single flat fill looks printed; a faint vertical gradient plus a
+     diagonal sheen that sweeps across on press gives the button a surface. */
+  .add-to-cart-btn, .btn-checkout, .checkout-submit-btn, .cheque-pick-btn {
+    position: relative;
+    overflow: hidden;
+    background-image: linear-gradient(180deg, var(--sheen) -60%, transparent 62%);
+    box-shadow: var(--elev-btn);
+    border-radius: var(--r-md);
+    letter-spacing: .005em;
+  }
+  .add-to-cart-btn::after, .btn-checkout::after,
+  .checkout-submit-btn::after, .cheque-pick-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 28%, rgba(255,255,255,.42) 50%, transparent 72%);
+    transform: translateX(-120%);
+    pointer-events: none;
+  }
+  .add-to-cart-btn:active::after, .btn-checkout:active::after,
+  .checkout-submit-btn:active::after, .cheque-pick-btn:active::after {
+    animation: sheenSweep .62s var(--ease);
+  }
+  @keyframes sheenSweep {
+    to { transform: translateX(120%); }
+  }
+  /* A disabled primary must stop looking clickable — flatten it completely. */
+  .add-to-cart-btn:disabled, .btn-checkout:disabled,
+  .checkout-submit-btn:disabled, .cheque-pick-btn:disabled {
+    box-shadow: none;
+    background-image: none;
+    transform: none;
+    filter: saturate(.45);
+  }
+
+  /* ── Product cards ─────────────────────────────────────────────────────
+     The press lifts the card and pushes the photo in slightly, so the image
+     feels like it sits *inside* the card rather than being pasted on it. */
+  .product-card, .carousel-card { transition: transform .34s var(--ease-spring); }
+  .product-card:active, .carousel-card:active { opacity: 1; transform: scale(.972); }
+  .product-card img, .product-card .no-photo,
+  .carousel-card .card-img, .carousel-card .no-photo {
+    box-shadow: var(--elev-2);
+    transition: box-shadow .3s var(--ease), transform .45s var(--ease);
+    border-radius: var(--r-md);
+  }
+  .product-card:active img, .carousel-card:active .card-img {
+    box-shadow: var(--elev-1);
+    transform: scale(1.035);
+  }
+  .product-card .card-img-wrap, .carousel-card .card-img-wrap {
+    border-radius: var(--r-md);
+    overflow: hidden;
+  }
+  .card-name { letter-spacing: -.005em; }
+
+  /* Favourite button: frosted disc instead of a bare glyph on the photo */
+  .card-fav-btn {
+    background: var(--surface-2) !important;
+    -webkit-backdrop-filter: blur(10px) saturate(140%);
+    backdrop-filter: blur(10px) saturate(140%);
+    border-radius: 50%;
+    box-shadow: var(--elev-1);
+    border: 1px solid var(--hairline);
+  }
+
+  /* ── Category chips ────────────────────────────────────────────────────
+     The active chip earns a coloured glow; the inactive ones get a hairline
+     so they read as pressable rather than as plain filled labels. */
+  .cat-tab {
+    border: 1px solid var(--hairline);
+    box-shadow: var(--elev-1);
+    font-weight: 600;
+    letter-spacing: .002em;
+  }
+  .cat-tab.active {
+    border-color: transparent;
+    box-shadow: var(--elev-btn);
+    background-image: linear-gradient(180deg, var(--sheen) -70%, transparent 60%);
+  }
+
+  /* ── Quantity stepper ──────────────────────────────────────────────────
+     Round, tactile, with a hairline — the two most-tapped controls in the
+     whole app deserve to look tappable. */
+  .qty-btn, .qty-step {
+    border-radius: 50%;
+    border: 1px solid var(--hairline);
+    box-shadow: var(--elev-1);
+  }
+
+  /* ── Tab bar ───────────────────────────────────────────────────────────
+     Frosted, with a soft pill behind the active item and a lifting icon.
+     The pill is a ::before on the item, so no markup changes are needed. */
+  .tab-bar {
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+    border-top: 1px solid var(--hairline);
+    box-shadow: 0 -8px 26px -14px rgba(0,0,0,.30);
+  }
+  .tab-item::before {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 50%;
+    width: 46px;
+    height: 30px;
+    margin-left: -23px;
+    border-radius: 12px;
+    background: var(--btn);
+    opacity: 0;
+    transform: scale(.6);
+    transition: opacity .3s var(--ease), transform .38s var(--ease-spring);
+    pointer-events: none;
+  }
+  .tab-item.active::before { opacity: .13; transform: scale(1); }
+  .tab-item svg, .tab-item span {
+    position: relative;
+    transition: transform .38s var(--ease-spring);
+  }
+  .tab-item.active svg { transform: translateY(-1px) scale(1.08); }
+  .tab-item span { font-weight: 600; letter-spacing: .01em; }
+  .tab-item.active span { font-weight: 700; }
+  .tab-item:active svg { transform: scale(.88); transition-duration: .1s; }
+  .tab-badge {
+    box-shadow: 0 2px 6px -1px rgba(210,64,90,.5);
+    border: 1.5px solid var(--bg);
+  }
+
+  /* ── Hero ──────────────────────────────────────────────────────────────
+     A gentle top gloss and a lifted CTA. The CTA is the first thing anyone
+     taps, so it gets the most finish. */
+  .home-hero { box-shadow: var(--elev-2); border-radius: var(--r-lg); }
+  .home-hero-cta {
+    box-shadow: var(--elev-2);
+    background-image: linear-gradient(180deg, #fff, #FFF4DF);
+    letter-spacing: .005em;
+  }
+  .home-hero-cta:active { opacity: 1; box-shadow: var(--elev-1); }
+
+  /* ── Cart & gift block ─────────────────────────────────────────────────
+     The gift box gets a soft inner glow so "free" reads as a reward rather
+     than as another line item. */
+  .cart-item { transition: background-color .3s var(--ease); }
+  .cart-gifts {
+    box-shadow: var(--elev-1), inset 0 1px 0 rgba(255,255,255,.35);
+    border-radius: var(--r-lg);
+  }
+  .cart-bonus { box-shadow: var(--elev-1); }
+  .cart-bonus .cb-free { letter-spacing: .01em; }
+  .promo-banner { border-radius: var(--r-lg); }
+  .cart-nudge-add { box-shadow: var(--elev-1); }
+
+  /* The gift emoji breathes — a slow 4s pulse. Long and shallow enough to
+     read as "alive", not as a blinking advert begging for attention. */
+  .cart-gifts-head, .promo-banner .pb-icon {
+    animation: giftBreathe 4s var(--ease) infinite;
+    transform-origin: left center;
+  }
+  @keyframes giftBreathe {
+    0%, 88%, 100% { transform: scale(1); }
+    94%           { transform: scale(1.07); }
+  }
+
+  /* ── Modals ────────────────────────────────────────────────────────────
+     Rise-and-settle instead of appearing instantly, with a blurred scrim so
+     the page behind recedes. */
+  .modal-overlay {
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    transition: opacity .28s var(--ease);
+  }
+  .modal-overlay .modal {
+    box-shadow: var(--elev-3);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  /* .modal already animates via slideUp; refine its curve rather than adding
+     a competing one — a bottom sheet should decelerate into place, not ease
+     linearly to a stop. */
+  .modal-overlay.show .modal { animation: slideUp .42s var(--ease); }
+  .modal-close {
+    border-radius: 50%;
+    opacity: .55;
+  }
+  .modal-close:active { opacity: 1; }
+
+  /* ── Page transitions ──────────────────────────────────────────────────
+     Each page fades up a few pixels when it becomes active. Purely visual —
+     `.page.active` is toggled by the existing switchPage(), untouched. */
+  .page.active { animation: pageIn .34s var(--ease); }
+  @keyframes pageIn {
+    from { opacity: 0; transform: translateY(7px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Loading shimmer ───────────────────────────────────────────────────
+     A moving highlight instead of a static word, so waiting feels shorter. */
+  .loading {
+    background: linear-gradient(90deg,
+      var(--hint) 20%, var(--text) 40%, var(--hint) 60%);
+    background-size: 250% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 1.8s linear infinite;
+  }
+  @keyframes shimmer {
+    to { background-position: -250% 0; }
+  }
+
+  /* ── Bonus badge ───────────────────────────────────────────────────────
+     Gently tinted rather than shouty — it's a delight, not an alarm. */
+  .bonus-badge, .detail-bonus {
+    border: 1px solid rgba(232,114,44,.22);
+    box-shadow: var(--elev-1);
+  }
+
+  /* ── Focus visibility ──────────────────────────────────────────────────
+     Keyboard/switch users get a real focus ring. :focus-visible only, so it
+     never appears on touch taps. */
+  button:focus-visible, input:focus-visible,
+  textarea:focus-visible, select:focus-visible {
+    outline: 2px solid var(--btn);
+    outline-offset: 2px;
+    border-radius: var(--r-sm);
+  }
+
+  /* ── Ambient leaves, dialled back ──────────────────────────────────────
+     The leaves sit at z-index:-1, which puts them above the body background
+     but below content — and most rows (cart lines, prices) paint no
+     background of their own, so a leaf would land squarely on top of a
+     price and read as a rendering glitch. Halving the container's opacity
+     multiplies with the per-leaf opacity JS sets inline, so they stay as
+     ambient texture without competing with anything the buyer is reading. */
+  .organic-leaves { opacity: .5; }
+
+  /* ── Respect the system's motion preference ────────────────────────────
+     Everything above is decoration; for anyone who asked the OS to reduce
+     motion it all collapses to instant, and the app still works identically. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+      scroll-behavior: auto !important;
+    }
+    .organic-leaves { display: none; }
+  }
+
 </style>
 </head>
 <body>
@@ -1662,6 +2120,14 @@
     <div class="home-hero-sub" id="home-hero-sub"></div>
     <button class="home-hero-cta" onclick="switchPage('catalog')" id="home-hero-cta" type="button"></button>
   </div>
+  <button class="promo-banner" id="home-promo-banner" style="display:none" type="button" onclick="openPromoSheet()">
+    <span class="pb-icon">🎁</span>
+    <span class="pb-body">
+      <span class="pb-title" id="home-promo-title"></span>
+      <span class="pb-sub" id="home-promo-sub"></span>
+    </span>
+    <span class="pb-arrow">›</span>
+  </button>
   <div id="home-sections"></div>
   <div class="loading" id="home-loading" style="display:none"></div>
 </div>
@@ -1674,6 +2140,7 @@
       <input type="text" id="catalog-search" placeholder="...">
     </div>
   </div>
+  <button class="promo-strip" id="catalog-promo-strip" style="display:none" type="button" onclick="openPromoSheet()"></button>
   <div class="categories" id="categories"></div>
   <div class="product-grid" id="product-grid"></div>
   <div class="loading" id="catalog-loading" style="display:none"></div>
@@ -1840,6 +2307,26 @@
   </div>
 </div>
 
+<!-- ===== AKSIYA SHEET ===== -->
+<div class="modal-overlay" id="promo-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="promo-sheet-title"></h2>
+      <button class="modal-close" onclick="closePromoSheet()">&times;</button>
+    </div>
+    <div class="detail-body">
+      <img class="promo-sheet-img" id="promo-sheet-img" style="display:none" alt="">
+      <div class="detail-saving" id="promo-sheet-days" style="display:none"></div>
+      <div class="promo-sheet-terms" id="promo-sheet-terms"></div>
+      <div id="promo-sheet-rules-wrap" style="display:none">
+        <div class="reviews-heading" id="promo-sheet-rules-heading"></div>
+        <ul class="promo-sheet-rules" id="promo-sheet-rules"></ul>
+        <div class="bonus-badge" id="promo-sheet-auto"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ===== PRODUCT DETAIL MODAL ===== -->
 <div class="modal-overlay" id="detail-modal">
   <div class="modal">
@@ -1853,6 +2340,7 @@
       <div><span class="detail-price" id="detail-price"></span> <span class="detail-unit" id="detail-unit"></span></div>
       <div class="detail-saving" id="detail-saving" style="display:none"></div>
       <div class="detail-discount-until" id="detail-discount-until" style="margin-top:6px;font-size:12px;color:var(--berry);font-weight:600"></div>
+      <div class="detail-bonus" id="detail-bonus" style="display:none"></div>
       <div class="detail-rating" id="detail-rating"></div>
       <div class="detail-seller" id="detail-seller"></div>
       <div class="detail-desc" id="detail-desc"></div>
@@ -2216,6 +2704,16 @@ const L = {
     heroTitle: "Sog'lom hayot bir joyda, <em>hamyonbop</em>",
     heroSub: 'Keto va dietik mahsulotlarning katta assortimenti — tabiiy unlar, yog\'lar, urug\'lar va superfudlar.',
     heroCta: 'Xaridni boshlash →',
+    promoDaysLeft: '{n} kun qoldi',
+    promoStrip: '🎁 Aksiya: {name} — batafsil',
+    promoRules: 'Bonus mahsulotlar',
+    promoAuto: 'Bonus savatga avtomatik qo\'shiladi — hech narsa qilishingiz shart emas.',
+    cartBonusFree: 'BEPUL',
+    cartGiftsTitle: '🎁 Sizga sovg\'alar',
+    cartGiftsValue: '{v} so\'mlik — bepul!',
+    cartNudgeTitle: '✨ Bonusga oz qoldi',
+    cartNudgeRow: 'Yana {n} {u} «{p}» → {b} sovg\'a',
+    cartNudgeAdd: '+ Qo\'shish',
   },
   ru: {
     all: 'Все',
@@ -2355,6 +2853,16 @@ const L = {
     heroTitle: 'Здоровая жизнь в одном месте, <em>доступно</em>',
     heroSub: 'Большой ассортимент кето и диетических продуктов — натуральная мука, масла, семена и суперфуды.',
     heroCta: 'Начать покупки →',
+    promoDaysLeft: 'осталось {n} дн.',
+    promoStrip: '🎁 Акция: {name} — подробнее',
+    promoRules: 'Бонусные товары',
+    promoAuto: 'Бонус добавляется в корзину автоматически — ничего делать не нужно.',
+    cartBonusFree: 'БЕСПЛАТНО',
+    cartGiftsTitle: '🎁 Ваши подарки',
+    cartGiftsValue: 'на {v} сум — бесплатно!',
+    cartNudgeTitle: '✨ До подарка совсем немного',
+    cartNudgeRow: 'Ещё {n} {u} «{p}» → {b} в подарок',
+    cartNudgeAdd: '+ Добавить',
   }
 };
 
@@ -2472,6 +2980,7 @@ async function switchLanguage(newLang) {
     try { await api('/api/lang', { method: 'POST', body: JSON.stringify({ lang }) }); } catch (_) { /* server-side preference is best-effort */ }
     // Reload dynamic content
     renderCatalogCategories();
+    renderPromoBanners();
     loadProducts();
     renderHomePage();
     if (activePage === 'cart') renderCartPage();
@@ -2597,6 +3106,7 @@ document.querySelectorAll('.tab-item').forEach(tab => {
 
   try {
     categories = await api('/api/categories');
+    await loadPromo();
     renderHomePage();
     renderCatalogCategories();
     await loadProducts();
@@ -2616,6 +3126,114 @@ document.querySelectorAll('.tab-item').forEach(tab => {
 
   await langPromise;
 })();
+
+// ===== TACTILE POLISH =====
+// A light haptic tick on every control tap. Telegram already gets one on a
+// few specific actions (add-to-cart, order placed); this generalises it to
+// the whole UI, which is most of what makes a web view feel like a real app
+// rather than a page. Delegated from the document so it covers controls that
+// are re-rendered by innerHTML — binding per element would miss those.
+//
+// Guarded three ways: the API is absent on old clients, throws on some
+// desktop builds, and must never break the tap it is decorating.
+(function initHaptics() {
+  const TAP = '.add-to-cart-btn,.btn-checkout,.checkout-submit-btn,.cheque-pick-btn,'
+            + '.home-hero-cta,.promo-banner,.cart-nudge-add,.review-submit-btn';
+  const LIGHT = '.cat-tab,.qty-btn,.qty-step,.btn-clear,.tab-item,.card-fav-btn,'
+              + '.detail-fav-btn,.modal-close,.promo-strip,.checkout-back-btn,'
+              + '.location-btn,.cheque-pay-later-btn,.lang-btn,.remove-btn';
+
+  document.addEventListener('pointerdown', (e) => {
+    try {
+      const h = tg.HapticFeedback;
+      if (!h) return;
+      if (e.target.closest(TAP)) h.impactOccurred('medium');
+      else if (e.target.closest(LIGHT)) h.impactOccurred('light');
+    } catch (_) { /* unsupported client — silence is the correct fallback */ }
+  }, { passive: true });
+})();
+
+// ===== AKSIYA / BONUS =====
+// One /api/promo read per session drives the home banner, the catalog strip,
+// the 🎁 badges on cards, and the aksiya sheet. Refreshed after every cart
+// change too, so a campaign that ends mid-session stops advertising itself.
+let promo = { active: false, trigger_ids: [] };
+
+async function loadPromo() {
+  try {
+    promo = await api('/api/promo');
+  } catch (e) {
+    promo = { active: false, trigger_ids: [] };
+  }
+  renderPromoBanners();
+}
+
+function renderPromoBanners() {
+  const banner = document.getElementById('home-promo-banner');
+  const strip = document.getElementById('catalog-promo-strip');
+  if (!promo || !promo.active) {
+    if (banner) banner.style.display = 'none';
+    if (strip) strip.style.display = 'none';
+    return;
+  }
+  if (banner) {
+    banner.style.display = 'flex';
+    document.getElementById('home-promo-title').textContent = promo.name;
+    document.getElementById('home-promo-sub').textContent =
+      promo.days_left ? t.promoDaysLeft.replace('{n}', promo.days_left) : '';
+  }
+  if (strip) {
+    strip.style.display = 'block';
+    strip.textContent = t.promoStrip.replace('{name}', promo.name);
+  }
+}
+
+function openPromoSheet() {
+  if (!promo || !promo.active) return;
+  document.getElementById('promo-sheet-title').textContent = '🎁 ' + promo.name;
+
+  const img = document.getElementById('promo-sheet-img');
+  if (promo.image_url) {
+    img.src = promo.image_url;
+    img.style.display = 'block';
+    img.onerror = () => { img.style.display = 'none'; };
+  } else {
+    img.style.display = 'none';
+  }
+
+  const daysEl = document.getElementById('promo-sheet-days');
+  if (promo.days_left) {
+    daysEl.textContent = '⏳ ' + t.promoDaysLeft.replace('{n}', promo.days_left);
+    daysEl.style.display = 'block';
+  } else {
+    daysEl.style.display = 'none';
+  }
+
+  document.getElementById('promo-sheet-terms').textContent = promo.conditions || '';
+
+  const wrap = document.getElementById('promo-sheet-rules-wrap');
+  const list = document.getElementById('promo-sheet-rules');
+  const rules = promo.bonuses || [];
+  if (rules.length) {
+    document.getElementById('promo-sheet-rules-heading').textContent = t.promoRules;
+    list.innerHTML = rules.map(r => '<li>🎁 ' + escapeHtml(r) + '</li>').join('');
+    document.getElementById('promo-sheet-auto').textContent = t.promoAuto;
+    wrap.style.display = 'block';
+  } else {
+    wrap.style.display = 'none';
+  }
+
+  document.getElementById('promo-modal').classList.add('show');
+}
+
+function closePromoSheet() {
+  document.getElementById('promo-modal').classList.remove('show');
+}
+
+/** 🎁 pill for a product card — p.bonus is the server-rendered rule line. */
+function bonusBadgeHtml(p) {
+  return p && p.bonus ? '<div class="bonus-badge">' + escapeHtml(p.bonus) + '</div>' : '';
+}
 
 // ===== HOME PAGE =====
 async function renderHomePage() {
@@ -2832,6 +3450,7 @@ function createCarouselCard(p) {
     '<div class="card-name">' + escapeHtml(p.name) + '</div>' +
     '<div class="card-price">' + priceHtml(p) + '</div>' +
     savingHtml(p) +
+    bonusBadgeHtml(p) +
     descHtml;
 
   // Fav button click (stop propagation so card click doesn't fire)
@@ -3036,6 +3655,7 @@ function createProductCard(p) {
     '<div class="card-name">' + (p.is_set ? '🎁 ' : '') + escapeHtml(p.name) + '</div>' +
     '<div class="card-price">' + priceHtml(p) + '</div>' +
     savingHtml(p) +
+    bonusBadgeHtml(p) +
     descHtml2 +
     soonBadge;
 
@@ -3116,6 +3736,13 @@ async function openDetail(productId, isSet = false) {
       untilEl.textContent = t.discountUntil.replace('{date}', formatDiscountDate(p.discount_until));
     } else {
       untilEl.textContent = '';
+    }
+    const bonusEl = document.getElementById('detail-bonus');
+    if (p.bonus) {
+      bonusEl.textContent = p.bonus;
+      bonusEl.style.display = 'block';
+    } else {
+      bonusEl.style.display = 'none';
     }
     document.getElementById('detail-unit').textContent = t.perUnit.replace('{unit}', p.unit);
     const descEl = document.getElementById('detail-desc');
@@ -3453,6 +4080,83 @@ function renderCartPage() {
       '<button class="remove-btn" data-id="' + item.cart_id + '">&times;</button>';
     container.appendChild(el);
   });
+
+  // Free aksiya bonuses, computed server-side from what's in the cart. Their
+  // own titled block under the paid items, each showing the shelf price
+  // struck through beside "BEPUL" — a crossed-out number reads as money
+  // saved, where a bare "free" reads as worthless.
+  const bonuses = cartData.bonuses || [];
+  if (bonuses.length) {
+    const box = document.createElement('div');
+    box.className = 'cart-gifts';
+
+    const totalValue = cartData.bonuses_value || 0;
+    let html = '<div class="cart-gifts-head"><span>' + t.cartGiftsTitle + '</span>';
+    if (totalValue > 0) {
+      html += '<span class="cart-gifts-total">' +
+              t.cartGiftsValue.replace('{v}', formatPrice(totalValue)) + '</span>';
+    }
+    html += '</div>';
+
+    bonuses.forEach(b => {
+      const pic = b.photo_url
+        ? '<img src="' + b.photo_url + '" alt="" onerror="this.outerHTML=\'<div class=cb-icon>🎁</div>\'">'
+        : '<div class="cb-icon">🎁</div>';
+      const priceBlock = b.value > 0
+        ? '<span class="cb-was">' + formatPrice(b.value) + '</span><span class="cb-free">0</span>'
+        : '<span class="cb-free">0</span>';
+      html +=
+        '<div class="cart-bonus">' + pic +
+          '<div class="cb-body">' +
+            '<div class="cb-name">' + escapeHtml(b.name) + ' — ' + escapeHtml(b.amount) + ' ' + escapeHtml(b.unit) + '</div>' +
+            '<div class="cb-tag">🎁 ' + t.cartBonusFree + '</div>' +
+          '</div>' +
+          '<div class="cb-price">' + priceBlock + '</div>' +
+        '</div>';
+    });
+    box.innerHTML = html;
+    container.appendChild(box);
+  }
+
+  // "Add one more and the gift is yours" — only for products already in the
+  // cart, so it's a heads-up rather than an ad. Tapping adds one straight in.
+  const misses = cartData.near_misses || [];
+  if (misses.length) {
+    const nudge = document.createElement('div');
+    nudge.className = 'cart-nudge';
+    nudge.innerHTML = '<div class="cart-nudge-head">' + t.cartNudgeTitle + '</div>' +
+      misses.map(m =>
+        '<div class="cart-nudge-row"><span>' +
+          t.cartNudgeRow
+            .replace('{n}', escapeHtml(m.needed))
+            .replace('{u}', escapeHtml(m.needed_unit))
+            .replace('{p}', escapeHtml(m.name || ''))
+            .replace('{b}', escapeHtml(m.bonus)) +
+        '</span>' +
+        '<button class="cart-nudge-add" data-add="' + m.product_id + '" data-qty="' + m.needed + '">' +
+          t.cartNudgeAdd + '</button></div>'
+      ).join('');
+    container.appendChild(nudge);
+
+    nudge.querySelectorAll('.cart-nudge-add').forEach(btn => {
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          await api('/api/cart/add', {
+            method: 'POST',
+            body: JSON.stringify({
+              product_id: parseInt(btn.dataset.add),
+              quantity: parseFloat(btn.dataset.qty) || 1,
+            }),
+          });
+          await loadCart();
+        } catch (err) {
+          console.error(err);
+          btn.disabled = false;
+        }
+      };
+    });
+  }
 
   // Remove buttons
   container.querySelectorAll('.remove-btn').forEach(btn => {

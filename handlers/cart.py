@@ -25,7 +25,8 @@ from database import (
 from locales import get_text, get_unit_name, get_display_unit, get_order_status, get_delivery_method_name
 from keyboards import (
     quantity_keyboard, cart_keyboard, back_to_menu_keyboard,
-    main_menu_keyboard, payment_method_keyboard, delivery_method_keyboard
+    main_menu_keyboard, payment_method_keyboard, delivery_method_keyboard,
+    persistent_menu_keyboard,
 )
 from config import PAYMENT_PROVIDER_TOKEN, ADMIN_IDS, PAYMENT_CARD_NUMBER, PAYMENT_RECIPIENT_NAME
 
@@ -361,34 +362,19 @@ async def show_cart(callback: CallbackQuery):
     await callback.answer()
 
 
-async def _render_cart(callback: CallbackQuery, lang: str):
-    """Render (in place) the cart message — shared by show_cart and the
-    +/- quantity steppers so they refresh the same bubble."""
-    cart_items = await get_cart(callback.from_user.id)
+async def build_cart_view(user_id: int, lang: str):
+    """(text, keyboard) for the cart, or (None, None) when it's empty.
 
+    Shared by the inline cart bubble, the 🛒 reply-keyboard button, and the
+    Mini App's bot-side fallbacks so all three show the same aksiya banner and
+    the same bonus lines."""
+    import promotions
+
+    cart_items = await get_cart(user_id)
     if not cart_items:
-        if callback.message.photo:
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
-            await callback.message.answer(
-                get_text("cart_empty", lang),
-                reply_markup=main_menu_keyboard(lang),
-                parse_mode="HTML"
-            )
-        else:
-            try:
-                await callback.message.edit_text(
-                    get_text("cart_empty", lang),
-                    reply_markup=main_menu_keyboard(lang),
-                    parse_mode="HTML"
-                )
-            except Exception:
-                pass
-        return
+        return None, None
 
-    text = get_text("cart_title", lang)
+    text = await promotions.banner(lang) + get_text("cart_title", lang)
     total = 0
     saved_total = 0
     for i, item in enumerate(cart_items, 1):
@@ -417,9 +403,69 @@ async def _render_cart(callback: CallbackQuery, lang: str):
                 price=f"{int(unit_price):,}".replace(",", " "),
                 total=f"{int(item_total):,}".replace(",", " "),
             )
+
+    # Free aksiya bonuses earned by what's in the cart right now. Recomputed
+    # on every render (not stored on the cart row) so a stepper tap, a
+    # campaign edit, or a campaign ending is reflected immediately.
+    bonus_input = [
+        {"product_id": it.get("product_id"), "quantity": it["cart_quantity"], "is_set": it.get("is_set", False)}
+        for it in cart_items
+    ]
+    promo = await promotions.get_active()
+    text += promotions.bonus_lines_text(promotions.compute_bonuses(promo, bonus_input), lang)
+
     text += get_text("cart_total", lang, total=f"{int(total):,}".replace(",", " "))
     if saved_total > 0:
         text += get_text("cart_saved", lang, amount=f"{int(saved_total):,}".replace(",", " "))
+
+    # "Yana 1 ta qo'shsangiz — sovg'a sizniki": only for products already in
+    # the cart, so it reads as a heads-up rather than an ad. Placed after the
+    # total so it can never push the price out of view.
+    text += promotions.near_miss_text(promotions.compute_near_misses(promo, bonus_input), lang)
+    return text, cart_keyboard(lang, cart_items)
+
+
+async def render_cart_message(message: Message, lang: str):
+    """Cart as a fresh message — the entry point for the 🛒 Savat button on
+    the persistent reply keyboard, which arrives as a plain text message and
+    so has no bubble to edit in place."""
+    text, keyboard = await build_cart_view(message.from_user.id, lang)
+    if text is None:
+        await message.answer(
+            get_text("cart_empty", lang),
+            reply_markup=main_menu_keyboard(lang),
+            parse_mode="HTML",
+        )
+        return
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+async def _render_cart(callback: CallbackQuery, lang: str):
+    """Render (in place) the cart message — shared by show_cart and the
+    +/- quantity steppers so they refresh the same bubble."""
+    text, keyboard = await build_cart_view(callback.from_user.id, lang)
+
+    if text is None:
+        if callback.message.photo:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await callback.message.answer(
+                get_text("cart_empty", lang),
+                reply_markup=main_menu_keyboard(lang),
+                parse_mode="HTML"
+            )
+        else:
+            try:
+                await callback.message.edit_text(
+                    get_text("cart_empty", lang),
+                    reply_markup=main_menu_keyboard(lang),
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+        return
 
     if callback.message.photo:
         # Coming from a photo bubble (e.g. the product-detail card's "go to
@@ -431,14 +477,14 @@ async def _render_cart(callback: CallbackQuery, lang: str):
             pass
         await callback.message.answer(
             text,
-            reply_markup=cart_keyboard(lang, cart_items),
+            reply_markup=keyboard,
             parse_mode="HTML"
         )
     else:
         try:
             await callback.message.edit_text(
                 text,
-                reply_markup=cart_keyboard(lang, cart_items),
+                reply_markup=keyboard,
                 parse_mode="HTML"
             )
         except Exception:
@@ -678,8 +724,11 @@ async def process_location(message: Message, state: FSMContext):
         address += f" — {readable}"
     await state.update_data(address=address, latitude=lat, longitude=lng)
 
-    # Remove the location keyboard
-    await message.answer("✅", reply_markup=ReplyKeyboardRemove())
+    # Swap the one-shot location keyboard back for the persistent 🏠/🛒 one.
+    # A bare ReplyKeyboardRemove here used to leave the buyer with nothing
+    # under the input box for the rest of the session — exactly the "I don't
+    # know how to get back" problem the persistent keyboard exists to fix.
+    await message.answer("✅", reply_markup=persistent_menu_keyboard(lang))
 
     # If we got a human-readable address, show it back and ask the buyer to
     # confirm — keeps them in control when GPS jitters or the wrong building
@@ -1108,6 +1157,15 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
             "seller_id": item.get("seller_id"),
         })
 
+    # Free aksiya bonuses ride along inside items_data as 0-so'm lines, so
+    # create_order freezes them into orders.items and _notify_sellers shows
+    # them to whoever packs the box — no extra plumbing at either call site.
+    # They add nothing to the totals below (price is 0) and are skipped when
+    # the priced item list is rendered.
+    import promotions
+    bonuses = await promotions.bonuses_for_items(items_data)
+    items_data.extend(bonuses)
+
     items_subtotal = sum(item["price"] * item["quantity"] for item in items_data)
     total = items_subtotal
 
@@ -1127,10 +1185,14 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
             total -= keto_redeem
 
     items_text = ""
-    for i, item in enumerate(items_data, 1):
+    for i, item in enumerate([it for it in items_data if not it.get("is_bonus")], 1):
         item_total = item["price"] * item["quantity"]
         badge = f" 🔥-{item['discount_percent']}%" if item.get("discount_percent") else ""
         items_text += f"{i}. {item['name']} — {item['quantity']} {get_display_unit(item['unit'], lang)} × {int(item['price']):,}{badge} = {int(item_total):,}\n".replace(",", " ")
+    items_text += promotions.bonus_lines_text(bonuses, lang)
+    items_text += promotions.near_miss_text(
+        promotions.compute_near_misses(await promotions.get_active(), items_data), lang
+    )
 
     payment_method = data["payment_method"]
     payment_label = get_text("btn_pay_cash", lang) if payment_method == "cash" else get_text("btn_pay_online", lang)
@@ -1736,7 +1798,14 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
         admin_lang = await get_user_language(admin_id)
         items_text = ""
         saved_total = 0
+        import promotions
         for item in items:
+            if item.get("is_bonus"):
+                # Free aksiya line — no price to show, and it has to stand out
+                # so whoever packs the order actually puts the gift in the box.
+                items_text += (f"🎁 <b>BONUS:</b> {promotions.bonus_label(item, admin_lang)} — "
+                               f"{promotions.bonus_price_html(item, admin_lang)}\n")
+                continue
             unit = get_display_unit(item['unit'], admin_lang)
             new_p = f"{int(item['price']):,}".replace(",", " ")
             op = item.get("original_price")
