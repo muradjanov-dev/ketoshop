@@ -10,7 +10,7 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import MenuButtonWebApp, WebAppInfo
+from aiogram.types import BotCommand, MenuButtonWebApp, WebAppInfo
 
 from config import BOT_TOKEN, ADMIN_IDS
 from database import init_db, close_db, get_extra_admin_ids
@@ -94,6 +94,30 @@ async def main():
     # A slash command always wins over whatever "waiting for X" state a
     # stale flow left behind — see state_guard.py.
     dp.message.outer_middleware(StateResetOnCommandMiddleware())
+
+    # Register the slash commands so typing "/" offers them. The chat's menu
+    # button is taken by the Mini App below, so this list is only reachable by
+    # typing — the real "I don't know how to start" fix is the persistent
+    # reply keyboard (see keyboards.persistent_menu_keyboard); this is the
+    # belt to its braces, and makes /start discoverable for anyone who does
+    # type a slash.
+    try:
+        await bot.set_my_commands([
+            BotCommand(command="start", description="🏠 Botni ishga tushirish / Bosh menyu"),
+            BotCommand(command="menu", description="🏠 Bosh menyu"),
+        ])
+        logger.info("Bot commands registered")
+    except Exception:
+        logger.exception("Failed to set bot commands")
+
+    # Warm the aksiya cache before the first update is handled — the synchronous
+    # keyboard builders read it without awaiting (promotions.cached_active), so
+    # a cold cache would hide the aksiya button until something else refreshed it.
+    import promotions
+    try:
+        await promotions.get_active(force=True)
+    except Exception:
+        logger.exception("Failed to warm the promotion cache")
 
     # Point the persistent chat menu button at THIS deployment's Mini App.
     # Without this the button keeps whatever URL was set via BotFather, which
@@ -181,11 +205,11 @@ async def main():
     from meta_ads import scheduler_loop as meta_ads_scheduler_loop
     meta_ads_task = asyncio.create_task(meta_ads_scheduler_loop(bot))
 
-    # Keto musobaqasi (referral contest) — daily reminder while active, and
-    # auto-finish (winner announcement) once the 7-day window is up. Dormant
-    # (no-op tick) until an admin starts a contest via the admin panel.
-    from referral_contest import scheduler_loop as contest_scheduler_loop
-    contest_task = asyncio.create_task(contest_scheduler_loop(bot))
+    # Aksiya / Bonus — closes a campaign out the moment its window ends (so
+    # bonuses stop being granted without anyone touching the admin panel) and
+    # keeps the shared campaign cache warm. No-op tick when nothing is running.
+    from promotions import scheduler_loop as promo_scheduler_loop
+    promo_task = asyncio.create_task(promo_scheduler_loop(bot))
 
     # Start polling
     logger.info("Bot started! Press Ctrl+C to stop.")
@@ -196,7 +220,7 @@ async def main():
         reco_task.cancel()
         backup_task.cancel()
         keto_task.cancel()
-        contest_task.cancel()
+        promo_task.cancel()
         meta_leads_task.cancel()
         meta_ads_task.cancel()
         if runner:

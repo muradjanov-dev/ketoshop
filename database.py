@@ -434,6 +434,14 @@ async def init_db():
         except Exception:
             pass
 
+        # The persistent 🏠/🛒 reply keyboard is sent once per chat and then
+        # stays put on Telegram's side (2026-08-31) — this records that it has
+        # been, so /start doesn't re-send the explainer message every time.
+        try:
+            await conn.execute("ALTER TABLE users ADD COLUMN menu_keyboard_sent BOOLEAN NOT NULL DEFAULT FALSE")
+        except Exception:
+            pass
+
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS keto_ledger (
                 id SERIAL PRIMARY KEY,
@@ -622,6 +630,83 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # ===== Aksiya / Bonus (2026-08-31) =====
+        # An "aksiya" is a named, time-boxed campaign the owner writes up in
+        # the admin panel and then explicitly starts. Only ONE can run at a
+        # time — starting one deactivates the rest (see start_promotion) —
+        # because the bot and Mini App both surface "the current aksiya" in a
+        # single banner slot rather than a list.
+        #
+        # Nothing here changes anything for buyers until an admin presses
+        # "Boshlash": rows are created inactive, so this table is safe to
+        # deploy ahead of the first campaign.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS promotions (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                name_ru TEXT,
+                conditions TEXT,
+                conditions_ru TEXT,
+                days INTEGER NOT NULL DEFAULT 7,
+                image_url TEXT,
+                active BOOLEAN NOT NULL DEFAULT FALSE,
+                started_at TIMESTAMP,
+                ends_at TIMESTAMP,
+                announced_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # One row per bonus rule: "buy `trigger_quantity` of trigger_product
+        # -> get `bonus_amount bonus_unit` of bonus_product free".
+        #
+        # Two quantity columns on purpose, because the display unit and the
+        # stock unit are usually different: the owner writes "100 gr" but
+        # Eritritol is stocked in kg, so bonus_amount/bonus_unit are what the
+        # buyer reads ("100 gr") while bonus_stock_qty (0.1) is what actually
+        # comes off products.quantity. See promotions.py::to_stock_qty for
+        # the conversion — it's computed once at save time so a later unit
+        # change on the product can't silently rewrite past orders.
+        #
+        # max_bonus_amount caps the multiplier ("3 kg -> 300 gr, but never
+        # more than 500 gr"); NULL means uncapped.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS promotion_bonuses (
+                id SERIAL PRIMARY KEY,
+                promo_id INTEGER NOT NULL REFERENCES promotions(id) ON DELETE CASCADE,
+                trigger_product_id INTEGER NOT NULL REFERENCES products(id),
+                trigger_quantity DOUBLE PRECISION NOT NULL DEFAULT 1,
+                bonus_product_id INTEGER NOT NULL REFERENCES products(id),
+                bonus_amount DOUBLE PRECISION NOT NULL DEFAULT 1,
+                bonus_unit TEXT NOT NULL DEFAULT 'gr',
+                bonus_stock_qty DOUBLE PRECISION NOT NULL DEFAULT 0,
+                max_bonus_amount DOUBLE PRECISION,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # Daily "bugungi sovg'alar" showcase (owner request 2026-08-31): 3 bonus
+        # rules a day, announced with a link straight to each product. The
+        # cursor walks the rule list so every rule gets its turn instead of the
+        # first three being announced forever; last_showcase_date is the
+        # once-a-day guard (Tashkent date, so a restart can't double-send).
+        for ddl in (
+            "ALTER TABLE promotions ADD COLUMN showcase_enabled BOOLEAN NOT NULL DEFAULT TRUE",
+            "ALTER TABLE promotions ADD COLUMN showcase_cursor INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE promotions ADD COLUMN last_showcase_date DATE",
+        ):
+            try:
+                await conn.execute(ddl)
+            except Exception:
+                pass
+
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_promo_bonuses_promo ON promotion_bonuses(promo_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_promo_bonuses_trigger ON promotion_bonuses(trigger_product_id)")
+        # Partial unique index — the "only one active aksiya" rule enforced by
+        # the database itself, not just by start_promotion's UPDATE order.
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_promotions_single_active ON promotions((active)) WHERE active"
+        )
 
 
 async def close_db():
@@ -1075,6 +1160,17 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
         async with conn.transaction():
             for item in items:
                 qty = item["quantity"]
+                if item.get("is_bonus"):
+                    # Free aksiya bonus (see promotions.py) — decrement stock
+                    # best-effort and NEVER block the order on it. A paid
+                    # order must not fail because the giveaway item ran out;
+                    # the admin sees the bonus line in the order notification
+                    # either way and can substitute or drop it while packing.
+                    await conn.execute(
+                        "UPDATE products SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2",
+                        float(item.get("stock_quantity") or 0), item.get("product_id"),
+                    )
+                    continue
                 if item.get("is_set"):
                     set_id = item.get("set_id") or item.get("product_id") or item.get("id")
                     set_items = await conn.fetch("SELECT product_id, quantity FROM product_set_items WHERE set_id = $1", set_id)
@@ -2945,6 +3041,23 @@ async def mark_kabinetim_intro_seen(user_id: int) -> None:
         )
 
 
+async def was_menu_keyboard_sent(user_id: int) -> bool:
+    """Has this chat already been given the persistent 🏠/🛒 reply keyboard?
+    Defaults to False for a user row that doesn't exist yet, so a brand-new
+    user gets it on their very first /start."""
+    async with pool.acquire() as conn:
+        return bool(await conn.fetchval(
+            "SELECT menu_keyboard_sent FROM users WHERE user_id = $1", user_id
+        ))
+
+
+async def mark_menu_keyboard_sent(user_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET menu_keyboard_sent = TRUE WHERE user_id = $1", user_id
+        )
+
+
 async def get_users_with_keto_pin() -> list[int]:
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT user_id FROM users WHERE keto_pin_message_id IS NOT NULL")
@@ -3228,3 +3341,214 @@ async def get_meta_leads_summary() -> dict:
             FROM meta_leads
         """)
         return {"total": row["total"], "today": row["today"], "unhandled": row["unhandled"]}
+
+
+# ===== AKSIYA / BONUS (2026-08-31) =====
+# Backing store for promotions.py. A promotion is created inactive and only
+# becomes visible to buyers once an admin presses "Boshlash" (start_promotion),
+# which is also what stamps started_at/ends_at — the `days` column is just the
+# saved default, so re-starting an old campaign gives it a fresh window.
+
+
+async def get_promotion(promo_id: int) -> dict | None:
+    """One promotion with its bonus rules (each rule carries the trigger and
+    bonus product names/units already joined in, so callers never have to
+    round-trip products themselves)."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM promotions WHERE id = $1", promo_id)
+        if row is None:
+            return None
+        promo = dict(row)
+        promo["bonuses"] = await _fetch_promo_bonuses(conn, promo_id)
+        return promo
+
+
+async def get_active_promotion() -> dict | None:
+    """The single running campaign, or None. Also self-heals an expired one:
+    a promotion whose ends_at has passed is reported as inactive even if the
+    scheduler hasn't ticked yet, so a restart-during-expiry can never leave a
+    stale banner up in the bot or Mini App."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM promotions WHERE active AND (ends_at IS NULL OR ends_at > CURRENT_TIMESTAMP) LIMIT 1"
+        )
+        if row is None:
+            return None
+        promo = dict(row)
+        promo["bonuses"] = await _fetch_promo_bonuses(conn, promo["id"])
+        return promo
+
+
+async def list_promotions() -> list[dict]:
+    """Every campaign ever created, running one first — the admin panel's list."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT * FROM promotions ORDER BY active DESC, created_at DESC")
+        out = []
+        for row in rows:
+            promo = dict(row)
+            promo["bonuses"] = await _fetch_promo_bonuses(conn, promo["id"])
+            out.append(promo)
+        return out
+
+
+async def _fetch_promo_bonuses(conn, promo_id: int) -> list[dict]:
+    rows = await conn.fetch(
+        """
+        SELECT b.*,
+               tp.name AS trigger_name, tp.name_ru AS trigger_name_ru, tp.unit AS trigger_unit,
+               bp.name AS bonus_name,   bp.name_ru AS bonus_name_ru,   bp.unit AS bonus_product_unit,
+               -- The bonus product's real shelf price, so the cart can show it
+               -- struck through next to 0 ("you're getting 25 000 so'm free")
+               -- instead of a bare "bepul" that reads as worth nothing.
+               bp.price AS bonus_price, bp.photo_id AS bonus_photo_id
+        FROM promotion_bonuses b
+        JOIN products tp ON tp.id = b.trigger_product_id
+        JOIN products bp ON bp.id = b.bonus_product_id
+        WHERE b.promo_id = $1
+        ORDER BY b.id
+        """,
+        promo_id,
+    )
+    return [dict(r) for r in rows]
+
+
+async def create_promotion(name: str, name_ru: str | None, conditions: str | None,
+                           conditions_ru: str | None, days: int,
+                           image_url: str | None) -> int:
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            """INSERT INTO promotions (name, name_ru, conditions, conditions_ru, days, image_url)
+               VALUES ($1, $2, $3, $4, $5, $6) RETURNING id""",
+            name, name_ru, conditions, conditions_ru, int(days), image_url,
+        )
+
+
+async def update_promotion(promo_id: int, **fields) -> None:
+    """Partial update. Editing a running campaign is allowed on purpose (fix a
+    typo in the shartlar mid-flight) — only `days` needs a restart to take
+    effect, since ends_at was already stamped at launch."""
+    allowed = {"name", "name_ru", "conditions", "conditions_ru", "days", "image_url"}
+    sets, values = [], []
+    for key, value in fields.items():
+        if key in allowed:
+            values.append(value)
+            sets.append(f"{key} = ${len(values)}")
+    if not sets:
+        return
+    values.append(promo_id)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            f"UPDATE promotions SET {', '.join(sets)} WHERE id = ${len(values)}", *values
+        )
+
+
+async def set_promotion_bonuses(promo_id: int, rules: list[dict]) -> None:
+    """Replace this campaign's whole bonus-rule list in one transaction.
+
+    Same replace-don't-merge approach product_set_items already uses: the
+    admin form always submits the complete list, so a row deleted in the UI
+    has to disappear here too."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM promotion_bonuses WHERE promo_id = $1", promo_id)
+            for rule in rules:
+                await conn.execute(
+                    """INSERT INTO promotion_bonuses
+                       (promo_id, trigger_product_id, trigger_quantity, bonus_product_id,
+                        bonus_amount, bonus_unit, bonus_stock_qty, max_bonus_amount)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
+                    promo_id,
+                    int(rule["trigger_product_id"]), float(rule["trigger_quantity"]),
+                    int(rule["bonus_product_id"]), float(rule["bonus_amount"]),
+                    rule["bonus_unit"], float(rule["bonus_stock_qty"]),
+                    rule.get("max_bonus_amount"),
+                )
+
+
+async def start_promotion(promo_id: int, days: int | None = None) -> dict | None:
+    """Launch (or relaunch) one campaign for `days` days from now, and stop
+    every other one — only a single aksiya runs at a time (a partial unique
+    index on `active` backs this up). Clears announced_at so a relaunch can
+    send its announcement again."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("UPDATE promotions SET active = FALSE WHERE active AND id != $1", promo_id)
+            if days is None:
+                days = await conn.fetchval("SELECT days FROM promotions WHERE id = $1", promo_id)
+            if days is None:
+                return None
+            row = await conn.fetchrow(
+                """UPDATE promotions SET
+                       active = TRUE, days = $2,
+                       started_at = CURRENT_TIMESTAMP,
+                       ends_at = CURRENT_TIMESTAMP + ($3 || ' days')::INTERVAL,
+                       announced_at = NULL
+                   WHERE id = $1 RETURNING id""",
+                promo_id, int(days), str(int(days)),
+            )
+    if row is None:
+        return None
+    return await get_promotion(promo_id)
+
+
+async def stop_promotion(promo_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE promotions SET active = FALSE WHERE id = $1", promo_id)
+
+
+async def delete_promotion(promo_id: int) -> None:
+    """Hard delete — bonus rules cascade. Past orders keep their bonus lines
+    regardless: those are frozen into orders.items as plain JSON at checkout,
+    not looked up from here."""
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM promotions WHERE id = $1", promo_id)
+
+
+async def mark_promotion_announced(promo_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE promotions SET announced_at = CURRENT_TIMESTAMP WHERE id = $1", promo_id
+        )
+
+
+async def expire_promotions() -> list[dict]:
+    """Deactivate every campaign whose window has closed. Returns the ones
+    that just ended, so the scheduler can tell the admins."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """UPDATE promotions SET active = FALSE
+               WHERE active AND ends_at IS NOT NULL AND ends_at <= CURRENT_TIMESTAMP
+               RETURNING *"""
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_bonus_trigger_product_ids() -> set[int]:
+    """Product ids that trigger a bonus under the currently running campaign —
+    what the catalog and Mini App use to stamp a "🎁 Bonus" badge on a card
+    without loading the whole rule set per product."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT DISTINCT b.trigger_product_id
+               FROM promotion_bonuses b JOIN promotions p ON p.id = b.promo_id
+               WHERE p.active AND (p.ends_at IS NULL OR p.ends_at > CURRENT_TIMESTAMP)"""
+        )
+        return {r["trigger_product_id"] for r in rows}
+
+
+async def set_promotion_showcase(promo_id: int, enabled: bool) -> None:
+    """Turn the daily 3-bonus announcement on/off for one campaign, without
+    touching the campaign itself — the "it's getting annoying" switch."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE promotions SET showcase_enabled = $2 WHERE id = $1", promo_id, enabled
+        )
+
+
+async def advance_promotion_showcase(promo_id: int, new_cursor: int, on_date) -> None:
+    """Record that today's showcase went out and move the cursor along."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE promotions SET showcase_cursor = $2, last_showcase_date = $3 WHERE id = $1",
+            promo_id, new_cursor, on_date,
+        )

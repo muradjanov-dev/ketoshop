@@ -16,6 +16,8 @@ from urllib.parse import parse_qsl, unquote
 from aiohttp import web
 from aiogram import Bot
 
+import promotions
+
 
 def _json_default(obj):
     """JSON fallback for types asyncpg returns that json.dumps can't handle.
@@ -459,7 +461,45 @@ async def api_cart(request: web.Request):
             "total": item_total,
             "photo_url": f"/api/photo/{item['photo_id']}" if item.get("photo_id") else None,
         })
-    return _json({"items": result, "total": total})
+
+    # Free aksiya bonuses earned by what's in the cart. Recomputed on every
+    # read rather than stored on the cart row, so a quantity change or a
+    # campaign ending is reflected the moment the page refreshes.
+    bonus_input = [
+        {"product_id": it.get("product_id"), "quantity": it["cart_quantity"], "is_set": it.get("is_set", False)}
+        for it in items
+    ]
+    promo = await promotions.get_active()
+    bonuses = promotions.compute_bonuses(promo, bonus_input)
+    misses = promotions.compute_near_misses(promo, bonus_input)
+
+    def _nm(m):
+        name = m.get("trigger_name_ru") if (lang == "ru" and m.get("trigger_name_ru")) else m.get("trigger_name")
+        bname = m.get("bonus_name_ru") if (lang == "ru" and m.get("bonus_name_ru")) else m.get("bonus_name")
+        return {
+            "product_id": m["trigger_product_id"],
+            "name": name,
+            "needed": promotions.fmt_amount(m["needed"]),
+            "needed_unit": promotions.unit_label(m.get("trigger_unit") or "dona", lang),
+            "bonus": f"{promotions.fmt_amount(m['bonus_amount'])} {promotions.unit_label(m['bonus_unit'], lang)} {bname}",
+        }
+
+    return _json({
+        "items": result,
+        "total": total,
+        "bonuses": [
+            {"name": b.get("name_ru") if (lang == "ru" and b.get("name_ru")) else b.get("name"),
+             "amount": promotions.fmt_amount(b["quantity"]),
+             "unit": promotions.unit_label(b["unit"], lang),
+             # Shelf price of the giveaway, struck through client-side so the
+             # bonus reads as money saved rather than a valueless freebie.
+             "value": round(float(b.get("bonus_value") or 0)),
+             "photo_url": f"/api/photo/{b['photo_id']}" if b.get("photo_id") else None}
+            for b in bonuses
+        ],
+        "bonuses_value": round(promotions.bonuses_total_value(bonuses)),
+        "near_misses": [_nm(m) for m in misses[:3]],
+    })
 
 
 async def api_cart_add(request: web.Request):
@@ -601,6 +641,12 @@ async def api_checkout(request: web.Request):
             "unit": item["unit"],
             "seller_id": item.get("seller_id"),
         })
+    # Free aksiya bonuses become 0-so'm lines inside items_data, exactly as on
+    # the bot side — create_order freezes them into orders.items and the
+    # admin's order notification shows them to whoever packs the box. They add
+    # nothing to the totals (price is 0).
+    items_data.extend(await promotions.bonuses_for_items(items_data))
+
     total = sum(item["price"] * item["quantity"] for item in items_data)
     subtotal = total  # product-only, before delivery fee — what Keto earns off of
     if delivery_method == "self":
@@ -1210,6 +1256,29 @@ async def api_photo(request: web.Request):
 
 # ===== HELPERS =====
 
+async def api_promo(request: web.Request):
+    """The running aksiya, or {"active": false}.
+
+    Everything the Mini App needs to render the banner, the aksiya sheet and
+    the 🎁 badges in one round trip — the badge list is sent as trigger_ids so
+    the client can mark cards without a per-product lookup."""
+    lang = request.get("user_lang", "uz")
+    promo = await promotions.get_active()
+    if not promo:
+        return _json({"active": False})
+
+    rules = promo.get("bonuses") or []
+    return _json({
+        "active": True,
+        "name": promotions.promo_name(promo, lang),
+        "conditions": promotions.promo_conditions(promo, lang),
+        "days_left": promotions.days_left(promo),
+        "image_url": promo.get("image_url"),
+        "bonuses": [promotions.rule_line(r, lang) for r in rules],
+        "trigger_ids": sorted({r["trigger_product_id"] for r in rules}),
+    })
+
+
 def _serialize_product(p: dict, lang: str) -> dict:
     # Russian translation when available; Latin → Cyrillic transliteration
     # for "uz_cyr" users; Latin source as-is for everyone else.
@@ -1219,6 +1288,11 @@ def _serialize_product(p: dict, lang: str) -> dict:
     discount_until = p.get("discount_until")
     discount = active_discount(p.get("discount_percent"), discount_until)
     final_price = effective_price(p["price"], discount, discount_until)
+
+    # Aksiya bonus this product triggers, if any — read from the shared
+    # in-process cache (no query, no await) so it costs nothing on the hot
+    # path that serializes 200 products for the home page.
+    bonus = promotions.bonus_hint(promotions.cached_active(), p["id"], lang)
 
     return {
         "id": p["id"],
@@ -1233,6 +1307,7 @@ def _serialize_product(p: dict, lang: str) -> dict:
         "out_of_stock": (p.get("quantity") or 0) <= 0,
         "category": p["category"],
         "photo_url": f"/api/photo/{p['photo_id']}" if p.get("photo_id") else None,
+        "bonus": bonus,
     }
 
 
@@ -1252,6 +1327,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/", index)
     app.router.add_get("/api/categories", api_categories)
+    app.router.add_get("/api/promo", api_promo)
     app.router.add_get("/api/products", api_products)
     app.router.add_get("/api/top", api_top)
     app.router.add_get("/api/leaderboard", api_leaderboard)
