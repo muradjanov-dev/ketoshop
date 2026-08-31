@@ -480,7 +480,7 @@ async def api_cart(request: web.Request):
             "product_id": m["trigger_product_id"],
             "name": name,
             "needed": promotions.fmt_amount(m["needed"]),
-            "needed_unit": promotions.unit_label(m.get("trigger_unit") or "dona", lang),
+            "needed_unit": promotions.trigger_unit_label(m, lang),
             "bonus": f"{promotions.fmt_amount(m['bonus_amount'])} {promotions.unit_label(m['bonus_unit'], lang)} {bname}",
         }
 

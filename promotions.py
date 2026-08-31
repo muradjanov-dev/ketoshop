@@ -42,6 +42,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import database
 from config import ADMIN_IDS
+from locales import get_display_unit
 
 logger = logging.getLogger(__name__)
 
@@ -144,11 +145,21 @@ def days_left(promo: dict) -> int:
     return max(0, int(delta.total_seconds() // 86400) + (1 if delta.total_seconds() % 86400 else 0))
 
 
+def trigger_unit_label(rule: dict, lang: str) -> str:
+    """The trigger side must use the SHOP's display unit, not the raw column.
+    Packaged goods are stored with unit='kg'/'g' but sold and counted as
+    pieces, which is why get_display_unit rewrites those to "dona" everywhere
+    else in the app. Reading the raw unit here produced "2 kg Kokos shakari
+    250gr" for what is really two packets — misleading, in a context where
+    the buyer is counting out what to add to qualify for a gift."""
+    return get_display_unit(rule.get("trigger_unit") or "piece", lang)
+
+
 def rule_line(rule: dict, lang: str) -> str:
     """One bonus rule as a readable line:
-    "1 kg Bodom uni → 100 gr Eritritol sovg'a" """
+    "1 dona Bodom uni → 100 gr Eritritol sovg'a" """
     trig_qty = fmt_amount(rule["trigger_quantity"])
-    trig_unit = unit_label(rule.get("trigger_unit") or "dona", lang)
+    trig_unit = trigger_unit_label(rule, lang)
     trig_name = _product_name(rule, "trigger", lang)
     bonus = f"{fmt_amount(rule['bonus_amount'])} {unit_label(rule['bonus_unit'], lang)}"
     bonus_name = _product_name(rule, "bonus", lang)
@@ -363,7 +374,7 @@ def near_miss_text(misses: list[dict], lang: str, limit: int = 3) -> str:
     for m in misses[:limit]:
         name = m.get("trigger_name_ru") if (lang == "ru" and m.get("trigger_name_ru")) else m.get("trigger_name")
         bonus_name = m.get("bonus_name_ru") if (lang == "ru" and m.get("bonus_name_ru")) else m.get("bonus_name")
-        need = f"{fmt_amount(m['needed'])} {unit_label(m.get('trigger_unit') or 'dona', lang)}"
+        need = f"{fmt_amount(m['needed'])} {trigger_unit_label(m, lang)}"
         bonus = f"{fmt_amount(m['bonus_amount'])} {unit_label(m['bonus_unit'], lang)} {bonus_name}"
         if lang == "ru":
             lines.append(f"   • Ещё {need} «{name}» → {bonus} в подарок!")
