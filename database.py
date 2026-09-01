@@ -778,6 +778,58 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS idx_blogger_earnings_user ON blogger_earnings(user_id)"
         )
 
+        # ===== Kunlik qiziqish eslatmasi (2026-09-01) =====
+        # One nudge a day about the product each person keeps looking at (see
+        # daily_interest.py). Single-row state, same shape as broadcast_state
+        # / personal_reco_state: `cycle` rotates the intro + benefit copy so a
+        # daily message about the same product never reads identically, and
+        # last_sent_date is the once-a-day guard (Tashkent date, so a restart
+        # can't double-send).
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS interest_nudge_state (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                cycle INTEGER NOT NULL DEFAULT 0,
+                last_sent_date DATE,
+                CONSTRAINT interest_nudge_state_single CHECK (id = 1)
+            )
+        """)
+        await conn.execute(
+            "INSERT INTO interest_nudge_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING"
+        )
+
+        # ===== Support yozishmalari (2026-09-01) =====
+        # Free text typed into the bot used to be relayed to the admins and
+        # then vanish — nobody could see afterwards whether anyone answered,
+        # or what they said (owner request: "kim va qanday javob berganini
+        # ko'rib tura olishimiz kerak"). Every inbound message and every
+        # reply sent back through the bot is now recorded here.
+        #
+        # direction: 'in' = buyer -> shop, 'out' = shop -> buyer.
+        # admin_id is who sent an 'out' row; answered_at is stamped on the
+        # buyer's open 'in' rows when a reply finally goes out, which is what
+        # makes "javob kutilmoqda" answerable with one query.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS support_messages (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                direction TEXT NOT NULL,
+                text TEXT NOT NULL,
+                admin_id BIGINT,
+                order_id INTEGER,
+                answered_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_support_messages_user ON support_messages(user_id, created_at DESC)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_support_messages_open "
+            "ON support_messages(created_at DESC) WHERE direction = 'in' AND answered_at IS NULL"
+        )
+
+
 
 async def close_db():
     """Close the connection pool"""
@@ -3870,3 +3922,129 @@ async def get_blogger_summary(blogger_id: int) -> dict:
                      WHERE e.blogger_id = $1 AND NOT e.credited) AS pending
         """, blogger_id)
         return dict(row) if row else {}
+
+
+# ===== KUNLIK QIZIQISH ESLATMASI (2026-09-01) =====
+
+async def get_interest_state() -> dict:
+    """The single daily-interest state row, creating it if missing."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM interest_nudge_state WHERE id = 1")
+        if row is None:
+            await conn.execute("INSERT INTO interest_nudge_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+            row = await conn.fetchrow("SELECT * FROM interest_nudge_state WHERE id = 1")
+        return dict(row)
+
+
+async def set_interest_enabled(enabled: bool) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE interest_nudge_state SET enabled = $1 WHERE id = 1", enabled)
+
+
+async def advance_interest(on_date, cycle: int) -> None:
+    """Claim today and move the copy rotation along — called BEFORE the
+    fan-out, so a crash mid-send can't re-nudge everyone on the next tick."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE interest_nudge_state SET last_sent_date = $1, cycle = $2 WHERE id = 1",
+            on_date, cycle,
+        )
+
+
+async def get_user_ids_with_views(recent_days: int = 30) -> list[int]:
+    """Everyone we know a current interest for: they've opened at least one
+    still-active product in the window. Admin/internal accounts excluded, the
+    same set the activity dashboard leaves out."""
+    excluded = _activity_excluded_ids()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT DISTINCT v.user_id
+              FROM product_views v
+              JOIN products p ON p.id = v.product_id AND p.is_active = 1
+              JOIN users u ON u.user_id = v.user_id
+             WHERE v.user_id IS NOT NULL
+               AND v.user_id <> ALL($1::bigint[])
+               AND v.viewed_at >= NOW() - ($2 || ' days')::interval
+               AND u.user_id NOT IN (SELECT user_id FROM banned_users)
+        """, excluded, str(recent_days))
+        return [int(r["user_id"]) for r in rows]
+
+
+# ===== SUPPORT YOZISHMALARI (2026-09-01) =====
+
+async def log_support_message(user_id: int, direction: str, text: str,
+                               admin_id: int | None = None,
+                               order_id: int | None = None) -> int | None:
+    """Record one side of a support exchange. Best-effort by contract — the
+    callers wrap it, because failing to log must never stop a real message
+    from reaching a buyer."""
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            """INSERT INTO support_messages (user_id, direction, text, admin_id, order_id)
+               VALUES ($1, $2, $3, $4, $5) RETURNING id""",
+            user_id, direction, text[:4000], admin_id, order_id,
+        )
+
+
+async def mark_support_answered(user_id: int) -> int:
+    """Close out every open question from this buyer. Returns how many were
+    waiting — the admin screens use that to show a "javob kutilmoqda" count."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """UPDATE support_messages SET answered_at = CURRENT_TIMESTAMP
+                WHERE user_id = $1 AND direction = 'in' AND answered_at IS NULL
+             RETURNING id""",
+            user_id,
+        )
+        return len(rows)
+
+
+async def get_support_threads(limit: int = 30, only_open: bool = False) -> list[dict]:
+    """One row per buyer who has ever written in: their latest message, how
+    many are still unanswered, and who last replied."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            WITH threads AS (
+                SELECT user_id,
+                       MAX(created_at) AS last_at,
+                       COUNT(*) FILTER (WHERE direction = 'in' AND answered_at IS NULL) AS open_count,
+                       COUNT(*) FILTER (WHERE direction = 'in') AS in_count,
+                       COUNT(*) FILTER (WHERE direction = 'out') AS out_count
+                  FROM support_messages
+                 GROUP BY user_id
+            )
+            SELECT t.*, u.full_name, u.username, u.phone,
+                   (SELECT s.text FROM support_messages s
+                     WHERE s.user_id = t.user_id ORDER BY s.created_at DESC, s.id DESC LIMIT 1) AS last_text,
+                   (SELECT s.direction FROM support_messages s
+                     WHERE s.user_id = t.user_id ORDER BY s.created_at DESC, s.id DESC LIMIT 1) AS last_direction,
+                   (SELECT s.admin_id FROM support_messages s
+                     WHERE s.user_id = t.user_id AND s.direction = 'out'
+                     ORDER BY s.created_at DESC, s.id DESC LIMIT 1) AS last_admin_id
+              FROM threads t
+              LEFT JOIN users u ON u.user_id = t.user_id
+             WHERE ($1::bool IS NOT TRUE OR t.open_count > 0)
+             ORDER BY t.open_count > 0 DESC, t.last_at DESC
+             LIMIT $2
+        """, only_open, limit)
+        return [dict(r) for r in rows]
+
+
+async def get_support_thread(user_id: int, limit: int = 40) -> list[dict]:
+    """One buyer's exchange, oldest first — the reading order of a chat."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT * FROM (
+                   SELECT * FROM support_messages WHERE user_id = $1
+                   ORDER BY created_at DESC, id DESC LIMIT $2
+               ) s ORDER BY created_at, id""",
+            user_id, limit,
+        )
+        return [dict(r) for r in rows]
+
+
+async def count_open_support() -> int:
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT COUNT(*) FROM support_messages WHERE direction = 'in' AND answered_at IS NULL"
+        )

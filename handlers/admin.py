@@ -28,6 +28,7 @@ from database import (
     list_promotions, get_promotion, create_promotion, update_promotion,
     set_promotion_bonuses, start_promotion, stop_promotion,
     search_products, save_web_image,
+    get_support_threads, get_support_thread, count_open_support,
 )
 from locales import (
     get_text, get_order_status, get_unit_name, get_display_unit, get_delivery_method_name,
@@ -3073,3 +3074,161 @@ async def set_photo_doc(message: Message, state: FSMContext, bot: Bot):
 @router.callback_query(F.data == "set_skip_photo", AddSetStates.photo)
 async def set_skip_photo(callback: CallbackQuery, state: FSMContext):
     await _save_set(callback, state, None)
+
+# ═══════════════════ Xabarlar — support yozishmalari ════════════════════════
+# Who wrote in, who answered, and what they said (owner request 2026-09-01).
+# The relay in handlers/support_relay.py records both directions; this reads
+# them back. Two screens: the thread list (open ones first) and one buyer's
+# exchange, with the same "↩️ Javob berish" button the relay message carries,
+# so an admin can answer straight from the history.
+
+_SUPPORT_PAGE = 12
+
+
+def _msg_when(value) -> str:
+    if not value:
+        return "—"
+    return format_local_dt(value, "%d.%m %H:%M")
+
+
+async def _admin_name(admin_id: int | None) -> str:
+    if not admin_id:
+        return "—"
+    user = await get_user(admin_id)
+    if not user:
+        return f"ID {admin_id}"
+    if user.get("username"):
+        return f"@{user['username']}"
+    return user.get("full_name") or f"ID {admin_id}"
+
+
+async def _render_support_list(only_open: bool = False):
+    threads = await get_support_threads(limit=_SUPPORT_PAGE, only_open=only_open)
+    open_total = await count_open_support()
+
+    title = "💬 <b>Botga yozilgan xabarlar</b>"
+    if only_open:
+        title = "⏳ <b>Javob kutayotgan xabarlar</b>"
+    lines = [title, ""]
+    if open_total:
+        lines.append(f"⏳ Javobsiz: <b>{open_total}</b> ta")
+        lines.append("")
+    if not threads:
+        lines.append("Hozircha xabar yo'q." if not only_open else "Javobsiz xabar yo'q — hammasiga javob berilgan. ✅")
+
+    for t in threads:
+        who = t.get("full_name") or f"ID {t['user_id']}"
+        handle = f" @{t['username']}" if t.get("username") else ""
+        mark = "🔴" if t["open_count"] else "✅"
+        snippet = (t.get("last_text") or "").replace("\n", " ")
+        if len(snippet) > 80:
+            snippet = snippet[:80].rstrip() + "…"
+        arrow = "👤" if t.get("last_direction") == "in" else "↩️"
+        lines.append(f"{mark} <b>{html.escape(who)}</b>{html.escape(handle)} · {_msg_when(t['last_at'])}")
+        lines.append(f"   {arrow} {html.escape(snippet)}")
+        if t["open_count"]:
+            lines.append(f"   ⏳ javob kutilmoqda ({t['open_count']} ta)")
+        else:
+            lines.append(f"   ✅ javob bergan: {html.escape(await _admin_name(t.get('last_admin_id')))}")
+
+    rows = [[InlineKeyboardButton(
+        text=f"{'🔴' if t['open_count'] else '💬'} {(t.get('full_name') or str(t['user_id']))[:24]}",
+        callback_data=f"admin:msg:view:{t['user_id']}",
+    )] for t in threads]
+    if only_open:
+        rows.append([InlineKeyboardButton(text="📋 Hammasi", callback_data="admin:msgs")])
+    elif open_total:
+        rows.append([InlineKeyboardButton(text=f"⏳ Javobsizlar ({open_total})", callback_data="admin:msgs:open")])
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_menu:users")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _render_support_thread(user_id: int):
+    messages = await get_support_thread(user_id, limit=30)
+    user = await get_user(user_id)
+    who = (user or {}).get("full_name") or f"ID {user_id}"
+    handle = f" @{user['username']}" if (user or {}).get("username") else ""
+    phone = (user or {}).get("phone")
+
+    lines = [f"💬 <b>{html.escape(who)}</b>{html.escape(handle)}",
+             f"🆔 <code>{user_id}</code>" + (f" · 📞 {html.escape(phone)}" if phone else ""), ""]
+    if not messages:
+        lines.append("Yozishma topilmadi.")
+    for m in messages:
+        body = html.escape((m["text"] or "").strip())
+        if m["direction"] == "in":
+            lines.append(f"👤 <b>Mijoz</b> · {_msg_when(m['created_at'])}")
+            lines.append(f"{body}")
+            if m["answered_at"] is None:
+                lines.append("⏳ <i>javobsiz</i>")
+        else:
+            by = await _admin_name(m.get("admin_id"))
+            order_note = f" · buyurtma #{m['order_id']}" if m.get("order_id") else ""
+            lines.append(f"↩️ <b>{html.escape(by)}</b> · {_msg_when(m['created_at'])}{order_note}")
+            lines.append(f"{body}")
+        lines.append("")
+
+    rows = [
+        [InlineKeyboardButton(text="↩️ Javob berish", callback_data=f"freereply:{user_id}")],
+        [InlineKeyboardButton(text="🔙 Xabarlar", callback_data="admin:msgs")],
+    ]
+    return "\n".join(lines).strip(), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.message(Command("xabarlar"))
+async def cmd_support_messages(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    await state.clear()
+    text, keyboard = await _render_support_list()
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin:msgs")
+async def show_support_messages(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    await state.clear()
+    text, keyboard = await _render_support_list()
+    await _support_show(callback, text, keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:msgs:open")
+async def show_open_support_messages(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    text, keyboard = await _render_support_list(only_open=True)
+    await _support_show(callback, text, keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:msg:view:"))
+async def show_support_thread(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    user_id = int(callback.data.rsplit(":", 1)[1])
+    text, keyboard = await _render_support_thread(user_id)
+    await _support_show(callback, text, keyboard)
+    await callback.answer()
+
+
+async def _support_show(callback: CallbackQuery, text: str, keyboard: InlineKeyboardMarkup) -> None:
+    """A long exchange can outgrow Telegram's 4096-char limit — trim from the
+    top (oldest first) rather than letting the screen fail to render at all."""
+    if len(text) > 4000:
+        text = "…\n" + text[-3900:]
+    if callback.message.photo:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        return
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")

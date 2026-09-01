@@ -171,7 +171,10 @@ PROFILES = [
     {
         "key": "oils",
         "emoji": "🫒",
-        "match": ["yog'", "yog ", "moy", "масло", "oil", "avokado", "zaytun", "olive"],
+        # "saryog"/"sariyog" spelled out because plain "yog" would swallow
+        # "yogurt"; the apostrophe-less spellings are common in the catalog.
+        "match": ["yog'", "yog ", "saryog", "sariyog", "moy", "масло", "oil",
+                  "avokado", "zaytun", "olive"],
         "name": {"uz": "Sog'lom yog'lar", "ru": "Полезные масла"},
         "benefits": [
             {"uz": "Sifatli o'simlik yog'lari — keto ratsionining asosi. Ular yog'da eruvchi vitaminlarni (A, D, E, K) o'zlashtirishga yordam beradi.",
@@ -457,10 +460,22 @@ def _aggregate_products(orders: list[dict]) -> list[tuple[str, float]]:
 
 
 def _profile_for(name: str) -> dict:
-    """Match a product name to a content profile (keyword lookup), else default."""
-    low = name.lower()
+    """Match a product name to a content profile (keyword lookup), else default.
+
+    Some products are keyed into the shop in Cyrillic ("Зайтун ёғи совуқ
+    сиқим"), which used to fall through to the generic profile even though a
+    perfectly good one exists — so a Cyrillic name is also matched in its
+    Latin transliteration (2026-09-01)."""
+    low = (name or "").lower()
+    variants = [low]
+    if re.search(r"[Ѐ-ӿ]", low):
+        try:
+            from translit import cyr_to_lat
+            variants.append(cyr_to_lat(low).lower())
+        except Exception:
+            pass
     for prof in PROFILES:
-        if any(kw in low for kw in prof["match"]):
+        if any(kw in variant for kw in prof["match"] for variant in variants):
             return prof
     return DEFAULT_PROFILE
 
