@@ -25,7 +25,8 @@ Public API:
   compute_bonuses(promo, items)      -> free bonus lines for a cart/order item list
   bonuses_for_items(items)           -> the same, fetching the active campaign for you
   bonus_hint(promo, product_id, lang)-> "🎁 1 kg olsangiz — 100 gr Eritritol sovg'a!"
-  banner(lang) / screen_text(lang)   -> short banner line / full aksiya screen
+  banner(lang) / screen_pages(lang)  -> short banner line / the aksiya screen,
+                                        split into Telegram-sized pages
   to_stock_qty(amount, unit, product_unit) -> display amount -> products.quantity units
   announce(bot, promo)               -> one-time broadcast of a freshly started campaign
   scheduler_loop(bot)                -> closes campaigns out when their window ends
@@ -450,34 +451,62 @@ async def banner(lang: str) -> str:
     return f"🎁 <b>AKSIYA:</b> {promo_name(promo, lang)}{tail}\n\n"
 
 
-async def screen_text(lang: str) -> str | None:
-    """The full aksiya screen: name, remaining days, shartlar, and every bonus
-    rule spelled out. None when no campaign is running."""
+# Telegram rejects a message over 4096 characters outright — and a campaign
+# with dozens of bonus rules blows past that (the 52-rule "Mavlid Aksiyasi"
+# came to 4164, which made the main-menu aksiya button do nothing at all;
+# owner report 2026-09-01). So the screen is built as PAGES the buyer leafs
+# through, never as one oversized message.
+SCREEN_PAGE_LIMIT = 3400   # headroom for HTML entities and the page footer
+
+
+async def screen_pages(lang: str) -> list[str] | None:
+    """The full aksiya screen, split into Telegram-sized pages: name, days
+    left and shartlar open page 1, then every bonus rule in order. None when
+    no campaign is running; otherwise always at least one page."""
     promo = await get_active()
     if not promo:
         return None
+
     left = days_left(promo)
-    parts = [f"🎁 <b>{promo_name(promo, lang)}</b>", ""]
+    header = [f"🎁 <b>{promo_name(promo, lang)}</b>", ""]
     if left:
-        parts.append(("⏳ Aksiyaga {n} kun qoldi" if lang != "ru" else "⏳ До конца акции {n} дн.").format(n=left))
-        parts.append("")
+        header.append(("⏳ Aksiyaga {n} kun qoldi" if lang != "ru" else "⏳ До конца акции {n} дн.").format(n=left))
+        header.append("")
     conditions = promo_conditions(promo, lang)
     if conditions:
-        parts.append("📋 <b>Shartlar:</b>" if lang != "ru" else "📋 <b>Условия:</b>")
-        parts.append(conditions)
-        parts.append("")
+        header.append("📋 <b>Shartlar:</b>" if lang != "ru" else "📋 <b>Условия:</b>")
+        header.append(conditions)
+        header.append("")
+
     rules = promo.get("bonuses") or []
-    if rules:
-        parts.append("🎁 <b>Bonus mahsulotlar:</b>" if lang != "ru" else "🎁 <b>Бонусные товары:</b>")
-        for rule in rules:
-            parts.append(f"   • {rule_line(rule, lang)}")
-        parts.append("")
-        parts.append(
-            "Bonus savatga avtomatik qo'shiladi — hech narsa qilishingiz shart emas."
-            if lang != "ru" else
-            "Бонус добавляется в корзину автоматически — ничего делать не нужно."
-        )
-    return "\n".join(parts).strip()
+    if not rules:
+        return ["\n".join(header).strip()]
+
+    rules_head = "🎁 <b>Bonus mahsulotlar:</b>" if lang != "ru" else "🎁 <b>Бонусные товары:</b>"
+    rules_more = ("🎁 <b>Bonus mahsulotlar</b> (davomi):" if lang != "ru"
+                  else "🎁 <b>Бонусные товары</b> (продолжение):")
+    footer = ("Bonus savatga avtomatik qo'shiladi — hech narsa qilishingiz shart emas."
+              if lang != "ru" else
+              "Бонус добавляется в корзину автоматически — ничего делать не нужно.")
+
+    pages: list[str] = []
+    buf = header + [rules_head]
+    for rule in rules:
+        line = f"   • {rule_line(rule, lang)}"
+        if len("\n".join(buf + [line])) > SCREEN_PAGE_LIMIT:
+            pages.append("\n".join(buf).strip())
+            buf = [rules_more]
+        buf.append(line)
+    buf += ["", footer]
+    pages.append("\n".join(buf).strip())
+    return pages
+
+
+async def screen_text(lang: str) -> str | None:
+    """Every page joined — for callers that have no length limit of their own.
+    Anything going out over Telegram must use screen_pages instead."""
+    pages = await screen_pages(lang)
+    return "\n".join(pages) if pages else None
 
 
 # ───────────────────────────── announcement ─────────────────────────────────

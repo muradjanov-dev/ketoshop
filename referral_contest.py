@@ -204,11 +204,19 @@ async def award_referral(referrer_id: int, referred_id: int, bot: Bot) -> None:
 
 
 async def notify_admins_new_user(bot: Bot, new_user_id: int, username: str | None,
-                                  full_name: str | None, referrer_id: int | None) -> None:
+                                  full_name: str | None, referrer_id: int | None,
+                                  blogger: dict | None = None) -> None:
     """Fired for every brand-new registration, referred or not (owner
-    request 2026-07-30: wants to see who joins and who invited them)."""
+    request 2026-07-30: wants to see who joins and who invited them).
+
+    `blogger` is set when they arrived through a partner blogger's link
+    (bloggers.py) — that's the strongest attribution there is, so it wins
+    over the plain user-to-user referral below."""
     who = _display_name(username, full_name, new_user_id)
-    if referrer_id:
+    if blogger:
+        ref_line = (f"🔗 Taklif qilgan: 📢 <b>{blogger['name']}</b> (bloger)\n"
+                    f"   havola: <code>?start={blogger['code']}</code>")
+    elif referrer_id:
         ref_user = await database.get_user(referrer_id)
         ref_who = _display_name(
             ref_user.get("username") if ref_user else None,
