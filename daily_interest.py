@@ -20,12 +20,13 @@ lashtirgichlar …), rotated by day so the same product doesn't read identically
 two days running.
 
 Where it sits in the day (all Asia/Tashkent):
-    08:00  tips broadcast, every 2 days          (broadcast.py)
+    08:00  tips broadcast, every 2 days           (broadcast.py)
     10:00  personal recommendations, every 4 days (personal_recommend.py)
     12:00  aksiya "bugungi sovg'alar", daily      (promotions.py)
-    18:00  THIS — daily, and it deliberately skips anyone who already got
-           one of the above today, so nobody ever gets more than two pushes
-           in a day.
+    18:00  THIS — daily, unless TWO of the above already went out today.
+           A veto on "anything else went out" would have made it dead code,
+           since the showcase runs every day; the cap is what keeps a buyer
+           from ever seeing more than two pushes in a day.
 
 Public API:
   build_message(product, lang, cycle, promo) -> (text, keyboard) | (None, None)
@@ -190,32 +191,39 @@ async def send_batch(bot: Bot, only_user: int | None = None) -> tuple[int, int, 
     return sent, failed, skipped
 
 
-async def _already_pushed_today(today) -> str | None:
-    """Which other broadcast already reached everyone today, if any — two
-    pushes in one day is what makes people mute a bot, so this one stands
-    down when another has already gone out."""
+MAX_PUSHES_PER_DAY = 2
+
+
+async def _pushes_today(today) -> list[str]:
+    """Which other broadcasts have already reached everyone today.
+
+    The rule this feeds is a CAP, not a veto: the aksiya showcase runs every
+    single day, so standing down whenever anything else had gone out would
+    have kept this nudge permanently dormant (caught on the first deploy).
+    Two pushes in a day is the ceiling — beyond that people mute the bot."""
+    out = []
     try:
         tips = await database.get_broadcast_state()
         last = (tips or {}).get("last_sent_at")
         if last and (last + TZ_OFFSET).date() == today:
-            return "tips"
+            out.append("tips")
     except Exception:
         logger.exception("Could not read broadcast state")
     try:
         reco = await database.get_reco_state()
         last = (reco or {}).get("last_sent_at")
         if last and (last + TZ_OFFSET).date() == today:
-            return "reco"
+            out.append("reco")
     except Exception:
         logger.exception("Could not read reco state")
     try:
         import promotions
         promo = await promotions.get_active()
         if promo and promo.get("last_showcase_date") == today:
-            return "aksiya showcase"
+            out.append("aksiya showcase")
     except Exception:
         logger.exception("Could not read showcase state")
-    return None
+    return out
 
 
 async def _tick(bot: Bot) -> None:
@@ -230,12 +238,12 @@ async def _tick(bot: Bot) -> None:
     if state.get("last_sent_date") == today:
         return
 
-    other = await _already_pushed_today(today)
-    if other:
+    others = await _pushes_today(today)
+    if len(others) >= MAX_PUSHES_PER_DAY:
         # Claim the day anyway, so tomorrow starts clean instead of this
-        # firing the moment the other broadcast's guard stops matching.
+        # firing the moment the other broadcasts' guards stop matching.
         await database.advance_interest(today, int(state.get("cycle") or 0))
-        logger.info("Interest nudge skipped: %s already went out today", other)
+        logger.info("Interest nudge skipped: %s already went out today", ", ".join(others))
         return
 
     # Claim the day BEFORE sending: a crash halfway through a fan-out must
