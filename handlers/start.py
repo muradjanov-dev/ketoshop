@@ -197,9 +197,19 @@ async def _process_new_user(bot, tg_user, referrer_id: int | None,
     except Exception:
         pass
 
+    # Blogger partner link (bloggers.py) — ties this brand-new buyer to the
+    # blogger whose link they came through, for good. Self-guarded, so a
+    # mistyped code just means no attribution, never a broken registration.
+    # Runs BEFORE the notification below, which names whoever brought them in.
+    blogger = None
+    if blogger_code:
+        import bloggers
+        blogger = await bloggers.attach_new_user(blogger_code, tg_user.id, bot)
+
     try:
         await referral_contest.notify_admins_new_user(
             bot, tg_user.id, tg_user.username, tg_user.full_name, valid_referrer,
+            blogger,
         )
     except Exception:
         pass
@@ -209,13 +219,6 @@ async def _process_new_user(bot, tg_user, referrer_id: int | None,
             await referral_contest.award_referral(valid_referrer, tg_user.id, bot)
         except Exception:
             pass
-
-    # Blogger partner link (bloggers.py) — ties this brand-new buyer to the
-    # blogger whose link they came through, for good. Self-guarded, so a
-    # mistyped code just means no attribution, never a broken registration.
-    if blogger_code:
-        import bloggers
-        await bloggers.attach_new_user(blogger_code, tg_user.id, bot)
 
 
 async def _resend_menu_keyboard(bot, user_id: int, lang: str) -> None:
@@ -460,33 +463,43 @@ async def show_help(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == "promo")
-async def show_promo(callback: CallbackQuery):
-    """The "🎁 <aksiya nomi>" main-menu entry — the campaign's full terms and
-    every bonus rule spelled out, with its image when the admin uploaded one.
+def _promo_keyboard(lang: str, page: int, total_pages: int) -> InlineKeyboardMarkup:
+    """Catalog + back, plus a page strip when the campaign's rules don't fit
+    in one Telegram message (see promotions.screen_pages)."""
+    rows = []
+    if total_pages > 1:
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"promo:p:{page - 1}"))
+        nav.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton(text="➡️", callback_data=f"promo:p:{page + 1}"))
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(text=get_text("btn_catalog", lang), callback_data="catalog")])
+    rows.append([InlineKeyboardButton(text=get_text("btn_back_to_menu", lang), callback_data="main_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
-    The button only appears while a campaign is running (see
-    keyboards.main_menu_keyboard), but a stale menu from before it ended can
-    still be tapped, so the "no aksiya" fallback is a real path, not dead code."""
+
+async def _render_promo(callback: CallbackQuery, page: int) -> None:
+    """One page of the aksiya screen. The campaign image rides along with the
+    first page only — it belongs to the campaign, not to every page."""
     import promotions
     from config import WEBAPP_URL
 
     lang = await get_user_language(callback.from_user.id)
-    text = await promotions.screen_text(lang)
+    pages = await promotions.screen_pages(lang)
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=get_text("btn_catalog", lang), callback_data="catalog"),
-    ], [
-        InlineKeyboardButton(text=get_text("btn_back_to_menu", lang), callback_data="main_menu"),
-    ]])
-
-    if not text:
-        await _send_or_edit(callback, get_text("promo_none", lang), keyboard)
+    if not pages:
+        await _send_or_edit(callback, get_text("promo_none", lang), _promo_keyboard(lang, 0, 1))
         await callback.answer()
         return
 
+    page = max(0, min(page, len(pages) - 1))
+    text = pages[page]
+    keyboard = _promo_keyboard(lang, page, len(pages))
+
     promo = await promotions.get_active()
-    image_url = (promo or {}).get("image_url")
+    image_url = (promo or {}).get("image_url") if page == 0 else None
     if image_url and not image_url.startswith("http") and WEBAPP_URL:
         image_url = WEBAPP_URL.rstrip("/") + "/" + image_url.lstrip("/")
 
@@ -509,6 +522,27 @@ async def show_promo(callback: CallbackQuery):
     else:
         await _send_or_edit(callback, text, keyboard)
     await callback.answer()
+
+
+@router.callback_query(F.data == "promo")
+async def show_promo(callback: CallbackQuery):
+    """The "🎁 <aksiya nomi>" main-menu entry — the campaign's full terms and
+    every bonus rule spelled out, with its image when the admin uploaded one.
+
+    The button only appears while a campaign is running (see
+    keyboards.main_menu_keyboard), but a stale menu from before it ended can
+    still be tapped, so the "no aksiya" fallback is a real path, not dead code."""
+    await _render_promo(callback, 0)
+
+
+@router.callback_query(F.data.startswith("promo:p:"))
+async def show_promo_page(callback: CallbackQuery):
+    """⬅️/➡️ through a campaign whose bonus list is too long for one message."""
+    try:
+        page = int(callback.data.rsplit(":", 1)[1])
+    except ValueError:
+        page = 0
+    await _render_promo(callback, page)
 
 
 @router.callback_query(F.data == "noop")

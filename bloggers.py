@@ -166,26 +166,29 @@ def parse_payload(payload: str | None) -> str | None:
 
 # ─────────────────────────── joining & payout ───────────────────────────────
 
-async def attach_new_user(code: str, user_id: int, bot: Bot | None = None) -> bool:
-    """Tie a brand-new buyer to the blogger whose link they used. Call only
-    for users who were just created (handlers/start.py::ensure_registered) —
-    someone who was already a Ketoshop customer isn't a blogger's acquisition.
-    Best-effort: never raises."""
+async def attach_new_user(code: str, user_id: int, bot: Bot | None = None) -> dict | None:
+    """Tie a brand-new buyer to the blogger whose link they used, and return
+    that blogger (so the caller can name them in the admins' "yangi
+    foydalanuvchi" notice). None when nobody was credited.
+
+    Call only for users who were just created (handlers/start.py::
+    ensure_registered) — someone who was already a Ketoshop customer isn't a
+    blogger's acquisition. Best-effort: never raises."""
     try:
         blogger = await database.get_blogger_by_code(code)
         if not blogger or not blogger["active"]:
-            return False
+            return None
         if blogger.get("user_id") == user_id:
-            return False  # the blogger opened their own link
+            return None  # the blogger opened their own link
         if user_id in ADMIN_IDS or user_id in database.LEADERBOARD_EXCLUDED_USER_IDS:
-            return False
-        recorded = await database.record_blogger_referral(blogger["id"], user_id)
-        if recorded:
-            logger.info("Blogger %s (%s) referred user %s", blogger["id"], blogger["code"], user_id)
-        return recorded
+            return None
+        if not await database.record_blogger_referral(blogger["id"], user_id):
+            return None
+        logger.info("Blogger %s (%s) referred user %s", blogger["id"], blogger["code"], user_id)
+        return blogger
     except Exception:
         logger.exception("attach_new_user failed (code=%s, user=%s)", code, user_id)
-        return False
+        return None
 
 
 def _is_eligible_order(order: dict) -> bool:
