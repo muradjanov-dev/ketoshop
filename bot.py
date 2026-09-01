@@ -33,6 +33,7 @@ from handlers.admin import router as admin_router
 from handlers.broadcast_admin import router as broadcast_admin_router
 from handlers.support_relay import router as support_relay_router
 from handlers.courier import router as courier_router
+from bloggers import router as bloggers_router
 from meta_leads import router as meta_leads_router
 from meta_ads import router as meta_ads_router
 
@@ -162,6 +163,8 @@ async def main():
     dp.include_router(seller_router)
     dp.include_router(admin_router)
     dp.include_router(courier_router)
+    # Bloger kabineti — /bloger and the partner's own stats screens.
+    dp.include_router(bloggers_router)
     # Catch-all for free text that no state/handler above claimed — must stay
     # last so it never steals a message a real flow was waiting on.
     dp.include_router(support_relay_router)

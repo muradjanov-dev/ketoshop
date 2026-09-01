@@ -1389,6 +1389,13 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
             from gamification import award_keto_for_order
             await award_keto_for_order(order, bot)
 
+            # Bloger keshbegi — if this buyer arrived through a blogger's
+            # partner link, that blogger gets their cut of this order's
+            # profit (see bloggers.py). Idempotent and self-guarded, same as
+            # the Keto award above.
+            import bloggers
+            await bloggers.award_for_order(order, bot)
+
     msg_key = {
         "confirm": "order_accepted",
         "ship": "order_marked_shipped",

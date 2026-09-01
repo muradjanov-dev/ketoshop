@@ -230,6 +230,7 @@
     <button class="tab" data-view="sets">🎁 To'plamlar (Set)</button>
     <button class="tab" data-view="promos">🎁 Aksiya / Bonus</button>
     <button class="tab" data-view="keto">🥑 Keto</button>
+    <button class="tab" data-view="bloggers">📢 Blogerlar</button>
     <button class="tab" data-view="reklama">📣 Reklama</button>
     <button class="tab" data-view="expenses">📉 Chiqimlar</button>
   </div>
@@ -352,6 +353,87 @@
         <tbody id="ketoRows"></tbody>
       </table>
       <div class="empty" id="ketoEmpty" style="display:none">Hozircha hech kimda Keto yo'q</div>
+    </div>
+  </section>
+
+  <!-- ===== BLOGERLAR VIEW ===== -->
+  <section class="view" id="view-bloggers">
+    <div id="blogListWrap">
+      <div class="toolbar">
+        <span class="count-pill" id="blogCount"></span>
+        <div class="spacer" style="margin-left:auto"></div>
+        <button class="btn btn-p" id="newBlogBtn">＋ Yangi bloger</button>
+      </div>
+      <p class="hint" style="margin:-6px 0 16px">
+        Har bir blogerga o'z ismi bilan shaxsiy havola beriladi — masalan
+        <code>https://t.me/ketoshopbot?start=aziza</code>. Shu havola orqali botga birinchi marta
+        kirgan mijoz o'sha blogerga biriktiriladi. Mijozning dastlabki <b>10 ta yetkazilgan</b>
+        xarididan olingan <b>foydaning 10%</b> blogerning keshbek balansiga tushadi
+        (foizni va buyurtmalar sonini har bir bloger uchun alohida o'zgartirsa bo'ladi).
+        Bloger bu pulni Ketoshopdan xarid qilishda ishlatadi. Telegram ID kiritilsa,
+        bloger o'z kabinetini botda ko'ra boshlaydi.
+      </p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Bloger</th><th>Havola</th><th>Telegram</th>
+            <th style="text-align:right">Mijozlar</th>
+            <th style="text-align:right">Buyurtmalar</th>
+            <th style="text-align:right">Savdo</th>
+            <th style="text-align:right">Keshbek</th>
+            <th style="text-align:right">Balans</th>
+            <th></th>
+          </tr></thead>
+          <tbody id="blogRows"></tbody>
+        </table>
+        <div class="empty" id="blogEmpty" style="display:none">
+          Hozircha bloger yo'q. "＋ Yangi bloger" bosing — ism yozsangiz, havola avtomatik yasaladi.
+        </div>
+      </div>
+    </div>
+
+    <div id="blogDetail" style="display:none">
+      <div class="toolbar">
+        <button class="btn btn-o btn-sm" id="blogBackBtn">← Blogerlar ro'yxati</button>
+        <div class="spacer" style="margin-left:auto"></div>
+        <button class="btn btn-o btn-sm" id="blogDetailEditBtn">✏️ Tahrirlash</button>
+      </div>
+      <h3 style="font-size:18px;margin-bottom:4px" id="blogDetailName"></h3>
+      <div style="font-size:13px;color:var(--ink-2);margin-bottom:14px" id="blogDetailLink"></div>
+      <div class="kpi-grid" id="blogDetailKpi"></div>
+
+      <h3 style="margin:22px 0 10px;font-size:15px">👥 Taklif qilingan mijozlar</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Mijoz</th><th>Telefon</th><th>Qo'shilgan</th>
+            <th style="text-align:right">Buyurtmalar</th>
+            <th style="text-align:right">Yetkazilgan</th>
+            <th style="text-align:right">Xarid summasi</th>
+            <th style="text-align:right">Keshbek</th>
+          </tr></thead>
+          <tbody id="blogBuyerRows"></tbody>
+        </table>
+        <div class="empty" id="blogBuyerEmpty" style="display:none">Hozircha bu havola orqali hech kim qo'shilmagan</div>
+      </div>
+
+      <h3 style="margin:22px 0 10px;font-size:15px">🧾 Mijozlarning buyurtmalari</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>№</th><th>Sana</th><th>Mijoz</th>
+            <th style="text-align:right">Summa</th><th>Holat</th>
+            <th style="text-align:right">Foyda</th>
+            <th style="text-align:right">Blogerga keshbek</th>
+          </tr></thead>
+          <tbody id="blogOrderRows"></tbody>
+        </table>
+        <div class="empty" id="blogOrderEmpty" style="display:none">Hozircha buyurtma yo'q</div>
+      </div>
+      <p style="font-size:12.5px;color:var(--ink-3);margin-top:10px">
+        Keshbek faqat <b>yetkazilgan</b> buyurtmalardan va faqat har bir mijozning belgilangan
+        birinchi N ta buyurtmasidan hisoblanadi. Foyda = mahsulot narxi − tannarxi.
+      </p>
     </div>
   </section>
 
@@ -584,6 +666,36 @@
   </form>
 </div>
 
+<!-- ===== BLOGER MODAL ===== -->
+<div class="modal-bg" id="blogModal">
+  <form class="modal" id="blogForm">
+    <h2 id="blogModalTitle">Yangi bloger</h2>
+    <p class="hint">Ismni yozing — havola shu ismdan avtomatik yasaladi. Telegram ID ni keyinroq ham kiritish mumkin:
+      shu paytgacha yig'ilgan keshbek ID kiritilgan zahoti balansiga tushadi.</p>
+    <div class="form-grid">
+      <div class="full"><label>Bloger ismi *</label>
+        <input name="name" id="blogName" required maxlength="120" placeholder="Masalan: Aziza Keto"></div>
+      <div class="full"><label>Havola nomi (lotin harflari)</label>
+        <input name="code" id="blogCode" maxlength="48" placeholder="aziza_keto">
+        <div class="hint" id="blogLinkPreview" style="margin-top:4px"></div></div>
+      <div><label>Telegram ID (ixtiyoriy)</label>
+        <input name="user_id" id="blogUserId" inputmode="numeric" placeholder="Masalan: 123456789"></div>
+      <div><label>Aloqa (@username / tel)</label>
+        <input name="contact" id="blogContact" maxlength="120" placeholder="@aziza"></div>
+      <div><label>Foyda ulushi (%) *</label>
+        <input name="percent" id="blogPercent" type="number" min="0.1" max="100" step="0.1" value="10" required></div>
+      <div><label>Har bir mijozdan necha buyurtma *</label>
+        <input name="max_orders" id="blogMaxOrders" type="number" min="1" step="1" value="10" required></div>
+      <div class="full"><label>Izoh</label>
+        <textarea name="note" id="blogNote" rows="2" maxlength="500" placeholder="Masalan: Instagram 45k obunachi, shartnoma 01.09"></textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-o" data-close>Bekor qilish</button>
+      <button type="submit" class="btn btn-p" id="blogSaveBtn">Saqlash</button>
+    </div>
+  </form>
+</div>
+
 <div class="toast" id="toast"></div>
 <div class="chart-tip" id="chartTip"></div>
 
@@ -592,6 +704,7 @@
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const fmt=n=>Math.round(+n).toLocaleString('ru-RU').replace(/,/g,' ')+" so'm";
 let PRODUCTS=[], SETS=[], CATEGORIES=[], PROMOS=[], editingProdId=null, editingSetId=null, editingPromoId=null;
+let BOT_USERNAME='ketoshopbot';   // overwritten by /admin/api/session
 
 // Categories used to be a fixed client-side list; now admin-added ones come
 // from /admin/api/session (see database.categories), so the label map is
@@ -659,10 +772,11 @@ $('#logoutBtn').addEventListener('click',async()=>{await api('/admin/api/logout'
 async function boot(){
   const s=await api('/admin/api/session');
   CATEGORIES=s.categories||[];
+  BOT_USERNAME=s.bot_username||BOT_USERNAME;
   CAT_MAP={};CATEGORIES.forEach(c=>CAT_MAP[c.key]=c.name_uz);
   renderCatOptions();
   lastCatValue=CATEGORIES[0]?.key||null;
-  showShell();await Promise.all([loadDashboard(),loadProducts(),loadSets(),loadPromos(),loadKeto()]);
+  showShell();await Promise.all([loadDashboard(),loadProducts(),loadSets(),loadPromos(),loadKeto(),loadBloggers()]);
 }
 
 /* ===== dashboard ===== */
@@ -800,7 +914,7 @@ $('#dashCustomDateBtn').addEventListener('click', () => {
 });
 
 /* ===== tabs ===== */
-const VIEWS=['dashboard','products','sets','promos','keto','reklama','expenses'];
+const VIEWS=['dashboard','products','sets','promos','keto','bloggers','reklama','expenses'];
 function switchView(v){
   if(!VIEWS.includes(v))v='dashboard';
   localStorage.setItem('ketoshop_admin_view',v);
@@ -811,6 +925,7 @@ function switchView(v){
   if(v==='sets')loadSets();
   if(v==='promos')loadPromos();
   if(v==='keto')loadKeto();
+  if(v==='bloggers')loadBloggers();
   if(v==='reklama')loadAds();
   if(v==='expenses')loadExpenses();
 }
@@ -1424,6 +1539,176 @@ $('#expForm').addEventListener('submit', async e => {
     btn.disabled=false;
   }
 });
+
+/* ===== blogerlar =====
+   Hamkor blogerlar: shaxsiy havola -> taklif qilingan mijozlar -> har bir
+   yetkazilgan buyurtma foydasining N% blogerning keshbek balansiga. Server
+   tomoni: admin_web.py (/admin/api/bloggers*), qoidalar: bloggers.py. */
+let BLOGGERS=[], editingBlogId=null, blogDetailId=null;
+const ORDER_STATUS_UZ={pending:'⏳ Yangi',confirmed:'✅ Tasdiqlangan',shipped:'\U0001F69A Yo‘lda',
+                       delivered:'\U0001F4E6 Yetkazilgan',cancelled:'❌ Bekor qilingan'};
+const dshort=d=>d?new Date(d).toLocaleDateString('ru-RU'):'—';
+
+async function loadBloggers(){
+  const d=await api('/admin/api/bloggers');BLOGGERS=d.bloggers||[];renderBloggers();
+  if(blogDetailId)await openBlogDetail(blogDetailId);
+}
+
+function renderBloggers(){
+  $('#blogCount').textContent=BLOGGERS.length+' ta bloger';
+  $('#blogEmpty').style.display=BLOGGERS.length?'none':'block';
+  $('#blogRows').innerHTML=BLOGGERS.map(b=>{
+    const tg=b.user_id
+      ? `<div>${esc(b.tg_username?'@'+b.tg_username:(b.tg_name||''))}<div style="font-size:11.5px;color:var(--ink-3)">${b.user_id}</div></div>`
+      : `<span class="pill off">ID kiritilmagan</span>`;
+    const pending=b.pending?`<div style="font-size:11.5px;color:var(--ink-3)">kutilmoqda: ${fmt(b.pending)}</div>`:'';
+    return `<tr>
+      <td><div style="font-weight:700">${esc(b.name)}</div>
+          <div style="font-size:11.5px;color:var(--ink-3)">${b.active?'\U0001F7E2 faol':'⚪ to‘xtatilgan'}${b.contact?' · '+esc(b.contact):''}</div></td>
+      <td><button class="btn btn-o btn-sm" onclick="copyBlogLink('${esc(b.link)}')" title="Nusxalash">\U0001F517 ${esc(b.code)}</button></td>
+      <td>${tg}</td>
+      <td class="tnum" style="text-align:right">${b.referred_count}</td>
+      <td class="tnum" style="text-align:right">${b.orders_count}</td>
+      <td class="tnum" style="text-align:right">${fmt(b.revenue)}</td>
+      <td class="tnum" style="text-align:right;font-weight:700">${fmt(b.earned)}${pending}</td>
+      <td class="tnum" style="text-align:right">${fmt(b.balance)}</td>
+      <td><div class="row-actions">
+        <button class="btn btn-o btn-sm" onclick="openBlogDetail(${b.id})">\U0001F4CA Batafsil</button>
+        <button class="btn btn-o btn-sm" onclick="openBlogModal(${b.id})">✏️</button>
+        <button class="btn btn-o btn-sm" onclick="toggleBlogActive(${b.id})">${b.active?'⏹':'▶️'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteBlogger(${b.id})">\U0001F5D1</button>
+      </div></td></tr>`;
+  }).join('');
+}
+
+window.copyBlogLink=function(link){
+  navigator.clipboard.writeText(link).then(
+    ()=>toast('\U0001F517 Havola nusxalandi: '+link),
+    ()=>toast(link));
+};
+
+/* live "mana shunday havola bo'ladi" preview while typing the name */
+function blogPreview(){
+  const raw=($('#blogCode').value||$('#blogName').value||'').toLowerCase();
+  const slug=raw.replace(/o'|g'|‘|’|'/g,m=>(m==="o'"?'o':m==="g'"?'g':''))
+                .replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,48);
+  $('#blogLinkPreview').innerHTML=slug
+    ? 'Havola: <code>https://t.me/'+esc(BOT_USERNAME)+'?start='+esc(slug)+'</code>'
+    : 'Ism yozilganda havola shu yerda ko‘rinadi.';
+}
+$('#blogName').addEventListener('input',blogPreview);
+$('#blogCode').addEventListener('input',blogPreview);
+
+window.openBlogModal=function(id){
+  editingBlogId=id||null;
+  const f=$('#blogForm');f.reset();
+  $('#blogModalTitle').textContent=id?'Blogerni tahrirlash':'Yangi bloger';
+  if(id){
+    const b=BLOGGERS.find(x=>x.id===id);if(!b)return;
+    f.name.value=b.name||'';f.code.value=b.code||'';f.user_id.value=b.user_id||'';
+    f.contact.value=b.contact||'';f.percent.value=b.percent;f.max_orders.value=b.max_orders;
+    f.note.value=b.note||'';
+  }
+  blogPreview();
+  $('#blogModal').classList.add('open');
+};
+$('#newBlogBtn').addEventListener('click',()=>openBlogModal(null));
+
+$('#blogForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const f=e.target,btn=$('#blogSaveBtn');btn.disabled=true;
+  const body={name:f.name.value,code:f.code.value||null,user_id:f.user_id.value.trim()||null,
+              contact:f.contact.value,percent:f.percent.value,max_orders:f.max_orders.value,
+              note:f.note.value};
+  if(!body.code)delete body.code;   // let the server slug it from the name
+  try{
+    if(editingBlogId){
+      await api('/admin/api/bloggers/'+editingBlogId,{method:'POST',body:JSON.stringify(body)});
+      toast('✅ Saqlandi');
+    }else{
+      const r=await api('/admin/api/bloggers',{method:'POST',body:JSON.stringify(body)});
+      toast('✅ Bloger qo‘shildi — havola: '+r.link);
+    }
+    closeModals();await loadBloggers();
+  }catch(err){toast('⚠️ '+err.message);}
+  finally{btn.disabled=false;}
+});
+
+window.toggleBlogActive=async function(id){
+  const b=BLOGGERS.find(x=>x.id===id);if(!b)return;
+  if(b.active&&!confirm(b.name+' — to‘xtatilsinmi? Havolasi ishlashda davom etadi, lekin yangi mijoz biriktirilmaydi va keshbek hisoblanmaydi.'))return;
+  try{
+    await api('/admin/api/bloggers/'+id,{method:'POST',body:JSON.stringify({active:!b.active})});
+    await loadBloggers();toast(b.active?'⏹ To‘xtatildi':'▶️ Yoqildi');
+  }catch(err){toast('⚠️ '+err.message);}
+};
+
+window.deleteBlogger=async function(id){
+  const b=BLOGGERS.find(x=>x.id===id);if(!b)return;
+  if(!confirm(b.name+' butunlay o‘chirilsinmi? Taklif qilgan mijozlari va keshbek tarixi ham o‘chadi. (Allaqachon to‘langan keshbek balansda qoladi.)'))return;
+  try{
+    await api('/admin/api/bloggers/'+id+'/delete',{method:'POST'});
+    if(blogDetailId===id)closeBlogDetail();
+    await loadBloggers();toast('\U0001F5D1 O‘chirildi');
+  }catch(err){toast('⚠️ '+err.message);}
+};
+
+function blogKpi(lab,val,sub){
+  return `<div class="kpi-card"><div class="lab">${esc(lab)}</div><div class="val tnum">${esc(val)}</div><div class="sub">${esc(sub)}</div></div>`;
+}
+
+window.openBlogDetail=async function(id){
+  let d;
+  try{d=await api('/admin/api/bloggers/'+id+'/detail');}
+  catch(err){toast('⚠️ '+err.message);return;}
+  blogDetailId=id;
+  const b=d.blogger,s=d.summary||{};
+  $('#blogListWrap').style.display='none';
+  $('#blogDetail').style.display='block';
+  $('#blogDetailName').textContent='\U0001F4E2 '+b.name;
+  $('#blogDetailLink').innerHTML='\U0001F517 <code>'+esc(b.link)+'</code> · '
+    +(b.user_id?('Telegram ID: '+b.user_id):'<b>Telegram ID kiritilmagan</b> — keshbek yig‘ilib turadi')
+    +' · '+(+b.percent)+'% · har bir mijozdan '+b.max_orders+' ta buyurtma';
+  $('#blogDetailKpi').innerHTML=[
+    blogKpi('Taklif qilgan mijozlar',(s.referred_count||0)+' ta','Havola orqali qo‘shilganlar'),
+    blogKpi('Buyurtmalar',(s.orders_count||0)+' ta','Yetkazilgan: '+(s.delivered_count||0)),
+    blogKpi('Savdo summasi',fmt(s.revenue||0),'Yetkazilgan buyurtmalar'),
+    blogKpi('Jami keshbek',fmt(s.earned||0),(s.pending?'Kutilmoqda: '+fmt(s.pending):'To‘liq hisoblangan')),
+  ].join('');
+
+  const buyers=d.buyers||[];
+  $('#blogBuyerEmpty').style.display=buyers.length?'none':'block';
+  $('#blogBuyerRows').innerHTML=buyers.map(u=>`<tr>
+      <td><div style="font-weight:600">${esc(u.full_name||('ID '+u.user_id))}</div>
+          <div style="font-size:11.5px;color:var(--ink-3)">${u.username?'@'+esc(u.username):''} ${u.user_id}</div></td>
+      <td>${esc(u.phone||'—')}</td>
+      <td>${dshort(u.joined_at)}</td>
+      <td class="tnum" style="text-align:right">${u.orders_count}</td>
+      <td class="tnum" style="text-align:right">${u.delivered_count}</td>
+      <td class="tnum" style="text-align:right">${fmt(u.spent)}</td>
+      <td class="tnum" style="text-align:right;font-weight:700">${fmt(u.earned)}</td>
+    </tr>`).join('');
+
+  const orders=d.orders||[];
+  $('#blogOrderEmpty').style.display=orders.length?'none':'block';
+  $('#blogOrderRows').innerHTML=orders.map(o=>`<tr>
+      <td>#${o.id}</td>
+      <td>${dshort(o.created_at)}</td>
+      <td>${esc(o.full_name||('ID '+o.user_id))}</td>
+      <td class="tnum" style="text-align:right">${fmt(o.total)}</td>
+      <td>${ORDER_STATUS_UZ[o.status]||esc(o.status)}</td>
+      <td class="tnum" style="text-align:right;color:var(--ink-2)">${o.profit!=null?fmt(o.profit):'—'}</td>
+      <td class="tnum" style="text-align:right;font-weight:700">${o.earned?fmt(o.earned):'—'}</td>
+    </tr>`).join('');
+};
+
+function closeBlogDetail(){
+  blogDetailId=null;
+  $('#blogDetail').style.display='none';
+  $('#blogListWrap').style.display='block';
+}
+$('#blogBackBtn').addEventListener('click',closeBlogDetail);
+$('#blogDetailEditBtn').addEventListener('click',()=>{if(blogDetailId)openBlogModal(blogDetailId);});
 
 /* ===== modals ===== */
 function closeModals(){$$('.modal-bg').forEach(m=>m.classList.remove('open'));}

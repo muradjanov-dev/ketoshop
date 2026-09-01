@@ -665,7 +665,7 @@ async def api_checkout(request: web.Request):
     # state: re-derive whether this is even allowed server-side, and clamp
     # to the buyer's *current* balance regardless of what they requested.
     keto_redeem = 0
-    if await gamification.is_redemption_enabled():
+    if await gamification.is_redemption_enabled(user_id):
         try:
             requested = int(body.get("keto_redeem") or 0)
         except (TypeError, ValueError):
@@ -1195,7 +1195,7 @@ async def api_keto_status(request: web.Request):
     toggle, off by default) + this buyer's spendable balance — the checkout
     page uses this to decide whether to show the redemption option at all."""
     user_id = request["user_id"]
-    enabled = await gamification.is_redemption_enabled()
+    enabled = await gamification.is_redemption_enabled(user_id)
     balance = 0
     if enabled:
         buyer = await get_user(user_id)

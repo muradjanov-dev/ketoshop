@@ -93,10 +93,15 @@ async def cmd_menu(message: Message, state: FSMContext):
 
 @router.message(CommandStart(deep_link=True))
 async def cmd_start_deep_link(message: Message, command: CommandObject):
-    """/start ref<user_id> — someone opened a Keto musobaqasi share link."""
+    """A /start carrying a payload — either a blogger's personal link
+    (?start=<bloger nomi>, see bloggers.py) or the older Keto musobaqasi
+    share link (?start=ref<user_id>). The two payload shapes can't collide:
+    bloggers.parse_payload refuses anything that looks like 'ref<digits>'."""
     import referral_contest
+    import bloggers
     referrer_id = referral_contest.parse_ref_payload(command.args)
-    await _handle_start(message, referrer_id)
+    blogger_code = bloggers.parse_payload(command.args)
+    await _handle_start(message, referrer_id, blogger_code)
 
 
 @router.message(CommandStart())
@@ -105,14 +110,15 @@ async def cmd_start(message: Message):
     await _handle_start(message, None)
 
 
-async def _handle_start(message: Message, referrer_id: int | None):
+async def _handle_start(message: Message, referrer_id: int | None,
+                        blogger_code: str | None = None):
     # Check if user is banned
     if await is_user_banned(message.from_user.id):
         lang = await get_user_language(message.from_user.id)
         await message.answer(get_text("you_are_banned", lang))
         return
 
-    is_new = await ensure_registered(message.bot, message.from_user, referrer_id)
+    is_new = await ensure_registered(message.bot, message.from_user, referrer_id, blogger_code)
     # Returning users get the persistent keyboard here — many have been using
     # the bot since before it existed and have nothing under their input box.
     # A brand-new user is skipped on purpose: they're about to pick a language
@@ -127,7 +133,8 @@ async def _handle_start(message: Message, referrer_id: int | None):
     )
 
 
-async def ensure_registered(bot, tg_user, referrer_id: int | None = None) -> bool:
+async def ensure_registered(bot, tg_user, referrer_id: int | None = None,
+                             blogger_code: str | None = None) -> bool:
     """Create the user row if this is their very first contact with the bot,
     wiring up referral crediting + the owner's "who joined / who invited
     them" admin notification. Returns True if a new row was created.
@@ -146,11 +153,12 @@ async def ensure_registered(bot, tg_user, referrer_id: int | None = None) -> boo
         full_name=tg_user.full_name,
         language="uz",
     )
-    await _process_new_user(bot, tg_user, referrer_id)
+    await _process_new_user(bot, tg_user, referrer_id, blogger_code)
     return True
 
 
-async def _process_new_user(bot, tg_user, referrer_id: int | None) -> None:
+async def _process_new_user(bot, tg_user, referrer_id: int | None,
+                             blogger_code: str | None = None) -> None:
     """Best-effort: referral crediting + the owner's "who joined / who
     invited them" notification must never block registration itself."""
     import referral_contest
@@ -175,6 +183,13 @@ async def _process_new_user(bot, tg_user, referrer_id: int | None) -> None:
             await referral_contest.award_referral(valid_referrer, tg_user.id, bot)
         except Exception:
             pass
+
+    # Blogger partner link (bloggers.py) — ties this brand-new buyer to the
+    # blogger whose link they came through, for good. Self-guarded, so a
+    # mistyped code just means no attribution, never a broken registration.
+    if blogger_code:
+        import bloggers
+        await bloggers.attach_new_user(blogger_code, tg_user.id, bot)
 
 
 async def _resend_menu_keyboard(bot, user_id: int, lang: str) -> None:
@@ -337,11 +352,19 @@ async def _render_kabinetim(callback: CallbackQuery, user_id: int, lang: str, us
         unlocked=profile["achievements_unlocked"],
         total=profile["achievements_total"],
     )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    rows = [
         [InlineKeyboardButton(text=get_text("btn_my_orders", lang), callback_data="my_orders")],
         [InlineKeyboardButton(text=get_text("btn_achievements", lang), callback_data="kabinetim:achievements")],
-        [InlineKeyboardButton(text=get_text("btn_back_to_menu", lang), callback_data="main_menu")],
-    ])
+    ]
+    # Bloger kabineti — shown only to registered partner bloggers, whose own
+    # link/clients/earnings live one tap from here (see bloggers.py). This is
+    # the section's only entry point besides the /bloger command, which is why
+    # it hangs off Kabinetim (async) rather than the synchronous main menu.
+    import bloggers
+    if await bloggers.has_cabinet(user_id):
+        rows.append(bloggers.cabinet_row(lang))
+    rows.append([InlineKeyboardButton(text=get_text("btn_back_to_menu", lang), callback_data="main_menu")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
     await _send_or_edit(callback, text, keyboard)
     await callback.answer()
 

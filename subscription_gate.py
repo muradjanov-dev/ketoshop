@@ -32,10 +32,11 @@ _cache: dict[int, tuple[bool, float]] = {}
 
 # A not-yet-subscribed user's very first /start never reaches handlers/
 # start.py — this middleware returns before the router sees it — so a
-# referral deep-link payload (/start ref<id>) would otherwise be lost the
-# moment someone shares their Keto musobaqasi link with a new user who
-# isn't already in the channel (the common case). Stash it here and replay
-# it once they confirm subscription (see CHECK_CALLBACK branch below).
+# deep-link payload (/start ref<id>, or a blogger's /start <bloger nomi>)
+# would otherwise be lost the moment someone shares their link with a new
+# user who isn't already in the channel (the common case — and for a blogger
+# link it is the ONLY case). Stash it here and replay it once they confirm
+# subscription (see CHECK_CALLBACK branch below).
 # In-process only, same durability tradeoff as the membership _cache above.
 _pending_start_payload: dict[int, str] = {}
 
@@ -116,10 +117,13 @@ class SubscriptionGateMiddleware(BaseMiddleware):
                 # payload was never processed) — see _pending_start_payload.
                 try:
                     import referral_contest
+                    import bloggers
                     from handlers.start import ensure_registered
 
-                    referrer_id = referral_contest.parse_ref_payload(_pending_start_payload.pop(user.id, None))
-                    await ensure_registered(bot, user, referrer_id)
+                    payload = _pending_start_payload.pop(user.id, None)
+                    referrer_id = referral_contest.parse_ref_payload(payload)
+                    blogger_code = bloggers.parse_payload(payload)
+                    await ensure_registered(bot, user, referrer_id, blogger_code)
                 except Exception:
                     logger.warning("Deferred registration failed for user %s", user.id, exc_info=True)
                 try:

@@ -198,6 +198,7 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
         order_id = int(parts[2])
         idx = int(parts[3])
         
+        delivered_order = None
         async with database.pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM orders WHERE id = $1 AND courier_id = $2", order_id, callback.from_user.id)
             if row:
@@ -210,9 +211,32 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
                         await bot.send_message(row["user_id"], msg)
                     except Exception:
                         pass
+                    delivered_order = dict(row)
+                    delivered_order["status"] = "delivered"
                 else: # cancel
                     await conn.execute("UPDATE orders SET status = 'confirmed', courier_id = NULL WHERE id = $1", order_id)
                     await callback.answer("Buyurtma qaytarildi.", show_alert=True)
+
+        # An order closed out by the courier reaches 'delivered' without ever
+        # passing through the seller panel, so both delivery rewards have to
+        # be triggered here as well: the buyer's own Keto (gamification.py)
+        # and, if they came through a partner link, the blogger's cashback
+        # (bloggers.py). Both are idempotent per order, so an order that
+        # somehow gets marked delivered twice still pays exactly once. Run
+        # outside the pool.acquire() block above — each of them takes its own
+        # connection, and neither may hold the courier's UI hostage on error.
+        if delivered_order is not None:
+            try:
+                from gamification import award_keto_for_order
+                await award_keto_for_order(delivered_order, bot)
+            except Exception:
+                logger.exception("Keto award failed for courier-delivered order %s", order_id)
+            try:
+                import bloggers
+                await bloggers.award_for_order(delivered_order, bot)
+            except Exception:
+                logger.exception("Blogger payout failed for courier-delivered order %s", order_id)
+
         
         # Refresh my orders list
         orders = await get_my_orders()

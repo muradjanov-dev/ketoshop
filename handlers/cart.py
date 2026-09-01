@@ -1234,7 +1234,7 @@ async def _render_confirmation(user_id: int, state: FSMContext, lang: str):
     # redemption on (off by default) and this buyer actually has a balance.
     # No DB reads happen here otherwise, so a disabled feature costs nothing.
     import gamification
-    if await gamification.is_redemption_enabled():
+    if await gamification.is_redemption_enabled(user_id):
         buyer = await get_user(user_id)
         keto_balance = int(buyer["keto_balance"]) if buyer else 0
         if keto_redeem > 0:
@@ -1273,7 +1273,7 @@ async def keto_redeem_start(callback: CallbackQuery, state: FSMContext):
     import gamification
 
     lang = await get_user_language(callback.from_user.id)
-    if not await gamification.is_redemption_enabled():
+    if not await gamification.is_redemption_enabled(callback.from_user.id):
         # Toggled off by the admin between rendering the button and this tap
         # — extremely unlikely, but don't leave the buyer stuck typing into
         # a feature that just got disabled.

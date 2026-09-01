@@ -41,7 +41,10 @@ SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "keto_market")
 ORDER_NOTIFICATION_CHAT = os.getenv("ORDER_NOTIFICATION_CHAT", "")
 
 # WebApp (Mini App) URL
-WEBAPP_URL = os.getenv("WEBAPP_URL", "") or "https://worker-production-5412.up.railway.app"
+# Fallback kept in sync with the live Railway domain (the old worker-*.railway
+# .app host is gone and now 404s) — production sets WEBAPP_URL explicitly, so
+# this only matters if that variable ever goes missing.
+WEBAPP_URL = os.getenv("WEBAPP_URL", "") or "https://bot-production-396f.up.railway.app"
 
 # Online payment destination — shown to buyers in the cheque prompt.
 # Override via env so rotating the card doesn't require a redeploy.
