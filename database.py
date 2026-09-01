@@ -708,6 +708,76 @@ async def init_db():
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_promotions_single_active ON promotions((active)) WHERE active"
         )
 
+        # ===== Blogerlar (influencer partner programme, 2026-09-01) =====
+        # Each blogger gets a personal deep link — t.me/<bot>?start=<code> —
+        # where `code` is a slug built from their own name, so the link they
+        # publish reads as "ketoshop + their name" (owner request). Everyone
+        # who first reaches the bot through that link is tied to them
+        # permanently (blogger_referrals.user_id is UNIQUE: the first link a
+        # person opens is the only one that ever counts).
+        #
+        # Payout: `percent` of the PROFIT (revenue - cost_price of the goods)
+        # of each referred buyer's first `max_orders` delivered orders, paid
+        # into the blogger's Keto balance so they can spend it on our own
+        # products at checkout (1 Keto = 1 so'm; see bloggers.py).
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS bloggers (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                code TEXT UNIQUE NOT NULL,
+                user_id BIGINT UNIQUE,
+                contact TEXT,
+                note TEXT,
+                percent DOUBLE PRECISION NOT NULL DEFAULT 10,
+                max_orders INTEGER NOT NULL DEFAULT 10,
+                active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # No FK to users(user_id) on purpose: a blogger is usually registered
+        # in the panel before they have ever opened the bot themselves, so
+        # their row must be allowed to exist without a users row.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS blogger_referrals (
+                id SERIAL PRIMARY KEY,
+                blogger_id INTEGER NOT NULL REFERENCES bloggers(id) ON DELETE CASCADE,
+                user_id BIGINT NOT NULL UNIQUE REFERENCES users(user_id),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_blogger_referrals_blogger ON blogger_referrals(blogger_id)"
+        )
+        # One row per paying order. UNIQUE(order_id) is what makes crediting
+        # idempotent — an order bounced back and forth through 'delivered'
+        # can never pay the blogger twice. order_no is the buyer's 1..N
+        # counter, frozen at credit time, so changing max_orders later never
+        # rewrites history. `credited` is FALSE while the blogger has no
+        # Telegram id yet: the earning is still recorded and gets paid into
+        # their balance the moment an admin fills the id in (see
+        # database.settle_blogger_earnings).
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS blogger_earnings (
+                id SERIAL PRIMARY KEY,
+                blogger_id INTEGER NOT NULL REFERENCES bloggers(id) ON DELETE CASCADE,
+                order_id INTEGER NOT NULL UNIQUE,
+                user_id BIGINT NOT NULL,
+                order_no INTEGER NOT NULL DEFAULT 1,
+                order_total DOUBLE PRECISION NOT NULL DEFAULT 0,
+                profit DOUBLE PRECISION NOT NULL DEFAULT 0,
+                percent DOUBLE PRECISION NOT NULL DEFAULT 0,
+                amount INTEGER NOT NULL DEFAULT 0,
+                credited BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_blogger_earnings_blogger ON blogger_earnings(blogger_id)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_blogger_earnings_user ON blogger_earnings(user_id)"
+        )
+
 
 async def close_db():
     """Close the connection pool"""
@@ -2428,6 +2498,20 @@ async def get_all_cost_prices() -> dict[int, float]:
         return {int(r["id"]): float(r["cost_price"]) for r in rows}
 
 
+async def get_set_costs() -> dict[int, float]:
+    """{set_id: cost_price of everything the set bundles}. A set line in an
+    order carries the set's own price and no product id, so its cost has to
+    be summed from its components — see bloggers.order_profit."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT i.set_id, COALESCE(SUM(COALESCE(p.cost_price, 0) * i.quantity), 0) AS cost
+                 FROM product_set_items i
+                 JOIN products p ON p.id = i.product_id
+                GROUP BY i.set_id"""
+        )
+        return {int(r["set_id"]): float(r["cost"]) for r in rows}
+
+
 async def get_orders_for_export(period: str = "all") -> list[dict]:
     """Return all orders in the given period with items already JSON-decoded.
     Used by reports.py to build Excel exports — sourced from the same time
@@ -3552,3 +3636,237 @@ async def advance_promotion_showcase(promo_id: int, new_cursor: int, on_date) ->
             "UPDATE promotions SET showcase_cursor = $2, last_showcase_date = $3 WHERE id = $1",
             promo_id, new_cursor, on_date,
         )
+
+# ===== BLOGERLAR (influencer partner programme, 2026-09-01) =====
+# Business rules live in bloggers.py — this layer is only storage. See the
+# CREATE TABLE block in init_db for what each column means.
+
+_BLOGGER_EDITABLE = {"name", "code", "user_id", "contact", "note", "percent", "max_orders", "active"}
+
+# Orders that never belong to a blogger: admin-keyed offline entries and B2B
+# wholesale rows carry an admin's user_id, not a real buyer's.
+_REAL_ORDER = "COALESCE(o.source, 'bot') NOT IN ('manual', 'b2b')"
+
+
+async def create_blogger(name: str, code: str, user_id: int | None = None,
+                          contact: str | None = None, note: str | None = None,
+                          percent: float = 10.0, max_orders: int = 10) -> int:
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            """INSERT INTO bloggers (name, code, user_id, contact, note, percent, max_orders)
+               VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id""",
+            name, code, user_id, contact, note, percent, max_orders,
+        )
+
+
+async def update_blogger(blogger_id: int, **fields) -> None:
+    """Partial update. Unknown keys are ignored rather than raising, same
+    contract as update_product."""
+    sets, args = [], []
+    for key, value in fields.items():
+        if key not in _BLOGGER_EDITABLE:
+            continue
+        args.append(value)
+        sets.append(f"{key} = ${len(args)}")
+    if not sets:
+        return
+    args.append(blogger_id)
+    async with pool.acquire() as conn:
+        await conn.execute(f"UPDATE bloggers SET {', '.join(sets)} WHERE id = ${len(args)}", *args)
+
+
+async def delete_blogger(blogger_id: int) -> None:
+    """Hard delete — referrals and earning rows cascade. Keto already paid to
+    the blogger stays paid: that lives in users.keto_balance / keto_ledger,
+    which this never touches."""
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM bloggers WHERE id = $1", blogger_id)
+
+
+async def get_blogger(blogger_id: int) -> dict | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM bloggers WHERE id = $1", blogger_id)
+        return dict(row) if row else None
+
+
+async def get_blogger_by_code(code: str) -> dict | None:
+    """Case-insensitive: a blogger's link gets retyped and re-shared by hand,
+    so ?start=Aziza must resolve the same as ?start=aziza."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM bloggers WHERE LOWER(code) = LOWER($1)", code)
+        return dict(row) if row else None
+
+
+async def get_blogger_by_user_id(user_id: int) -> dict | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM bloggers WHERE user_id = $1", user_id)
+        return dict(row) if row else None
+
+
+async def get_blogger_user_ids() -> set[int]:
+    """Telegram ids of every active blogger — used to decide whether to show
+    the "Bloger kabineti" entry and to open Keto redemption for them."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT user_id FROM bloggers WHERE active AND user_id IS NOT NULL")
+        return {int(r["user_id"]) for r in rows}
+
+
+async def get_bloggers_with_stats() -> list[dict]:
+    """Every blogger + their headline numbers, for the admin panel list."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(f"""
+            SELECT b.*,
+                   u.full_name AS tg_name, u.username AS tg_username,
+                   COALESCE(u.keto_balance, 0) AS balance,
+                   (SELECT COUNT(*) FROM blogger_referrals r WHERE r.blogger_id = b.id) AS referred_count,
+                   (SELECT COUNT(*) FROM orders o
+                      JOIN blogger_referrals r ON r.user_id = o.user_id
+                     WHERE r.blogger_id = b.id AND {_REAL_ORDER}) AS orders_count,
+                   (SELECT COALESCE(SUM(o.total), 0) FROM orders o
+                      JOIN blogger_referrals r ON r.user_id = o.user_id
+                     WHERE r.blogger_id = b.id AND o.status = 'delivered' AND {_REAL_ORDER}) AS revenue,
+                   (SELECT COALESCE(SUM(e.amount), 0) FROM blogger_earnings e
+                     WHERE e.blogger_id = b.id) AS earned,
+                   (SELECT COALESCE(SUM(e.amount), 0) FROM blogger_earnings e
+                     WHERE e.blogger_id = b.id AND NOT e.credited) AS pending
+              FROM bloggers b
+              LEFT JOIN users u ON u.user_id = b.user_id
+             ORDER BY b.active DESC, b.created_at DESC
+        """)
+        return [dict(r) for r in rows]
+
+
+async def record_blogger_referral(blogger_id: int, user_id: int) -> bool:
+    """Tie a brand-new buyer to the blogger whose link they came through.
+    Returns False if they already belong to someone — UNIQUE(user_id) means
+    the first link a person opens is the only one that ever counts."""
+    async with pool.acquire() as conn:
+        try:
+            await conn.execute(
+                "INSERT INTO blogger_referrals (blogger_id, user_id) VALUES ($1, $2)",
+                blogger_id, user_id,
+            )
+            return True
+        except (asyncpg.UniqueViolationError, asyncpg.ForeignKeyViolationError):
+            return False
+
+
+async def get_blogger_for_buyer(user_id: int) -> dict | None:
+    """The blogger this buyer was referred by (row from `bloggers`), or None."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT b.* FROM bloggers b
+                 JOIN blogger_referrals r ON r.blogger_id = b.id
+                WHERE r.user_id = $1""",
+            user_id,
+        )
+        return dict(row) if row else None
+
+
+async def count_blogger_earnings_for_buyer(blogger_id: int, user_id: int) -> int:
+    """How many of this buyer's orders have already paid the blogger — the
+    counter the `max_orders` cap is checked against."""
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT COUNT(*) FROM blogger_earnings WHERE blogger_id = $1 AND user_id = $2",
+            blogger_id, user_id,
+        )
+
+
+async def add_blogger_earning(blogger_id: int, order_id: int, user_id: int, order_no: int,
+                               order_total: float, profit: float, percent: float,
+                               amount: int, credited: bool) -> bool:
+    """Record one payout. Returns False if this order already paid out —
+    UNIQUE(order_id) is what makes award_for_order safe to call repeatedly."""
+    async with pool.acquire() as conn:
+        try:
+            await conn.execute(
+                """INSERT INTO blogger_earnings
+                       (blogger_id, order_id, user_id, order_no, order_total, profit, percent, amount, credited)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
+                blogger_id, order_id, user_id, order_no, order_total, profit, percent, amount, credited,
+            )
+            return True
+        except asyncpg.UniqueViolationError:
+            return False
+
+
+async def get_uncredited_blogger_earnings(blogger_id: int) -> list[dict]:
+    """Payouts recorded while the blogger had no Telegram id on file — they
+    get settled into their Keto balance as soon as an admin fills it in."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM blogger_earnings WHERE blogger_id = $1 AND NOT credited ORDER BY id",
+            blogger_id,
+        )
+        return [dict(r) for r in rows]
+
+
+async def mark_blogger_earning_credited(earning_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE blogger_earnings SET credited = TRUE WHERE id = $1", earning_id)
+
+
+async def get_blogger_referred_buyers(blogger_id: int) -> list[dict]:
+    """Who this blogger brought in, with each person's order count, how much
+    they've spent and how much the blogger earned from them."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(f"""
+            SELECT r.user_id, r.created_at AS joined_at,
+                   u.full_name, u.username, u.phone,
+                   (SELECT COUNT(*) FROM orders o
+                     WHERE o.user_id = r.user_id AND {_REAL_ORDER}) AS orders_count,
+                   (SELECT COUNT(*) FROM orders o
+                     WHERE o.user_id = r.user_id AND o.status = 'delivered' AND {_REAL_ORDER}) AS delivered_count,
+                   (SELECT COALESCE(SUM(o.total), 0) FROM orders o
+                     WHERE o.user_id = r.user_id AND o.status = 'delivered' AND {_REAL_ORDER}) AS spent,
+                   (SELECT COALESCE(SUM(e.amount), 0) FROM blogger_earnings e
+                     WHERE e.blogger_id = r.blogger_id AND e.user_id = r.user_id) AS earned
+              FROM blogger_referrals r
+              LEFT JOIN users u ON u.user_id = r.user_id
+             WHERE r.blogger_id = $1
+             ORDER BY r.created_at DESC
+        """, blogger_id)
+        return [dict(r) for r in rows]
+
+
+async def get_blogger_orders(blogger_id: int, limit: int = 300) -> list[dict]:
+    """Every order placed by this blogger's referred buyers, newest first,
+    with the payout it produced (NULL when it didn't pay — not delivered yet,
+    over the per-buyer cap, or zero profit)."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(f"""
+            SELECT o.id, o.user_id, o.created_at, o.total, o.status,
+                   u.full_name, u.username,
+                   e.amount AS earned, e.profit, e.order_no
+              FROM orders o
+              JOIN blogger_referrals r ON r.user_id = o.user_id
+              LEFT JOIN users u ON u.user_id = o.user_id
+              LEFT JOIN blogger_earnings e ON e.order_id = o.id AND e.blogger_id = r.blogger_id
+             WHERE r.blogger_id = $1 AND {_REAL_ORDER}
+             ORDER BY o.created_at DESC
+             LIMIT $2
+        """, blogger_id, limit)
+        return [dict(r) for r in rows]
+
+
+async def get_blogger_summary(blogger_id: int) -> dict:
+    """Headline numbers for one blogger — used by their own in-bot cabinet."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(f"""
+            SELECT (SELECT COUNT(*) FROM blogger_referrals r WHERE r.blogger_id = $1) AS referred_count,
+                   (SELECT COUNT(*) FROM orders o
+                      JOIN blogger_referrals r ON r.user_id = o.user_id
+                     WHERE r.blogger_id = $1 AND {_REAL_ORDER}) AS orders_count,
+                   (SELECT COUNT(*) FROM orders o
+                      JOIN blogger_referrals r ON r.user_id = o.user_id
+                     WHERE r.blogger_id = $1 AND o.status = 'delivered' AND {_REAL_ORDER}) AS delivered_count,
+                   (SELECT COALESCE(SUM(o.total), 0) FROM orders o
+                      JOIN blogger_referrals r ON r.user_id = o.user_id
+                     WHERE r.blogger_id = $1 AND o.status = 'delivered' AND {_REAL_ORDER}) AS revenue,
+                   (SELECT COALESCE(SUM(e.amount), 0) FROM blogger_earnings e
+                     WHERE e.blogger_id = $1) AS earned,
+                   (SELECT COALESCE(SUM(e.amount), 0) FROM blogger_earnings e
+                     WHERE e.blogger_id = $1 AND NOT e.credited) AS pending
+        """, blogger_id)
+        return dict(row) if row else {}

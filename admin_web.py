@@ -32,6 +32,12 @@ Routes (all mounted by setup_admin_routes):
   POST /admin/api/promos/{id}/start    — {days?} -> go live (stops any other running one)
   POST /admin/api/promos/{id}/stop     — end it early
   POST /admin/api/promos/{id}/announce — one-time "yangi aksiya" broadcast to all users
+  GET  /admin/api/bloggers        — partner bloggers + their referral/earning stats
+  POST /admin/api/bloggers        — create {name, code?, user_id?, percent?, max_orders?}
+  GET  /admin/api/bloggers/suggest?name=  — the link code that name would get
+  POST /admin/api/bloggers/{id}   — update (partial)
+  POST /admin/api/bloggers/{id}/delete
+  GET  /admin/api/bloggers/{id}/detail — referred buyers + every order + payout
   GET  /admin/api/keto/status     — redemption on/off + every user's Keto balance
   POST /admin/api/keto/redemption — {enabled} -> toggle Keto-as-discount at checkout
   GET  /admin/api/dashboard       — {period} -> KPI/trend/best-sellers/Keto snapshot for the Dashboard tab
@@ -55,7 +61,7 @@ import aiohttp
 from aiohttp import web
 
 import database
-from config import ADMIN_WEB_PASSWORD, BOT_TOKEN, ADMIN_IDS
+from config import ADMIN_WEB_PASSWORD, BOT_TOKEN, ADMIN_IDS, BOT_USERNAME
 from locales import CATEGORIES
 
 logger = logging.getLogger(__name__)
@@ -156,7 +162,11 @@ async def api_session(request: web.Request):
     for c in categories:
         if c.get("created_at"):
             c["created_at"] = c["created_at"].isoformat()
-    return web.json_response({"ok": True, "categories": categories})
+    # bot_username lets the Blogerlar tab preview a partner link
+    # (t.me/<bot>?start=<name>) as the admin types, without hardcoding the
+    # bot's name into the page.
+    return web.json_response({"ok": True, "categories": categories,
+                              "bot_username": BOT_USERNAME})
 
 
 @require_auth
@@ -944,6 +954,247 @@ async def api_ads_lead_handled(request: web.Request):
     return web.json_response({"ok": bool(ok), "handled_by": WEB_SELLER_ID if ok else None})
 
 
+# ───────────────────────────── blogerlar ────────────────────────────────────
+# Influencer partner programme — see bloggers.py for the rules. The panel is
+# the only place a blogger is created: everything downstream (their link, the
+# cashback, their own in-bot cabinet) keys off the row written here.
+
+def _blogger_json(b: dict) -> dict:
+    import bloggers
+    return {
+        "id": b["id"],
+        "name": b["name"],
+        "code": b["code"],
+        "link": bloggers.link(b["code"]),
+        "user_id": b.get("user_id"),
+        "tg_name": b.get("tg_name"),
+        "tg_username": b.get("tg_username"),
+        "contact": b.get("contact"),
+        "note": b.get("note"),
+        "percent": float(b.get("percent") or 0),
+        "max_orders": int(b.get("max_orders") or 0),
+        "active": bool(b.get("active")),
+        "created_at": b.get("created_at"),
+        "referred_count": int(b.get("referred_count") or 0),
+        "orders_count": int(b.get("orders_count") or 0),
+        "revenue": float(b.get("revenue") or 0),
+        "earned": int(b.get("earned") or 0),
+        "pending": int(b.get("pending") or 0),
+        "balance": int(b.get("balance") or 0),
+    }
+
+
+def _parse_tg_id(raw):
+    """'' / None -> None (no Telegram id yet), '@name' -> error. Bloggers are
+    often registered before they've ever opened the bot, so blank is a valid
+    answer here — but a half-typed id must not silently become None."""
+    if raw in (None, "", "-"):
+        return None
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        raise ValueError("Telegram ID faqat raqamlardan iborat bo'lishi kerak (masalan: 123456789)")
+    if value <= 0:
+        raise ValueError("Telegram ID noto'g'ri")
+    return value
+
+
+def _parse_percent(raw, default=None):
+    if raw in (None, ""):
+        if default is None:
+            raise ValueError("foiz kiritilmagan")
+        return default
+    try:
+        value = float(str(raw).replace(",", "."))
+    except (TypeError, ValueError):
+        raise ValueError("foiz noto'g'ri kiritilgan")
+    if not 0 < value <= 100:
+        raise ValueError("foiz 0 dan katta va 100 dan kichik bo'lishi kerak")
+    return value
+
+
+def _parse_max_orders(raw, default=None):
+    if raw in (None, ""):
+        if default is None:
+            raise ValueError("buyurtmalar soni kiritilmagan")
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError("buyurtmalar soni butun son bo'lishi kerak")
+    if value <= 0:
+        raise ValueError("buyurtmalar soni musbat bo'lishi kerak")
+    return value
+
+
+@require_auth
+async def api_bloggers_list(request: web.Request):
+    rows = await database.get_bloggers_with_stats()
+    return web.json_response(
+        {"bloggers": [_blogger_json(b) for b in rows]},
+        dumps=lambda obj: json.dumps(obj, default=str),
+    )
+
+
+@require_auth
+async def api_bloggers_create(request: web.Request):
+    import bloggers
+
+    b = await request.json()
+    name = _clean_str(b.get("name"), 120)
+    if not name:
+        return web.json_response({"error": "bloger ismi kiritilmagan"}, status=400)
+
+    # The link carries the blogger's own name: the code defaults to a slug of
+    # it ("Aziza Blog" -> aziza_blog -> t.me/<bot>?start=aziza_blog). A clash
+    # on an auto-derived code just gets a number appended ("aziza2"); a code
+    # the admin typed out themselves is refused instead, so nobody hands a
+    # blogger a link that quietly isn't the one they asked for.
+    raw_code = _clean_str(b.get("code"), 48)
+    if raw_code:
+        code = bloggers.normalize_code(raw_code)
+        if not code:
+            return web.json_response(
+                {"error": "havola nomi faqat lotin harflari, raqam va _ dan iborat bo'lsin"}, status=400)
+        if await database.get_blogger_by_code(code):
+            return web.json_response({"error": "bu havola nomi band, boshqasini tanlang"}, status=400)
+    else:
+        code = await bloggers.suggest_code(name)
+
+    try:
+        user_id = _parse_tg_id(b.get("user_id"))
+        percent = _parse_percent(b.get("percent"), bloggers.DEFAULT_PERCENT)
+        max_orders = _parse_max_orders(b.get("max_orders"), bloggers.DEFAULT_MAX_ORDERS)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+    if user_id is not None and await database.get_blogger_by_user_id(user_id):
+        return web.json_response({"error": "bu Telegram ID boshqa blogerga biriktirilgan"}, status=400)
+
+    blogger_id = await database.create_blogger(
+        name=name, code=code, user_id=user_id,
+        contact=_clean_str(b.get("contact"), 120),
+        note=_clean_str(b.get("note"), 500),
+        percent=percent, max_orders=max_orders,
+    )
+    blogger = await database.get_blogger(blogger_id)
+    if user_id:
+        asyncio.create_task(_blogger_welcome(request.app["bot"], blogger))
+    return web.json_response({"ok": True, "id": blogger_id, "code": code,
+                              "link": bloggers.link(code)})
+
+
+@require_auth
+async def api_bloggers_update(request: web.Request):
+    import bloggers
+
+    blogger_id = int(request.match_info["id"])
+    existing = await database.get_blogger(blogger_id)
+    if existing is None:
+        return web.json_response({"error": "bloger topilmadi"}, status=404)
+    b = await request.json()
+
+    fields = {}
+    if "name" in b:
+        name = _clean_str(b.get("name"), 120)
+        if not name:
+            return web.json_response({"error": "bloger ismi kiritilmagan"}, status=400)
+        fields["name"] = name
+    if "code" in b:
+        code = bloggers.normalize_code(_clean_str(b.get("code"), 48) or "")
+        if not code:
+            return web.json_response(
+                {"error": "havola nomi faqat lotin harflari, raqam va _ dan iborat bo'lsin"}, status=400)
+        if code.lower() != (existing["code"] or "").lower():
+            clash = await database.get_blogger_by_code(code)
+            if clash and clash["id"] != blogger_id:
+                return web.json_response({"error": "bu havola nomi band, boshqasini tanlang"}, status=400)
+        fields["code"] = code
+    for key, limit in (("contact", 120), ("note", 500)):
+        if key in b:
+            fields[key] = _clean_str(b.get(key), limit)
+    try:
+        if "percent" in b:
+            fields["percent"] = _parse_percent(b.get("percent"))
+        if "max_orders" in b:
+            fields["max_orders"] = _parse_max_orders(b.get("max_orders"))
+        if "user_id" in b:
+            user_id = _parse_tg_id(b.get("user_id"))
+            if user_id is not None and user_id != existing.get("user_id"):
+                clash = await database.get_blogger_by_user_id(user_id)
+                if clash and clash["id"] != blogger_id:
+                    return web.json_response({"error": "bu Telegram ID boshqa blogerga biriktirilgan"}, status=400)
+            fields["user_id"] = user_id
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    if "active" in b:
+        fields["active"] = bool(b.get("active"))
+
+    if fields:
+        await database.update_blogger(blogger_id, **fields)
+
+    # A Telegram id that was just filled in turns a "banked" blogger into a
+    # payable one: greet them and settle everything they earned while we
+    # didn't know who they were (see bloggers.settle_pending).
+    new_user_id = fields.get("user_id")
+    if new_user_id and new_user_id != existing.get("user_id"):
+        blogger = await database.get_blogger(blogger_id)
+        asyncio.create_task(_blogger_welcome(request.app["bot"], blogger))
+    return web.json_response({"ok": True})
+
+
+async def _blogger_welcome(bot, blogger: dict) -> None:
+    """Greeting + settle-up, in the background: both hit Telegram, which has
+    no business holding the admin's save request open."""
+    import bloggers
+    try:
+        await bloggers.notify_registered(blogger, bot)
+        settled = await bloggers.settle_pending(blogger, bot)
+        if settled:
+            logger.info("Blogger %s settled %s so'm on registration", blogger["id"], settled)
+    except Exception:
+        logger.exception("Blogger welcome failed for %s", blogger.get("id"))
+
+
+@require_auth
+async def api_bloggers_delete(request: web.Request):
+    """Full delete — their referral links and earning history go with them.
+    Cashback already paid stays in the person's Keto balance."""
+    await database.delete_blogger(int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
+@require_auth
+async def api_bloggers_detail(request: web.Request):
+    """Everything behind one blogger: who they brought in, every order those
+    people placed, and what each one paid the blogger."""
+    import bloggers
+
+    blogger_id = int(request.match_info["id"])
+    blogger = await database.get_blogger(blogger_id)
+    if blogger is None:
+        return web.json_response({"error": "bloger topilmadi"}, status=404)
+
+    buyers = await database.get_blogger_referred_buyers(blogger_id)
+    orders = await database.get_blogger_orders(blogger_id, limit=300)
+    summary = await database.get_blogger_summary(blogger_id)
+    return web.json_response({
+        "blogger": {**blogger, "link": bloggers.link(blogger["code"])},
+        "summary": summary,
+        "buyers": [dict(x) for x in buyers],
+        "orders": [dict(x) for x in orders],
+    }, dumps=lambda obj: json.dumps(obj, default=str))
+
+
+@require_auth
+async def api_bloggers_suggest(request: web.Request):
+    """Live "this is what the link will look like" for the create form."""
+    import bloggers
+    name = request.query.get("name", "")
+    code = await bloggers.suggest_code(name) if name.strip() else ""
+    return web.json_response({"code": code, "link": bloggers.link(code) if code else ""})
+
+
 # ─────────────────────────── image upload / serve ───────────────────────────
 
 @require_auth
@@ -1025,4 +1276,10 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/ads/status", api_ads_status)
     app.router.add_get("/admin/api/ads/leads", api_ads_leads)
     app.router.add_post("/admin/api/ads/leads/{lead_id}/handled", api_ads_lead_handled)
+    app.router.add_get("/admin/api/bloggers", api_bloggers_list)
+    app.router.add_post("/admin/api/bloggers", api_bloggers_create)
+    app.router.add_get("/admin/api/bloggers/suggest", api_bloggers_suggest)
+    app.router.add_post("/admin/api/bloggers/{id:[0-9]+}", api_bloggers_update)
+    app.router.add_post("/admin/api/bloggers/{id:[0-9]+}/delete", api_bloggers_delete)
+    app.router.add_get("/admin/api/bloggers/{id:[0-9]+}/detail", api_bloggers_detail)
     app.router.add_get("/img/{id:\\d+}", serve_image)

@@ -54,12 +54,24 @@ async def is_enabled() -> bool:
     return bool(state["enabled"])
 
 
-async def is_redemption_enabled() -> bool:
+async def is_redemption_enabled(user_id: int | None = None) -> bool:
     """Keto-as-discount at checkout — separate switch from earning above, off
     by default (2026-07-30: built for the owner to turn on later; real users
-    can't use it while this is False, no matter their balance)."""
+    can't use it while this is False, no matter their balance).
+
+    Partner bloggers are the one standing exception (2026-09-01): their
+    cashback IS a Keto balance and the whole point of it is that they spend
+    it in the shop, so spending is open to them whether or not the global
+    switch is on. Pass the buyer's user_id wherever it's known."""
     state = await database.get_gamification_state()
-    return bool(state["enabled"]) and bool(state["redemption_enabled"])
+    if not state["enabled"]:
+        return False
+    if state["redemption_enabled"]:
+        return True
+    if user_id is not None:
+        blogger = await database.get_blogger_by_user_id(user_id)
+        return bool(blogger and blogger["active"])
+    return False
 
 
 def _fmt(n: int) -> str:
