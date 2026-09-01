@@ -31,6 +31,7 @@ BUYER_COMMANDS = [
 ADMIN_COMMANDS = [
     BotCommand(command="admin", description="🛠 Admin panel"),
     BotCommand(command="blogerlar", description="📢 Blogerlar (hamkorlar)"),
+    BotCommand(command="xabarlar", description="💬 Botga yozilgan xabarlar"),
     BotCommand(command="reklama", description="📣 Reklama statistikasi"),
     BotCommand(command="leads", description="📋 Yangi leadlar"),
     BotCommand(command="tips_status", description="💡 Maslahatlar holati"),
@@ -562,6 +563,9 @@ def admin_users_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text=get_text("btn_admin_broadcast", lang), callback_data="admin:broadcast")
+        ],
+        [
+            InlineKeyboardButton(text="💬 Xabarlar (kim javob bergan)", callback_data="admin:msgs"),
         ],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")],
     ])

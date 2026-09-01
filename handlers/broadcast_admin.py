@@ -254,3 +254,74 @@ async def keto_off(message: Message):
         "(oldin berilganlar saqlanib qoladi).",
         parse_mode=ParseMode.HTML,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Kunlik qiziqish eslatmasi (daily_interest.py)
+#   /qiziqish_status — holat, oluvchilar soni, jadval
+#   /qiziqish_on     — yoqish
+#   /qiziqish_off    — to'xtatish
+#   /qiziqish_test   — namunani faqat o'zingizga yuborish
+#   /qiziqish_now    — hoziroq hammaga yuborish
+# ─────────────────────────────────────────────────────────────────────────────
+import daily_interest
+
+
+@router.message(Command("qiziqish_status"))
+async def interest_status(message: Message):
+    state = await database.get_interest_state()
+    people = await database.get_user_ids_with_views(daily_interest.RECENT_DAYS)
+    last = state.get("last_sent_date")
+    holat = "🟢 yoqilgan" if state.get("enabled") else "🔴 to'xtatilgan"
+    await message.answer(
+        f"👀 <b>Kunlik qiziqish eslatmasi</b>\n\n"
+        f"Holat: {holat}\n"
+        f"Oluvchilar (so'nggi {daily_interest.RECENT_DAYS} kunda mahsulot ko'rganlar): "
+        f"<b>{len(people)}</b> ta\n"
+        f"Sikl (matn rotatsiyasi): {state.get('cycle', 0)}\n"
+        f"Oxirgi yuborilgan sana: {last or '— (hali yo‘q)'}\n\n"
+        f"Jadval: har kuni <b>{daily_interest.SEND_HOUR}:00</b> (Toshkent).\n"
+        f"O'sha kuni maslahat / shaxsiy tavsiya / aksiya e'loni allaqachon "
+        f"yuborilgan bo'lsa, bu xabar o'tkazib yuboriladi — kuniga ikkitadan "
+        f"ortiq xabar bormasligi uchun.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(Command("qiziqish_on"))
+async def interest_on(message: Message):
+    await database.set_interest_enabled(True)
+    await message.answer("🟢 Kunlik qiziqish eslatmasi <b>yoqildi</b>.", parse_mode=ParseMode.HTML)
+
+
+@router.message(Command("qiziqish_off"))
+async def interest_off(message: Message):
+    await database.set_interest_enabled(False)
+    await message.answer("🔴 Kunlik qiziqish eslatmasi <b>to'xtatildi</b>.", parse_mode=ParseMode.HTML)
+
+
+@router.message(Command("qiziqish_test"))
+async def interest_test(message: Message):
+    """Preview against YOUR own most-viewed product — nothing is recorded and
+    nobody else receives anything."""
+    sent, failed, skipped = await daily_interest.send_batch(message.bot, only_user=message.from_user.id)
+    if skipped:
+        await message.answer(
+            "Sizda ko'rilgan mahsulot yo'q, shuning uchun namuna tuzilmadi. "
+            "Katalogdan biror mahsulotni ochib, qayta urinib ko'ring."
+        )
+    elif failed:
+        await message.answer("⚠️ Yuborib bo'lmadi.")
+
+
+@router.message(Command("qiziqish_now"))
+async def interest_now(message: Message):
+    people = await database.get_user_ids_with_views(daily_interest.RECENT_DAYS)
+    await message.answer(f"📤 {len(people)} ta foydalanuvchiga qiziqish eslatmasi yuborilmoqda…")
+    sent, failed, skipped = await daily_interest.send_batch(message.bot)
+    state = await database.get_interest_state()
+    await database.advance_interest(daily_interest._now_tk().date(), int(state.get("cycle") or 0) + 1)
+    await message.answer(
+        f"✅ {sent} ta yetkazildi · ⚠️ {failed} ta yetmadi · ⏭ {skipped} ta o'tkazildi.",
+        parse_mode=ParseMode.HTML,
+    )

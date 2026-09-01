@@ -17,10 +17,16 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
+import logging
+
 from config import ADMIN_IDS
-from database import get_user_language
+from database import (
+    get_user_language, log_support_message, mark_support_answered, count_open_support,
+)
 from locales import get_text
 from keyboards import main_menu_keyboard
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -63,6 +69,14 @@ async def send_freeform_reply(message: Message, state: FSMContext, bot: Bot):
             get_text("freeform_reply_to_buyer", buyer_lang, text=reply_text),
             parse_mode="HTML",
         )
+        # Recorded so the owner can see afterwards WHO answered and WHAT they
+        # said (see database.get_support_threads / the "Xabarlar" screen).
+        # Never let a logging failure look like a delivery failure.
+        try:
+            await log_support_message(buyer_id, "out", reply_text, admin_id=message.from_user.id)
+            await mark_support_answered(buyer_id)
+        except Exception:
+            logger.exception("Could not log support reply to %s", buyer_id)
         await message.answer("✅ Yuborildi.")
     except Exception:
         await message.answer("⚠️ Yuborib bo'lmadi — foydalanuvchi botni bloklagan bo'lishi mumkin.")
@@ -86,6 +100,15 @@ async def relay_freeform_text(message: Message, bot: Bot):
     name = message.from_user.full_name or "—"
     contact = buyer_contact_link(buyer_id, message.from_user.username, name)
 
+    # Keep the question itself, not just the relay — the admins' copy scrolls
+    # away in their chat, and until now nothing was left to review.
+    open_count = 0
+    try:
+        await log_support_message(buyer_id, "in", text)
+        open_count = await count_open_support()
+    except Exception:
+        logger.exception("Could not log inbound support message from %s", buyer_id)
+
     reply_kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="↩️ Javob berish", callback_data=f"freereply:{buyer_id}"),
     ]])
@@ -93,9 +116,10 @@ async def relay_freeform_text(message: Message, bot: Bot):
     for admin_id in ADMIN_IDS:
         admin_lang = await get_user_language(admin_id)
         try:
+            waiting = f"\n\n⏳ Javobsiz xabarlar: <b>{open_count}</b> ta" if open_count > 1 else ""
             await bot.send_message(
                 admin_id,
-                get_text("freeform_from_buyer", admin_lang, name=name, contact=contact, text=text),
+                get_text("freeform_from_buyer", admin_lang, name=name, contact=contact, text=text) + waiting,
                 parse_mode="HTML",
                 reply_markup=reply_kb,
             )

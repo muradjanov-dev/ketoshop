@@ -244,6 +244,13 @@ async def main():
     from promotions import scheduler_loop as promo_scheduler_loop
     promo_task = asyncio.create_task(promo_scheduler_loop(bot))
 
+    # Kunlik qiziqish eslatmasi — one nudge a day about the product each
+    # person keeps looking at, with the aksiya offer attached when that
+    # product is part of it. Stands down on days another broadcast already
+    # went out (see daily_interest.py).
+    from daily_interest import scheduler_loop as interest_scheduler_loop
+    interest_task = asyncio.create_task(interest_scheduler_loop(bot))
+
     # Start polling
     logger.info("Bot started! Press Ctrl+C to stop.")
     try:
@@ -254,6 +261,7 @@ async def main():
         backup_task.cancel()
         keto_task.cancel()
         promo_task.cancel()
+        interest_task.cancel()
         meta_leads_task.cancel()
         meta_ads_task.cancel()
         if runner:

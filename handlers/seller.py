@@ -1491,6 +1491,14 @@ async def message_client_send(message: Message, state: FSMContext, bot: Bot):
             text=f"{header}\n\n{html.escape(raw)}",
             parse_mode="HTML",
         )
+        # Same log the free-text relay writes, so the "Xabarlar" screen shows
+        # every reply a buyer got, whichever screen the admin sent it from.
+        try:
+            from database import log_support_message, mark_support_answered
+            await log_support_message(target, "out", raw, admin_id=message.from_user.id, order_id=order_id)
+            await mark_support_answered(target)
+        except Exception:
+            pass
         await message.answer(get_text("message_client_sent", lang))
     except Exception:
         await message.answer(get_text("message_client_failed", lang))
