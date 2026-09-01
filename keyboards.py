@@ -5,11 +5,40 @@ from datetime import datetime, timezone, timedelta
 
 from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo,
-    ReplyKeyboardMarkup, KeyboardButton,
+    ReplyKeyboardMarkup, KeyboardButton, BotCommand,
 )
 from locales import get_text, get_category_name, get_unit_name, get_month_name, CATEGORIES, UNITS
 from config import WEBAPP_URL, SUPPORT_USERNAME
 import promotions
+
+
+# ===== The "/" menu (owner request 2026-09-01: "tayyor shortcutlar") =====
+# Published by bot.py at startup, per scope: BUYER_COMMANDS for everyone,
+# + ADMIN_COMMANDS in each admin's own chat, + BLOGGER_COMMAND in each partner
+# blogger's chat (bloggers.py re-publishes that one the moment a blogger is
+# registered, so they don't have to wait for a restart). They live here rather
+# than in bot.py so bloggers.py can reach them without importing bot.py back.
+
+BUYER_COMMANDS = [
+    BotCommand(command="start", description="🏠 Botni ishga tushirish / Bosh menyu"),
+    BotCommand(command="menu", description="🏠 Bosh menyu"),
+    BotCommand(command="savat", description="🛒 Savatim"),
+    BotCommand(command="buyurtmalarim", description="📦 Mening buyurtmalarim"),
+    BotCommand(command="kabinet", description="👤 Kabinetim (Keto balans, daraja)"),
+    BotCommand(command="yordam", description="❓ Qo'llanma va yordam"),
+]
+
+ADMIN_COMMANDS = [
+    BotCommand(command="admin", description="🛠 Admin panel"),
+    BotCommand(command="blogerlar", description="📢 Blogerlar (hamkorlar)"),
+    BotCommand(command="reklama", description="📣 Reklama statistikasi"),
+    BotCommand(command="leads", description="📋 Yangi leadlar"),
+    BotCommand(command="tips_status", description="💡 Maslahatlar holati"),
+    BotCommand(command="keto_status", description="🥑 Keto dasturi holati"),
+    BotCommand(command="backup_now", description="💾 Bazadan nusxa olish"),
+]
+
+BLOGGER_COMMAND = BotCommand(command="bloger", description="📢 Bloger kabinetim")
 
 
 def persistent_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
@@ -545,6 +574,9 @@ def admin_marketing_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text=get_text("btn_admin_promo", lang), callback_data="admin:promo"),
+        ],
+        [
+            InlineKeyboardButton(text="📢 Blogerlar", callback_data="admin:bloger"),
         ],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")],
     ])

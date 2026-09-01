@@ -36,8 +36,13 @@ Public API:
   award_for_order(order, bot)          -> pay the blogger, call on 'delivered'
   settle_pending(blogger, bot)         -> credit earnings banked before the id
   notify_registered(blogger, bot)      -> "you're in, here's your link" DM
-  router                               -> the blogger's own in-bot cabinet
+  router                               -> the blogger's own in-bot cabinet AND
+                                          the admin's "Blogerlar" section
   has_cabinet(user_id)                 -> is this user an active blogger?
+
+Admins manage the programme from either panel: the website (/admin ->
+Blogerlar, see admin_web.py) or the bot itself (Admin panel -> Marketing ->
+Blogerlar, or /blogerlar) — both drive the same tables.
 """
 import json
 import logging
@@ -47,10 +52,12 @@ from datetime import datetime, timedelta
 from aiogram import Bot, Router, F
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, Message
 
 import database
-from config import ADMIN_IDS, BOT_USERNAME
+from config import ADMIN_IDS, BOT_USERNAME, WEBAPP_URL
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -369,6 +376,21 @@ async def notify_registered(blogger: dict, bot: Bot) -> None:
                                 parse_mode=ParseMode.HTML)
     except Exception:
         logger.warning("Registration notice failed for blogger user %s", user_id, exc_info=True)
+    await _publish_cabinet_command(bot, user_id)
+
+
+async def _publish_cabinet_command(bot: Bot, user_id: int) -> None:
+    """Put /bloger in this partner's own "/" menu right away, instead of only
+    at the next restart (bot.py registers the same scope on boot). Best-effort:
+    Telegram rejects the scope for a chat that doesn't exist yet, which is
+    normal for a blogger who hasn't opened the bot."""
+    try:
+        from aiogram.types import BotCommandScopeChat
+        from keyboards import BUYER_COMMANDS, BLOGGER_COMMAND
+        await bot.set_my_commands(BUYER_COMMANDS + [BLOGGER_COMMAND],
+                                   scope=BotCommandScopeChat(chat_id=user_id))
+    except Exception:
+        logger.info("Could not publish /bloger command for %s", user_id, exc_info=True)
 
 
 def _pct(value) -> str:
@@ -595,3 +617,481 @@ async def cabinet_orders(callback: CallbackQuery):
         "\nℹ️ Кешбэк начисляется только с доставленных заказов."))
     await _render(callback, "\n".join(lines), _back_keyboard(lang))
     await callback.answer()
+
+# ═════════════════════ admin panel, inside the bot ══════════════════════════
+# The website (/admin → Blogerlar) is the full-featured view; this is the same
+# programme driven from a phone: list, add a blogger through a short chat
+# wizard, edit the numbers, stop/delete, and read the same client and order
+# lists. Callback namespace 'admin:bloger:*' — handlers/admin.py owns 'admin:'
+# but registers no catch-all, so the two never collide.
+
+
+class BloggerAdminStates(StatesGroup):
+    new_name = State()
+    new_tg = State()
+    new_percent = State()
+    new_orders = State()
+    edit_value = State()      # data: {"field": …, "blogger_id": …}
+
+
+def _is_admin(user_id: int) -> bool:
+    return user_id in ADMIN_IDS
+
+
+_SKIP_HINT = "<i>O'tkazib yuborish uchun /skip bosing.</i>"
+
+
+async def _render_admin_list() -> tuple[str, InlineKeyboardMarkup]:
+    rows_data = await database.get_bloggers_with_stats()
+    lines = ["📢 <b>Blogerlar</b>", ""]
+    if not rows_data:
+        lines.append("Hozircha bloger yo'q.")
+        lines.append("")
+        lines.append(
+            "➕ tugmasini bosib qo'shing — ismini yozsangiz, havola avtomatik yasaladi "
+            "(masalan <code>t.me/" + BOT_USERNAME + "?start=aziza</code>)."
+        )
+    else:
+        total_buyers = sum(int(b["referred_count"] or 0) for b in rows_data)
+        total_earned = sum(int(b["earned"] or 0) for b in rows_data)
+        lines.append(
+            f"Jami: <b>{len(rows_data)} ta</b> bloger · 👥 {total_buyers} mijoz · "
+            f"💰 {_fmt(total_earned)} so'm keshbek"
+        )
+        lines.append("")
+        for b in rows_data:
+            mark = "🟢" if b["active"] else "⚪"
+            lines.append(f"{mark} <b>{b['name']}</b>")
+            lines.append(f"   🔗 <code>{link(b['code'])}</code>")
+            lines.append(
+                f"   👥 {b['referred_count']} · 🧾 {b['orders_count']} · "
+                f"💰 {_fmt(b['earned'])} so'm"
+                + ("" if b.get("user_id") else " · ⚠️ ID yo'q")
+            )
+        lines.append("")
+        lines.append(
+            "ℹ️ Keshbek har bir mijozning belgilangan birinchi N ta <b>yetkazilgan</b> "
+            "buyurtmasi foydasidan hisoblanadi."
+        )
+
+    rows = [[InlineKeyboardButton(text=f"📊 {b['name']}", callback_data=f"admin:bloger:view:{b['id']}")]
+            for b in rows_data[:20]]
+    rows.append([InlineKeyboardButton(text="➕ Yangi bloger", callback_data="admin:bloger:new")])
+    rows.append([InlineKeyboardButton(text="🌐 Saytda ochish", url=f"{WEBAPP_URL}/admin")])
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_menu:marketing")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _render_admin_view(blogger_id: int) -> tuple[str, InlineKeyboardMarkup] | tuple[None, None]:
+    blogger = await database.get_blogger(blogger_id)
+    if not blogger:
+        return None, None
+    summary = await database.get_blogger_summary(blogger_id)
+    balance = 0
+    if blogger.get("user_id"):
+        user = await database.get_user(blogger["user_id"])
+        balance = int((user or {}).get("keto_balance") or 0)
+
+    lines = [
+        f"📢 <b>{blogger['name']}</b> {'🟢 faol' if blogger['active'] else '⚪ to‘xtatilgan'}",
+        "",
+        f"🔗 <code>{link(blogger['code'])}</code>",
+        (f"🆔 Telegram ID: <code>{blogger['user_id']}</code>" if blogger.get("user_id")
+         else "🆔 Telegram ID: ⚠️ kiritilmagan — keshbek yig'ilib turadi"),
+        f"💯 Foyda ulushi: <b>{_pct(blogger['percent'])}%</b> · "
+        f"har bir mijozdan <b>{blogger['max_orders']} ta</b> buyurtma",
+        "",
+        f"👥 Taklif qilgan mijozlar: <b>{summary.get('referred_count', 0)} ta</b>",
+        f"🧾 Buyurtmalari: <b>{summary.get('orders_count', 0)} ta</b> "
+        f"(yetkazilgan: {summary.get('delivered_count', 0)})",
+        f"💵 Savdo summasi: <b>{_fmt(summary.get('revenue'))} so'm</b>",
+        f"💰 Jami keshbek: <b>{_fmt(summary.get('earned'))} so'm</b>",
+        f"💳 Balansi: <b>{_fmt(balance)} so'm</b>",
+    ]
+    if summary.get("pending"):
+        lines.append(f"⏳ To'lanmagan (ID kutilmoqda): <b>{_fmt(summary['pending'])} so'm</b>")
+    if blogger.get("contact"):
+        lines.append(f"📞 {blogger['contact']}")
+    if blogger.get("note"):
+        lines.append(f"📝 {blogger['note']}")
+
+    bid = blogger_id
+    rows = [
+        [InlineKeyboardButton(text="👥 Mijozlari", callback_data=f"admin:bloger:buyers:{bid}"),
+         InlineKeyboardButton(text="🧾 Buyurtmalari", callback_data=f"admin:bloger:orders:{bid}")],
+        [InlineKeyboardButton(text="💯 Foizni o'zgartirish", callback_data=f"admin:bloger:edit:percent:{bid}"),
+         InlineKeyboardButton(text="🔢 Buyurtma soni", callback_data=f"admin:bloger:edit:orders:{bid}")],
+        [InlineKeyboardButton(text="🆔 Telegram ID", callback_data=f"admin:bloger:edit:tgid:{bid}"),
+         InlineKeyboardButton(text="✏️ Ism", callback_data=f"admin:bloger:edit:name:{bid}")],
+        [InlineKeyboardButton(
+            text="⏹ To'xtatish" if blogger["active"] else "▶️ Yoqish",
+            callback_data=f"admin:bloger:toggle:{bid}")],
+        [InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"admin:bloger:del:{bid}")],
+        [InlineKeyboardButton(text="🔙 Blogerlar", callback_data="admin:bloger")],
+    ]
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == "admin:bloger")
+async def admin_bloger_list(callback: CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        return
+    await state.clear()
+    text, keyboard = await _render_admin_list()
+    await _render(callback, text, keyboard)
+    await callback.answer()
+
+
+@router.message(Command("blogerlar"))
+async def cmd_blogerlar(message: Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
+    await state.clear()
+    text, keyboard = await _render_admin_list()
+    await message.answer(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+
+
+@router.callback_query(F.data.startswith("admin:bloger:view:"))
+async def admin_bloger_view(callback: CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        return
+    await state.clear()
+    text, keyboard = await _render_admin_view(int(callback.data.rsplit(":", 1)[1]))
+    if text is None:
+        await callback.answer("Bloger topilmadi", show_alert=True)
+        return
+    await _render(callback, text, keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:bloger:buyers:"))
+async def admin_bloger_buyers(callback: CallbackQuery):
+    if not _is_admin(callback.from_user.id):
+        return
+    bid = int(callback.data.rsplit(":", 1)[1])
+    buyers = await database.get_blogger_referred_buyers(bid)
+    lines = [f"👥 <b>Taklif qilingan mijozlar</b> — {len(buyers)} ta", ""]
+    if not buyers:
+        lines.append("Hozircha bu havola orqali hech kim qo'shilmagan.")
+    for i, b in enumerate(buyers[:30], 1):
+        who = b.get("full_name") or f"ID {b['user_id']}"
+        contact = f" · @{b['username']}" if b.get("username") else ""
+        phone = f" · {b['phone']}" if b.get("phone") else ""
+        lines.append(f"{i}. <b>{who}</b>{contact}{phone}")
+        lines.append(
+            f"   🗓 {_dt(b.get('joined_at'))} · 🧾 {b['orders_count']} ta "
+            f"(yetkazilgan {b['delivered_count']}) · 💵 {_fmt(b['spent'])} · 💰 {_fmt(b['earned'])} so'm"
+        )
+    if len(buyers) > 30:
+        lines.append(f"\n… va yana {len(buyers) - 30} ta — to'liq ro'yxat saytda.")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"admin:bloger:view:{bid}")]])
+    await _render(callback, "\n".join(lines), keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:bloger:orders:"))
+async def admin_bloger_orders(callback: CallbackQuery):
+    if not _is_admin(callback.from_user.id):
+        return
+    bid = int(callback.data.rsplit(":", 1)[1])
+    orders = await database.get_blogger_orders(bid, limit=25)
+    lines = ["🧾 <b>Mijozlarning buyurtmalari</b>", ""]
+    if not orders:
+        lines.append("Hozircha buyurtma yo'q.")
+    for o in orders:
+        status = _STATUS_LABEL.get(o["status"], (o["status"], o["status"]))[0]
+        who = (o.get("full_name") or f"ID {o['user_id']}").split()[0]
+        earned = int(o["earned"] or 0)
+        tail = f" · 💰 +{_fmt(earned)} so'm" if earned else ""
+        lines.append(
+            f"#{o['id']} · {_dt(o.get('created_at'))} · <b>{who}</b>\n"
+            f"   💵 {_fmt(o['total'])} so'm · {status}{tail}"
+        )
+    lines.append("\nℹ️ Keshbek faqat yetkazilgan buyurtmalardan beriladi.")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"admin:bloger:view:{bid}")]])
+    await _render(callback, "\n".join(lines), keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:bloger:toggle:"))
+async def admin_bloger_toggle(callback: CallbackQuery):
+    if not _is_admin(callback.from_user.id):
+        return
+    bid = int(callback.data.rsplit(":", 1)[1])
+    blogger = await database.get_blogger(bid)
+    if not blogger:
+        await callback.answer("Bloger topilmadi", show_alert=True)
+        return
+    await database.update_blogger(bid, active=not blogger["active"])
+    text, keyboard = await _render_admin_view(bid)
+    await _render(callback, text, keyboard)
+    await callback.answer("⏹ To'xtatildi" if blogger["active"] else "▶️ Yoqildi")
+
+
+@router.callback_query(F.data.startswith("admin:bloger:del:"))
+async def admin_bloger_delete_ask(callback: CallbackQuery):
+    if not _is_admin(callback.from_user.id):
+        return
+    bid = int(callback.data.rsplit(":", 1)[1])
+    blogger = await database.get_blogger(bid)
+    if not blogger:
+        await callback.answer("Bloger topilmadi", show_alert=True)
+        return
+    text = (
+        f"🗑 <b>{blogger['name']}</b> o'chirilsinmi?\n\n"
+        "Uning taklif qilgan mijozlari ro'yxati va keshbek tarixi ham o'chadi.\n"
+        "Allaqachon to'langan keshbek balansida qoladi.\n\n"
+        "<i>Vaqtincha to'xtatish uchun o'chirish emas, \"⏹ To'xtatish\" ni tanlang.</i>"
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑 Ha, o'chirilsin", callback_data=f"admin:bloger:delyes:{bid}")],
+        [InlineKeyboardButton(text="🔙 Bekor qilish", callback_data=f"admin:bloger:view:{bid}")],
+    ])
+    await _render(callback, text, keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:bloger:delyes:"))
+async def admin_bloger_delete(callback: CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        return
+    await database.delete_blogger(int(callback.data.rsplit(":", 1)[1]))
+    await state.clear()
+    text, keyboard = await _render_admin_list()
+    await _render(callback, text, keyboard)
+    await callback.answer("🗑 O'chirildi")
+
+
+# ─────────────────────────── the "new blogger" wizard ───────────────────────
+
+@router.callback_query(F.data == "admin:bloger:new")
+async def admin_bloger_new(callback: CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        return
+    await state.set_state(BloggerAdminStates.new_name)
+    await _render(callback,
+        "📢 <b>Yangi bloger</b>\n\n1/4 — Blogerning ismini yozing.\n"
+        "<i>Havola shu ismdan yasaladi, masalan: Aziza Keto → "
+        f"t.me/{BOT_USERNAME}?start=aziza_keto</i>",
+        None)
+    await callback.answer()
+
+
+@router.message(BloggerAdminStates.new_name, F.text)
+async def admin_bloger_new_name(message: Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
+    name = message.text.strip()[:120]
+    if not name:
+        await message.answer("Ism bo'sh bo'lmasin. Qaytadan yozing.")
+        return
+    code = await suggest_code(name)
+    await state.update_data(name=name, code=code)
+    await state.set_state(BloggerAdminStates.new_tg)
+    await message.answer(
+        f"✅ Ism: <b>{name}</b>\n🔗 Havolasi: <code>{link(code)}</code>\n\n"
+        f"2/4 — Blogerning <b>Telegram ID</b> raqamini yozing "
+        f"(u o'z kabinetini botda ko'rishi uchun).\n"
+        f"{_SKIP_HINT} Keyinroq ham kiritish mumkin — keshbek yig'ilib turadi.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(BloggerAdminStates.new_tg, F.text)
+async def admin_bloger_new_tg(message: Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
+    raw = message.text.strip()
+    user_id = None
+    if raw != "/skip":
+        if not raw.lstrip("-").isdigit():
+            await message.answer(
+                "🆔 Telegram ID faqat raqamlardan iborat (masalan <code>123456789</code>).\n"
+                "Blogerdan @userinfobot ga /start yozib, ID sini so'rashingiz mumkin.\n"
+                f"{_SKIP_HINT}",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+        user_id = int(raw)
+        existing = await database.get_blogger_by_user_id(user_id)
+        if existing:
+            await message.answer(
+                f"⚠️ Bu ID allaqachon <b>{existing['name']}</b> ga biriktirilgan. "
+                f"Boshqa ID yozing yoki /skip bosing.",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+    await state.update_data(user_id=user_id)
+    await state.set_state(BloggerAdminStates.new_percent)
+    await message.answer(
+        f"3/4 — Foydaning necha <b>foizi</b> blogerga keshbek bo'lsin?\n"
+        f"<i>Faqat raqam yozing, masalan: 10</i>\n{_SKIP_HINT} "
+        f"(standart {_pct(DEFAULT_PERCENT)}%)",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(BloggerAdminStates.new_percent, F.text)
+async def admin_bloger_new_percent(message: Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
+    raw = message.text.strip()
+    percent = DEFAULT_PERCENT
+    if raw != "/skip":
+        try:
+            percent = float(raw.replace(",", ".").rstrip("%"))
+            if not 0 < percent <= 100:
+                raise ValueError
+        except ValueError:
+            await message.answer(f"Foiz 0 dan katta, 100 dan kichik son bo'lsin. Qaytadan yozing.\n{_SKIP_HINT}",
+                                  parse_mode=ParseMode.HTML)
+            return
+    await state.update_data(percent=percent)
+    await state.set_state(BloggerAdminStates.new_orders)
+    await message.answer(
+        f"4/4 — Har bir mijozning nechta buyurtmasidan keshbek berilsin?\n"
+        f"<i>Masalan: 10 — ya'ni o'sha mijozning birinchi 10 ta yetkazilgan xaridi.</i>\n"
+        f"{_SKIP_HINT} (standart {DEFAULT_MAX_ORDERS} ta)",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(BloggerAdminStates.new_orders, F.text)
+async def admin_bloger_new_orders(message: Message, state: FSMContext, bot: Bot):
+    if not _is_admin(message.from_user.id):
+        return
+    raw = message.text.strip()
+    max_orders = DEFAULT_MAX_ORDERS
+    if raw != "/skip":
+        if not raw.isdigit() or int(raw) <= 0:
+            await message.answer(f"Musbat butun son yozing (masalan 10).\n{_SKIP_HINT}",
+                                  parse_mode=ParseMode.HTML)
+            return
+        max_orders = int(raw)
+
+    data = await state.get_data()
+    await state.clear()
+    # The code was reserved several messages ago — re-derive it in case another
+    # admin created a blogger with the same name in the meantime.
+    code = await suggest_code(data["name"])
+    blogger_id = await database.create_blogger(
+        name=data["name"], code=code, user_id=data.get("user_id"),
+        percent=data.get("percent", DEFAULT_PERCENT), max_orders=max_orders,
+    )
+    blogger = await database.get_blogger(blogger_id)
+    if blogger.get("user_id"):
+        try:
+            await notify_registered(blogger, bot)
+            await settle_pending(blogger, bot)
+        except Exception:
+            logger.exception("Blogger welcome failed for %s", blogger_id)
+
+    text, keyboard = await _render_admin_view(blogger_id)
+    await message.answer(
+        f"✅ <b>Bloger qo'shildi!</b>\n\n"
+        f"🔗 Havolasini blogerga yuboring (bosib nusxalasa bo'ladi):\n"
+        f"<code>{link(code)}</code>\n\n"
+        + ("📨 Blogerga tanishtiruv xabari yuborildi."
+           if blogger.get("user_id")
+           else "⚠️ Telegram ID kiritilmagan — bloger o'z kabinetini hozircha ko'ra olmaydi. "
+                "Keyinroq kiritsangiz, yig'ilgan keshbek balansiga tushadi."),
+        parse_mode=ParseMode.HTML,
+    )
+    await message.answer(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+
+
+# ──────────────────────────── single-field edits ────────────────────────────
+
+_EDIT_PROMPT = {
+    "percent": "💯 Yangi foizni yozing (masalan 10):",
+    "orders":  "🔢 Har bir mijozdan nechta buyurtmadan keshbek berilsin? (masalan 10):",
+    "tgid":    ("🆔 Blogerning Telegram ID raqamini yozing.\n"
+                "<i>O'chirish uchun 0 yozing.</i>"),
+    "name":    "✏️ Blogerning yangi ismini yozing:\n<i>Havolasi o'zgarmaydi.</i>",
+}
+
+
+@router.callback_query(F.data.startswith("admin:bloger:edit:"))
+async def admin_bloger_edit_ask(callback: CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        return
+    _, _, _, field, raw_id = callback.data.split(":")
+    if field not in _EDIT_PROMPT:
+        await callback.answer()
+        return
+    blogger_id = int(raw_id)
+    await state.set_state(BloggerAdminStates.edit_value)
+    await state.update_data(field=field, blogger_id=blogger_id)
+    await _render(callback, _EDIT_PROMPT[field], None)
+    await callback.answer()
+
+
+@router.message(BloggerAdminStates.edit_value, F.text)
+async def admin_bloger_edit_save(message: Message, state: FSMContext, bot: Bot):
+    if not _is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    field, blogger_id = data.get("field"), data.get("blogger_id")
+    raw = message.text.strip()
+    blogger = await database.get_blogger(blogger_id)
+    if not blogger:
+        await state.clear()
+        await message.answer("Bloger topilmadi.")
+        return
+
+    notify = False
+    if field == "percent":
+        try:
+            value = float(raw.replace(",", ".").rstrip("%"))
+            if not 0 < value <= 100:
+                raise ValueError
+        except ValueError:
+            await message.answer("Foiz 0 dan katta, 100 dan kichik son bo'lsin. Qaytadan yozing.")
+            return
+        await database.update_blogger(blogger_id, percent=value)
+    elif field == "orders":
+        if not raw.isdigit() or int(raw) <= 0:
+            await message.answer("Musbat butun son yozing (masalan 10).")
+            return
+        await database.update_blogger(blogger_id, max_orders=int(raw))
+    elif field == "name":
+        if not raw:
+            await message.answer("Ism bo'sh bo'lmasin.")
+            return
+        await database.update_blogger(blogger_id, name=raw[:120])
+    elif field == "tgid":
+        if raw == "0":
+            await database.update_blogger(blogger_id, user_id=None)
+        elif raw.lstrip("-").isdigit():
+            user_id = int(raw)
+            existing = await database.get_blogger_by_user_id(user_id)
+            if existing and existing["id"] != blogger_id:
+                await message.answer(f"⚠️ Bu ID <b>{existing['name']}</b> ga biriktirilgan. "
+                                      f"Boshqa ID yozing.", parse_mode=ParseMode.HTML)
+                return
+            await database.update_blogger(blogger_id, user_id=user_id)
+            notify = user_id != blogger.get("user_id")
+        else:
+            await message.answer(
+                "🆔 Telegram ID faqat raqamlardan iborat (masalan <code>123456789</code>). "
+                "O'chirish uchun 0 yozing.", parse_mode=ParseMode.HTML)
+            return
+
+    await state.clear()
+    updated = await database.get_blogger(blogger_id)
+    if notify:
+        try:
+            await notify_registered(updated, bot)
+            settled = await settle_pending(updated, bot)
+            if settled:
+                await message.answer(
+                    f"💰 Yig'ilib turgan <b>{_fmt(settled)} so'm</b> keshbek blogerning "
+                    f"balansiga o'tkazildi.", parse_mode=ParseMode.HTML)
+        except Exception:
+            logger.exception("Blogger welcome failed for %s", blogger_id)
+
+    text, keyboard = await _render_admin_view(blogger_id)
+    await message.answer("✅ Saqlandi.")
+    await message.answer(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)

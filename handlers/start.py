@@ -91,6 +91,32 @@ async def cmd_menu(message: Message, state: FSMContext):
 
 
 
+@router.message(Command("kabinet"))
+async def cmd_kabinet(message: Message, state: FSMContext):
+    """Typed shortcut into Kabinetim — same screen as the menu button, minus
+    the one-time intro (which only makes sense on a first visit)."""
+    await state.clear()
+    user_id = message.from_user.id
+    lang = await get_user_language(user_id)
+    user = await get_user(user_id)
+    if not user:
+        await ensure_registered(message.bot, message.from_user)
+        user = await get_user(user_id)
+    text, keyboard = await build_kabinetim_view(message.bot, user_id, lang, user or {})
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.message(Command("yordam"))
+async def cmd_help(message: Message, state: FSMContext):
+    await state.clear()
+    lang = await get_user_language(message.from_user.id)
+    await message.answer(
+        get_text("help_text", lang, support_username=SUPPORT_USERNAME),
+        reply_markup=build_help_keyboard(lang),
+        parse_mode="HTML",
+    )
+
+
 @router.message(CommandStart(deep_link=True))
 async def cmd_start_deep_link(message: Message, command: CommandObject):
     """A /start carrying a payload — either a blogger's personal link
@@ -316,7 +342,9 @@ async def kabinetim_after_intro(callback: CallbackQuery):
     await _render_kabinetim(callback, user_id, lang, user)
 
 
-async def _render_kabinetim(callback: CallbackQuery, user_id: int, lang: str, user: dict) -> None:
+async def build_kabinetim_view(bot, user_id: int, lang: str, user: dict):
+    """(text, keyboard) for Kabinetim — shared by the inline button and the
+    /kabinet command."""
     import gamification
 
     profile = await gamification.get_profile(user_id)
@@ -331,7 +359,7 @@ async def _render_kabinetim(callback: CallbackQuery, user_id: int, lang: str, us
     else:
         progress_line = get_text("kabinetim_top_level", lang)
 
-    name = user.get("full_name") or callback.from_user.full_name or "—"
+    name = user.get("full_name") or "—"
     phone = user.get("phone") or get_text("kabinetim_no_phone", lang)
     lang_label = _LANG_LABELS.get(lang, lang)
 
@@ -340,7 +368,7 @@ async def _render_kabinetim(callback: CallbackQuery, user_id: int, lang: str, us
     # buyer who hasn't ordered yet never gets one (owner report 2026-07-27).
     try:
         if not user.get("keto_pin_message_id") and await gamification.is_enabled():
-            await gamification.ensure_pinned_card(callback.bot, user_id, lang)
+            await gamification.ensure_pinned_card(bot, user_id, lang)
     except Exception:
         pass
 
@@ -364,7 +392,11 @@ async def _render_kabinetim(callback: CallbackQuery, user_id: int, lang: str, us
     if await bloggers.has_cabinet(user_id):
         rows.append(bloggers.cabinet_row(lang))
     rows.append([InlineKeyboardButton(text=get_text("btn_back_to_menu", lang), callback_data="main_menu")])
-    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _render_kabinetim(callback: CallbackQuery, user_id: int, lang: str, user: dict) -> None:
+    text, keyboard = await build_kabinetim_view(callback.bot, user_id, lang, user)
     await _send_or_edit(callback, text, keyboard)
     await callback.answer()
 
@@ -396,12 +428,9 @@ async def show_achievements(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == "help")
-async def show_help(callback: CallbackQuery):
-    """Show help"""
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    lang = await get_user_language(callback.from_user.id)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+def build_help_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Shared by the Qo'llanma button and the /yordam command."""
+    return InlineKeyboardMarkup(inline_keyboard=[
         # Language switch moved here from the main menu (per request): the
         # guide is where users look for "how do I change things".
         [InlineKeyboardButton(
@@ -417,9 +446,15 @@ async def show_help(callback: CallbackQuery):
             callback_data="main_menu"
         )],
     ])
+
+
+@router.callback_query(F.data == "help")
+async def show_help(callback: CallbackQuery):
+    """Show help"""
+    lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
         get_text("help_text", lang, support_username=SUPPORT_USERNAME),
-        reply_markup=keyboard,
+        reply_markup=build_help_keyboard(lang),
         parse_mode="HTML"
     )
     await callback.answer()

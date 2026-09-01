@@ -6,6 +6,7 @@ import json
 import logging
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -104,6 +105,22 @@ async def show_admin_panel(callback: CallbackQuery, state: FSMContext = None):
         parse_mode="HTML"
     )
     await callback.answer()
+
+
+@router.message(Command("admin"))
+async def cmd_admin(message: Message, state: FSMContext):
+    """Typed way into the admin panel. Non-admins get nothing back — and the
+    message stops here rather than falling through to the support relay,
+    which would otherwise forward every stray "/admin" to the owners."""
+    if not is_admin(message.from_user.id):
+        return
+    await state.clear()
+    lang = await get_user_language(message.from_user.id)
+    await message.answer(
+        get_text("admin_panel", lang),
+        reply_markup=admin_panel_keyboard(lang),
+        parse_mode="HTML",
+    )
 
 
 @router.callback_query(F.data.startswith("admin_menu:"))

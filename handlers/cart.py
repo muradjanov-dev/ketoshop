@@ -9,6 +9,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
     InlineKeyboardMarkup, InlineKeyboardButton
 )
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -955,17 +956,34 @@ async def show_my_orders(callback: CallbackQuery):
     """Show buyer's order history as plain text — no per-order action buttons.
     Only navigation back to the main menu."""
     lang = await get_user_language(callback.from_user.id)
-    orders = await get_user_orders(callback.from_user.id)
+    text, keyboard = await build_my_orders_view(callback.from_user.id, lang)
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
 
-    if not orders:
-        await callback.message.edit_text(
-            get_text("no_orders", lang),
-            reply_markup=main_menu_keyboard(lang),
-            parse_mode="HTML"
-        )
-        await callback.answer()
+
+# ===== Slash-command shortcuts =====
+# Every main-menu destination also answers to a typed command, so the "/"
+# menu in Telegram is a real table of contents (owner request 2026-09-01).
+# They render a NEW message rather than editing one — a command has no bubble
+# of its own to edit.
+
+@router.message(Command("savat"))
+async def cmd_cart(message: Message):
+    lang = await get_user_language(message.from_user.id)
+    text, keyboard = await build_cart_view(message.from_user.id, lang)
+    if text is None:
+        await message.answer(get_text("cart_empty", lang),
+                             reply_markup=main_menu_keyboard(lang), parse_mode="HTML")
         return
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
+
+async def build_my_orders_view(user_id: int, lang: str):
+    """(text, keyboard) for the buyer's order history — shared by the inline
+    "Mening buyurtmalarim" button and the /buyurtmalarim command."""
+    orders = await get_user_orders(user_id)
+    if not orders:
+        return get_text("no_orders", lang), main_menu_keyboard(lang)
     text = get_text("my_orders_title", lang)
     for order in orders[:10]:
         text += get_text("order_item", lang,
@@ -974,13 +992,14 @@ async def show_my_orders(callback: CallbackQuery):
             status=get_order_status(order["status"], lang),
             total=f"{int(order['total']):,}".replace(",", " "),
         )
+    return text, back_to_menu_keyboard(lang)
 
-    await callback.message.edit_text(
-        text,
-        reply_markup=back_to_menu_keyboard(lang),
-        parse_mode="HTML"
-    )
-    await callback.answer()
+
+@router.message(Command("buyurtmalarim"))
+async def cmd_my_orders(message: Message):
+    lang = await get_user_language(message.from_user.id)
+    text, keyboard = await build_my_orders_view(message.from_user.id, lang)
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
 @router.callback_query(F.data.startswith("reorder:"))

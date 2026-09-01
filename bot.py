@@ -10,7 +10,7 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import BotCommand, MenuButtonWebApp, WebAppInfo
+from aiogram.types import MenuButtonWebApp, WebAppInfo
 
 from config import BOT_TOKEN, ADMIN_IDS
 from database import init_db, close_db, get_extra_admin_ids
@@ -38,6 +38,41 @@ from meta_leads import router as meta_leads_router
 from meta_ads import router as meta_ads_router
 
 from webapp_server import create_webapp
+
+
+async def _register_commands(bot: Bot, logger) -> None:
+    """Publish the "/" menu. Per-chat scopes are best-effort: a chat the bot
+    has never seen (an admin who never messaged it, a blogger who hasn't
+    started it yet) makes Telegram reject that one scope, which must not stop
+    the others — the default list is what matters most."""
+    from aiogram.types import BotCommandScopeDefault, BotCommandScopeChat
+    from keyboards import BUYER_COMMANDS, ADMIN_COMMANDS, BLOGGER_COMMAND
+
+    try:
+        await bot.set_my_commands(BUYER_COMMANDS, scope=BotCommandScopeDefault())
+        logger.info("Bot commands registered (%d for everyone)", len(BUYER_COMMANDS))
+    except Exception:
+        logger.exception("Failed to set default bot commands")
+
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.set_my_commands(BUYER_COMMANDS + ADMIN_COMMANDS,
+                                      scope=BotCommandScopeChat(chat_id=admin_id))
+        except Exception:
+            logger.warning("Could not set admin commands for %s", admin_id, exc_info=True)
+
+    try:
+        from database import get_blogger_user_ids
+        for blogger_id in await get_blogger_user_ids():
+            if blogger_id in ADMIN_IDS:
+                continue
+            try:
+                await bot.set_my_commands(BUYER_COMMANDS + [BLOGGER_COMMAND],
+                                          scope=BotCommandScopeChat(chat_id=blogger_id))
+            except Exception:
+                logger.warning("Could not set blogger commands for %s", blogger_id, exc_info=True)
+    except Exception:
+        logger.exception("Failed to set blogger command scopes")
 
 
 async def main():
@@ -96,20 +131,15 @@ async def main():
     # stale flow left behind — see state_guard.py.
     dp.message.outer_middleware(StateResetOnCommandMiddleware())
 
-    # Register the slash commands so typing "/" offers them. The chat's menu
-    # button is taken by the Mini App below, so this list is only reachable by
-    # typing — the real "I don't know how to start" fix is the persistent
-    # reply keyboard (see keyboards.persistent_menu_keyboard); this is the
-    # belt to its braces, and makes /start discoverable for anyone who does
-    # type a slash.
-    try:
-        await bot.set_my_commands([
-            BotCommand(command="start", description="🏠 Botni ishga tushirish / Bosh menyu"),
-            BotCommand(command="menu", description="🏠 Bosh menyu"),
-        ])
-        logger.info("Bot commands registered")
-    except Exception:
-        logger.exception("Failed to set bot commands")
+    # Register the slash commands so typing "/" offers them — a real table of
+    # contents for the bot (owner request 2026-09-01: "shu yerda tayyor
+    # shortcutlar bo'lsin"). Three scopes, because the useful list differs per
+    # audience: everyone gets the shop, admins additionally get the panel and
+    # the operational commands, and each partner blogger gets /bloger. The
+    # chat's menu button is taken by the Mini App, so this typed list plus the
+    # persistent reply keyboard (keyboards.persistent_menu_keyboard) are the
+    # two ways around.
+    await _register_commands(bot, logger)
 
     # Warm the aksiya cache before the first update is handled — the synchronous
     # keyboard builders read it without awaiting (promotions.cached_active), so
