@@ -30,9 +30,11 @@ from database import (
     search_products, save_web_image,
     get_support_threads, get_support_thread, count_open_support,
     get_admin_profiles, get_targets_state, set_targets,
+    get_b2b_products, set_b2b_price,
 )
 from locales import (
-    get_text, get_order_status, get_unit_name, get_display_unit, get_delivery_method_name,
+    get_text, get_order_status, get_unit_name, get_display_unit, get_item_unit,
+    get_delivery_method_name,
     get_category_name, get_month_name, localize_product_text, CATEGORIES,
 )
 from keyboards import (
@@ -81,6 +83,7 @@ class AdminStates(StatesGroup):
     b2b_eritritol_address = State()
     b2b_eritritol_phone = State()
     b2b_eritritol_quantity = State()
+    b2b_price_value = State()   # setting one product's wholesale price per kg
     b2b_eritritol_total = State()
     b2b_eritritol_confirm = State()
 
@@ -2054,10 +2057,127 @@ async def b2b_submenu(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🛒 Optom Eritritol", callback_data="admin:b2b_eritritol")],
         [InlineKeyboardButton(text="📦 Boshqa Maxsulotlar (B2B)", callback_data="admin:b2b_order")],
+        [InlineKeyboardButton(text="💰 Optom narxlar", callback_data="admin:b2b_prices")],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")]
     ])
     await callback.message.edit_text("B2B Savdo turini tanlang:", reply_markup=kb)
     await callback.answer()
+
+
+# ===== OPTOM NARXLAR (wholesale price list) =====
+# Admin-only by construction: every handler below checks is_admin, the list is
+# only reachable from the B2B menu, and b2b_price is absent from the buyer
+# serializers in webapp_server.py and the bot's catalog, which both build
+# explicit field lists. Owner's requirement was that nothing about B2B is
+# visible outside the admin panel.
+
+_B2B_PAGE = 10
+
+
+async def _render_b2b_prices(page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
+    products = await get_b2b_products()
+    priced = [p for p in products if float(p["b2b_price"] or 0) > 0]
+
+    pages = max(1, (len(products) + _B2B_PAGE - 1) // _B2B_PAGE)
+    page = max(0, min(page, pages - 1))
+    chunk = products[page * _B2B_PAGE:(page + 1) * _B2B_PAGE]
+
+    lines = ["💰 <b>Optom narxlar</b> (1 kg uchun)", "",
+             f"✅ Narx belgilangan: <b>{len(priced)}</b> ta · "
+             f"⬜ belgilanmagan: <b>{len(products) - len(priced)}</b> ta", ""]
+    for p in chunk:
+        b2b = float(p["b2b_price"] or 0)
+        if b2b > 0:
+            lines.append(f"✅ <b>{html.escape(p['name'])}</b>")
+            lines.append(f"   💰 {_fmt_price(b2b)} so'm / kg · chakana {_fmt_price(p['price'])} so'm")
+        else:
+            lines.append(f"⬜ <b>{html.escape(p['name'])}</b>")
+            lines.append(f"   optom narx yo'q · chakana {_fmt_price(p['price'])} so'm")
+    lines += ["", f"📄 {page + 1} / {pages}",
+              "", "Narx belgilash uchun mahsulotni tanlang:"]
+
+    rows = [[InlineKeyboardButton(
+        text=f"{'✅' if float(p['b2b_price'] or 0) > 0 else '⬜'} {p['name'][:30]}",
+        callback_data=f"admin:b2bprice:{p['id']}",
+    )] for p in chunk]
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"admin:b2b_prices:{page - 1}"))
+    if page < pages - 1:
+        nav.append(InlineKeyboardButton(text="➡️", callback_data=f"admin:b2b_prices:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin:b2b_menu")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == "admin:b2b_prices")
+@router.callback_query(F.data.startswith("admin:b2b_prices:"))
+async def show_b2b_prices(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    await state.clear()
+    parts = callback.data.split(":")
+    page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+    text, keyboard = await _render_b2b_prices(page)
+    await _support_show(callback, text, keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:b2bprice:"))
+async def b2b_price_prompt(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    pid = int(callback.data.rsplit(":", 1)[1])
+    product = await get_product(pid)
+    if not product:
+        await callback.answer("❌")
+        return
+    await state.set_state(AdminStates.b2b_price_value)
+    await state.update_data(b2b_price_pid=pid)
+    current = float(product.get("b2b_price") or 0)
+    await callback.message.answer(
+        f"💰 <b>{html.escape(product['name'])}</b>\n\n"
+        f"Chakana narx: {_fmt_price(product['price'])} so'm\n"
+        f"Hozirgi optom narx: "
+        + (f"{_fmt_price(current)} so'm / kg" if current > 0 else "belgilanmagan") + "\n\n"
+        "1 kg uchun optom narxni so'mda yuboring (masalan: 42000).\n"
+        "<i>O'chirish uchun 0 yuboring.</i>",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.b2b_price_value, F.text)
+async def b2b_price_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return
+    data = await state.get_data()
+    pid = data.get("b2b_price_pid")
+    if not pid:
+        await state.clear()
+        return
+    raw = (message.text or "").strip().replace(" ", "").replace(",", "")
+    try:
+        value = float(raw)
+        if value < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("⚠️ Narxni son bilan yuboring, masalan: 42000")
+        return
+
+    await set_b2b_price(pid, value)
+    await state.clear()
+    product = await get_product(pid)
+    name = html.escape((product or {}).get("name") or "")
+    note = (f"✅ <b>{name}</b> — optom narx {_fmt_price(value)} so'm / kg."
+            if value > 0 else f"🗑 <b>{name}</b> — optom narx o'chirildi.")
+    text, keyboard = await _render_b2b_prices()
+    await message.answer(note, parse_mode="HTML")
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 @router.callback_query(F.data == "admin:b2b_order")
 async def b2b_order_start(callback: CallbackQuery, state: FSMContext):
@@ -2337,6 +2457,38 @@ async def manual_pick_product(callback: CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
     lang = data.get("lang", "uz")
+
+    if data.get("order_type") == "b2b":
+        # Wholesale ignores the product's packaging entirely: the price is per
+        # kilogram and the amount is a real weight, so 500 gr is entered as
+        # 0.5. Falls back to the retail price when no wholesale price has been
+        # set yet, and says so — quoting retail to a wholesaler by accident is
+        # the one mistake this screen has to make impossible to miss.
+        b2b_price = float(product.get("b2b_price") or 0)
+        no_price = b2b_price <= 0
+        if no_price:
+            d = active_discount(product.get("discount_percent"), product.get("discount_until"))
+            b2b_price = effective_price(product["price"], d, product.get("discount_until"))
+
+        await state.update_data(
+            pending_product_id=pid,
+            pending_product_name=product["name"],
+            pending_product_price=b2b_price,
+            pending_product_unit="kg",
+            pending_bulk=True,
+        )
+        await state.set_state(AdminStates.manual_quantity)
+        warn = ("\n\n⚠️ Bu mahsulotga optom narx belgilanmagan — chakana narx "
+                "ko'rsatildi. Keyingi qadamda to'g'ri narxni kiriting.") if no_price else ""
+        await callback.message.edit_text(
+            get_text("b2b_enter_quantity", lang,
+                     name=html.escape(product["name"]),
+                     price=_fmt_price(b2b_price)) + warn,
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
     d = active_discount(product.get("discount_percent"), product.get("discount_until"))
     unit_price = effective_price(product["price"], d, product.get("discount_until"))
 
@@ -2345,6 +2497,7 @@ async def manual_pick_product(callback: CallbackQuery, state: FSMContext):
         pending_product_name=product["name"],
         pending_product_price=unit_price,
         pending_product_unit=product.get("unit") or "",
+        pending_bulk=False,
     )
     await state.set_state(AdminStates.manual_quantity)
     await callback.message.edit_text(
@@ -2373,13 +2526,17 @@ async def manual_quantity(message: Message, state: FSMContext):
         await message.answer(get_text("manual_invalid_quantity", lang), reply_markup=admin_cancel_keyboard(lang))
         return
 
-    # Quantity captured — hop to the optional per-line discount step.
+    # Quantity captured — hop to the price step. Retail asks for a discount
+    # off the shelf price; wholesale asks for the agreed price per kg, since
+    # that is the number the two sides actually shook hands on.
     await state.update_data(pending_qty=qty)
     await state.set_state(AdminStates.manual_discount)
+    base_price = float(data.get("pending_product_price") or 0)
+    key = "b2b_enter_price" if data.get("pending_bulk") else "manual_enter_discount"
     await message.answer(
-        get_text("manual_enter_discount", lang,
+        get_text(key, lang,
                  name=data.get("pending_product_name") or "",
-                 price=_fmt_price(float(data.get("pending_product_price") or 0))),
+                 price=_fmt_price(base_price)),
         parse_mode="HTML",
     )
 
@@ -2400,6 +2557,26 @@ async def manual_discount(message: Message, state: FSMContext):
     lang = data.get("lang", "uz")
     raw = (message.text or "").strip().lower()
     base_price = float(data.get("pending_product_price") or 0)
+
+    if data.get("pending_bulk"):
+        # Wholesale: the number IS the agreed per-kg price. No percent
+        # arithmetic and no "a discount cannot raise the price" guard — a
+        # wholesale quote is negotiated per deal and legitimately lands on
+        # either side of the retail figure, so that guard would reject exactly
+        # the entries this screen exists for.
+        if raw in ("/skip", "skip", "-", ""):
+            final_price = base_price
+        else:
+            try:
+                final_price = float(raw.replace(",", ".").replace(" ", "").replace("%", ""))
+                if final_price <= 0:
+                    raise ValueError
+            except (ValueError, AttributeError):
+                await message.answer(get_text("b2b_invalid_price", lang),
+                                     reply_markup=admin_cancel_keyboard(lang))
+                return
+        await _add_manual_item(message, state, data, lang, final_price, discount=0, bulk=True)
+        return
 
     if raw in ("/skip", "skip", "-", ""):
         d = 0
@@ -2431,10 +2608,19 @@ async def manual_discount(message: Message, state: FSMContext):
             final_price = num
             d = round((base_price - final_price) / base_price * 100) if base_price > 0 else 0
 
+    await _add_manual_item(message, state, data, lang, final_price, d, bulk=False)
+
+
+async def _add_manual_item(message: Message, state: FSMContext, data: dict, lang: str,
+                           final_price: float, discount: int, bulk: bool) -> None:
+    """Append the line the admin just described, confirm it, and loop back to
+    the picker. Shared by the retail and wholesale price steps — they disagree
+    about how the price is arrived at, not about what a line looks like."""
     pid = data.get("pending_product_id")
     name = data.get("pending_product_name")
     unit = data.get("pending_product_unit") or ""
     qty = float(data.get("pending_qty") or 0)
+    base_price = float(data.get("pending_product_price") or 0)
 
     items: list[dict] = list(data.get("items") or [])
     item: dict = {
@@ -2444,25 +2630,30 @@ async def manual_discount(message: Message, state: FSMContext):
         "price": final_price,
         "unit": unit,
     }
+    if bulk:
+        # Marks the quantity as a real weight rather than a package count, so
+        # locales.get_item_unit keeps saying "kg" instead of "dona".
+        item["bulk"] = True
     # Per-line discount applies to this order only; keeping original_price +
     # discount_percent on the item lets the order card render the 🔥 badge
     # and feed into the total-saved line.
-    if d > 0:
+    if discount > 0:
         item["original_price"] = base_price
-        item["discount_percent"] = d
+        item["discount_percent"] = discount
     items.append(item)
-    await state.update_data(items=items, pending_qty=None)
+    await state.update_data(items=items, pending_qty=None, pending_bulk=False)
 
     line_total = qty * final_price
-    qty_str = int(qty) if float(qty).is_integer() else f"{qty:.2f}"
-    if d > 0:
+    qty_str = int(qty) if float(qty).is_integer() else f"{qty:g}"
+    unit_label = get_item_unit(item, lang)
+    if discount > 0:
         body = get_text("manual_item_added_discount", lang,
-                        name=name, qty=qty_str, unit=get_display_unit(unit, lang),
+                        name=name, qty=qty_str, unit=unit_label,
                         old=_fmt_price(base_price), price=_fmt_price(final_price),
-                        percent=d, line_total=_fmt_price(line_total))
+                        percent=discount, line_total=_fmt_price(line_total))
     else:
         body = get_text("manual_item_added", lang,
-                        name=name, qty=qty_str, unit=get_display_unit(unit, lang),
+                        name=name, qty=qty_str, unit=unit_label,
                         price=_fmt_price(final_price), line_total=_fmt_price(line_total))
     await message.answer(body, parse_mode="HTML")
 
@@ -2499,7 +2690,7 @@ async def manual_finish_items(callback: CallbackQuery, state: FSMContext):
         items_block = "\n".join(
             f"• {html.escape(it['name'])} — "
             f"{(int(it['quantity']) if float(it['quantity']).is_integer() else it['quantity'])} "
-            f"{get_display_unit(it.get('unit') or '', lang)} × {_fmt_price(it['price'])} = "
+            f"{get_item_unit(it, lang)} × {_fmt_price(it['price'])} = "
             f"<b>{_fmt_price(float(it['quantity']) * float(it['price']))}</b>"
             for it in items
         )
@@ -2614,10 +2805,12 @@ async def _show_manual_confirm(target, state: FSMContext, lang: str) -> None:
     items_lines = []
     for it in items:
         qty = float(it["quantity"])
-        qty_str = str(int(qty)) if qty.is_integer() else f"{qty:.2f}"
+        # :g not :.2f — a wholesale line of half a kilo should read "0.5 kg",
+        # not "0.50 kg".
+        qty_str = str(int(qty)) if qty.is_integer() else f"{qty:g}"
         line_total = qty * float(it["price"])
         items_lines.append(
-            f"• {html.escape(it['name'])} — {qty_str} {get_display_unit(it.get('unit') or '', lang)} "
+            f"• {html.escape(it['name'])} — {qty_str} {get_item_unit(it, lang)} "
             f"× {_fmt_price(it['price'])} = <b>{_fmt_price(line_total)}</b>"
         )
     items_block = "\n".join(items_lines) if items_lines else "—"

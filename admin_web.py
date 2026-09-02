@@ -232,6 +232,7 @@ async def api_products_create(request: web.Request):
         name_ru=_clean_str(b.get("name_ru"), 200),
         description_ru=_clean_str(b.get("description_ru"), 2000),
         cost_price=float(b.get("cost_price") or 0),
+        b2b_price=float(b.get("b2b_price") or 0),
         discount_percent=int(b.get("discount_percent") or 0),
         image_url=_clean_str(b.get("image_url"), 300),
     )
@@ -255,6 +256,9 @@ async def api_products_update(request: web.Request):
     if "description_ru" in b:   fields["description_ru"] = _clean_str(b["description_ru"], 2000)
     if "price" in b:            fields["price"] = float(b["price"])
     if "cost_price" in b:       fields["cost_price"] = float(b["cost_price"] or 0)
+    # Wholesale price per kg. Admin-only, like cost_price — the buyer
+    # serializers never read it.
+    if "b2b_price" in b:        fields["b2b_price"] = float(b["b2b_price"] or 0)
     if "quantity" in b:         fields["quantity"] = float(b["quantity"] or 0)
     if "unit" in b:             fields["unit"] = _clean_str(b["unit"], 20) or "kg"
     if "discount_percent" in b: fields["discount_percent"] = int(b["discount_percent"] or 0)

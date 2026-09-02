@@ -348,6 +348,39 @@ TEXTS = {
         "uz": "✅ Buyurtma #{order_id} saqlandi va statistikaga qo'shildi.",
         "ru": "✅ Заказ #{order_id} сохранён и учтён в статистике.",
     },
+    # Wholesale is quoted per kilogram and sold in any amount, so these two
+    # prompts deliberately spell out the "500 gr = 0.5" convention every time
+    # rather than assuming it is remembered (owner request 2026-09-02).
+    "b2b_enter_quantity": {
+        "uz": (
+            "📦 <b>{name}</b>\n"
+            "💰 Optom narx: <b>{price} so'm / 1 kg</b>\n\n"
+            "Necha <b>kg</b> sotildi?\n"
+            "<i>500 gr uchun 0.5 · 1 kg 200 gr uchun 1.2 deb yozing.</i>"
+        ),
+        "ru": (
+            "📦 <b>{name}</b>\n"
+            "💰 Оптовая цена: <b>{price} сум / 1 кг</b>\n\n"
+            "Сколько <b>кг</b> продано?\n"
+            "<i>Для 500 г напишите 0.5 · для 1 кг 200 г — 1.2.</i>"
+        ),
+    },
+    "b2b_enter_price": {
+        "uz": (
+            "💰 <b>{name}</b> — 1 kg narxi\n\n"
+            "Kelishilgan narxni so'mda yuboring (masalan: 42000).\n"
+            "<i>O'zgartirmasangiz /skip — {price} so'm qoladi.</i>"
+        ),
+        "ru": (
+            "💰 <b>{name}</b> — цена за 1 кг\n\n"
+            "Отправьте согласованную цену в сумах (например: 42000).\n"
+            "<i>Оставить {price} сум — /skip.</i>"
+        ),
+    },
+    "b2b_invalid_price": {
+        "uz": "⚠️ Narxni son bilan yuboring, masalan: 42000",
+        "ru": "⚠️ Отправьте цену числом, например: 42000",
+    },
     "b2b_order_intro": {
         "uz": (
             "🏢 <b>B2B savdo kiritish</b>\n\n"
@@ -1763,6 +1796,20 @@ def get_display_unit(unit_key: str, lang: str) -> str:
     if unit_key in ("kg", "g"):
         return get_text("unit_piece", lang)
     return get_unit_name(unit_key, lang)
+
+
+def get_item_unit(item: dict, lang: str) -> str:
+    """Unit label for one cart/order line.
+
+    Retail weight-priced goods are sold as packages, which is why
+    get_display_unit rewrites their kg/g to "dona". A wholesale line is the
+    exception the owner asked for on 2026-09-02: its quantity IS a weight
+    (0.5 means half a kilo), so it has to keep the real unit or the packing
+    slip ends up saying "0.5 dona". Lines mark themselves with `bulk`."""
+    unit = item.get("unit") or ""
+    if item.get("bulk"):
+        return get_unit_name(unit, lang)
+    return get_display_unit(unit, lang)
 
 
 def get_order_status(status: str, lang: str) -> str:

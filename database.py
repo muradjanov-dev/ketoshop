@@ -337,6 +337,20 @@ async def init_db():
         except Exception:
             pass
 
+        # Wholesale price, PER KILOGRAM (owner request 2026-09-02). Retail and
+        # wholesale are two different prices for the same goods: retail is per
+        # package ("1 dona Eritritol 100gr"), wholesale is per kg and sold in
+        # whatever amount the buyer asks for — 500 gr is entered as 0.5.
+        # Keeping it in its own column rather than deriving it from `price`
+        # means the two move independently, which is the point.
+        # Admin-only, like cost_price: the buyer serializers in
+        # webapp_server.py and the bot's catalog both build explicit field
+        # lists, so this never reaches a buyer.
+        try:
+            await conn.execute("ALTER TABLE products ADD COLUMN b2b_price DOUBLE PRECISION DEFAULT 0")
+        except Exception:
+            pass
+
         # Website-hosted product image (URL/path served by our own server).
         # Separate from photo_id (a Telegram file_id) so images uploaded via the
         # admin website work on a plain browser page, not only inside Telegram.
@@ -1118,7 +1132,7 @@ async def bulk_set_category_discount(category: str, discount_percent: int,
 
 
 async def update_product(product_id: int, **kwargs):
-    allowed_columns = {"name", "description", "price", "unit", "quantity", "category", "photo_id", "is_active", "name_ru", "description_ru", "discount_percent", "discount_until", "low_stock_threshold", "cost_price", "image_url"}
+    allowed_columns = {"name", "description", "price", "unit", "quantity", "category", "photo_id", "is_active", "name_ru", "description_ru", "discount_percent", "discount_until", "low_stock_threshold", "cost_price", "b2b_price", "image_url"}
     async with pool.acquire() as conn:
         for key, value in kwargs.items():
             if key not in allowed_columns:
@@ -2693,6 +2707,33 @@ def now_local_for_display() -> "datetime":
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+async def get_b2b_products(only_priced: bool = False) -> list[dict]:
+    """The wholesale price list — admin-only by every caller's contract.
+
+    Returns active products with their per-kg wholesale price, priced ones
+    first: an admin opening the list wants to see what is ready to sell, and
+    then what still needs a price put on it."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, name, name_ru, unit, quantity, category, price,
+                      COALESCE(b2b_price, 0) AS b2b_price,
+                      COALESCE(cost_price, 0) AS cost_price
+                 FROM products
+                WHERE is_active = 1
+                  AND ($1::bool IS NOT TRUE OR COALESCE(b2b_price, 0) > 0)
+                ORDER BY COALESCE(b2b_price, 0) > 0 DESC, category, name""",
+            only_priced,
+        )
+        return [dict(r) for r in rows]
+
+
+async def set_b2b_price(product_id: int, price: float) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE products SET b2b_price = $2 WHERE id = $1", product_id, float(price)
+        )
+
+
 async def get_all_cost_prices() -> dict[int, float]:
     """Return {product_id: cost_price} for every product.
 
@@ -3109,6 +3150,7 @@ async def admin_create_product(seller_id: int, name: str, price: float, category
                                unit: str = "kg", quantity: float = 0,
                                description: str = None, name_ru: str = None,
                                description_ru: str = None, cost_price: float = 0,
+                               b2b_price: float = 0,
                                discount_percent: int = 0, image_url: str = None) -> int:
     """Insert a product from the admin website. seller_id must reference an
     existing users row (the caller ensures the admin user exists first)."""
@@ -3116,10 +3158,10 @@ async def admin_create_product(seller_id: int, name: str, price: float, category
         return await conn.fetchval(
             """INSERT INTO products
                  (seller_id, name, description, price, unit, quantity, category,
-                  name_ru, description_ru, cost_price, discount_percent, image_url)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id""",
+                  name_ru, description_ru, cost_price, b2b_price, discount_percent, image_url)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id""",
             seller_id, name, description, price, unit, quantity, category,
-            name_ru, description_ru, cost_price, discount_percent, image_url,
+            name_ru, description_ru, cost_price, b2b_price, discount_percent, image_url,
         )
 
 
