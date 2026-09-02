@@ -699,7 +699,16 @@ async def _showcase_tick(bot: Bot) -> None:
     await database.advance_promotion_showcase(promo["id"], next_cursor, today)
     await refresh()
 
+    # Admins first, then everyone else. The day is claimed before the fan-out
+    # (above), so a restart mid-send loses the rest of that day's audience —
+    # and with 800+ one-by-one sends that window is minutes long. Putting the
+    # admins at the head means the people who need to know the showcase went
+    # out see it themselves, first, instead of having to infer it from the
+    # summary that only lands once the whole fan-out has finished.
     user_ids = await database.get_all_user_ids()
+    admin_first = [u for u in user_ids if u in ADMIN_IDS]
+    user_ids = admin_first + [u for u in user_ids if u not in ADMIN_IDS]
+
     sent = failed = 0
     for user_id in user_ids:
         lang = await database.get_user_language(user_id)
