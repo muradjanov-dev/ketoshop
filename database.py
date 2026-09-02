@@ -2727,6 +2727,27 @@ async def get_b2b_products(only_priced: bool = False) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+async def admin_search_products(query: str, limit: int = 20) -> list[dict]:
+    """Find a product to edit, by uz or ru name.
+
+    Unlike the shopper-facing search_products this includes ARCHIVED products
+    (is_active = 0) — an admin looking for something to fix is often looking
+    for exactly the one that was hidden from the catalogue. Plain ILIKE, no
+    similarity ranking: the admin knows what the product is called, and an
+    exact list beats a fuzzy one when the next tap edits a price."""
+    like = f"%{(query or '').strip()}%"
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, name, name_ru, price, quantity, unit, is_active
+                 FROM products
+                WHERE name ILIKE $1 OR COALESCE(name_ru, '') ILIKE $1
+                ORDER BY is_active DESC, name
+                LIMIT $2""",
+            like, int(limit),
+        )
+        return [dict(r) for r in rows]
+
+
 async def set_b2b_price(product_id: int, price: float) -> None:
     async with pool.acquire() as conn:
         await conn.execute(

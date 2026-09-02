@@ -570,6 +570,7 @@
       <div><label>Qoldiq (miqdor)</label><input name="quantity" type="number" min="0" step="any" value="0"></div>
       <div><label>Chegirma (%)</label><input name="discount_percent" type="number" min="0" max="100" step="1" value="0"></div>
       <div class="full"><label>Tavsif (UZ)</label><textarea name="description" rows="2" maxlength="2000"></textarea></div>
+      <div class="full"><label>Tavsif (RU)</label><textarea name="description_ru" rows="2" maxlength="2000" placeholder="Bo'sh qoldirsangiz avtomatik tarjima ishlatiladi"></textarea></div>
       <div class="full"><label>Rasm</label>
         <div class="img-drop" id="prodImgDrop">
           <div class="prev" id="prodImgPrev">📷</div>
@@ -968,7 +969,7 @@ window.openProdModal=function(id){
   $('#prodModalTitle').textContent=id?'Mahsulotni tahrirlash':'Yangi mahsulot';
   if(id){
     const p=PRODUCTS.find(x=>x.id===id);if(!p)return;
-    for(const k of['name','name_ru','category','unit','price','cost_price','b2b_price','quantity','discount_percent','description'])
+    for(const k of['name','name_ru','category','unit','price','cost_price','b2b_price','quantity','discount_percent','description','description_ru'])
       if(f[k]!==undefined&&p[k]!=null)f[k].value=p[k];
     if(p.image_url){$('#prodImgUrl').value=p.image_url;$('#prodImgPrev').innerHTML=`<img src="${p.image_url}">`;}
   }
@@ -981,7 +982,7 @@ $('#prodForm').addEventListener('submit',async e=>{
   e.preventDefault();const f=e.target,btn=$('#prodSaveBtn');btn.disabled=true;
   const body={name:f.name.value,name_ru:f.name_ru.value,category:f.category.value,unit:f.unit.value,
     price:+f.price.value,cost_price:+f.cost_price.value||0,b2b_price:+f.b2b_price.value||0,quantity:+f.quantity.value||0,
-    discount_percent:+f.discount_percent.value||0,description:f.description.value,image_url:$('#prodImgUrl').value||null};
+    discount_percent:+f.discount_percent.value||0,description:f.description.value,description_ru:f.description_ru.value,image_url:$('#prodImgUrl').value||null};
   try{
     if(editingProdId)await api('/admin/api/products/'+editingProdId,{method:'POST',body:JSON.stringify(body)});
     else await api('/admin/api/products',{method:'POST',body:JSON.stringify(body)});

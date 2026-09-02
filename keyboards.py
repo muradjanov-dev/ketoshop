@@ -324,14 +324,17 @@ def category_select_keyboard(lang: str, prefix: str = "selcat", allow_new: bool 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def unit_select_keyboard(lang: str) -> InlineKeyboardMarkup:
+def unit_select_keyboard(lang: str, prefix: str = "unit") -> InlineKeyboardMarkup:
+    """`prefix` lets the edit flow route the pick back to itself (editunit:<id>)
+    instead of into the add-product flow, the same trick
+    category_select_keyboard already uses."""
     buttons = []
     for i in range(0, len(UNITS), 3):
         row = []
         for unit in UNITS[i:i+3]:
             row.append(InlineKeyboardButton(
                 text=get_unit_name(unit, lang),
-                callback_data=f"unit:{unit}"
+                callback_data=f"{prefix}:{unit}"
             ))
         buttons.append(row)
     return InlineKeyboardMarkup(inline_keyboard=buttons)

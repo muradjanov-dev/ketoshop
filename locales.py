@@ -924,6 +924,65 @@ TEXTS = {
     "btn_edit_discount": {"uz": "🔥 Chegirma %", "ru": "🔥 Скидка %"},
     "btn_edit_low_stock": {"uz": "⚠️ Kam qoldiq chegarasi", "ru": "⚠️ Порог низкого остатка"},
     "btn_edit_cost_price": {"uz": "💼 Asl narx (tannarx)", "ru": "💼 Себестоимость"},
+    "btn_edit_name_ru": {"uz": "🇷🇺 Nomi (rus)", "ru": "🇷🇺 Название (рус)"},
+    "btn_edit_desc_ru": {"uz": "🇷🇺 Tavsif (rus)", "ru": "🇷🇺 Описание (рус)"},
+    "btn_edit_unit": {"uz": "📐 O'lchov birligi", "ru": "📐 Единица измерения"},
+    "btn_edit_b2b_price": {"uz": "🏢 Optom narx", "ru": "🏢 Оптовая цена"},
+    "btn_find_product": {"uz": "🔎 Mahsulot qidirish", "ru": "🔎 Найти товар"},
+    "select_product_unit": {
+        "uz": "📐 <b>O'lchov birligini tanlang</b>\n\n<i>Diqqat: kg va gramm mijozga «dona» bo'lib ko'rinadi.</i>",
+        "ru": "📐 <b>Выберите единицу измерения</b>\n\n<i>Внимание: кг и граммы показываются покупателю как «шт».</i>",
+    },
+    "enter_product_name_ru": {
+        "uz": ("🇷🇺 <b>Ruscha nomi</b>\n\n"
+               "Rus tilidagi mijozlar shu nomni ko'radi.\n"
+               "<i>Yangi nom yozing:</i>"),
+        "ru": ("🇷🇺 <b>Название на русском</b>\n\n"
+               "Русскоязычные покупатели видят именно его.\n"
+               "<i>Напишите новое название:</i>"),
+    },
+    "enter_product_desc_ru": {
+        "uz": ("🇷🇺 <b>Ruscha tavsif</b>\n\n"
+               "Rus tilidagi mijozlar shu tavsifni ko'radi.\n"
+               "<i>Yangi tavsifni yozing:</i>"),
+        "ru": ("🇷🇺 <b>Описание на русском</b>\n\n"
+               "Русскоязычные покупатели видят именно его.\n"
+               "<i>Напишите новое описание:</i>"),
+    },
+    "enter_b2b_price": {
+        "uz": ("🏢 <b>Optom narx (1 kg uchun)</b>\n\n"
+               "Optomchilarga sotiladigan narxni so'mda kiriting.\n"
+               "Bu faqat adminlarga ko'rinadi — mijozlar chakana narxni ko'radi.\n\n"
+               "<i>Optomga sotilmasa /skip yuboring.</i>"),
+        "ru": ("🏢 <b>Оптовая цена (за 1 кг)</b>\n\n"
+               "Введите цену для оптовых покупателей в сумах.\n"
+               "Видна только админам — покупатели видят розничную цену.\n\n"
+               "<i>Если оптом не продаётся — отправьте /skip.</i>"),
+    },
+    "invalid_b2b_price": {
+        "uz": "⚠️ Optom narxni son bilan yuboring, masalan: 42000 (yoki /skip)",
+        "ru": "⚠️ Отправьте оптовую цену числом, например: 42000 (или /skip)",
+    },
+    "find_product_prompt": {
+        "uz": ("🔎 <b>Mahsulot qidirish</b>\n\n"
+               "Mahsulot nomining bir qismini yozing — o'zbekcha yoki ruscha.\n"
+               "<i>Masalan: bodom · эритрит · kunjut</i>"),
+        "ru": ("🔎 <b>Поиск товара</b>\n\n"
+               "Напишите часть названия — по-узбекски или по-русски.\n"
+               "<i>Например: bodom · эритрит · kunjut</i>"),
+    },
+    "find_product_too_short": {
+        "uz": "⚠️ Kamida 2 ta harf yozing.",
+        "ru": "⚠️ Напишите хотя бы 2 буквы.",
+    },
+    "find_product_found": {
+        "uz": "🔎 <b>{count} ta mahsulot topildi.</b> Tahrirlash uchun tanlang:",
+        "ru": "🔎 <b>Найдено товаров: {count}.</b> Выберите для редактирования:",
+    },
+    "find_product_none": {
+        "uz": "🔍 «{query}» bo'yicha hech narsa topilmadi. Boshqa so'z bilan urinib ko'ring.",
+        "ru": "🔍 По «{query}» ничего не найдено. Попробуйте другое слово.",
+    },
     "enter_cost_price": {
         "uz": (
             "💼 <b>Asl narx (tannarx)</b>\n\n"

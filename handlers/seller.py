@@ -17,10 +17,10 @@ from database import (
     add_product_media, get_product_media, delete_product_media,
     cancel_order as db_cancel_order,
     format_local_dt, now_local_for_display,
-    get_user_delivered_order_count,
+    get_user_delivered_order_count, admin_search_products,
 )
 from config import ADMIN_IDS
-from locales import get_text, get_category_name, get_unit_name, get_order_status, get_delivery_method_name, localize_product_text, CATEGORIES
+from locales import get_text, get_category_name, get_unit_name, get_order_status, get_delivery_method_name, localize_product_text, CATEGORIES, UNITS
 from keyboards import (
     seller_panel_keyboard, category_select_keyboard, unit_select_keyboard,
     seller_product_keyboard, confirm_delete_keyboard, seller_order_keyboard,
@@ -197,6 +197,7 @@ class EditProductStates(StatesGroup):
     waiting_photo = State()
     waiting_extra_media = State()
     waiting_discount_days = State()
+    waiting_search = State()      # typing a name to jump straight to a product
 
 
 # ===== SELLER PANEL =====
@@ -532,6 +533,53 @@ async def show_my_products_page(callback: CallbackQuery):
     await _show_my_products_page(callback, page)
 
 
+@router.callback_query(F.data == "seller:find_prod")
+async def find_product_start(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("🚫", show_alert=True)
+        return
+    lang = await get_user_language(callback.from_user.id)
+    await state.set_state(EditProductStates.waiting_search)
+    await state.update_data(lang=lang)
+    await callback.message.answer(get_text("find_product_prompt", lang), parse_mode="HTML")
+    await callback.answer()
+
+
+@router.message(EditProductStates.waiting_search, F.text)
+async def find_product_results(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await state.clear()
+        return
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    lang = (await state.get_data()).get("lang", "uz")
+    query = (message.text or "").strip()
+    if len(query) < 2:
+        await message.answer(get_text("find_product_too_short", lang))
+        return
+
+    results = await admin_search_products(query)
+    await state.clear()
+    if not results:
+        await message.answer(get_text("find_product_none", lang, query=html.escape(query)),
+                             parse_mode="HTML")
+        return
+
+    lines = [get_text("find_product_found", lang, count=len(results)), ""]
+    rows = []
+    for p in results:
+        archived = "" if p["is_active"] else " · 🗄 arxivda"
+        name = localize_product_text(p.get("name"), p.get("name_ru"), lang)
+        lines.append(f"• <b>{html.escape(name)}</b> — {int(p['price']):,} so'm{archived}"
+                     .replace(",", " "))
+        rows.append([InlineKeyboardButton(text=f"✏️ {name[:32]}",
+                                          callback_data=f"edit_prod:{p['id']}")])
+    rows.append([InlineKeyboardButton(text=get_text("btn_back", lang),
+                                      callback_data="seller:my_products")])
+    await message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+                         parse_mode="HTML")
+
+
 async def _build_my_products_view(user_id: int, lang: str, page: int = 0):
     """Return (text, keyboard) for the My Products list at the given page,
     or (text, fallback_kb) when there are no products. Pure function — caller
@@ -583,6 +631,11 @@ async def _build_my_products_view(user_id: int, lang: str, page: int = 0):
         if page < total_pages - 1:
             nav_row.append(InlineKeyboardButton(text="▶️", callback_data=f"seller_prods_page:{page + 1}"))
         buttons.append(nav_row)
+    # With 120+ products, eight to a page, reaching an arbitrary one meant
+    # fifteen taps on ▶️. Search is what makes "edit any product" true in
+    # practice rather than only in principle.
+    buttons.append([InlineKeyboardButton(text=get_text("btn_find_product", lang),
+                                         callback_data="seller:find_prod")])
     buttons.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="seller_panel")])
     return text, InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -679,6 +732,14 @@ async def start_edit_product(callback: CallbackQuery, state: FSMContext):
             InlineKeyboardButton(text=get_text("btn_edit_desc", lang), callback_data=f"editf:description:{product_id}"),
             InlineKeyboardButton(text=get_text("btn_edit_quantity", lang), callback_data=f"editf:quantity:{product_id}"),
         ],
+        # The Russian pair is entered by hand here. Editing the uz name or
+        # description auto-translates into these, which is fine as a starting
+        # point but is exactly what someone wants to override — until now
+        # there was nowhere to do it, in the bot or on the website.
+        [
+            InlineKeyboardButton(text=get_text("btn_edit_name_ru", lang), callback_data=f"editf:name_ru:{product_id}"),
+            InlineKeyboardButton(text=get_text("btn_edit_desc_ru", lang), callback_data=f"editf:description_ru:{product_id}"),
+        ],
         [
             InlineKeyboardButton(text=get_text("btn_edit_photo", lang), callback_data=f"editf:photo_id:{product_id}"),
             InlineKeyboardButton(text=get_text("btn_edit_media", lang), callback_data=f"edit_media:{product_id}"),
@@ -687,8 +748,14 @@ async def start_edit_product(callback: CallbackQuery, state: FSMContext):
             InlineKeyboardButton(text=get_text("btn_edit_discount", lang), callback_data=f"editf:discount_percent:{product_id}"),
             InlineKeyboardButton(text=get_text("btn_edit_low_stock", lang), callback_data=f"editf:low_stock_threshold:{product_id}"),
         ],
-        [InlineKeyboardButton(text=get_text("btn_edit_cost_price", lang), callback_data=f"editf:cost_price:{product_id}")],
-        [InlineKeyboardButton(text=get_text("btn_edit_category", lang), callback_data=f"editf:category:{product_id}")],
+        [
+            InlineKeyboardButton(text=get_text("btn_edit_cost_price", lang), callback_data=f"editf:cost_price:{product_id}"),
+            InlineKeyboardButton(text=get_text("btn_edit_b2b_price", lang), callback_data=f"editf:b2b_price:{product_id}"),
+        ],
+        [
+            InlineKeyboardButton(text=get_text("btn_edit_category", lang), callback_data=f"editf:category:{product_id}"),
+            InlineKeyboardButton(text=get_text("btn_edit_unit", lang), callback_data=f"editf:unit:{product_id}"),
+        ],
         [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=f"view_prod:{product_id}")],
     ])
 
@@ -729,15 +796,30 @@ async def select_edit_field(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
 
+    if field == "unit":
+        await _safe_edit_or_resend(
+            callback.message,
+            get_text("select_product_unit", lang),
+            reply_markup=unit_select_keyboard(lang, prefix=f"editunit:{product_id}"),
+        )
+        await callback.answer()
+        return
+
     prompts = {
         "name": "enter_product_name",
+        "name_ru": "enter_product_name_ru",
         "description": "enter_product_desc",
+        "description_ru": "enter_product_desc_ru",
         "price": "enter_product_price",
         "quantity": "enter_product_quantity",
         "discount_percent": "enter_product_discount",
         "low_stock_threshold": "enter_low_stock_threshold",
         "cost_price": "enter_cost_price",
+        "b2b_price": "enter_b2b_price",
     }
+    if field not in prompts:
+        await callback.answer("❌")
+        return
 
     await state.set_state(EditProductStates.waiting_value)
     await state.update_data(edit_field=field, edit_product_id=product_id, lang=lang)
@@ -783,6 +865,44 @@ async def process_edit_category(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("editunit:"))
+async def process_edit_unit(callback: CallbackQuery, state: FSMContext):
+    """Unit pick from the edit flow: callback is editunit:PID:UNIT.
+
+    Changing a unit rewrites how every existing screen counts this product
+    (kg/g are shown as "dona" to buyers), so it is a pick from the same fixed
+    list the add flow offers rather than free text."""
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        await callback.answer("❌")
+        return
+    try:
+        product_id = int(parts[1])
+    except ValueError:
+        await callback.answer("❌")
+        return
+    unit = parts[2]
+    if unit not in UNITS:
+        await callback.answer("❌")
+        return
+
+    lang = await get_user_language(callback.from_user.id)
+    product = await get_product(product_id)
+    is_admin = callback.from_user.id in ADMIN_IDS
+    if not product or (product["seller_id"] != callback.from_user.id and not is_admin):
+        await callback.answer("❌", show_alert=True)
+        return
+
+    data = await state.get_data()
+    await update_product(product_id, unit=unit)
+    await send_my_products_after_edit(
+        callback.message, callback.from_user.id, lang,
+        prefix=("✅ Mahsulot yangilandi" if lang == "uz" else "✅ Товар обновлён"),
+        page=data.get("edit_page", 0),
+    )
+    await callback.answer()
+
+
 @router.message(EditProductStates.waiting_value, F.text)
 async def process_edit_value(message: Message, state: FSMContext):
     """Process the new value for the edited field"""
@@ -805,8 +925,10 @@ async def process_edit_value(message: Message, state: FSMContext):
             error_key = "invalid_price" if field == "price" else "invalid_quantity"
             await message.answer(get_text(error_key, lang))
             return
-    elif field == "cost_price":
-        # /skip clears it (sets to 0); otherwise must be 0+ number
+    elif field in ("cost_price", "b2b_price"):
+        # /skip clears it (sets to 0); otherwise must be 0+ number.
+        # b2b_price is 0 = "not sold wholesale", which is the same "cleared"
+        # meaning cost_price has, so the two share this branch.
         raw_str = (value or "").strip()
         if raw_str.lower() in ("/skip", "skip", "-"):
             cost = 0.0
@@ -816,9 +938,10 @@ async def process_edit_value(message: Message, state: FSMContext):
                 if cost < 0:
                     raise ValueError
             except (ValueError, AttributeError):
-                await message.answer(get_text("invalid_cost_price", lang))
+                await message.answer(get_text(
+                    "invalid_cost_price" if field == "cost_price" else "invalid_b2b_price", lang))
                 return
-        await update_product(product_id, cost_price=cost)
+        await update_product(product_id, **{field: cost})
         await state.clear()
         await send_my_products_after_edit(
             message, message.from_user.id, lang,
