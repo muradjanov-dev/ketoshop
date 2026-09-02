@@ -1,0 +1,262 @@
+"""
+Maqsadlar — the shop's two standing targets, pushed to the admins and kept
+as a day-by-day record (owner request 2026-09-02: "kunlik 10 ta sotuv
+qilishimiz kerak, va oylik $2000 sof foyda qilishimiz kerak shuni eslatib va
+qancha qolganin haqida eslatib tursin va statistikaga ham yozilib borsin").
+
+    daily   — 10 sales a day
+    monthly — $2 000 net profit
+
+Two numbers, two different clocks, so the message always answers the same two
+questions: how far off are we right now, and what does that mean for the rest
+of the month.
+
+Definitions, chosen to match the numbers the admin screens already show:
+  * a SALE is an order placed today that has not been cancelled. It is the
+    number the team can move during the day, which is what a mid-day nudge
+    has to be about.
+  * NET PROFIT is get_admin_stats' `profit` — delivered revenue minus the
+    cost_price of the goods minus the expenses booked in the period. It lags
+    behind sales by the delivery time, on purpose: money that has not been
+    delivered has not been earned.
+
+The dollar target is converted at a rate stored alongside it rather than
+fetched, because a target that silently moves with the exchange rate is not a
+target. The owner changes it in the panel when it drifts.
+
+Where it sits in the day (Asia/Tashkent), alongside the buyer-facing pushes:
+    13:00  mid-day  — "bugun 4 ta, yana 6 ta kerak"
+    20:00  yakun    — how the day closed, and where the month stands
+These go to ADMINS ONLY, so they are outside the two-push-a-day ceiling that
+governs broadcasts to buyers (see daily_interest.py).
+
+Public API:
+  snapshot()                    -> today's + this month's figures
+  build_message(snap, slot)     -> the admin push
+  progress_screen()             -> the "🎯 Maqsadlar" panel screen
+  scheduler_loop(bot)           -> runs forever
+"""
+import asyncio
+import logging
+from datetime import datetime, timedelta
+
+from aiogram import Bot
+from aiogram.enums import ParseMode
+
+import database
+from config import ADMIN_IDS
+
+logger = logging.getLogger(__name__)
+
+TZ_OFFSET = timedelta(hours=5)   # Asia/Tashkent, fixed UTC+5, no DST
+CHECK_EVERY = 1800               # 30 minutes: fine enough for a 13:00/20:00 slot
+SEND_SLOTS = (13, 20)            # hours, Asia/Tashkent
+SEND_DELAY = 0.05
+
+
+def _now_tk() -> datetime:
+    return datetime.utcnow() + TZ_OFFSET
+
+
+def fmt_sum(value: float) -> str:
+    return f"{int(round(value or 0)):,}".replace(",", " ")
+
+
+def fmt_usd(value: float) -> str:
+    return f"${int(round(value or 0)):,}".replace(",", " ")
+
+
+def _days_in_month(day) -> int:
+    nxt = (day.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return (nxt - timedelta(days=1)).day
+
+
+async def snapshot() -> dict:
+    """Everything both the push and the panel screen need, in one place so the
+    two can never disagree about where we stand."""
+    state = await database.get_targets_state()
+    today = _now_tk().date()
+    first = today.replace(day=1)
+
+    day_stats = await database.get_admin_stats("today")
+    month_stats = await database.get_admin_stats(
+        {"start": first.isoformat(), "end": today.isoformat()}
+    )
+
+    # Cancelled orders are not sales. get_admin_stats counts them in
+    # orders_total, so they have to come back out here.
+    sales = max(0, int(day_stats.get("orders_total") or 0)
+                - int(day_stats.get("orders_cancelled") or 0))
+
+    daily_target = int(state.get("daily_orders") or 10)
+    usd_rate = float(state.get("usd_rate") or 12800)
+    monthly_usd = float(state.get("monthly_profit_usd") or 2000)
+    monthly_uzs = monthly_usd * usd_rate
+
+    month_profit = float(month_stats.get("profit") or 0)
+    days_total = _days_in_month(today)
+    days_left = days_total - today.day + 1          # today counts as still winnable
+
+    remaining_uzs = max(0.0, monthly_uzs - month_profit)
+
+    return {
+        "date": today,
+        "month_first": first,
+        "sales": sales,
+        "daily_target": daily_target,
+        "sales_left": max(0, daily_target - sales),
+        "day_revenue": float(day_stats.get("revenue") or 0),
+        "day_profit": float(day_stats.get("profit") or 0),
+        "month_profit": month_profit,
+        "month_profit_usd": month_profit / usd_rate if usd_rate else 0.0,
+        "month_revenue": float(month_stats.get("revenue") or 0),
+        "month_orders": max(0, int(month_stats.get("orders_total") or 0)
+                            - int(month_stats.get("orders_cancelled") or 0)),
+        "monthly_target_usd": monthly_usd,
+        "monthly_target_uzs": monthly_uzs,
+        "remaining_uzs": remaining_uzs,
+        "remaining_usd": remaining_uzs / usd_rate if usd_rate else 0.0,
+        "needed_per_day_usd": (remaining_uzs / usd_rate / days_left)
+                              if usd_rate and days_left else 0.0,
+        "days_left": days_left,
+        "days_total": days_total,
+        "usd_rate": usd_rate,
+        "enabled": bool(state.get("enabled", True)),
+    }
+
+
+def _bar(done: float, target: float, width: int = 10) -> str:
+    """A ten-block progress bar — the share of the target reached reads faster
+    than the two numbers it is built from."""
+    if target <= 0:
+        return "▫️" * width
+    filled = max(0, min(width, int(round(width * done / target))))
+    return "🟩" * filled + "⬜" * (width - filled)
+
+
+def _percent(done: float, target: float) -> int:
+    return int(round(100 * done / target)) if target > 0 else 0
+
+
+def build_message(snap: dict, slot: int) -> str:
+    """The admin push. 13:00 asks for the rest of the day, 20:00 reports how
+    it closed — same figures, different tense."""
+    midday = slot < 20
+    lines = ["🎯 <b>MAQSADLAR</b>" if midday else "🎯 <b>KUN YAKUNI</b>", ""]
+
+    # ----- daily sales -----
+    sales, target = snap["sales"], snap["daily_target"]
+    lines.append(f"📦 <b>Bugungi sotuv: {sales} / {target}</b>")
+    lines.append(f"{_bar(sales, target)}  {_percent(sales, target)}%")
+    if sales >= target:
+        lines.append(f"✅ Kunlik maqsad bajarildi! (+{sales - target} ta ortiqcha)"
+                     if sales > target else "✅ Kunlik maqsad bajarildi!")
+    elif midday:
+        lines.append(f"⏳ Yana <b>{snap['sales_left']} ta</b> sotuv kerak — kun tugagani yo'q.")
+    else:
+        lines.append(f"❌ <b>{snap['sales_left']} ta</b> yetmadi.")
+    if snap["day_revenue"]:
+        lines.append(f"💵 Bugun: {fmt_sum(snap['day_revenue'])} so'm tushum · "
+                     f"{fmt_sum(snap['day_profit'])} so'm foyda")
+    lines.append("")
+
+    # ----- monthly profit -----
+    lines.append(f"💰 <b>Oylik sof foyda: {fmt_usd(snap['month_profit_usd'])} / "
+                 f"{fmt_usd(snap['monthly_target_usd'])}</b>")
+    lines.append(f"{_bar(snap['month_profit'], snap['monthly_target_uzs'])}  "
+                 f"{_percent(snap['month_profit'], snap['monthly_target_uzs'])}%")
+    lines.append(f"   ({fmt_sum(snap['month_profit'])} so'm · "
+                 f"1$ = {fmt_sum(snap['usd_rate'])} so'm)")
+    if snap["remaining_uzs"] <= 0:
+        lines.append("🏆 <b>Oylik maqsad bajarildi!</b>")
+    else:
+        lines.append(f"⏳ Yana <b>{fmt_usd(snap['remaining_usd'])}</b> "
+                     f"({fmt_sum(snap['remaining_uzs'])} so'm) kerak")
+        lines.append(f"📅 Oyning oxirigacha <b>{snap['days_left']} kun</b> — "
+                     f"kuniga {fmt_usd(snap['needed_per_day_usd'])} qilish kerak")
+    lines.append("")
+    lines.append(f"📊 Oy boshidan: {snap['month_orders']} ta sotuv · "
+                 f"{fmt_sum(snap['month_revenue'])} so'm tushum")
+    return "\n".join(lines)
+
+
+async def progress_screen() -> str:
+    """The "🎯 Maqsadlar" panel screen: where we are now, plus the last two
+    weeks day by day so a bad run is visible as a run, not as one bad day."""
+    snap = await snapshot()
+    summary = await database.get_target_month_summary(snap["month_first"])
+    history = await database.get_target_days(limit=14)
+
+    lines = [build_message(snap, slot=13), ""]
+    lines.append(f"🗓 <b>Shu oyda:</b> {int(summary.get('days_hit') or 0)}/"
+                 f"{int(summary.get('days') or 0)} kun maqsadga yetgan · "
+                 f"eng yaxshi kun {int(summary.get('best_day') or 0)} ta")
+    if not snap["enabled"]:
+        lines.append("⚠️ Eslatmalar o'chirilgan.")
+    if history:
+        lines += ["", "📅 <b>Oxirgi kunlar:</b>"]
+        for row in history:
+            hit = "✅" if int(row["orders"]) >= int(row["daily_target"]) else "❌"
+            lines.append(
+                f"{hit} {row['day']:%d.%m} — {int(row['orders'])}/{int(row['daily_target'])} ta · "
+                f"{fmt_sum(row['profit'])} so'm foyda"
+            )
+    else:
+        lines += ["", "📅 Tarix hali yig'ilmagan — birinchi kun bugundan boshlanadi."]
+    return "\n".join(lines)
+
+
+async def _tick(bot: Bot) -> None:
+    snap = await snapshot()
+
+    # Record first, always — the history has to keep filling even when the
+    # reminders are switched off, or the statistics grow holes.
+    try:
+        await database.record_target_day(
+            snap["date"], snap["sales"], snap["daily_target"],
+            snap["day_revenue"], snap["day_profit"], snap["month_profit"],
+            snap["monthly_target_usd"], snap["usd_rate"],
+        )
+    except Exception:
+        logger.exception("Could not record target day")
+
+    if not snap["enabled"]:
+        return
+
+    now_tk = _now_tk()
+    slot = max((h for h in SEND_SLOTS if now_tk.hour >= h), default=None)
+    if slot is None:
+        return
+
+    state = await database.get_targets_state()
+    if (state.get("last_sent_date") == snap["date"]
+            and int(state.get("last_sent_slot") or 0) >= slot):
+        return
+
+    # Claim the slot before sending, so a crash mid-fan-out cannot re-push to
+    # the admins who already got it.
+    await database.mark_targets_sent(snap["date"], slot)
+
+    text = build_message(snap, slot)
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, text, parse_mode=ParseMode.HTML)
+        except Exception:
+            logger.debug("Target reminder to %s failed", admin_id)
+        await asyncio.sleep(SEND_DELAY)
+    logger.info("Target reminder sent for slot %02d:00 (%d sales, %.0f so'm month profit)",
+                slot, snap["sales"], snap["month_profit"])
+
+
+async def scheduler_loop(bot: Bot) -> None:
+    logger.info("Targets scheduler started (%s Asia/Tashkent)",
+                ", ".join(f"{h:02d}:00" for h in SEND_SLOTS))
+    await asyncio.sleep(45)   # let startup settle
+    while True:
+        try:
+            await _tick(bot)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Targets tick failed")
+        await asyncio.sleep(CHECK_EVERY)

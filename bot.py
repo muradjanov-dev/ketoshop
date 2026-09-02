@@ -251,6 +251,12 @@ async def main():
     from daily_interest import scheduler_loop as interest_scheduler_loop
     interest_task = asyncio.create_task(interest_scheduler_loop(bot))
 
+    # Maqsadlar — the daily-sales and monthly-profit targets. Records the
+    # day's figures on every tick and pushes the standing to the ADMINS twice
+    # a day; nothing here ever reaches a buyer.
+    from targets import scheduler_loop as targets_scheduler_loop
+    targets_task = asyncio.create_task(targets_scheduler_loop(bot))
+
     # Start polling
     logger.info("Bot started! Press Ctrl+C to stop.")
     try:
@@ -262,6 +268,7 @@ async def main():
         keto_task.cancel()
         promo_task.cancel()
         interest_task.cancel()
+        targets_task.cancel()
         meta_leads_task.cancel()
         meta_ads_task.cancel()
         if runner:

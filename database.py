@@ -631,6 +631,42 @@ async def init_db():
             )
         """)
 
+        # ===== Maqsadlar / targets (2026-09-02) =====
+        # Owner's two numbers: 10 sales a day, $2 000 net profit a month.
+        # The single settings row keeps them editable without a deploy — the
+        # dollar rate especially, since the profit is earned in so'm and the
+        # target is set in dollars.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS targets_state (
+                id INTEGER PRIMARY KEY,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                daily_orders INTEGER NOT NULL DEFAULT 10,
+                monthly_profit_usd DOUBLE PRECISION NOT NULL DEFAULT 2000,
+                usd_rate DOUBLE PRECISION NOT NULL DEFAULT 12800,
+                last_sent_date DATE,
+                last_sent_slot INTEGER
+            )
+        """)
+        # One row per day, rewritten on every scheduler tick rather than
+        # written once at a cut-off time — so the row for today is always
+        # current, and by midnight it holds the day's final numbers without
+        # anything having to run at midnight. This is the "statistikaga ham
+        # yozilib borsin" half of the request: the history survives even
+        # though get_admin_stats can only ever answer about right now.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS target_days (
+                day DATE PRIMARY KEY,
+                orders INTEGER NOT NULL DEFAULT 0,
+                daily_target INTEGER NOT NULL DEFAULT 10,
+                revenue DOUBLE PRECISION NOT NULL DEFAULT 0,
+                profit DOUBLE PRECISION NOT NULL DEFAULT 0,
+                month_profit DOUBLE PRECISION NOT NULL DEFAULT 0,
+                monthly_target_usd DOUBLE PRECISION NOT NULL DEFAULT 2000,
+                usd_rate DOUBLE PRECISION NOT NULL DEFAULT 12800,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # ===== Aksiya / Bonus (2026-08-31) =====
         # An "aksiya" is a named, time-boxed campaign the owner writes up in
         # the admin panel and then explicitly starts. Only ONE can run at a
@@ -2066,6 +2102,94 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         "product_cost": product_cost_total,
         "profit": profit,
     }
+
+# ===== MAQSADLAR / TARGETS (2026-09-02) =====
+
+_TARGETS_EDITABLE = {"enabled", "daily_orders", "monthly_profit_usd", "usd_rate"}
+
+
+async def get_targets_state() -> dict:
+    """The single settings row, created with the owner's numbers on first read."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM targets_state WHERE id = 1")
+        if row is None:
+            await conn.execute(
+                "INSERT INTO targets_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING"
+            )
+            row = await conn.fetchrow("SELECT * FROM targets_state WHERE id = 1")
+        return dict(row)
+
+
+async def set_targets(**fields) -> None:
+    sets, values = [], []
+    for key, value in fields.items():
+        if key in _TARGETS_EDITABLE:
+            values.append(value)
+            sets.append(f"{key} = ${len(values)}")
+    if not sets:
+        return
+    async with pool.acquire() as conn:
+        await conn.execute(f"UPDATE targets_state SET {', '.join(sets)} WHERE id = 1", *values)
+
+
+async def mark_targets_sent(day, slot: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE targets_state SET last_sent_date = $1, last_sent_slot = $2 WHERE id = 1",
+            day, int(slot),
+        )
+
+
+async def record_target_day(day, orders: int, daily_target: int, revenue: float,
+                            profit: float, month_profit: float,
+                            monthly_target_usd: float, usd_rate: float) -> None:
+    """Upsert today's line in the target history. Called on every tick, so the
+    row tracks the day as it happens instead of freezing at whatever moment a
+    report was generated."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO target_days
+                   (day, orders, daily_target, revenue, profit, month_profit,
+                    monthly_target_usd, usd_rate, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+               ON CONFLICT (day) DO UPDATE SET
+                   orders = EXCLUDED.orders,
+                   daily_target = EXCLUDED.daily_target,
+                   revenue = EXCLUDED.revenue,
+                   profit = EXCLUDED.profit,
+                   month_profit = EXCLUDED.month_profit,
+                   monthly_target_usd = EXCLUDED.monthly_target_usd,
+                   usd_rate = EXCLUDED.usd_rate,
+                   updated_at = CURRENT_TIMESTAMP""",
+            day, int(orders), int(daily_target), float(revenue), float(profit),
+            float(month_profit), float(monthly_target_usd), float(usd_rate),
+        )
+
+
+async def get_target_days(limit: int = 14) -> list[dict]:
+    """Most recent days first."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM target_days ORDER BY day DESC LIMIT $1", int(limit)
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_target_month_summary(first_day) -> dict:
+    """How the current month has gone so far: days recorded, how many hit the
+    daily target, and the best day. Read from target_days rather than
+    recomputed, so it agrees exactly with what the admins were told."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) AS days,
+                      COALESCE(SUM(orders), 0) AS orders,
+                      COUNT(*) FILTER (WHERE orders >= daily_target) AS days_hit,
+                      COALESCE(MAX(orders), 0) AS best_day
+                 FROM target_days WHERE day >= $1""",
+            first_day,
+        )
+        return dict(row) if row else {"days": 0, "orders": 0, "days_hit": 0, "best_day": 0}
+
 
 async def add_expense(name: str, amount: float) -> int:
     async with pool.acquire() as conn:

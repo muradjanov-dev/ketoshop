@@ -1397,6 +1397,7 @@ TEXTS = {
     "btn_admin_users": {"uz": "👥 Foydalanuvchilar", "ru": "👥 Пользователи"},
     "btn_admin_add_admin": {"uz": "➕ Yangi admin qo'shish", "ru": "➕ Добавить администратора"},
     "btn_admin_admin_list": {"uz": "👥 Adminlar ro'yxati", "ru": "👥 Список администраторов"},
+    "btn_admin_targets": {"uz": "🎯 Maqsadlar", "ru": "🎯 Цели"},
     "btn_admin_orders": {"uz": "📦 Barcha buyurtmalar", "ru": "📦 Все заказы"},
     "btn_admin_products": {"uz": "🛒 Barcha mahsulotlar", "ru": "🛒 Все товары"},
     "btn_admin_delivery": {"uz": "🚚 Yetkazish zonalari", "ru": "🚚 Зоны доставки"},

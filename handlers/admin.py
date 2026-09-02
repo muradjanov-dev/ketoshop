@@ -29,7 +29,7 @@ from database import (
     set_promotion_bonuses, start_promotion, stop_promotion,
     search_products, save_web_image,
     get_support_threads, get_support_thread, count_open_support,
-    get_admin_profiles,
+    get_admin_profiles, get_targets_state, set_targets,
 )
 from locales import (
     get_text, get_order_status, get_unit_name, get_display_unit, get_delivery_method_name,
@@ -58,6 +58,7 @@ class AdminStates(StatesGroup):
     bulk_discount_confirm = State()
     list_quote_input = State()
     add_admin_id = State()
+    target_value = State()      # editing one of the Maqsadlar numbers
     # Manual order entry (offline orders received by phone / in-person)
     manual_name = State()
     manual_phone = State()
@@ -629,6 +630,126 @@ async def show_admin_list(callback: CallbackQuery, state: FSMContext):
     text, keyboard = await _render_admin_list()
     await _support_show(callback, text, keyboard)
     await callback.answer()
+
+
+# ===== MAQSADLAR / TARGETS =====
+# The push itself lives in targets.py; this is the panel view of the same
+# snapshot, plus the three numbers behind it. They are editable from here
+# because the dollar rate drifts and a target nobody can adjust stops being
+# used — see the note at the top of targets.py.
+
+_TARGET_FIELDS = {
+    "daily": ("daily_orders", "📦 Kunlik sotuv maqsadi",
+              "Kuniga nechta sotuv qilish kerak? Faqat son yuboring (masalan: 10)"),
+    "monthly": ("monthly_profit_usd", "💰 Oylik sof foyda ($)",
+                "Oyiga qancha sof foyda ($)? Faqat son yuboring (masalan: 2000)"),
+    "rate": ("usd_rate", "💱 Dollar kursi",
+             "1 dollar necha so'm? Faqat son yuboring (masalan: 12800)"),
+}
+
+
+async def _render_targets() -> tuple[str, InlineKeyboardMarkup]:
+    import targets
+    state = await get_targets_state()
+    text = await targets.progress_screen()
+    toggle = ("🔕 Eslatmalarni o'chirish" if state.get("enabled", True)
+              else "🔔 Eslatmalarni yoqish")
+    rows = [
+        [InlineKeyboardButton(text="⚙️ Maqsadlarni o'zgartirish", callback_data="admin:targets:edit")],
+        [InlineKeyboardButton(text=toggle, callback_data="admin:targets:toggle")],
+        [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_menu:stats")],
+    ]
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == "admin:targets")
+async def show_targets(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    await state.clear()
+    text, keyboard = await _render_targets()
+    await _support_show(callback, text, keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:targets:toggle")
+async def toggle_targets(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    current = await get_targets_state()
+    await set_targets(enabled=not current.get("enabled", True))
+    text, keyboard = await _render_targets()
+    await _support_show(callback, text, keyboard)
+    await callback.answer("Eslatmalar yoqildi." if not current.get("enabled", True)
+                          else "Eslatmalar o'chirildi.")
+
+
+@router.callback_query(F.data == "admin:targets:edit")
+async def edit_targets_menu(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    state_row = await get_targets_state()
+    lines = ["⚙️ <b>Maqsadlarni o'zgartirish</b>", "",
+             f"📦 Kunlik sotuv: <b>{int(state_row.get('daily_orders') or 0)}</b> ta",
+             f"💰 Oylik sof foyda: <b>${int(state_row.get('monthly_profit_usd') or 0)}</b>",
+             f"💱 Dollar kursi: <b>{int(state_row.get('usd_rate') or 0):,}</b> so'm".replace(",", " "),
+             "", "O'zgartirmoqchi bo'lganingizni tanlang:"]
+    rows = [[InlineKeyboardButton(text=label, callback_data=f"admin:targets:set:{key}")]
+            for key, (_, label, _) in _TARGET_FIELDS.items()]
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin:targets")])
+    await _support_show(callback, "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:targets:set:"))
+async def edit_target_prompt(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    key = callback.data.rsplit(":", 1)[1]
+    if key not in _TARGET_FIELDS:
+        await callback.answer()
+        return
+    _, label, prompt = _TARGET_FIELDS[key]
+    await state.set_state(AdminStates.target_value)
+    await state.update_data(target_key=key)
+    await callback.message.answer(f"{label}\n\n{prompt}")
+    await callback.answer()
+
+
+@router.message(AdminStates.target_value, F.text)
+async def edit_target_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return
+    data = await state.get_data()
+    key = data.get("target_key")
+    if key not in _TARGET_FIELDS:
+        await state.clear()
+        return
+
+    # Accept "12 800" and "12,800" — the dollar rate is naturally written with
+    # separators, and rejecting that reads as a bug rather than as validation.
+    raw = (message.text or "").replace(" ", "").replace(",", "").replace("$", "")
+    try:
+        value = float(raw)
+    except ValueError:
+        await message.answer("⚠️ Faqat son yuboring. Masalan: 10")
+        return
+    if value <= 0:
+        await message.answer("⚠️ Son noldan katta bo'lishi kerak.")
+        return
+
+    column, label, _ = _TARGET_FIELDS[key]
+    await set_targets(**{column: int(value) if column == "daily_orders" else float(value)})
+    await state.clear()
+
+    import targets
+    await message.answer(f"✅ {label} yangilandi.\n\n" + await targets.progress_screen(),
+                         parse_mode="HTML")
 
 
 # ===== ADD ADMIN =====

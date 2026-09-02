@@ -530,6 +530,9 @@ def admin_stats_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=_current_month_label(lang), callback_data="admin:monthly_stats")
         ],
         [
+            InlineKeyboardButton(text=get_text("btn_admin_targets", lang), callback_data="admin:targets"),
+        ],
+        [
             InlineKeyboardButton(text=get_text("btn_admin_excel", lang), callback_data="admin:excel"),
             InlineKeyboardButton(text=get_text("btn_admin_list_quote", lang), callback_data="admin:list_quote")
         ],
