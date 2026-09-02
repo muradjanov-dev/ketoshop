@@ -562,6 +562,9 @@ def admin_users_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=get_text("btn_admin_add_admin", lang), callback_data="admin:add_admin"),
         ],
         [
+            InlineKeyboardButton(text=get_text("btn_admin_admin_list", lang), callback_data="admin:admins"),
+        ],
+        [
             InlineKeyboardButton(text=get_text("btn_admin_broadcast", lang), callback_data="admin:broadcast")
         ],
         [

@@ -2689,6 +2689,42 @@ async def add_admin_db(user_id: int, added_by: int) -> None:
         )
 
 
+async def get_admin_profiles(admin_ids: list[int]) -> list[dict]:
+    """One row per id in the live ADMIN_IDS list, enriched for the roster
+    screen. Driven from the passed-in list rather than from the `admins`
+    table, because that table only holds the ones added through the bot —
+    the hardcoded/env admins have no row there and would otherwise be
+    invisible on a screen whose whole point is showing everyone.
+
+    `full_name` is NULL for an admin who has never opened the bot; that is
+    worth surfacing, since the bot cannot push anything to them — no support
+    cards, no broadcast summaries."""
+    if not admin_ids:
+        return []
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT i.user_id,
+                   u.full_name, u.username, u.phone, u.created_at AS joined_at,
+                   a.added_by, a.created_at AS granted_at,
+                   COALESCE(r.replies, 0) AS replies,
+                   r.last_reply_at
+              FROM unnest($1::bigint[]) AS i(user_id)
+              LEFT JOIN users u ON u.user_id = i.user_id
+              LEFT JOIN admins a ON a.user_id = i.user_id
+              LEFT JOIN (
+                    SELECT admin_id, COUNT(*) AS replies, MAX(created_at) AS last_reply_at
+                      FROM support_messages
+                     WHERE direction = 'out' AND admin_id IS NOT NULL
+                     GROUP BY admin_id
+              ) r ON r.admin_id = i.user_id
+             ORDER BY a.created_at IS NOT NULL, a.created_at, i.user_id
+            """,
+            list(admin_ids),
+        )
+        return [dict(r) for r in rows]
+
+
 async def get_courier_ids() -> list[int]:
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT user_id FROM couriers")
