@@ -476,6 +476,7 @@ async def api_cart(request: web.Request):
     def _nm(m):
         name = m.get("trigger_name_ru") if (lang == "ru" and m.get("trigger_name_ru")) else m.get("trigger_name")
         bname = m.get("bonus_name_ru") if (lang == "ru" and m.get("bonus_name_ru")) else m.get("bonus_name")
+        bname = promotions.bonus_display_name(bname, m.get("bonus_unit"))
         return {
             "product_id": m["trigger_product_id"],
             "name": name,
@@ -488,7 +489,9 @@ async def api_cart(request: web.Request):
         "items": result,
         "total": total,
         "bonuses": [
-            {"name": b.get("name_ru") if (lang == "ru" and b.get("name_ru")) else b.get("name"),
+            {"name": promotions.bonus_display_name(
+                 b.get("name_ru") if (lang == "ru" and b.get("name_ru")) else b.get("name"),
+                 b.get("unit")),
              "amount": promotions.fmt_amount(b["quantity"]),
              "unit": promotions.unit_label(b["unit"], lang),
              # Shelf price of the giveaway, struck through client-side so the

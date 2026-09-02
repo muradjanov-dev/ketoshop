@@ -33,6 +33,7 @@ Public API:
 """
 import asyncio
 import logging
+import re
 import time
 from datetime import datetime, timedelta
 
@@ -156,6 +157,32 @@ def trigger_unit_label(rule: dict, lang: str) -> str:
     return get_display_unit(rule.get("trigger_unit") or "piece", lang)
 
 
+# A pack size at the very end of a product name: "Alluloza 200gr",
+# "Kokos yog'i (Organic Extra Virgin) 500ml", and the ru catalogue's
+# abbreviated form "Аллюлоза 200 гр." — hence the optional trailing dot.
+# Anchored to the end, which is what keeps names that merely CONTAIN a size
+# ("Zig'ir uni 400g «Кудесница»", "Шоколад Победа 57%") intact.
+_PACK_SIZE_SUFFIX = re.compile(
+    r"\s*\b\d+(?:[.,]\d+)?\s*(?:gr|g|гр|г|kg|кг|ml|мл|l|л)\.?\s*$", re.IGNORECASE
+)
+
+
+def bonus_display_name(name: str, unit: str) -> str:
+    """The bonus product's name as the buyer should read it beside the amount.
+
+    When the giveaway is quoted in grams or millilitres, the amount already
+    states the size, and the pack size baked into the product name is at best
+    a repeat ("Eritritol 100gr — 100 gr") and at worst a contradiction: a
+    100 gr scoop out of a 200 gr pack would otherwise read "100 gr Alluloza
+    200gr sovg'a". Count units ("1 dona Eritritol 100gr") keep the full name,
+    since there the pack IS what changes hands."""
+    dimension = (_UNIT_BASE.get((unit or "").lower()) or ("count",))[0]
+    if dimension not in ("mass", "volume"):
+        return name or ""
+    stripped = _PACK_SIZE_SUFFIX.sub("", name or "").strip(" -–—·,")
+    return stripped or (name or "")
+
+
 def rule_line(rule: dict, lang: str) -> str:
     """One bonus rule as a readable line:
     "1 dona Bodom uni → 100 gr Eritritol sovg'a" """
@@ -163,7 +190,7 @@ def rule_line(rule: dict, lang: str) -> str:
     trig_unit = trigger_unit_label(rule, lang)
     trig_name = _product_name(rule, "trigger", lang)
     bonus = f"{fmt_amount(rule['bonus_amount'])} {unit_label(rule['bonus_unit'], lang)}"
-    bonus_name = _product_name(rule, "bonus", lang)
+    bonus_name = bonus_display_name(_product_name(rule, "bonus", lang), rule["bonus_unit"])
     arrow = "→"
     if lang == "ru":
         return f"{trig_qty} {trig_unit} {trig_name} {arrow} {bonus} {bonus_name} в подарок"
@@ -375,6 +402,7 @@ def near_miss_text(misses: list[dict], lang: str, limit: int = 3) -> str:
     for m in misses[:limit]:
         name = m.get("trigger_name_ru") if (lang == "ru" and m.get("trigger_name_ru")) else m.get("trigger_name")
         bonus_name = m.get("bonus_name_ru") if (lang == "ru" and m.get("bonus_name_ru")) else m.get("bonus_name")
+        bonus_name = bonus_display_name(bonus_name, m.get("bonus_unit"))
         need = f"{fmt_amount(m['needed'])} {trigger_unit_label(m, lang)}"
         bonus = f"{fmt_amount(m['bonus_amount'])} {unit_label(m['bonus_unit'], lang)} {bonus_name}"
         if lang == "ru":
@@ -392,6 +420,7 @@ async def bonuses_for_items(items: list[dict]) -> list[dict]:
 def bonus_label(bonus: dict, lang: str) -> str:
     """"Eritritol — 300 gr" — the product + amount half of a bonus line."""
     name = bonus.get("name_ru") if (lang == "ru" and bonus.get("name_ru")) else bonus.get("name")
+    name = bonus_display_name(name, bonus.get("unit"))
     return f"{name} — {fmt_amount(bonus['quantity'])} {unit_label(bonus['unit'], lang)}"
 
 
@@ -584,10 +613,18 @@ def _announcement_text(promo: dict, lang: str) -> str:
 # Owner request 2026-08-31: announce 3 bonuses a day, celebratory, with a
 # button straight to each product — and explicitly "odamlarni asabiga
 # tegmaydigan qilib". So: ONE message a day (not three), at midday rather than
-# first thing, only while a campaign is running, only if the campaign has more
-# than SHOWCASE_PER_DAY rules to be worth rotating, and never on a day the
-# 2-day tips broadcast already went out (broadcast.py) — two pushes in one day
-# is exactly what makes people mute a bot. Per-campaign kill switch on top.
+# first thing, only while a campaign is running, and only if the campaign has
+# more than SHOWCASE_PER_DAY rules to be worth rotating. Per-campaign kill
+# switch on top.
+#
+# This used to also stand down on any day the 2-day tips broadcast had gone
+# out, which quietly turned "har kuni" into every OTHER day — the owner asked
+# on 2026-09-02 why the aksiya reminder wasn't arriving daily. The two-push
+# ceiling that guard was protecting is now held one layer down instead:
+# daily_interest.py counts this showcase in _pushes_today() and stands its own
+# 18:00 nudge down, so a tips day is still tips + showcase and no more. The
+# aksiya's own daily beat is the thing that must not be skipped — it is the
+# campaign, and it only runs for a couple of weeks.
 
 SHOWCASE_HOUR = 12          # 12:00 Asia/Tashkent — clear of the 08:00 tips slot
 SHOWCASE_PER_DAY = 3
@@ -652,24 +689,6 @@ async def _showcase_tick(bot: Bot) -> None:
     today = now_tk.date()
     if promo.get("last_showcase_date") == today:
         return
-
-    # Don't stack on top of the 2-day tips broadcast — see broadcast.py.
-    # last_sent_at is a naive-UTC timestamp, so compare it in Tashkent-local
-    # terms, the same day boundary this showcase uses.
-    try:
-        state = await database.get_broadcast_state()
-        last_tips = (state or {}).get("last_sent_at")
-        if last_tips and (last_tips + TZ_OFFSET).date() == today:
-            logger.info("Showcase skipped: tips broadcast already went out today")
-            # Still claim the day, so tomorrow starts fresh rather than the
-            # showcase firing the moment the tips guard stops matching.
-            await database.advance_promotion_showcase(
-                promo["id"], int(promo.get("showcase_cursor") or 0), today
-            )
-            await refresh()
-            return
-    except Exception:
-        logger.exception("Could not read broadcast state; sending showcase anyway")
 
     picked, next_cursor = _showcase_slice(rules, int(promo.get("showcase_cursor") or 0), SHOWCASE_PER_DAY)
     if not picked:
