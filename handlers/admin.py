@@ -29,6 +29,7 @@ from database import (
     set_promotion_bonuses, start_promotion, stop_promotion,
     search_products, save_web_image,
     get_support_threads, get_support_thread, count_open_support,
+    get_admin_profiles,
 )
 from locales import (
     get_text, get_order_status, get_unit_name, get_display_unit, get_delivery_method_name,
@@ -553,6 +554,80 @@ async def admin_unban_user(callback: CallbackQuery):
         reply_markup=admin_panel_keyboard(lang),
         parse_mode="HTML"
     )
+    await callback.answer()
+
+
+# ===== ADMIN ROSTER =====
+# Owner request 2026-09-02: the panel could hand out admin rights but never
+# show who already had them, so the only way to know was to read config.py.
+
+async def _render_admin_list() -> tuple[str, InlineKeyboardMarkup]:
+    """Everyone in the live ADMIN_IDS list, split by how they got in.
+
+    Deliberately more than a list of ids: an admin who has never opened the
+    bot cannot be reached by it at all (no support cards, no broadcast
+    summaries), and the reply counts answer "who is actually working the
+    messages" — the question the Xabarlar screen only answers one thread at
+    a time."""
+    profiles = await get_admin_profiles(ADMIN_IDS)
+    permanent = [p for p in profiles if p["granted_at"] is None]
+    granted = [p for p in profiles if p["granted_at"] is not None]
+
+    async def _block(number: int, profile: dict) -> list[str]:
+        name = profile.get("full_name") or "botga hali kirmagan"
+        handle = f" @{profile['username']}" if profile.get("username") else ""
+        out = [f"{number}. <b>{html.escape(name)}</b>{html.escape(handle)}"]
+
+        bits = [f"🆔 <code>{profile['user_id']}</code>"]
+        if profile.get("phone"):
+            bits.append(f"📞 {html.escape(profile['phone'])}")
+        out.append("   " + " · ".join(bits))
+
+        replies = int(profile.get("replies") or 0)
+        out.append(f"   💬 {replies} ta javob · oxirgisi {_msg_when(profile['last_reply_at'])}"
+                   if replies else "   💬 hali javob bermagan")
+
+        if profile.get("granted_at"):
+            by = await _admin_name(profile.get("added_by"))
+            out.append(f"   ➕ {html.escape(by)} qo'shgan · {_msg_when(profile['granted_at'])}")
+        return out
+
+    lines = [f"👥 <b>Adminlar</b> — jami {len(profiles)} ta", ""]
+    if permanent:
+        lines.append("🔒 <b>Doimiy</b> (kod/env orqali — botdan o'chirib bo'lmaydi):")
+        for i, profile in enumerate(permanent, 1):
+            lines += await _block(i, profile)
+        lines.append("")
+    if granted:
+        lines.append("➕ <b>Bot orqali qo'shilgan:</b>")
+        for i, profile in enumerate(granted, len(permanent) + 1):
+            lines += await _block(i, profile)
+        lines.append("")
+
+    unreachable = [p for p in profiles if not p.get("full_name")]
+    if unreachable:
+        lines.append(
+            f"⚠️ {len(unreachable)} ta admin botni hali ochmagan — "
+            "ularga xabar (mijoz savollari, hisobotlar) bora olmaydi. "
+            "Ular botga kirib /start bossin."
+        )
+
+    rows = [
+        [InlineKeyboardButton(text=get_text("btn_admin_add_admin", "uz"),
+                              callback_data="admin:add_admin")],
+        [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_menu:users")],
+    ]
+    return "\n".join(lines).strip(), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == "admin:admins")
+async def show_admin_list(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    await state.clear()
+    text, keyboard = await _render_admin_list()
+    await _support_show(callback, text, keyboard)
     await callback.answer()
 
 
