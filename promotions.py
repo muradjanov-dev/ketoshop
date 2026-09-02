@@ -197,6 +197,41 @@ def rule_line(rule: dict, lang: str) -> str:
     return f"{trig_qty} {trig_unit} {trig_name} {arrow} {bonus} {bonus_name} sovg'a"
 
 
+def rule_bonus_value(rule: dict) -> float:
+    """What one step of this rule's giveaway is worth at shelf price.
+
+    bonus_price is the bonus product's own price, joined in by
+    _fetch_promo_bonuses; bonus_stock_qty is how much of it changes hands (1
+    for a whole pack, 0.5 for a 100 gr scoop out of a 200 gr one). Their
+    product is the number the buyer should see crossed out."""
+    return float(rule.get("bonus_price") or 0) * float(rule.get("bonus_stock_qty") or 0)
+
+
+def rule_block(rule: dict, lang: str) -> str:
+    """One bonus rule over two lines, for the screens buyers actually read.
+
+    rule_line() stays as it is — the admin panel and the wizard want the terse
+    one-liner. This is the shop-window version: the quantity you have to buy
+    is bold on its own line, the gift is bold on the next, and the money you
+    are not paying for it is struck through beside a zero. Owner's point, made
+    twice now, is that "bepul" alone reads as worthless while a crossed-out
+    number reads as money saved."""
+    trig_qty = fmt_amount(rule["trigger_quantity"])
+    trig_unit = trigger_unit_label(rule, lang)
+    trig_name = _product_name(rule, "trigger", lang)
+    bonus_amt = f"{fmt_amount(rule['bonus_amount'])} {unit_label(rule['bonus_unit'], lang)}"
+    bonus_name = bonus_display_name(_product_name(rule, "bonus", lang), rule["bonus_unit"])
+    value = rule_bonus_value(rule)
+
+    if lang == "ru":
+        gift = f"{bonus_amt} <b>{bonus_name}</b>"
+        price = f" — <s>{fmt_sum(value)}</s> <b>БЕСПЛАТНО</b>" if value > 0 else " — в подарок"
+        return f"🎁 <b>{trig_qty} {trig_unit}</b> {trig_name}\n      └ {gift}{price}"
+    gift = f"{bonus_amt} <b>{bonus_name}</b>"
+    price = f" — <s>{fmt_sum(value)}</s> <b>BEPUL</b>" if value > 0 else " — sovg'a"
+    return f"🎁 <b>{trig_qty} {trig_unit}</b> {trig_name}\n      └ {gift}{price}"
+
+
 def bonus_hint(promo: dict | None, product_id: int, lang: str) -> str | None:
     """The badge line for a product that triggers a bonus, or None. Shown on
     the bot's product card, in the catalog list, and on the Mini App card."""
@@ -496,37 +531,53 @@ async def screen_pages(lang: str) -> list[str] | None:
     if not promo:
         return None
 
+    rules = promo.get("bonuses") or []
     left = days_left(promo)
-    header = [f"🎁 <b>{promo_name(promo, lang)}</b>", ""]
+    ru = lang == "ru"
+
+    header = ["🎁🎁🎁", f"<b>{promo_name(promo, lang)}</b>", ""]
     if left:
-        header.append(("⏳ Aksiyaga {n} kun qoldi" if lang != "ru" else "⏳ До конца акции {n} дн.").format(n=left))
+        header.append(
+            (f"⏳ Aksiyaga <b>{left} kun</b> qoldi — ulgurib qoling!" if not ru
+             else f"⏳ До конца акции <b>{left} дн.</b> — успейте!")
+        )
         header.append("")
     conditions = promo_conditions(promo, lang)
     if conditions:
-        header.append("📋 <b>Shartlar:</b>" if lang != "ru" else "📋 <b>Условия:</b>")
+        header.append("📋 <b>Shartlar:</b>" if not ru else "📋 <b>Условия:</b>")
         header.append(conditions)
         header.append("")
 
-    rules = promo.get("bonuses") or []
     if not rules:
         return ["\n".join(header).strip()]
 
-    rules_head = "🎁 <b>Bonus mahsulotlar:</b>" if lang != "ru" else "🎁 <b>Бонусные товары:</b>"
-    rules_more = ("🎁 <b>Bonus mahsulotlar</b> (davomi):" if lang != "ru"
-                  else "🎁 <b>Бонусные товары</b> (продолжение):")
-    footer = ("Bonus savatga avtomatik qo'shiladi — hech narsa qilishingiz shart emas."
-              if lang != "ru" else
-              "Бонус добавляется в корзину автоматически — ничего делать не нужно.")
+    # Count, not sum: adding up all 69 giveaways would advertise a number
+    # nobody can actually earn in one order.
+    rules_head = (f"🎁 <b>{len(rules)} ta sovg'a taklifi:</b>" if not ru
+                  else f"🎁 <b>{len(rules)} подарочных предложений:</b>")
+    rules_more = ("🎁 <b>Sovg'alar</b> (davomi):" if not ru
+                  else "🎁 <b>Подарки</b> (продолжение):")
+    footer = [
+        "",
+        ("✅ Sovg'a savatingizga <b>avtomatik</b> qo'shiladi — hech narsa qilishingiz shart emas."
+         if not ru else
+         "✅ Подарок добавляется в корзину <b>автоматически</b> — ничего делать не нужно."),
+        ("➕ Ko'proq olsangiz — sovg'a ham ko'payadi." if not ru
+         else "➕ Возьмёте больше — и подарков больше."),
+        "",
+        ("🛒 <b>Buyurtma bering va sovg'angizni oling!</b>" if not ru
+         else "🛒 <b>Оформите заказ и получите подарок!</b>"),
+    ]
 
     pages: list[str] = []
-    buf = header + [rules_head]
+    buf = header + [rules_head, ""]
     for rule in rules:
-        line = f"   • {rule_line(rule, lang)}"
-        if len("\n".join(buf + [line])) > SCREEN_PAGE_LIMIT:
+        block = rule_block(rule, lang)
+        if len("\n".join(buf + [block] + footer)) > SCREEN_PAGE_LIMIT:
             pages.append("\n".join(buf).strip())
-            buf = [rules_more]
-        buf.append(line)
-    buf += ["", footer]
+            buf = [rules_more, ""]
+        buf.append(block)
+    buf += footer
     pages.append("\n".join(buf).strip())
     return pages
 
@@ -643,19 +694,35 @@ def _showcase_slice(rules: list[dict], cursor: int, count: int) -> tuple[list[di
 
 
 def showcase_text(promo: dict, rules: list[dict], lang: str) -> str:
+    """The daily push. Owner's brief, 2026-09-02: make it worth opening — say
+    what the gift is worth in so'm, say the aksiya is running out, and end on
+    something to do. So the message closes on three concrete things: the money
+    on today's table, the days left, and the buttons underneath."""
     left = days_left(promo)
-    if lang == "ru":
-        parts = [f"🎉 <b>{promo_name(promo, lang)}</b>", "", "🎁 <b>Подарки дня:</b>", ""]
-    else:
-        parts = [f"🎉 <b>{promo_name(promo, lang)}</b>", "", "🎁 <b>Bugungi sovg'alar:</b>", ""]
+    ru = lang == "ru"
+    total = sum(rule_bonus_value(r) for r in rules)
+
+    parts = ["🎁🎁🎁",
+             "<b>BUGUNGI SOVG'ALAR</b>" if not ru else "<b>ПОДАРКИ ДНЯ</b>",
+             f"🎉 {promo_name(promo, lang)}", ""]
     for rule in rules:
-        parts.append(f"   🎁 {rule_line(rule, lang)}")
-    parts.append("")
+        parts.append(rule_block(rule, lang))
+        parts.append("")
+
+    if total > 0:
+        parts.append(
+            (f"💚 Bugun <b>{fmt_sum(total)} so'm</b>lik sovg'a olishingiz mumkin!" if not ru
+             else f"💚 Сегодня можно забрать подарков на <b>{fmt_sum(total)} сум</b>!")
+        )
     if left:
-        parts.append(("⏳ Aksiyaga {n} kun qoldi" if lang != "ru" else "⏳ До конца акции {n} дн.").format(n=left))
-    parts.append(
-        "👇 Mahsulotni ko'rish uchun bosing" if lang != "ru" else "👇 Нажмите, чтобы открыть товар"
-    )
+        parts.append(
+            (f"⏳ Aksiyaga atigi <b>{left} kun</b> qoldi — ulgurib qoling!" if not ru
+             else f"⏳ До конца акции всего <b>{left} дн.</b> — успейте!")
+        )
+    parts += ["",
+              ("👇 Mahsulotni ochish uchun tugmani bosing va savatga qo'shing"
+               if not ru else
+               "👇 Нажмите на товар и добавьте его в корзину")]
     return "\n".join(parts)
 
 
