@@ -1497,6 +1497,11 @@ async def message_client_send(message: Message, state: FSMContext, bot: Bot):
             from database import log_support_message, mark_support_answered
             await log_support_message(target, "out", raw, admin_id=message.from_user.id, order_id=order_id)
             await mark_support_answered(target)
+            # If this buyer had also written into the bot, their question is
+            # now answered — close the cards sitting in the other admins'
+            # chats too, or they keep a live reply button for it.
+            from handlers.support_relay import announce_support_answer
+            await announce_support_answer(bot, target, message.from_user.id, raw)
         except Exception:
             pass
         await message.answer(get_text("message_client_sent", lang))

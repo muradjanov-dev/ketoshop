@@ -828,6 +828,39 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS idx_support_messages_open "
             "ON support_messages(created_at DESC) WHERE direction = 'in' AND answered_at IS NULL"
         )
+        # Every admin gets their own copy of a buyer's question pushed into
+        # their chat. Remembering where those copies landed is what lets a
+        # reply by one admin rewrite ALL of them — "javob berildi, mana javob"
+        # — instead of leaving the rest looking at a live reply button for a
+        # question that is already handled (owner request 2026-09-02).
+        # `body` is the rendered card in that admin's own language, kept so
+        # the edit can append a footer without rebuilding the text.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS support_relay_copies (
+                id SERIAL PRIMARY KEY,
+                buyer_id BIGINT NOT NULL,
+                admin_id BIGINT NOT NULL,
+                chat_id BIGINT NOT NULL,
+                message_id BIGINT NOT NULL,
+                body TEXT NOT NULL,
+                closed_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_support_relay_open "
+            "ON support_relay_copies(buyer_id) WHERE closed_at IS NULL"
+        )
+        # Whoever taps "Javob berish" first owns the conversation until they
+        # send or cancel. One row per buyer, so the PRIMARY KEY itself is the
+        # lock — two admins tapping at the same moment cannot both win.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS support_claims (
+                buyer_id BIGINT PRIMARY KEY,
+                admin_id BIGINT NOT NULL,
+                claimed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
 
 
@@ -4048,3 +4081,118 @@ async def count_open_support() -> int:
         return await conn.fetchval(
             "SELECT COUNT(*) FROM support_messages WHERE direction = 'in' AND answered_at IS NULL"
         )
+
+
+# ----- relay copies: the same question sitting in several admins' chats -----
+
+async def record_support_relay(buyer_id: int, admin_id: int, chat_id: int,
+                               message_id: int, body: str) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO support_relay_copies (buyer_id, admin_id, chat_id, message_id, body)
+               VALUES ($1, $2, $3, $4, $5)""",
+            buyer_id, admin_id, chat_id, message_id, body[:4000],
+        )
+
+
+async def open_support_relays(buyer_id: int) -> list[dict]:
+    """Every still-live copy of this buyer's question, oldest first."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT * FROM support_relay_copies
+                WHERE buyer_id = $1 AND closed_at IS NULL ORDER BY id""",
+            buyer_id,
+        )
+        return [dict(r) for r in rows]
+
+
+async def close_support_relays(buyer_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE support_relay_copies SET closed_at = CURRENT_TIMESTAMP"
+            " WHERE buyer_id = $1 AND closed_at IS NULL",
+            buyer_id,
+        )
+
+
+# ----- claims: one admin at a time may be writing the answer -----
+
+SUPPORT_CLAIM_TTL_MINUTES = 15
+
+
+async def claim_support(buyer_id: int, admin_id: int) -> int:
+    """Take this buyer's question, or report who already has it.
+
+    Returns the admin who holds the claim afterwards: `admin_id` when the
+    claim was won (including re-taking one you already held), someone else's
+    id when they got there first. A claim left untouched for
+    SUPPORT_CLAIM_TTL_MINUTES is up for grabs again — otherwise an admin who
+    taps "Javob berish" and then walks away freezes the buyer's question for
+    everyone, which is worse than the double-reply this is preventing."""
+    async with pool.acquire() as conn:
+        held = await conn.fetchval(
+            f"""
+            INSERT INTO support_claims (buyer_id, admin_id) VALUES ($1, $2)
+            ON CONFLICT (buyer_id) DO UPDATE
+               SET admin_id = EXCLUDED.admin_id, claimed_at = CURRENT_TIMESTAMP
+             WHERE support_claims.admin_id = EXCLUDED.admin_id
+                OR support_claims.claimed_at
+                   < CURRENT_TIMESTAMP - INTERVAL '{SUPPORT_CLAIM_TTL_MINUTES} minutes'
+            RETURNING admin_id
+            """,
+            buyer_id, admin_id,
+        )
+        if held is not None:
+            return int(held)
+        # The DO UPDATE's WHERE filtered us out — somebody else is on it.
+        current = await conn.fetchval(
+            "SELECT admin_id FROM support_claims WHERE buyer_id = $1", buyer_id
+        )
+        return int(current) if current is not None else admin_id
+
+
+async def support_claim_holder(buyer_id: int) -> int | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            f"""SELECT admin_id FROM support_claims
+                 WHERE buyer_id = $1
+                   AND claimed_at
+                       >= CURRENT_TIMESTAMP - INTERVAL '{SUPPORT_CLAIM_TTL_MINUTES} minutes'""",
+            buyer_id,
+        )
+
+
+async def release_support_claim(buyer_id: int, admin_id: int | None = None) -> None:
+    """Give the question back. Passing admin_id keeps one admin's cancel from
+    clearing a claim that has since been taken over by someone else."""
+    async with pool.acquire() as conn:
+        if admin_id is None:
+            await conn.execute("DELETE FROM support_claims WHERE buyer_id = $1", buyer_id)
+        else:
+            await conn.execute(
+                "DELETE FROM support_claims WHERE buyer_id = $1 AND admin_id = $2",
+                buyer_id, admin_id,
+            )
+
+
+async def is_support_answered(buyer_id: int) -> bool:
+    """True when nothing from this buyer is still waiting for a reply."""
+    async with pool.acquire() as conn:
+        return not await conn.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM support_messages"
+            " WHERE user_id = $1 AND direction = 'in' AND answered_at IS NULL)",
+            buyer_id,
+        )
+
+
+async def last_support_reply(buyer_id: int) -> dict | None:
+    """The most recent outbound reply to this buyer — who wrote it and what
+    it said, for showing the other admins what has already been answered."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT text, admin_id, created_at FROM support_messages
+                WHERE user_id = $1 AND direction = 'out'
+                ORDER BY created_at DESC, id DESC LIMIT 1""",
+            buyer_id,
+        )
+        return dict(row) if row else None
