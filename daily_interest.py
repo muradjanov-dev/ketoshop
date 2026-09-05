@@ -160,6 +160,9 @@ async def send_batch(bot: Bot, only_user: int | None = None) -> tuple[int, int, 
     else:
         user_ids = await database.get_user_ids_with_views(RECENT_DAYS)
 
+    # One query for the whole audience instead of a SELECT * per recipient.
+    langs = await database.get_user_languages(user_ids)
+
     sent = failed = skipped = 0
     for uid in user_ids:
         try:
@@ -167,7 +170,7 @@ async def send_batch(bot: Bot, only_user: int | None = None) -> tuple[int, int, 
             if not products:
                 skipped += 1
                 continue
-            lang = await database.get_user_language(uid)
+            lang = langs.get(uid, "uz")
             text, keyboard = build_message(products[0], lang, cycle, promo)
             if not text:
                 skipped += 1

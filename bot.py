@@ -18,6 +18,7 @@ from pg_storage import PostgresStorage
 from activity import ActivityMiddleware
 from subscription_gate import SubscriptionGateMiddleware
 from state_guard import StateResetOnCommandMiddleware
+import tg_safety
 
 # Handlers
 from handlers.webapp_data import router as webapp_data_router
@@ -112,6 +113,9 @@ async def main():
     # Initialize bot and dispatcher — Postgres-backed FSM so checkout state
     # survives bot restarts (users mid-cheque don't get wedged).
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    # Guarantees a message still arrives when a name/address/note interpolated
+    # into an HTML template contains a bare "<" or "&" — see tg_safety.py.
+    tg_safety.install(bot)
     storage = PostgresStorage()
     dp = Dispatcher(storage=storage)
 

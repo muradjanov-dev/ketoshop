@@ -597,11 +597,13 @@ async def announce(bot: Bot, promo: dict) -> tuple[int, int]:
     Returns (sent, failed). Marks the campaign announced so the admin panel
     can grey the button out and a stray second press can't spam everyone."""
     user_ids = await database.get_all_user_ids()
+    # Per-user language, like every other broadcast in the bot — everyone reads
+    # this in their own saved uz/uz_cyr/ru, not one site-wide default. Fetched
+    # for the whole audience at once: one query instead of one per recipient.
+    langs = await database.get_user_languages(user_ids)
     sent = failed = 0
     for user_id in user_ids:
-        # Per-user language, like every other broadcast in the bot — everyone
-        # reads this in their own saved uz/uz_cyr/ru, not one site-wide default.
-        lang = await database.get_user_language(user_id)
+        lang = langs.get(user_id, "uz")
         text = _announcement_text(promo, lang)
         try:
             if promo.get("image_url"):
@@ -757,7 +759,8 @@ async def _showcase_tick(bot: Bot) -> None:
     if promo.get("last_showcase_date") == today:
         return
 
-    picked, next_cursor = _showcase_slice(rules, int(promo.get("showcase_cursor") or 0), SHOWCASE_PER_DAY)
+    cursor_before = int(promo.get("showcase_cursor") or 0)
+    picked, next_cursor = _showcase_slice(rules, cursor_before, SHOWCASE_PER_DAY)
     if not picked:
         return
 
@@ -776,15 +779,22 @@ async def _showcase_tick(bot: Bot) -> None:
     admin_first = [u for u in user_ids if u in ADMIN_IDS]
     user_ids = admin_first + [u for u in user_ids if u not in ADMIN_IDS]
 
+    langs = await database.get_user_languages(user_ids)
+    # Both message bodies are identical for everyone reading the same
+    # language, so render the three of them once instead of 844 times.
+    bodies = {lang: (showcase_text(promo, picked, lang), showcase_keyboard(picked, lang))
+              for lang in ("uz", "uz_cyr", "ru")}
+
     sent = failed = 0
     for user_id in user_ids:
-        lang = await database.get_user_language(user_id)
+        lang = langs.get(user_id, "uz")
+        text, keyboard = bodies.get(lang) or bodies["uz"]
         try:
             await bot.send_message(
                 user_id,
-                showcase_text(promo, picked, lang),
+                text,
                 parse_mode=ParseMode.HTML,
-                reply_markup=showcase_keyboard(picked, lang),
+                reply_markup=keyboard,
             )
             sent += 1
         except TelegramRetryAfter as exc:
@@ -798,12 +808,24 @@ async def _showcase_tick(bot: Bot) -> None:
         await asyncio.sleep(SEND_DELAY)
 
     logger.info("Aksiya showcase sent: %d ok, %d failed", sent, failed)
+    await database.record_promotion_showcase(promo["id"], sent, failed)
+
+    if sent == 0 and user_ids:
+        # Not one message landed — that is an outage, not a send. Hand the day
+        # back so the next tick tries again, rather than burning it silently
+        # and leaving everyone to wonder why no reminder arrived.
+        logger.error("Aksiya showcase reached NOBODY (%d attempts); releasing the day", failed)
+        await database.release_promotion_showcase(promo["id"], cursor_before)
+        await refresh()
+
     for admin_id in ADMIN_IDS:
         try:
             await bot.send_message(
                 admin_id,
                 f"🎁 Bugungi sovg'alar e'lon qilindi ({len(picked)} ta bonus).\n"
-                f"✅ {sent} ta yetkazildi, ⚠️ {failed} ta yetmadi.",
+                f"✅ {sent} ta yetkazildi, ⚠️ {failed} ta yetmadi."
+                + ("\n\n⚠️ Hech kimga yetmadi — keyingi tekshiruvda qayta urinib ko'riladi."
+                   if sent == 0 and user_ids else ""),
                 parse_mode=ParseMode.HTML,
             )
         except Exception:

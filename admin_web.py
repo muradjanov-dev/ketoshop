@@ -50,6 +50,7 @@ Images are stored in Postgres (web_images) because Railway's filesystem is
 ephemeral — see database.py.
 """
 import asyncio
+import functools
 import hashlib
 import hmac
 import json
@@ -63,8 +64,24 @@ from aiohttp import web
 import database
 from config import ADMIN_WEB_PASSWORD, BOT_TOKEN, ADMIN_IDS, BOT_USERNAME
 from locales import CATEGORIES
+# Same tolerant JSON encoder the Mini App uses: aiohttp's default dumps cannot
+# serialize the date / datetime / Decimal values asyncpg hands back, and every
+# endpoint here that forgot to convert one 500s at render time with nothing to
+# show the admin. `/admin/api/promos` was doing exactly that from the moment
+# promotions.last_showcase_date (a DATE) was added — the whole Aksiya tab was
+# dead. Handing web.json_response this encoder fixes the class of bug rather
+# than the one instance.
+from webapp_server import _json_default
 
 logger = logging.getLogger(__name__)
+
+_safe_dumps = functools.partial(json.dumps, default=_json_default)
+
+
+def _json(data, **kwargs):
+    """web.json_response that survives whatever asyncpg returns."""
+    return web.json_response(data, dumps=_safe_dumps, **kwargs)
+
 
 SESSION_COOKIE = "safran_admin"
 SESSION_TTL = 7 * 24 * 3600          # 7 days
@@ -108,9 +125,9 @@ def _authed(request: web.Request) -> bool:
 def require_auth(handler):
     async def wrapped(request: web.Request):
         if not ADMIN_WEB_PASSWORD:
-            return web.json_response({"error": "admin panel disabled: ADMIN_WEB_PASSWORD not set"}, status=503)
+            return _json({"error": "admin panel disabled: ADMIN_WEB_PASSWORD not set"}, status=503)
         if not _authed(request):
-            return web.json_response({"error": "unauthorized"}, status=401)
+            return _json({"error": "unauthorized"}, status=401)
         return await handler(request)
     return wrapped
 
@@ -128,18 +145,18 @@ async def admin_page(request: web.Request):
 
 async def api_login(request: web.Request):
     if not ADMIN_WEB_PASSWORD:
-        return web.json_response({"error": "ADMIN_WEB_PASSWORD is not configured on the server"}, status=503)
+        return _json({"error": "ADMIN_WEB_PASSWORD is not configured on the server"}, status=503)
     try:
         body = await request.json()
     except Exception:
-        return web.json_response({"error": "bad request"}, status=400)
+        return _json({"error": "bad request"}, status=400)
     password = str(body.get("password", ""))
     # Constant-time compare + a small delay to blunt brute-forcing.
     ok = hmac.compare_digest(password.encode(), ADMIN_WEB_PASSWORD.encode())
     if not ok:
         import asyncio
         await asyncio.sleep(1.0)
-        return web.json_response({"error": "wrong password"}, status=403)
+        return _json({"error": "wrong password"}, status=403)
     resp = web.json_response({"ok": True})
     resp.set_cookie(
         SESSION_COOKIE, _make_session(),
@@ -165,7 +182,7 @@ async def api_session(request: web.Request):
     # bot_username lets the Blogerlar tab preview a partner link
     # (t.me/<bot>?start=<name>) as the admin types, without hardcoding the
     # bot's name into the page.
-    return web.json_response({"ok": True, "categories": categories,
+    return _json({"ok": True, "categories": categories,
                               "bot_username": BOT_USERNAME})
 
 
@@ -179,12 +196,12 @@ async def api_categories_create(request: web.Request):
         if not name_uz:
             raise ValueError
     except Exception:
-        return web.json_response({"error": "name_uz is required"}, status=400)
+        return _json({"error": "name_uz is required"}, status=400)
 
     cat = await database.create_category(name_uz=name_uz, name_ru=_clean_str(b.get("name_ru"), 200))
     if cat.get("created_at"):
         cat["created_at"] = cat["created_at"].isoformat()
-    return web.json_response({"ok": True, "category": cat})
+    return _json({"ok": True, "category": cat})
 
 
 # ────────────────────────────── products ────────────────────────────────────
@@ -198,7 +215,7 @@ async def api_products_list(request: web.Request):
             p["created_at"] = p["created_at"].isoformat()
         if p.get("discount_until"):
             p["discount_until"] = p["discount_until"].isoformat()
-    return web.json_response({"products": products})
+    return _json({"products": products})
 
 
 def _clean_str(v, max_len=500) -> str | None:
@@ -218,7 +235,7 @@ async def api_products_create(request: web.Request):
         if not name or price < 0 or category not in CATEGORIES:
             raise ValueError
     except Exception:
-        return web.json_response({"error": "name, price, category are required"}, status=400)
+        return _json({"error": "name, price, category are required"}, status=400)
 
     await database.ensure_user_exists(WEB_SELLER_ID, "Ketoshop Admin")
     pid = await database.admin_create_product(
@@ -236,18 +253,18 @@ async def api_products_create(request: web.Request):
         discount_percent=int(b.get("discount_percent") or 0),
         image_url=_clean_str(b.get("image_url"), 300),
     )
-    return web.json_response({"ok": True, "id": pid})
+    return _json({"ok": True, "id": pid})
 
 
 @require_auth
 async def api_products_update(request: web.Request):
     pid = int(request.match_info["id"])
     if not await database.get_product(pid):
-        return web.json_response({"error": "not found"}, status=404)
+        return _json({"error": "not found"}, status=404)
     try:
         b = await request.json()
     except Exception:
-        return web.json_response({"error": "bad request"}, status=400)
+        return _json({"error": "bad request"}, status=400)
 
     fields = {}
     if "name" in b:             fields["name"] = _clean_str(b["name"], 200)
@@ -266,20 +283,20 @@ async def api_products_update(request: web.Request):
     if "is_active" in b:        fields["is_active"] = 1 if b["is_active"] else 0
     if "category" in b:
         if b["category"] not in CATEGORIES:
-            return web.json_response({"error": "bad category"}, status=400)
+            return _json({"error": "bad category"}, status=400)
         fields["category"] = b["category"]
     if not fields:
-        return web.json_response({"error": "nothing to update"}, status=400)
+        return _json({"error": "nothing to update"}, status=400)
 
     await database.update_product(pid, **fields)
-    return web.json_response({"ok": True})
+    return _json({"ok": True})
 
 
 @require_auth
 async def api_products_delete(request: web.Request):
     pid = int(request.match_info["id"])
     await database.delete_product(pid)  # soft delete: is_active = 0
-    return web.json_response({"ok": True})
+    return _json({"ok": True})
 
 
 # ──────────────────────────────── sets ──────────────────────────────────────
@@ -304,7 +321,7 @@ async def api_sets_list(request: web.Request):
     for s in sets:
         if s.get("created_at"):
             s["created_at"] = s["created_at"].isoformat()
-    return web.json_response({"sets": sets})
+    return _json({"sets": sets})
 
 
 @require_auth
@@ -317,13 +334,13 @@ async def api_sets_create(request: web.Request):
         if not name or set_price < 0:
             raise ValueError
     except Exception as e:
-        return web.json_response({"error": f"invalid payload: {e}"}, status=400)
+        return _json({"error": f"invalid payload: {e}"}, status=400)
 
     # Every member product must exist and be active.
     for it in items:
         p = await database.get_product(it["product_id"])
         if not p or not p["is_active"]:
-            return web.json_response({"error": f"product {it['product_id']} not found or archived"}, status=400)
+            return _json({"error": f"product {it['product_id']} not found or archived"}, status=400)
 
     sid = await database.create_set(
         name=name, set_price=set_price, items=items,
@@ -332,18 +349,18 @@ async def api_sets_create(request: web.Request):
         description_ru=_clean_str(b.get("description_ru"), 2000),
         image_url=_clean_str(b.get("image_url"), 300),
     )
-    return web.json_response({"ok": True, "id": sid})
+    return _json({"ok": True, "id": sid})
 
 
 @require_auth
 async def api_sets_update(request: web.Request):
     sid = int(request.match_info["id"])
     if not await database.get_set(sid):
-        return web.json_response({"error": "not found"}, status=404)
+        return _json({"error": "not found"}, status=404)
     try:
         b = await request.json()
     except Exception:
-        return web.json_response({"error": "bad request"}, status=400)
+        return _json({"error": "bad request"}, status=400)
 
     fields = {}
     if "name" in b:           fields["name"] = _clean_str(b["name"], 200)
@@ -359,17 +376,17 @@ async def api_sets_update(request: web.Request):
         try:
             items = _parse_set_items(b["items"])
         except Exception as e:
-            return web.json_response({"error": f"invalid items: {e}"}, status=400)
+            return _json({"error": f"invalid items: {e}"}, status=400)
 
     await database.update_set(sid, items=items, **fields)
-    return web.json_response({"ok": True})
+    return _json({"ok": True})
 
 
 @require_auth
 async def api_sets_delete(request: web.Request):
     sid = int(request.match_info["id"])
     await database.delete_set(sid)
-    return web.json_response({"ok": True})
+    return _json({"ok": True})
 
 
 # ────────────────────── personal recommendations control ────────────────────
@@ -377,7 +394,7 @@ async def api_sets_delete(request: web.Request):
 @require_auth
 async def api_reco_on(request: web.Request):
     await database.set_reco_enabled(True)
-    return web.json_response({"ok": True, "enabled": True})
+    return _json({"ok": True, "enabled": True})
 
 
 @require_auth
@@ -405,7 +422,7 @@ async def api_reco_send_now(request: web.Request):
 
     import asyncio
     asyncio.create_task(run())
-    return web.json_response({"ok": True, "started": True,
+    return _json({"ok": True, "started": True,
                               "buyers": len(buyers), "cycle": state.get("cycle", 0)})
 
 
@@ -421,7 +438,7 @@ async def api_reco_backfill(request: web.Request):
         body = await request.json()
         cycle = int(body.get("cycle", 0))
     except Exception:
-        return web.json_response({"error": "bad request"}, status=400)
+        return _json({"error": "bad request"}, status=400)
 
     marked = 0
     for uid in await database.get_user_ids_with_orders():
@@ -432,7 +449,7 @@ async def api_reco_backfill(request: web.Request):
             h = hashlib.sha256(text.encode()).hexdigest()
             await database.mark_reco_sent(uid, h)
             marked += 1
-    return web.json_response({"ok": True, "cycle": cycle, "marked": marked})
+    return _json({"ok": True, "cycle": cycle, "marked": marked})
 
 
 # ─────────────────────────── Aksiya / Bonus ─────────────────────────────────
@@ -503,7 +520,7 @@ async def _parse_bonus_rules(raw) -> list[dict]:
 @require_auth
 async def api_promos_list(request: web.Request):
     promos = await database.list_promotions()
-    return web.json_response({"promos": [_promo_json(p) for p in promos]})
+    return _json({"promos": [_promo_json(p) for p in promos]})
 
 
 @require_auth
@@ -511,7 +528,7 @@ async def api_promos_create(request: web.Request):
     b = await request.json()
     name = _clean_str(b.get("name"), 200)
     if not name:
-        return web.json_response({"error": "aksiya nomi kiritilmagan"}, status=400)
+        return _json({"error": "aksiya nomi kiritilmagan"}, status=400)
     # `or 7` would swallow an explicit 0 and silently run the campaign for a
     # week the admin never asked for — only an ABSENT/blank days field falls
     # back to the default; a supplied one has to be valid.
@@ -521,12 +538,12 @@ async def api_promos_create(request: web.Request):
         if days <= 0:
             raise ValueError
     except (TypeError, ValueError):
-        return web.json_response({"error": "kunlar soni musbat butun son bo'lishi kerak"}, status=400)
+        return _json({"error": "kunlar soni musbat butun son bo'lishi kerak"}, status=400)
 
     try:
         rules = await _parse_bonus_rules(b.get("bonuses") or [])
     except ValueError as exc:
-        return web.json_response({"error": str(exc)}, status=400)
+        return _json({"error": str(exc)}, status=400)
 
     promo_id = await database.create_promotion(
         name=name,
@@ -537,7 +554,7 @@ async def api_promos_create(request: web.Request):
         image_url=_clean_str(b.get("image_url"), 300),
     )
     await database.set_promotion_bonuses(promo_id, rules)
-    return web.json_response({"ok": True, "id": promo_id})
+    return _json({"ok": True, "id": promo_id})
 
 
 @require_auth
@@ -549,7 +566,7 @@ async def api_promos_update(request: web.Request):
     if "name" in b:
         name = _clean_str(b.get("name"), 200)
         if not name:
-            return web.json_response({"error": "aksiya nomi kiritilmagan"}, status=400)
+            return _json({"error": "aksiya nomi kiritilmagan"}, status=400)
         fields["name"] = name
     for key, limit in (("name_ru", 200), ("conditions", 2000), ("conditions_ru", 2000), ("image_url", 300)):
         if key in b:
@@ -561,7 +578,7 @@ async def api_promos_update(request: web.Request):
                 raise ValueError
             fields["days"] = days
         except (TypeError, ValueError):
-            return web.json_response({"error": "kunlar soni musbat butun son bo'lishi kerak"}, status=400)
+            return _json({"error": "kunlar soni musbat butun son bo'lishi kerak"}, status=400)
 
     if fields:
         await database.update_promotion(promo_id, **fields)
@@ -569,12 +586,12 @@ async def api_promos_update(request: web.Request):
         try:
             rules = await _parse_bonus_rules(b.get("bonuses") or [])
         except ValueError as exc:
-            return web.json_response({"error": str(exc)}, status=400)
+            return _json({"error": str(exc)}, status=400)
         await database.set_promotion_bonuses(promo_id, rules)
 
     import promotions
     await promotions.refresh()   # an edit to the running campaign shows up at once
-    return web.json_response({"ok": True})
+    return _json({"ok": True})
 
 
 @require_auth
@@ -582,7 +599,7 @@ async def api_promos_delete(request: web.Request):
     import promotions
     await database.delete_promotion(int(request.match_info["id"]))
     await promotions.refresh()
-    return web.json_response({"ok": True})
+    return _json({"ok": True})
 
 
 @require_auth
@@ -598,13 +615,13 @@ async def api_promos_start(request: web.Request):
             if days <= 0:
                 raise ValueError
         except (TypeError, ValueError):
-            return web.json_response({"error": "kunlar soni musbat butun son bo'lishi kerak"}, status=400)
+            return _json({"error": "kunlar soni musbat butun son bo'lishi kerak"}, status=400)
 
     promo = await database.start_promotion(promo_id, days)
     if promo is None:
-        return web.json_response({"error": "aksiya topilmadi"}, status=404)
+        return _json({"error": "aksiya topilmadi"}, status=404)
     await promotions.refresh()
-    return web.json_response({"ok": True, "promo": _promo_json(promo)})
+    return _json({"ok": True, "promo": _promo_json(promo)})
 
 
 @require_auth
@@ -612,7 +629,7 @@ async def api_promos_stop(request: web.Request):
     import promotions
     await database.stop_promotion(int(request.match_info["id"]))
     await promotions.refresh()
-    return web.json_response({"ok": True})
+    return _json({"ok": True})
 
 
 @require_auth
@@ -626,9 +643,9 @@ async def api_promos_announce(request: web.Request):
     promo_id = int(request.match_info["id"])
     promo = await database.get_promotion(promo_id)
     if promo is None:
-        return web.json_response({"error": "aksiya topilmadi"}, status=404)
+        return _json({"error": "aksiya topilmadi"}, status=404)
     if not promo.get("active"):
-        return web.json_response({"error": "avval aksiyani boshlang"}, status=400)
+        return _json({"error": "avval aksiyani boshlang"}, status=400)
 
     bot = request.app["bot"]
 
@@ -650,7 +667,7 @@ async def api_promos_announce(request: web.Request):
             logger.exception("Aksiya announcement failed")
 
     asyncio.create_task(_run())
-    return web.json_response({"ok": True})
+    return _json({"ok": True})
 
 
 # ───────────────────────────── expenses ──────────────────────────────────────
@@ -658,7 +675,7 @@ async def api_promos_announce(request: web.Request):
 @require_auth
 async def api_expenses_list(request: web.Request):
     expenses = await database.get_expenses(100)
-    return web.json_response({"expenses": expenses}, dumps=lambda obj: json.dumps(obj, default=str))
+    return _json({"expenses": expenses}, dumps=lambda obj: json.dumps(obj, default=str))
 
 @require_auth
 async def api_expenses_add(request: web.Request):
@@ -669,10 +686,10 @@ async def api_expenses_add(request: web.Request):
         if not name or amount <= 0:
             raise ValueError
     except Exception:
-        return web.json_response({"error": "invalid name or amount"}, status=400)
+        return _json({"error": "invalid name or amount"}, status=400)
     
     eid = await database.add_expense(name, amount)
-    return web.json_response({"ok": True, "id": eid})
+    return _json({"ok": True, "id": eid})
 
 
 # ───────────────────────────── dashboard ─────────────────────────────────────
@@ -699,7 +716,7 @@ async def api_dashboard(request: web.Request):
         database.get_keto_program_stats(),
         database.get_abc_analysis(period_arg),
     )
-    return web.json_response({
+    return _json({
         "stats": stats,
         "monthly": monthly,
         "top_products": top_products,
@@ -717,7 +734,7 @@ async def api_keto_status(request: web.Request):
     `redemption_enabled` defaults FALSE, see gamification.is_redemption_enabled)."""
     state = await database.get_gamification_state()
     balances = await database.get_keto_balances_list()
-    return web.json_response({
+    return _json({
         "redemption_enabled": bool(state.get("redemption_enabled")),
         "gamification_enabled": bool(state.get("enabled")),
         "balances": balances,
@@ -730,9 +747,9 @@ async def api_keto_redemption_toggle(request: web.Request):
         b = await request.json()
         enabled = bool(b.get("enabled"))
     except Exception:
-        return web.json_response({"error": "bad request"}, status=400)
+        return _json({"error": "bad request"}, status=400)
     await database.set_redemption_enabled(enabled)
-    return web.json_response({"ok": True, "enabled": enabled})
+    return _json({"ok": True, "enabled": enabled})
 
 
 # ────────────────────────── Reklama (Meta Ads) ───────────────────────────────
@@ -809,7 +826,7 @@ async def api_ads(request: web.Request):
         import meta_ads
     except Exception:
         logger.exception("meta_ads import failed")
-        return web.json_response({"enabled": False})
+        return _json({"enabled": False})
 
     period = request.query.get("period", "today")
     if period not in meta_ads.PRESETS:
@@ -817,7 +834,7 @@ async def api_ads(request: web.Request):
     label = meta_ads.PRESETS[period][0]
 
     if not meta_ads.is_enabled():
-        return web.json_response({"enabled": False, "period": period, "label": label})
+        return _json({"enabled": False, "period": period, "label": label})
 
     # Lead counters come from our own Postgres, so they stay live — only the
     # Graph half of the payload is cached.
@@ -825,7 +842,7 @@ async def api_ads(request: web.Request):
 
     cached = _ads_cached("ads:" + period)
     if cached is not None:
-        return web.json_response({**cached, "leads": leads})
+        return _json({**cached, "leads": leads})
 
     base = {"enabled": True, "period": period, "label": label}
     try:
@@ -838,13 +855,13 @@ async def api_ads(request: web.Request):
             )
     except Exception:
         logger.exception("Ads insights request failed")
-        return web.json_response({**base, "error": "Meta bilan bog'lanib bo'lmadi", "leads": leads})
+        return _json({**base, "error": "Meta bilan bog'lanib bo'lmadi", "leads": leads})
 
     if isinstance(account_res, meta_ads.GraphError):
-        return web.json_response({**base, "error": str(account_res), "leads": leads})
+        return _json({**base, "error": str(account_res), "leads": leads})
     if isinstance(account_res, BaseException):
         logger.error("Ads account insights failed", exc_info=account_res)
-        return web.json_response({**base, "error": "Meta bilan bog'lanib bo'lmadi", "leads": leads})
+        return _json({**base, "error": "Meta bilan bog'lanib bo'lmadi", "leads": leads})
 
     ad_rows = ad_res if isinstance(ad_res, list) else []
     camp_rows = camp_res if isinstance(camp_res, list) else []
@@ -856,7 +873,7 @@ async def api_ads(request: web.Request):
         "campaigns": _by_spend([_insight_row(meta_ads, r, "campaign_name") for r in camp_rows]),
     }
     _ads_store("ads:" + period, payload)
-    return web.json_response({**payload, "leads": leads})
+    return _json({**payload, "leads": leads})
 
 
 @require_auth
@@ -868,14 +885,14 @@ async def api_ads_status(request: web.Request):
         import meta_ads
     except Exception:
         logger.exception("meta_ads import failed")
-        return web.json_response({"enabled": False})
+        return _json({"enabled": False})
 
     if not meta_ads.is_enabled():
-        return web.json_response({"enabled": False})
+        return _json({"enabled": False})
 
     cached = _ads_cached("status")
     if cached is not None:
-        return web.json_response(cached)
+        return _json(cached)
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -886,13 +903,13 @@ async def api_ads_status(request: web.Request):
             )
     except Exception:
         logger.exception("Ads status request failed")
-        return web.json_response({"enabled": True, "error": "Meta bilan bog'lanib bo'lmadi"})
+        return _json({"enabled": True, "error": "Meta bilan bog'lanib bo'lmadi"})
 
     if isinstance(account_res, meta_ads.GraphError):
-        return web.json_response({"enabled": True, "error": str(account_res)})
+        return _json({"enabled": True, "error": str(account_res)})
     if isinstance(account_res, BaseException):
         logger.error("Ad account status failed", exc_info=account_res)
-        return web.json_response({"enabled": True, "error": "Meta bilan bog'lanib bo'lmadi"})
+        return _json({"enabled": True, "error": "Meta bilan bog'lanib bo'lmadi"})
 
     code = account_res.get("account_status")
     emoji, status_label = meta_ads.ACCOUNT_STATUS.get(code, ("❔", "Noma'lum (%s)" % code))
@@ -921,7 +938,7 @@ async def api_ads_status(request: web.Request):
             ],
         })
 
-    return web.json_response(_ads_store("status", {"enabled": True, "account": account, "ads": ads}))
+    return _json(_ads_store("status", {"enabled": True, "account": account, "ads": ads}))
 
 
 def _lead_json(row: dict) -> dict:
@@ -945,7 +962,7 @@ async def api_ads_leads(request: web.Request):
         database.get_recent_meta_leads(limit),
         database.count_meta_leads(),
     )
-    return web.json_response({"leads": [_lead_json(r) for r in rows], "total": total})
+    return _json({"leads": [_lead_json(r) for r in rows], "total": total})
 
 
 @require_auth
@@ -955,7 +972,7 @@ async def api_ads_lead_handled(request: web.Request):
     WHERE handled_by IS NULL settles that race in Postgres, not here."""
     lead_id = request.match_info["lead_id"]
     ok = await database.mark_meta_lead_handled(lead_id, WEB_SELLER_ID)
-    return web.json_response({"ok": bool(ok), "handled_by": WEB_SELLER_ID if ok else None})
+    return _json({"ok": bool(ok), "handled_by": WEB_SELLER_ID if ok else None})
 
 
 # ───────────────────────────── blogerlar ────────────────────────────────────
@@ -1034,7 +1051,7 @@ def _parse_max_orders(raw, default=None):
 @require_auth
 async def api_bloggers_list(request: web.Request):
     rows = await database.get_bloggers_with_stats()
-    return web.json_response(
+    return _json(
         {"bloggers": [_blogger_json(b) for b in rows]},
         dumps=lambda obj: json.dumps(obj, default=str),
     )
@@ -1047,7 +1064,7 @@ async def api_bloggers_create(request: web.Request):
     b = await request.json()
     name = _clean_str(b.get("name"), 120)
     if not name:
-        return web.json_response({"error": "bloger ismi kiritilmagan"}, status=400)
+        return _json({"error": "bloger ismi kiritilmagan"}, status=400)
 
     # The link carries the blogger's own name: the code defaults to a slug of
     # it ("Aziza Blog" -> aziza_blog -> t.me/<bot>?start=aziza_blog). A clash
@@ -1058,10 +1075,10 @@ async def api_bloggers_create(request: web.Request):
     if raw_code:
         code = bloggers.normalize_code(raw_code)
         if not code:
-            return web.json_response(
+            return _json(
                 {"error": "havola nomi faqat lotin harflari, raqam va _ dan iborat bo'lsin"}, status=400)
         if await database.get_blogger_by_code(code):
-            return web.json_response({"error": "bu havola nomi band, boshqasini tanlang"}, status=400)
+            return _json({"error": "bu havola nomi band, boshqasini tanlang"}, status=400)
     else:
         code = await bloggers.suggest_code(name)
 
@@ -1070,10 +1087,10 @@ async def api_bloggers_create(request: web.Request):
         percent = _parse_percent(b.get("percent"), bloggers.DEFAULT_PERCENT)
         max_orders = _parse_max_orders(b.get("max_orders"), bloggers.DEFAULT_MAX_ORDERS)
     except ValueError as exc:
-        return web.json_response({"error": str(exc)}, status=400)
+        return _json({"error": str(exc)}, status=400)
 
     if user_id is not None and await database.get_blogger_by_user_id(user_id):
-        return web.json_response({"error": "bu Telegram ID boshqa blogerga biriktirilgan"}, status=400)
+        return _json({"error": "bu Telegram ID boshqa blogerga biriktirilgan"}, status=400)
 
     blogger_id = await database.create_blogger(
         name=name, code=code, user_id=user_id,
@@ -1084,7 +1101,7 @@ async def api_bloggers_create(request: web.Request):
     blogger = await database.get_blogger(blogger_id)
     if user_id:
         asyncio.create_task(_blogger_welcome(request.app["bot"], blogger))
-    return web.json_response({"ok": True, "id": blogger_id, "code": code,
+    return _json({"ok": True, "id": blogger_id, "code": code,
                               "link": bloggers.link(code)})
 
 
@@ -1095,24 +1112,24 @@ async def api_bloggers_update(request: web.Request):
     blogger_id = int(request.match_info["id"])
     existing = await database.get_blogger(blogger_id)
     if existing is None:
-        return web.json_response({"error": "bloger topilmadi"}, status=404)
+        return _json({"error": "bloger topilmadi"}, status=404)
     b = await request.json()
 
     fields = {}
     if "name" in b:
         name = _clean_str(b.get("name"), 120)
         if not name:
-            return web.json_response({"error": "bloger ismi kiritilmagan"}, status=400)
+            return _json({"error": "bloger ismi kiritilmagan"}, status=400)
         fields["name"] = name
     if "code" in b:
         code = bloggers.normalize_code(_clean_str(b.get("code"), 48) or "")
         if not code:
-            return web.json_response(
+            return _json(
                 {"error": "havola nomi faqat lotin harflari, raqam va _ dan iborat bo'lsin"}, status=400)
         if code.lower() != (existing["code"] or "").lower():
             clash = await database.get_blogger_by_code(code)
             if clash and clash["id"] != blogger_id:
-                return web.json_response({"error": "bu havola nomi band, boshqasini tanlang"}, status=400)
+                return _json({"error": "bu havola nomi band, boshqasini tanlang"}, status=400)
         fields["code"] = code
     for key, limit in (("contact", 120), ("note", 500)):
         if key in b:
@@ -1127,10 +1144,10 @@ async def api_bloggers_update(request: web.Request):
             if user_id is not None and user_id != existing.get("user_id"):
                 clash = await database.get_blogger_by_user_id(user_id)
                 if clash and clash["id"] != blogger_id:
-                    return web.json_response({"error": "bu Telegram ID boshqa blogerga biriktirilgan"}, status=400)
+                    return _json({"error": "bu Telegram ID boshqa blogerga biriktirilgan"}, status=400)
             fields["user_id"] = user_id
     except ValueError as exc:
-        return web.json_response({"error": str(exc)}, status=400)
+        return _json({"error": str(exc)}, status=400)
     if "active" in b:
         fields["active"] = bool(b.get("active"))
 
@@ -1144,7 +1161,7 @@ async def api_bloggers_update(request: web.Request):
     if new_user_id and new_user_id != existing.get("user_id"):
         blogger = await database.get_blogger(blogger_id)
         asyncio.create_task(_blogger_welcome(request.app["bot"], blogger))
-    return web.json_response({"ok": True})
+    return _json({"ok": True})
 
 
 async def _blogger_welcome(bot, blogger: dict) -> None:
@@ -1165,7 +1182,7 @@ async def api_bloggers_delete(request: web.Request):
     """Full delete — their referral links and earning history go with them.
     Cashback already paid stays in the person's Keto balance."""
     await database.delete_blogger(int(request.match_info["id"]))
-    return web.json_response({"ok": True})
+    return _json({"ok": True})
 
 
 @require_auth
@@ -1177,12 +1194,12 @@ async def api_bloggers_detail(request: web.Request):
     blogger_id = int(request.match_info["id"])
     blogger = await database.get_blogger(blogger_id)
     if blogger is None:
-        return web.json_response({"error": "bloger topilmadi"}, status=404)
+        return _json({"error": "bloger topilmadi"}, status=404)
 
     buyers = await database.get_blogger_referred_buyers(blogger_id)
     orders = await database.get_blogger_orders(blogger_id, limit=300)
     summary = await database.get_blogger_summary(blogger_id)
-    return web.json_response({
+    return _json({
         "blogger": {**blogger, "link": bloggers.link(blogger["code"])},
         "summary": summary,
         "buyers": [dict(x) for x in buyers],
@@ -1196,7 +1213,7 @@ async def api_bloggers_suggest(request: web.Request):
     import bloggers
     name = request.query.get("name", "")
     code = await bloggers.suggest_code(name) if name.strip() else ""
-    return web.json_response({"code": code, "link": bloggers.link(code) if code else ""})
+    return _json({"code": code, "link": bloggers.link(code) if code else ""})
 
 
 # ─────────────────────────── image upload / serve ───────────────────────────
@@ -1206,11 +1223,11 @@ async def api_upload(request: web.Request):
     reader = await request.multipart()
     field = await reader.next()
     if field is None or field.name != "file":
-        return web.json_response({"error": "send multipart field named 'file'"}, status=400)
+        return _json({"error": "send multipart field named 'file'"}, status=400)
 
     content_type = (field.headers.get("Content-Type") or "").split(";")[0].strip().lower()
     if content_type not in ALLOWED_IMAGE_TYPES:
-        return web.json_response({"error": f"unsupported image type: {content_type or 'unknown'} (jpeg/png/webp only)"}, status=400)
+        return _json({"error": f"unsupported image type: {content_type or 'unknown'} (jpeg/png/webp only)"}, status=400)
 
     data = bytearray()
     while True:
@@ -1219,13 +1236,13 @@ async def api_upload(request: web.Request):
             break
         data.extend(chunk)
         if len(data) > MAX_UPLOAD_BYTES:
-            return web.json_response({"error": "image too large (max 5 MB)"}, status=413)
+            return _json({"error": "image too large (max 5 MB)"}, status=413)
 
     if not data:
-        return web.json_response({"error": "empty file"}, status=400)
+        return _json({"error": "empty file"}, status=400)
 
     image_id = await database.save_web_image(bytes(data), content_type)
-    return web.json_response({"ok": True, "url": f"/img/{image_id}"})
+    return _json({"ok": True, "url": f"/img/{image_id}"})
 
 
 async def serve_image(request: web.Request):

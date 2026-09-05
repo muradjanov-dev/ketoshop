@@ -1219,14 +1219,16 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     delivery_fee_block = get_text("delivery_fee_line", lang, fee=f"{delivery_fee:,}".replace(",", " ")) if delivery_fee else ""
     keto_block = get_text("keto_redeemed_line", lang, amount=f"{keto_redeem:,}".replace(",", " ")) if keto_redeem else ""
     address_note = data.get("address_note")
-    note_block = f"\n📝 {address_note}" if address_note else ""
+    note_block = f"\n📝 {_escape_html(address_note)}" if address_note else ""
     secondary_phone = data.get("secondary_phone")
-    secondary_block = f"\n📞 {secondary_phone}" if secondary_phone else ""
+    secondary_block = f"\n📞 {_escape_html(secondary_phone)}" if secondary_phone else ""
 
+    # The buyer's own address is echoed back to them inside an HTML template:
+    # an unescaped "&" broke the checkout screen for the person ordering.
     text = get_text("order_summary", lang,
-        phone=data["phone"],
+        phone=_escape_html(data["phone"]),
         secondary_block=secondary_block,
-        address=data["address"],
+        address=_escape_html(data["address"]),
         note_block=note_block,
         payment=payment_label,
         delivery=delivery_label,
@@ -1836,25 +1838,31 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
                 saved_total += (op - item["price"]) * item["quantity"]
             else:
                 price_part = new_p
-            items_text += f"• {item['name']} — {item['quantity']} {unit} × {price_part}\n"
+            items_text += (f"• {_escape_html(item['name'])} — {item['quantity']} "
+                           f"{unit} × {price_part}\n")
         saved_block = ""
         if saved_total > 0:
             saved_block = get_text("new_order_discount_total", admin_lang,
                                    amount=f"{int(saved_total):,}".replace(",", " "))
+        # Everything below is typed by the buyer and lands inside an
+        # HTML-parsed template. Unescaped, a single "&" in an address made
+        # Telegram reject the message, and the except-block below wrote that
+        # off as "the admin blocked us" — so the order arrived and no seller
+        # was ever told about it.
         note = data.get("address_note")
-        note_block = f"\n📝 {note}" if note else ""
+        note_block = f"\n📝 {_escape_html(note)}" if note else ""
         sec = data.get("secondary_phone")
-        secondary_block = f"\n📞 {sec}" if sec else ""
+        secondary_block = f"\n📞 {_escape_html(sec)}" if sec else ""
         delivery_fee = SELF_DELIVERY_FEE if data.get("delivery_method") == "self" else 0
         delivery_fee_block = get_text("delivery_fee_line", admin_lang, fee=f"{delivery_fee:,}".replace(",", " ")) if delivery_fee else ""
         try:
             text = get_text("new_order_notification", admin_lang,
                 order_id=order_id,
-                name=data["customer_name"],
-                phone=data["phone"],
+                name=_escape_html(data["customer_name"]),
+                phone=_escape_html(data["phone"]),
                 secondary_block=secondary_block,
-                contact=contact,
-                address=data["address"],
+                contact=contact,          # already-escaped markup — buyer_contact_link
+                address=_escape_html(data["address"]),
                 note_block=note_block,
                 delivery=get_delivery_method_name(data.get("delivery_method"), admin_lang),
                 payment_block=payment_status_block(data.get("payment_method"), data.get("status"), admin_lang),

@@ -3294,7 +3294,7 @@ async def add_set_name(message: Message, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_panel")]
     ])
-    await message.answer(f"To'plam nomi saqlandi: <b>{message.text}</b>\n\nEndi to'plamning maxsus (skidkali) narxini kiriting:\n<i>Faqat son bilan, masalan: 120000</i>", reply_markup=kb, parse_mode="HTML")
+    await message.answer(f"To'plam nomi saqlandi: <b>{html.escape(message.text or '')}</b>\n\nEndi to'plamning maxsus (skidkali) narxini kiriting:\n<i>Faqat son bilan, masalan: 120000</i>", reply_markup=kb, parse_mode="HTML")
 
 @router.message(AddSetStates.price, F.text)
 async def add_set_price(message: Message, state: FSMContext):

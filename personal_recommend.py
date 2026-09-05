@@ -656,11 +656,14 @@ async def send_personal_batch(bot: Bot, only_user: int | None = None) -> tuple[i
     # the bookkeeping so they don't burn variants.
     record = only_user is None
 
+    # One query for the whole audience instead of a SELECT * per recipient.
+    langs = await database.get_user_languages(user_ids)
+
     sent = failed = skipped = 0
     for uid in user_ids:
         try:
             orders = await database.get_user_orders(uid)
-            lang = await database.get_user_language(uid)
+            lang = langs.get(uid, "uz")
 
             seen = await database.get_reco_hashes(uid) if record else set()
             text = msg_hash = None
@@ -712,13 +715,14 @@ async def send_personal_batch(bot: Bot, only_user: int | None = None) -> tuple[i
     # product only changes once genuinely-new content is needed.
     if only_user is None:
         view_only_ids = await database.get_user_ids_with_views_no_orders()
+        view_langs = await database.get_user_languages(view_only_ids)
         for uid in view_only_ids:
             try:
                 products = await database.get_user_top_viewed_products(uid, limit=3, recent_days=30)
                 if not products:
                     skipped += 1
                     continue
-                lang = await database.get_user_language(uid)
+                lang = view_langs.get(uid, "uz")
                 seen = await database.get_reco_hashes(uid)
 
                 text = msg_hash = product = None
