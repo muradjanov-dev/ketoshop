@@ -744,6 +744,13 @@ async def init_db():
             "ALTER TABLE promotions ADD COLUMN showcase_enabled BOOLEAN NOT NULL DEFAULT TRUE",
             "ALTER TABLE promotions ADD COLUMN showcase_cursor INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE promotions ADD COLUMN last_showcase_date DATE",
+            # How the last fan-out actually went. Until these existed the only
+            # record was a log line that rolls off within hours, so "did
+            # today's reminder go out?" was unanswerable the next morning —
+            # which is exactly when it gets asked.
+            "ALTER TABLE promotions ADD COLUMN last_showcase_sent INTEGER",
+            "ALTER TABLE promotions ADD COLUMN last_showcase_failed INTEGER",
+            "ALTER TABLE promotions ADD COLUMN last_showcase_at TIMESTAMP",
         ):
             try:
                 await conn.execute(ddl)
@@ -955,6 +962,27 @@ async def update_user_info(user_id: int, **kwargs):
 async def get_user_language(user_id: int) -> str:
     user = await get_user(user_id)
     return user["language"] if user else "uz"
+
+
+async def get_user_languages(user_ids) -> dict[int, str]:
+    """{user_id: language} for a whole audience in one query.
+
+    Every fan-out used to call get_user_language once per recipient, and that
+    helper does a SELECT * to read a single column — so a broadcast to the
+    current 844 users meant 844 sequential round trips, each pulling a full
+    user row, several times a day. Missing rows are simply absent here;
+    callers default to "uz" the same way get_user_language does.
+    """
+    ids = list(user_ids)
+    if not ids:
+        return {}
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT user_id, COALESCE(language, 'uz') AS language"
+            "  FROM users WHERE user_id = ANY($1::bigint[])",
+            ids,
+        )
+        return {int(r["user_id"]): r["language"] for r in rows}
 
 
 async def set_user_as_seller(user_id: int):
@@ -1990,128 +2018,125 @@ def _period_range(period: str | dict):
     return _period_start(period), None
 
 async def get_admin_stats(period: str | dict = "all") -> dict:
+    """KPI snapshot for one time window.
+
+    Read by the bot's Statistika screen (an admin waiting on it), the admin
+    website's Dashboard, and the Maqsadlar scheduler twice every half hour —
+    so it is worth it not being slow. It used to fire ~15 sequential queries,
+    six of them separate COUNT(*) passes over `orders` differing only by
+    status, and each round trip paid for itself in latency. Same numbers now
+    come out of four:
+
+      1. catalogue/lifetime counters (period-independent)
+      2. one pass over `orders` with FILTER aggregates for every status,
+         revenue and the B2B split
+      3. the window's new users, new reviews and booked expenses
+      4. the delivered orders' item lines + the cost table behind them
+
+    Deliberately still not one query: mixing unrelated tables into a single
+    statement makes the plan worse, not better, and the four are independent
+    enough to stay readable.
+    """
     start_time, end_time = _period_range(period)
-    
+
+    # Same window expressed for the three tables it is applied to. asyncpg
+    # placeholders are positional, so each statement gets its own args list.
+    conds, args = [], []
+    if start_time:
+        conds.append(f"created_at >= ${len(args) + 1}")
+        args.append(start_time)
+    if end_time:
+        conds.append(f"created_at <= ${len(args) + 1}")
+        args.append(end_time)
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    order_where = (" AND " + " AND ".join(conds)) if conds else ""
+
     async with pool.acquire() as conn:
-        users_total = await conn.fetchval("SELECT COUNT(*) FROM users")
-        reviews_total = await conn.fetchval("SELECT COUNT(*) FROM reviews")
-        
-        where_time = ""
-        args = []
-        if start_time and end_time:
-            where_time = " WHERE created_at >= $1 AND created_at <= $2"
-            args = [start_time, end_time]
-        elif start_time:
-            where_time = " WHERE created_at >= $1"
-            args = [start_time]
-            
-        if not where_time:
-            users_new = users_total
-            reviews_new = reviews_total
+        catalog = await conn.fetchrow("""
+            SELECT (SELECT COUNT(*) FROM users)   AS users_total,
+                   (SELECT COUNT(*) FROM reviews) AS reviews_total,
+                   (SELECT COUNT(*) FROM products WHERE is_active = 1) AS products_active,
+                   (SELECT COUNT(*) FROM products WHERE is_active = 1 AND quantity > 0)
+                       AS products_in_stock
+        """)
+
+        orders_row = await conn.fetchrow(f"""
+            SELECT COUNT(*)                                            AS total,
+                   COUNT(*) FILTER (WHERE status = 'pending')          AS pending,
+                   COUNT(*) FILTER (WHERE status = 'confirmed')        AS confirmed,
+                   COUNT(*) FILTER (WHERE status = 'delivered')        AS delivered,
+                   COUNT(*) FILTER (WHERE status = 'cancelled')        AS cancelled,
+                   COALESCE(SUM(total) FILTER (WHERE status = 'delivered'), 0)
+                       AS revenue,
+                   COALESCE(SUM(total) FILTER (WHERE status = 'delivered'
+                                                 AND source = 'b2b'), 0)
+                       AS b2b_revenue,
+                   COUNT(*) FILTER (WHERE status = 'delivered' AND source = 'b2b')
+                       AS b2b_orders
+              FROM orders{where}
+        """, *args)
+
+        if where:
+            window = await conn.fetchrow(f"""
+                SELECT (SELECT COUNT(*) FROM users{where})    AS users_new,
+                       (SELECT COUNT(*) FROM reviews{where})  AS reviews_new,
+                       (SELECT COALESCE(SUM(amount), 0) FROM expenses{where})
+                           AS expenses
+            """, *args)
+            users_new = int(window["users_new"])
+            reviews_new = int(window["reviews_new"])
+            expenses_total = int(window["expenses"] or 0)
         else:
-            users_new = await conn.fetchval(f"SELECT COUNT(*) FROM users{where_time}", *args)
-            reviews_new = await conn.fetchval(f"SELECT COUNT(*) FROM reviews{where_time}", *args)
-            
-        products_active = await conn.fetchval("SELECT COUNT(*) FROM products WHERE is_active = 1")
-        products_in_stock = await conn.fetchval("SELECT COUNT(*) FROM products WHERE is_active = 1 AND quantity > 0")
+            users_new = int(catalog["users_total"])
+            reviews_new = int(catalog["reviews_total"])
+            expenses_total = int(
+                await conn.fetchval("SELECT COALESCE(SUM(amount), 0) FROM expenses") or 0
+            )
 
-        async def count_status(status: str | None) -> int:
-            q = "SELECT COUNT(*) FROM orders"
-            w = []
-            a = []
-            if status:
-                w.append("status = $1")
-                a.append(status)
-            if start_time:
-                w.append(f"created_at >= ${len(a)+1}")
-                a.append(start_time)
-            if end_time:
-                w.append(f"created_at <= ${len(a)+1}")
-                a.append(end_time)
-            
-            if w:
-                q += " WHERE " + " AND ".join(w)
-            return await conn.fetchval(q, *a)
+        # Cost of goods. The item lines live as JSON text inside orders.items,
+        # so this stays in Python: a malformed row must be skipped, not blow up
+        # a dashboard, and casting text to jsonb in SQL cannot be made to skip.
+        orders_rows = await conn.fetch(
+            f"SELECT items FROM orders WHERE status = 'delivered'{order_where}", *args
+        )
+        cost_map = {
+            row["id"]: row["cost_price"] or 0
+            for row in await conn.fetch("SELECT id, cost_price FROM products")
+        }
 
-        orders_total = await count_status(None)
-        orders_pending = await count_status("pending")
-        orders_confirmed = await count_status("confirmed")
-        orders_delivered = await count_status("delivered")
-        orders_cancelled = await count_status("cancelled")
+    product_cost_total = 0.0
+    for r in orders_rows:
+        try:
+            for item in json.loads(r["items"] or "[]"):
+                pid = item.get("id") or item.get("product_id")
+                if pid in cost_map:
+                    product_cost_total += cost_map[pid] * item.get("quantity", 0)
+        except Exception:
+            # One unreadable order must not cost the whole report.
+            continue
 
-        q_rev = "SELECT COALESCE(SUM(total), 0) FROM orders WHERE status = 'delivered'"
-        q_b2b = "SELECT COALESCE(SUM(total), 0) AS rev, COUNT(*) AS cnt FROM orders WHERE status = 'delivered' AND source = 'b2b'"
-        w_time = ""
-        a_time = []
-        if start_time:
-            w_time += f" AND created_at >= ${len(a_time)+1}"
-            a_time.append(start_time)
-        if end_time:
-            w_time += f" AND created_at <= ${len(a_time)+1}"
-            a_time.append(end_time)
-            
-        revenue = await conn.fetchval(q_rev + w_time, *a_time)
-        b2b_row = await conn.fetchrow(q_b2b + w_time, *a_time)
-        
-    revenue = int(revenue or 0)
-    aov = int(revenue / orders_delivered) if orders_delivered else 0
-    b2b_revenue = int(b2b_row["rev"] or 0)
-    b2b_orders = int(b2b_row["cnt"] or 0)
-
-    async with pool.acquire() as conn:
-        q_exp = "SELECT COALESCE(SUM(amount), 0) FROM expenses"
-        w_exp = ""
-        a_exp = []
-        if start_time:
-            w_exp += f" WHERE created_at >= ${len(a_exp)+1}"
-            a_exp.append(start_time)
-        if end_time:
-            prefix = " AND" if w_exp else " WHERE"
-            w_exp += f"{prefix} created_at <= ${len(a_exp)+1}"
-            a_exp.append(end_time)
-            
-        expenses_total = await conn.fetchval(q_exp + w_exp, *a_exp)
-        
-        q_items = "SELECT items FROM orders WHERE status = 'delivered'"
-        orders_rows = await conn.fetch(q_items + w_time, *a_time)
-            
-        product_cost_total = 0
-        products_costs_rows = await conn.fetch("SELECT id, cost_price FROM products")
-        cost_map = {row["id"]: row["cost_price"] or 0 for row in products_costs_rows}
-        
-        for r in orders_rows:
-            try:
-                import json
-                items = json.loads(r["items"] or "[]")
-                for item in items:
-                    pid = item.get("id") or item.get("product_id")
-                    qty = item.get("quantity", 0)
-                    if pid in cost_map:
-                        product_cost_total += cost_map[pid] * qty
-            except Exception:
-                pass
-                
-    expenses_total = int(expenses_total or 0)
+    revenue = int(orders_row["revenue"] or 0)
+    orders_delivered = int(orders_row["delivered"])
     product_cost_total = int(product_cost_total)
     profit = revenue - expenses_total - product_cost_total
 
     return {
         "period": period if isinstance(period, str) else "custom",
-        "users_total": users_total,
+        "users_total": int(catalog["users_total"]),
         "users_new": users_new,
-        "products_active": products_active,
-        "products_in_stock": products_in_stock,
-        "reviews_total": reviews_total,
+        "products_active": int(catalog["products_active"]),
+        "products_in_stock": int(catalog["products_in_stock"]),
+        "reviews_total": int(catalog["reviews_total"]),
         "reviews_new": reviews_new,
-        "orders_total": orders_total,
-        "orders_pending": orders_pending,
-        "orders_confirmed": orders_confirmed,
+        "orders_total": int(orders_row["total"]),
+        "orders_pending": int(orders_row["pending"]),
+        "orders_confirmed": int(orders_row["confirmed"]),
         "orders_delivered": orders_delivered,
-        "orders_cancelled": orders_cancelled,
+        "orders_cancelled": int(orders_row["cancelled"]),
         "revenue": revenue,
-        "aov": aov,
-        "b2b_revenue": b2b_revenue,
-        "b2b_orders": b2b_orders,
+        "aov": int(revenue / orders_delivered) if orders_delivered else 0,
+        "b2b_revenue": int(orders_row["b2b_revenue"] or 0),
+        "b2b_orders": int(orders_row["b2b_orders"]),
         "expenses": expenses_total,
         "product_cost": product_cost_total,
         "profit": profit,
@@ -3938,11 +3963,38 @@ async def set_promotion_showcase(promo_id: int, enabled: bool) -> None:
 
 
 async def advance_promotion_showcase(promo_id: int, new_cursor: int, on_date) -> None:
-    """Record that today's showcase went out and move the cursor along."""
+    """Claim today's showcase and move the cursor along. Called BEFORE the
+    fan-out so a crash halfway through cannot re-announce to everyone."""
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE promotions SET showcase_cursor = $2, last_showcase_date = $3 WHERE id = $1",
             promo_id, new_cursor, on_date,
+        )
+
+
+async def record_promotion_showcase(promo_id: int, sent: int, failed: int) -> None:
+    """Store how the fan-out went, so tomorrow's "did it go out?" has an answer
+    that outlives the log buffer."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE promotions SET last_showcase_sent = $2, last_showcase_failed = $3,"
+            " last_showcase_at = CURRENT_TIMESTAMP WHERE id = $1",
+            promo_id, int(sent), int(failed),
+        )
+
+
+async def release_promotion_showcase(promo_id: int, old_cursor: int) -> None:
+    """Give today back when the fan-out reached nobody at all.
+
+    The day is claimed up front to prevent a double send, but that also means
+    a fan-out that fails wholesale (every message rejected, the bot token
+    rate-limited, the network gone) silently burns the day. Zero deliveries is
+    not a send, so the claim is rolled back and the next tick retries."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE promotions SET showcase_cursor = $2, last_showcase_date = NULL"
+            " WHERE id = $1",
+            promo_id, int(old_cursor),
         )
 
 # ===== BLOGERLAR (influencer partner programme, 2026-09-01) =====
