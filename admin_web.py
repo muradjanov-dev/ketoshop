@@ -79,8 +79,15 @@ _safe_dumps = functools.partial(json.dumps, default=_json_default)
 
 
 def _json(data, **kwargs):
-    """web.json_response that survives whatever asyncpg returns."""
-    return web.json_response(data, dumps=_safe_dumps, **kwargs)
+    """web.json_response that survives whatever asyncpg returns.
+
+    setdefault, not a plain keyword: a couple of handlers used to pass their
+    own `dumps=` before this helper existed, and hard-coding it here made
+    json_response receive the argument twice — a 500 on exactly the endpoints
+    that had been careful enough to handle their own serialisation.
+    """
+    kwargs.setdefault("dumps", _safe_dumps)
+    return web.json_response(data, **kwargs)
 
 
 SESSION_COOKIE = "safran_admin"
@@ -675,7 +682,7 @@ async def api_promos_announce(request: web.Request):
 @require_auth
 async def api_expenses_list(request: web.Request):
     expenses = await database.get_expenses(100)
-    return _json({"expenses": expenses}, dumps=lambda obj: json.dumps(obj, default=str))
+    return _json({"expenses": expenses})
 
 @require_auth
 async def api_expenses_add(request: web.Request):
@@ -1051,10 +1058,7 @@ def _parse_max_orders(raw, default=None):
 @require_auth
 async def api_bloggers_list(request: web.Request):
     rows = await database.get_bloggers_with_stats()
-    return _json(
-        {"bloggers": [_blogger_json(b) for b in rows]},
-        dumps=lambda obj: json.dumps(obj, default=str),
-    )
+    return _json({"bloggers": [_blogger_json(b) for b in rows]})
 
 
 @require_auth
@@ -1204,7 +1208,7 @@ async def api_bloggers_detail(request: web.Request):
         "summary": summary,
         "buyers": [dict(x) for x in buyers],
         "orders": [dict(x) for x in orders],
-    }, dumps=lambda obj: json.dumps(obj, default=str))
+    })
 
 
 @require_auth
