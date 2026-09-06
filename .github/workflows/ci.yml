@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_call:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      # config.py raises at import without this. No connection is made here —
+      # asyncpg only dials in init_db(), which the smoke test never calls.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      BOT_TOKEN: "123456:CI-TOKEN"
+      ADMIN_WEB_PASSWORD: ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+
+      - name: Syntax check
+        run: python -m compileall -q .
+
+      # There is no test suite here yet. This import walk is the cheap version:
+      # it catches the two failures that have actually broken deploys — a syntax
+      # error in a rarely-touched module, and a dependency used in code but
+      # missing from requirements.txt.
+      - name: Import smoke test
+        run: |
+          python - <<'PY'
+          import importlib
+          mods = [
+              "config", "database", "locales", "keyboards", "bot",
+              "webapp_server", "admin_web", "broadcast", "broadcast_tips",
+              "personal_recommend", "gamification", "referral_contest",
+              "meta_ads", "meta_leads", "db_backup", "reports", "activity",
+              "subscription_gate", "pg_storage", "state_guard", "translit",
+              "translator", "nps_survey",
+          ]
+          for m in mods:
+              importlib.import_module(m)
+              print("ok", m)
+          PY

@@ -1,0 +1,12 @@
+.git
+.github
+__pycache__/
+*.pyc
+*.dump
+.env
+scratch/
+scratch_*
+__MACOSX/
+webapp/index.html.bak-preredesign
+.restore_secret_tmp
+*.md
