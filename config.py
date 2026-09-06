@@ -40,8 +40,12 @@ SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "keto_market")
 # Channel/group for order notifications (optional)
 ORDER_NOTIFICATION_CHAT = os.getenv("ORDER_NOTIFICATION_CHAT", "")
 
-# WebApp (Mini App) URL
-WEBAPP_URL = os.getenv("WEBAPP_URL", "") or "https://worker-production-5412.up.railway.app"
+# WebApp (Mini App) URL. No fallback on purpose: the old default pointed at a
+# Railway deployment that no longer exists, so a missing WEBAPP_URL used to hand
+# every user a button that opened "Application failed to respond" instead of the
+# shop. Empty is the safe failure — bot.py then skips setting the chat menu
+# button and main_menu_keyboard() leaves the store button out entirely.
+WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
 
 # Online payment destination — shown to buyers in the cheque prompt.
 # Override via env so rotating the card doesn't require a redeploy.
