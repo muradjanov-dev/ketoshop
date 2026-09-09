@@ -54,8 +54,23 @@ TEXTS = {
     "btn_back": {"uz": "◀️ Orqaga", "ru": "◀️ Назад"},
     "btn_contact_admin": {"uz": "📞 Admin bilan bog'lanish", "ru": "📞 Связаться с админом"},
     "btn_back_to_menu": {"uz": "🏠 Asosiy menyu", "ru": "🏠 Главное меню"},
-    "btn_keto_contest": {"uz": "🏆 Keto musobaqasi", "ru": "🏆 Конкурс Keto"},
-    "btn_keto_contest_share": {"uz": "📤 Do'stlarga yuborish", "ru": "📤 Отправить друзьям"},
+    # Aksiya (2026-08-31) — only rendered into the main menu while a campaign
+    # is actually running; see keyboards.main_menu_keyboard.
+    "btn_promo": {"uz": "🎁 Aksiya", "ru": "🎁 Акция"},
+
+    # Persistent reply-keyboard buttons (2026-08-31). These sit under the text
+    # input forever, so a buyer who doesn't know to type /start always has a
+    # visible way back into the bot — see keyboards.persistent_menu_keyboard.
+    "btn_kb_menu": {"uz": "🏠 Bosh menyu", "ru": "🏠 Главное меню"},
+    "btn_kb_cart": {"uz": "🛒 Savat", "ru": "🛒 Корзина"},
+    "persistent_kb_hint": {
+        "uz": "👇 Pastdagi <b>🏠 Bosh menyu</b> tugmasi doim shu yerda turadi — istalgan payt bosib, boshiga qaytishingiz mumkin. Hech narsa yozish shart emas.",
+        "ru": "👇 Кнопка <b>🏠 Главное меню</b> внизу всегда на месте — нажмите в любой момент, чтобы вернуться в начало. Ничего печатать не нужно.",
+    },
+    "promo_none": {
+        "uz": "🎁 Hozircha faol aksiya yo'q.\n\nYangi aksiyalar haqida birinchi bo'lib xabar olish uchun kanalimizga obuna bo'ling.",
+        "ru": "🎁 Сейчас нет активных акций.\n\nПодпишитесь на наш канал, чтобы узнавать о новых первыми.",
+    },
 
     # ===== CATEGORIES =====
     "categories_title": {
@@ -152,7 +167,7 @@ TEXTS = {
     },
     "btn_admin_bulk_discount": {"uz": "🔥 To'plam chegirma", "ru": "🔥 Массовая скидка"},
     "btn_admin_keto": {"uz": "🥑 Keto boshqaruvi", "ru": "🥑 Управление Keto"},
-    "btn_admin_contest": {"uz": "🏆 Keto musobaqasi", "ru": "🏆 Конкурс Keto"},
+    "btn_admin_promo": {"uz": "🎁 Aksiya / Bonus", "ru": "🎁 Акция / Бонус"},
     "btn_keto_toggle_on": {"uz": "🚀 Yoqish", "ru": "🚀 Включить"},
     "btn_keto_toggle_off": {"uz": "⏹ O'chirish", "ru": "⏹ Выключить"},
     "btn_admin_manual_order": {"uz": "📝 Qo'lda buyurtma kiritish", "ru": "📝 Добавить заказ вручную"},

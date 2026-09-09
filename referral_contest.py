@@ -1,27 +1,29 @@
 """
-Keto musobaqasi — referral contest (2026-07-30).
+Keto musobaqasi — referral contest (2026-07-30). RETIRED 2026-08-31.
 
-Anyone can open "Keto musobaqasi" from the main menu and get their own
-referral deep link (t.me/<bot>?start=ref<user_id>). Whoever brings in the
-most new users during the contest's window (10 days by default, admin-configurable)
-wins one of 3 prizes (admin
-sets the prize text and picks the launch date/image from the admin panel —
-see admin_web.py's /admin/api/contest/* routes). The contest is dormant
-(referral_contest_state.active = FALSE) until an admin explicitly starts it;
-deploying this code changes nothing for real users by itself.
+The contest finished and the owner asked for it to be taken out, so every
+entry point into it is gone: the main-menu button, the admin panel's
+"Musobaqa" tab and the bot's own contest screen, and the daily-reminder /
+auto-finish scheduler (bot.py no longer starts scheduler_loop). The
+referral_contest_state row and the leaderboard helpers are left in place so
+the campaign can be brought back without rewriting it.
 
-Independent of whether a contest is currently running, every successful
-referral (a brand-new user whose first /start carried someone's ref<id>
-payload) pays BOTH sides 10 Keto immediately — see award_referral(). Every
-new user, referred or not, also triggers an admin notification — see
-notify_admins_new_user() in handlers/start.py's call site.
+WHAT IS STILL LIVE from this module:
+  - parse_ref_payload()      — /start ref<id> deep links still resolve
+  - award_referral()         — a referred sign-up still pays BOTH sides 10 Keto
+  - notify_admins_new_user() — owners still get "X joined, invited by Y"
+
+Those three are wired up from handlers/start.py and subscription_gate.py and
+are independent of whether a contest is running. Everything below them
+(build_contest_screen, the reminders, _finish_contest, scheduler_loop) is
+dormant: reachable only if a future change re-registers it.
 
 Public API:
   award_referral(referrer_id, referred_id, bot)  -> credit 10 Keto to both + DM each
-  build_contest_screen(user_id, lang)            -> (intro_text, detail_text, has_share_button, media, share_url, guide_video_file_id)
-  build_share_text(user_id, lang, prizes)        -> ready-to-forward post + prizes + referral link (used by daily reminders)
-  share_deeplink(user_id, lang, prizes)          -> t.me/share/url link (carries prizes) that opens Telegram's chat picker
-  scheduler_loop(bot)                            -> daily reminder while active; auto-finish at ends_at
+  notify_admins_new_user(...)                    -> "who joined / who invited them"
+  parse_ref_payload(payload)                     -> referrer id from a /start deep link
+  build_contest_screen / build_share_text / share_deeplink / scheduler_loop
+                                                 -> dormant, kept for a future relaunch
 """
 import asyncio
 import logging

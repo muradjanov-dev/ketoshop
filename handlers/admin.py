@@ -3,6 +3,7 @@ Admin panel — stats, user management, order overview, broadcast, delivery zone
 """
 import html
 import json
+import logging
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -22,11 +23,15 @@ from database import (
     format_local_dt,
     add_admin_db,
     get_gamification_state, get_keto_balances_list, set_redemption_enabled,
-    get_referral_contest_state, start_referral_contest, stop_referral_contest,
-    get_contest_leaderboard, LEADERBOARD_EXCLUDED_USER_IDS, update_contest_media,
-    update_contest_guide_video, add_b2b_eritritol_order,
+    LEADERBOARD_EXCLUDED_USER_IDS, add_b2b_eritritol_order,
+    list_promotions, get_promotion, create_promotion, update_promotion,
+    set_promotion_bonuses, start_promotion, stop_promotion,
+    search_products, save_web_image,
 )
-from locales import get_text, get_order_status, get_unit_name, get_display_unit, get_delivery_method_name, get_category_name, get_month_name, CATEGORIES
+from locales import (
+    get_text, get_order_status, get_unit_name, get_display_unit, get_delivery_method_name,
+    get_category_name, get_month_name, localize_product_text, CATEGORIES,
+)
 from keyboards import (
     admin_panel_keyboard, admin_stats_menu_keyboard, admin_products_menu_keyboard,
     admin_users_menu_keyboard, admin_marketing_menu_keyboard,
@@ -36,6 +41,7 @@ from keyboards import (
 )
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 
 class AdminStates(StatesGroup):
@@ -982,414 +988,550 @@ async def toggle_keto_redemption(callback: CallbackQuery):
     await callback.answer("🚀 Yoqildi" if new_value else "⏹ O'chirildi")
 
 
-# ===== KETO MUSOBAQASI (referral contest) — reachable from either admin
-# panel; this is the bot's own in-chat version alongside the website's
-# /admin "🏆 Musobaqa" tab. Both write to the same referral_contest_state
-# row (see database.start_referral_contest's docstring for how the two
-# media slots the two panels can each produce — image_url on the website,
-# image_file_id here — are kept from clobbering each other). =====
+# ===== AKSIYA / BONUS (2026-08-31) — the bot's own in-chat version of the
+# website's "🎁 Aksiya / Bonus" tab. Both write the same promotions /
+# promotion_bonuses rows, so a campaign drafted here can be started from the
+# website and vice versa.
+#
+# The creation flow is a chat wizard: nom → kun → shartlar → rasm → bonus
+# qoidalari. Products are picked by typing part of a name and tapping a match,
+# which keeps the flow the same size whether the shop has 20 products or 500.
+# Every optional step takes /skip. =====
 
-class ContestAdminStates(StatesGroup):
-    waiting_media = State()
+class PromoAdminStates(StatesGroup):
+    waiting_name = State()
     waiting_days = State()
-    waiting_prize1 = State()
-    waiting_prize2 = State()
-    waiting_prize3 = State()
-    confirming = State()
-    waiting_media_update = State()
-    waiting_guide_video = State()
+    waiting_conditions = State()
+    waiting_image = State()
+    waiting_trigger_query = State()
+    waiting_trigger_qty = State()
+    waiting_bonus_query = State()
+    waiting_bonus_amount = State()
+    waiting_image_update = State()
 
 
-def _contest_excluded() -> set[int]:
-    return set(ADMIN_IDS) | LEADERBOARD_EXCLUDED_USER_IDS
+# The units an admin can attach to a bonus amount, matching the website's
+# dropdown (promotions._UNIT_BASE knows how to convert each into stock units).
+PROMO_BONUS_UNITS = ["gr", "kg", "ml", "litr", "dona", "banka"]
 
 
-def _contest_display_name(username: str | None, full_name: str | None, user_id: int) -> str:
-    if username:
-        return f"@{username}"
-    if full_name:
-        return full_name
-    return f"ID {user_id}"
+def _promo_pname(product: dict, lang: str) -> str:
+    return localize_product_text(product.get("name"), product.get("name_ru"), lang)
 
 
-async def _render_contest_admin(lang: str) -> tuple[str, InlineKeyboardMarkup]:
-    state = await get_referral_contest_state()
-    started = bool(state.get("started_at"))
-    active = bool(state.get("active"))
+async def _render_promo_admin(lang: str) -> tuple[str, InlineKeyboardMarkup]:
+    """Status screen: what's running, what's saved, and what can be done."""
+    import promotions
 
-    if lang == "ru":
-        never_started = "⚪ Ещё не запущен."
-        status_active = "🟢 <b>Активен</b> — до {end}"
-        status_finished = "⚪ Завершён / остановлен."
-        media_line = "🎬 Медиа: {has}"
-        media_yes, media_no = "загружено", "не загружено"
-        prizes_label = "🎁 Призы:"
-        no_prize = "—"
-        board_label = "📊 Топ участников:"
-        no_board = "Пока никто не участвует."
-        start_btn = "🚀 Запустить конкурс"
-        stop_btn = "⏹ Остановить"
-        media_btn = "🎬 Изменить фото/видео"
-        guide_line = "📹 Видео-инструкция: {has}"
-        guide_btn = "📹 Добавить видео-инструкцию"
-        guide_btn_change = "📹 Изменить видео-инструкцию"
+    promos = await list_promotions()
+    active = next((p for p in promos if p.get("active")), None)
+
+    lines = ["🎁 <b>Aksiya / Bonus</b>", ""]
+    if active:
+        left = promotions.days_left(active)
+        lines.append(f"🟢 <b>Faol:</b> {active['name']}")
+        lines.append(f"⏳ {left} kun qoldi")
+        if active.get("conditions"):
+            lines.append("")
+            lines.append(f"📋 {active['conditions']}")
+        rules = active.get("bonuses") or []
+        if rules:
+            lines.append("")
+            lines.append("🎁 <b>Bonuslar:</b>")
+            for rule in rules:
+                lines.append(f"   • {promotions.rule_line(rule, lang)}")
     else:
-        never_started = "⚪ Hali boshlanmagan."
-        status_active = "🟢 <b>Faol</b> — tugaydi: {end}"
-        status_finished = "⚪ Yakunlangan / to'xtatilgan."
-        media_line = "🎬 Media: {has}"
-        media_yes, media_no = "yuklangan", "yuklanmagan"
-        prizes_label = "🎁 Sovg'alar:"
-        no_prize = "—"
-        board_label = "📊 Top ishtirokchilar:"
-        no_board = "Hozircha hech kim ishtirok etmagan."
-        start_btn = "🚀 Musobaqani boshlash"
-        stop_btn = "⏹ To'xtatish"
-        media_btn = "🎬 Rasm/videoni almashtirish"
-        guide_line = "📹 Video qo'llanma: {has}"
-        guide_btn = "📹 Video qo'llanma qo'shish"
-        guide_btn_change = "📹 Video qo'llanmani almashtirish"
+        lines.append("⚪ Hozircha faol aksiya yo'q.")
 
-    lines = ["🏆 <b>Keto musobaqasi</b>", ""]
-    if not started:
-        lines.append(never_started)
-    elif active:
-        end_str = state["ends_at"].strftime("%d.%m.%Y %H:%M") if state.get("ends_at") else "?"
-        lines.append(status_active.format(end=end_str))
-    else:
-        lines.append(status_finished)
-
-    has_media = bool(state.get("video_file_id") or state.get("image_file_id") or state.get("image_url"))
-    lines.append(media_line.format(has=media_yes if has_media else media_no))
-    has_guide = bool(state.get("guide_video_file_id"))
-    lines.append(guide_line.format(has=media_yes if has_guide else media_no))
-    lines.append("")
-    lines.append(prizes_label)
-    for i, (medal, key) in enumerate([("🥇", "prize_1"), ("🥈", "prize_2"), ("🥉", "prize_3")]):
-        if i > 0:
-            lines.append("")  # blank line — admin's prize text is itself multi-line, so
-        lines.append(f"{medal} {state.get(key) or no_prize}")  # without this, 2nd/3rd run into the previous one
-
-    if started:
-        excluded = _contest_excluded()
-        board = await get_contest_leaderboard(state["started_at"], state["ends_at"], excluded, limit=10)
+    saved = [p for p in promos if not p.get("active")]
+    if saved:
         lines.append("")
-        lines.append(board_label)
-        if not board:
-            lines.append(no_board)
-        else:
-            medals = {0: "🥇", 1: "🥈", 2: "🥉"}
-            for i, r in enumerate(board):
-                mark = medals.get(i, f"{i + 1}.")
-                name = _contest_display_name(r.get("username"), r.get("full_name"), r["user_id"])
-                lines.append(f"{mark} {name} — {r['invites']}")
+        lines.append(f"💾 Saqlangan aksiyalar: {len(saved)} ta — boshlash uchun tanlang.")
 
-    text = "\n".join(lines)
     rows = []
     if active:
-        rows.append([InlineKeyboardButton(text=stop_btn, callback_data="admin:contest:stop_confirm")])
+        rows.append([InlineKeyboardButton(text="⏹ To'xtatish", callback_data=f"admin:promo:stop:{active['id']}")])
+        rows.append([InlineKeyboardButton(text="📤 Hammaga e'lon qilish", callback_data=f"admin:promo:announce:{active['id']}")])
+        rows.append([InlineKeyboardButton(text="🖼 Rasmni almashtirish", callback_data=f"admin:promo:image:{active['id']}")])
+    for promo in saved[:8]:
+        rows.append([InlineKeyboardButton(
+            text=f"🚀 Boshlash: {promo['name'][:30]} ({promo['days']} kun)",
+            callback_data=f"admin:promo:start:{promo['id']}",
+        )])
+    rows.append([InlineKeyboardButton(text="➕ Yangi aksiya yaratish", callback_data="admin:promo:new")])
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == "admin:promo")
+async def show_promo_admin(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+    await state.clear()
+    lang = await get_user_language(callback.from_user.id)
+    text, keyboard = await _render_promo_admin(lang)
+    await _promo_show(callback, text, keyboard)
+    await callback.answer()
+
+
+async def _promo_show(callback: CallbackQuery, text: str, keyboard: InlineKeyboardMarkup) -> None:
+    """A campaign screen may follow a photo bubble (the image-preview step),
+    and edit_text can't turn a photo into text — delete + resend when so."""
+    if callback.message.photo:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     else:
-        rows.append([InlineKeyboardButton(text=start_btn, callback_data="admin:contest:start")])
-    if started:
-        # Swap the photo/video without resetting the countdown or prizes —
-        # separate from the full "start" flow, which re-arms the timer.
-        rows.append([InlineKeyboardButton(text=media_btn, callback_data="admin:contest:media")])
-        # The guide video is ADDITIVE (owner request 2026-07-31: keep the
-        # photo, just add a video alongside it) — its own separate slot,
-        # not the mutually-exclusive photo/video pair above.
-        rows.append([InlineKeyboardButton(text=guide_btn_change if has_guide else guide_btn, callback_data="admin:contest:guide")])
-    rows.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="admin_panel")])
-    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+        try:
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
-@router.callback_query(F.data == "admin:contest")
-async def show_contest_admin(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("admin:promo:start:"))
+async def promo_start(callback: CallbackQuery):
+    import promotions
+    if not is_admin(callback.from_user.id):
+        return
+    promo_id = int(callback.data.split(":")[3])
+    await start_promotion(promo_id)
+    await promotions.refresh()
+    lang = await get_user_language(callback.from_user.id)
+    text, keyboard = await _render_promo_admin(lang)
+    await _promo_show(callback, text, keyboard)
+    await callback.answer("🚀 Aksiya boshlandi!")
+
+
+@router.callback_query(F.data.startswith("admin:promo:stop:"))
+async def promo_stop(callback: CallbackQuery):
+    import promotions
+    if not is_admin(callback.from_user.id):
+        return
+    await stop_promotion(int(callback.data.split(":")[3]))
+    await promotions.refresh()
+    lang = await get_user_language(callback.from_user.id)
+    text, keyboard = await _render_promo_admin(lang)
+    await _promo_show(callback, text, keyboard)
+    await callback.answer("⏹ To'xtatildi")
+
+
+@router.callback_query(F.data.startswith("admin:promo:announce:"))
+async def promo_announce(callback: CallbackQuery, bot: Bot):
+    """Fire-and-forget: the fan-out to every user takes minutes at Telegram's
+    rate limits, far longer than a callback may stay unanswered."""
+    import asyncio
+    import promotions
+
+    if not is_admin(callback.from_user.id):
+        return
+    promo = await get_promotion(int(callback.data.split(":")[3]))
+    if not promo:
+        await callback.answer("❌ Topilmadi", show_alert=True)
+        return
+    await callback.answer("📤 Yuborilmoqda — tugagach xabar keladi", show_alert=True)
+
+    async def _run():
+        try:
+            sent, failed = await promotions.announce(bot, promo)
+            for admin_id in ADMIN_IDS:
+                try:
+                    await bot.send_message(
+                        admin_id,
+                        f"📤 Aksiya e'lon qilindi: <b>{promo['name']}</b>\n"
+                        f"✅ {sent} ta yetkazildi, ⚠️ {failed} ta yetmadi.",
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            logger.exception("Aksiya announcement failed")
+
+    asyncio.create_task(_run())
+
+
+# ───────────────────── create-a-campaign wizard ─────────────────────────────
+
+@router.callback_query(F.data == "admin:promo:new")
+async def promo_new(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         return
     lang = await get_user_language(callback.from_user.id)
-    text, keyboard = await _render_contest_admin(lang)
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await state.set_state(PromoAdminStates.waiting_name)
+    await state.update_data(lang=lang, promo_rules=[])
+    await callback.message.edit_text(
+        "🎁 <b>Yangi aksiya</b>\n\n1/5 — Aksiya nomini yozing.\n"
+        "<i>Masalan: Bodom uni haftaligi</i>",
+        parse_mode="HTML",
+    )
     await callback.answer()
 
 
-@router.callback_query(F.data == "admin:contest:stop_confirm")
-async def confirm_stop_contest(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
+@router.message(PromoAdminStates.waiting_name, F.text)
+async def promo_name_entered(message: Message, state: FSMContext):
+    name = (message.text or "").strip()
+    if not name or name.startswith("/"):
+        await message.answer("Aksiya nomini yozing (masalan: Bodom uni haftaligi).")
         return
-    lang = await get_user_language(callback.from_user.id)
-    text = "Musobaqa hoziroq to'xtatilsinmi?" if lang != "ru" else "Остановить конкурс прямо сейчас?"
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Ha" if lang != "ru" else "✅ Да", callback_data="admin:contest:stop_yes"),
-        InlineKeyboardButton(text="❌ Yo'q" if lang != "ru" else "❌ Нет", callback_data="admin:contest"),
-    ]])
-    await callback.message.edit_text(text, reply_markup=keyboard)
-    await callback.answer()
+    await state.update_data(promo_name=name[:200])
+    await state.set_state(PromoAdminStates.waiting_days)
+    await message.answer("2/5 — Aksiya necha kun davom etsin? (raqam kiriting, masalan: 7)")
 
 
-@router.callback_query(F.data == "admin:contest:stop_yes")
-async def stop_contest(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        return
-    await stop_referral_contest()
-    lang = await get_user_language(callback.from_user.id)
-    text, keyboard = await _render_contest_admin(lang)
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    await callback.answer("⏹ To'xtatildi" if lang != "ru" else "⏹ Остановлено")
-
-
-@router.callback_query(F.data == "admin:contest:start")
-async def start_contest_flow(callback: CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        return
-    lang = await get_user_language(callback.from_user.id)
-    await state.set_state(ContestAdminStates.waiting_media)
-    await state.update_data(lang=lang)
-    text = (
-        "🏆 Musobaqa uchun rasm yoki video yuboring.\n"
-        "O'zgartirmoqchi bo'lmasangiz yoki hech qanday rasm/video kerak bo'lmasa — /skip deb yozing."
-        if lang != "ru" else
-        "🏆 Отправьте фото или видео для конкурса.\n"
-        "Если не хотите менять или медиа не нужно — напишите /skip."
-    )
-    await callback.message.edit_text(text)
-    await callback.answer()
-
-
-@router.message(ContestAdminStates.waiting_media, F.photo)
-async def contest_media_photo(message: Message, state: FSMContext):
-    await state.update_data(new_image_file_id=message.photo[-1].file_id, new_video_file_id=None, media_touched=True)
-    await _ask_contest_days(message, state)
-
-
-@router.message(ContestAdminStates.waiting_media, F.video)
-async def contest_media_video(message: Message, state: FSMContext):
-    await state.update_data(new_video_file_id=message.video.file_id, new_image_file_id=None, media_touched=True)
-    await _ask_contest_days(message, state)
-
-
-@router.message(ContestAdminStates.waiting_media, F.text == "/skip")
-async def contest_media_skip(message: Message, state: FSMContext):
-    await state.update_data(media_touched=False)
-    await _ask_contest_days(message, state)
-
-
-@router.message(ContestAdminStates.waiting_media)
-async def contest_media_invalid(message: Message, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("lang", "uz")
-    await message.answer(
-        "Iltimos, rasm/video yuboring yoki /skip deb yozing."
-        if lang != "ru" else "Пожалуйста, отправьте фото/видео или напишите /skip."
-    )
-
-
-@router.callback_query(F.data == "admin:contest:media")
-async def start_contest_media_update(callback: CallbackQuery, state: FSMContext):
-    """Quick media swap — doesn't touch the timer/prizes, unlike the full
-    start flow (owner request 2026-07-31: change the video without
-    restarting the whole contest)."""
-    if not is_admin(callback.from_user.id):
-        return
-    lang = await get_user_language(callback.from_user.id)
-    await state.set_state(ContestAdminStates.waiting_media_update)
-    await state.update_data(lang=lang)
-    text = (
-        "🎬 Yangi rasm yoki video yuboring:" if lang != "ru" else "🎬 Отправьте новое фото или видео:"
-    )
-    await callback.message.edit_text(text)
-    await callback.answer()
-
-
-@router.message(ContestAdminStates.waiting_media_update, F.photo)
-async def contest_media_update_photo(message: Message, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("lang", "uz")
-    await update_contest_media(video_file_id=None, image_file_id=message.photo[-1].file_id)
-    await state.clear()
-    text, keyboard = await _render_contest_admin(lang)
-    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
-
-
-@router.message(ContestAdminStates.waiting_media_update, F.video)
-async def contest_media_update_video(message: Message, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("lang", "uz")
-    await update_contest_media(video_file_id=message.video.file_id, image_file_id=None)
-    await state.clear()
-    text, keyboard = await _render_contest_admin(lang)
-    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
-
-
-@router.message(ContestAdminStates.waiting_media_update)
-async def contest_media_update_invalid(message: Message, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("lang", "uz")
-    await message.answer(
-        "Iltimos, rasm yoki video yuboring." if lang != "ru" else "Пожалуйста, отправьте фото или видео."
-    )
-
-
-@router.callback_query(F.data == "admin:contest:guide")
-async def start_guide_video_update(callback: CallbackQuery, state: FSMContext):
-    """The ADDITIONAL 'how to participate' video — coexists with the main
-    photo/video above rather than replacing it (owner request 2026-07-31)."""
-    if not is_admin(callback.from_user.id):
-        return
-    lang = await get_user_language(callback.from_user.id)
-    await state.set_state(ContestAdminStates.waiting_guide_video)
-    await state.update_data(lang=lang)
-    text = (
-        "📹 Video qo'llanmani yuboring (asosiy rasm o'zgarmaydi, bu — qo'shimcha video):"
-        if lang != "ru" else
-        "📹 Отправьте видео-инструкцию (основное фото не изменится, это — дополнительное видео):"
-    )
-    await callback.message.edit_text(text)
-    await callback.answer()
-
-
-@router.message(ContestAdminStates.waiting_guide_video, F.video)
-async def contest_guide_video_received(message: Message, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("lang", "uz")
-    await update_contest_guide_video(message.video.file_id)
-    await state.clear()
-    text, keyboard = await _render_contest_admin(lang)
-    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
-
-
-@router.message(ContestAdminStates.waiting_guide_video)
-async def contest_guide_video_invalid(message: Message, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("lang", "uz")
-    await message.answer(
-        "Iltimos, video yuboring." if lang != "ru" else "Пожалуйста, отправьте видео."
-    )
-
-
-async def _ask_contest_days(message: Message, state: FSMContext) -> None:
-    data = await state.get_data()
-    lang = data.get("lang", "uz")
-    await state.set_state(ContestAdminStates.waiting_days)
-    await message.answer(
-        "⏳ Musobaqa necha kun davom etsin? (raqam kiriting, masalan: 10)"
-        if lang != "ru" else "⏳ Сколько дней будет длиться конкурс? (введите число, например: 10)"
-    )
-
-
-@router.message(ContestAdminStates.waiting_days)
-async def contest_days_entered(message: Message, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("lang", "uz")
+@router.message(PromoAdminStates.waiting_days, F.text)
+async def promo_days_entered(message: Message, state: FSMContext):
     try:
         days = int((message.text or "").strip())
         if days <= 0:
             raise ValueError
     except ValueError:
-        await message.answer(
-            "Musbat butun son kiriting (masalan: 10)." if lang != "ru" else "Введите положительное целое число (например: 10)."
-        )
+        await message.answer("Musbat butun son kiriting (masalan: 7).")
         return
-    await state.update_data(days=days)
-    await state.set_state(ContestAdminStates.waiting_prize1)
+    await state.update_data(promo_days=days)
+    await state.set_state(PromoAdminStates.waiting_conditions)
     await message.answer(
-        "🥇 1-o'rin sovg'asini yozing:" if lang != "ru" else "🥇 Напишите приз за 1-е место:"
+        "3/5 — Aksiya shartlarini yozing.\n"
+        "<i>Masalan: Aksiya faqat yetkazib berish buyurtmalarida amal qiladi. "
+        "Bonus savatga avtomatik qo'shiladi.</i>\n\n"
+        "O'tkazib yuborish uchun /skip yoki quyidagi tugma.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="⏭ O'tkazib yuborish", callback_data="admin:promo:skipcond"),
+        ]]),
     )
 
 
-@router.message(ContestAdminStates.waiting_prize1)
-async def contest_prize1_entered(message: Message, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("lang", "uz")
-    await state.update_data(prize_1=(message.text or "").strip()[:500])
-    await state.set_state(ContestAdminStates.waiting_prize2)
-    await message.answer(
-        "🥈 2-o'rin sovg'asini yozing:" if lang != "ru" else "🥈 Напишите приз за 2-е место:"
-    )
-
-
-@router.message(ContestAdminStates.waiting_prize2)
-async def contest_prize2_entered(message: Message, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("lang", "uz")
-    await state.update_data(prize_2=(message.text or "").strip()[:500])
-    await state.set_state(ContestAdminStates.waiting_prize3)
-    await message.answer(
-        "🥉 3-o'rin sovg'asini yozing:" if lang != "ru" else "🥉 Напишите приз за 3-е место:"
-    )
-
-
-@router.message(ContestAdminStates.waiting_prize3)
-async def contest_prize3_entered(message: Message, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("lang", "uz")
-    await state.update_data(prize_3=(message.text or "").strip()[:500])
-    await state.set_state(ContestAdminStates.confirming)
-
-    data = await state.get_data()
-    media_note = ""
-    if data.get("media_touched"):
-        media_note = ("\n🎬 Yangi media saqlanadi." if lang != "ru" else "\n🎬 Новое медиа будет сохранено.")
-
-    if lang == "ru":
-        summary = (
-            f"Проверьте перед запуском:\n\n"
-            f"⏳ Длительность: {data['days']} дн.\n"
-            f"🥇 {data['prize_1'] or '—'}\n🥈 {data['prize_2'] or '—'}\n🥉 {data['prize_3'] or '—'}"
-            f"{media_note}\n\nЗапустить конкурс сейчас?"
-        )
-        yes, no = "✅ Запустить", "❌ Отмена"
-    else:
-        summary = (
-            f"Boshlashdan oldin tekshiring:\n\n"
-            f"⏳ Davomiyligi: {data['days']} kun\n"
-            f"🥇 {data['prize_1'] or '—'}\n🥈 {data['prize_2'] or '—'}\n🥉 {data['prize_3'] or '—'}"
-            f"{media_note}\n\nMusobaqa hoziroq boshlansinmi?"
-        )
-        yes, no = "✅ Boshlash", "❌ Bekor qilish"
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=yes, callback_data="admin:contest:confirm"),
-        InlineKeyboardButton(text=no, callback_data="admin:contest:cancel"),
-    ]])
-    await message.answer(summary, reply_markup=keyboard)
-
-
-@router.callback_query(F.data == "admin:contest:cancel", ContestAdminStates.confirming)
-async def cancel_contest_start(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-    lang = await get_user_language(callback.from_user.id)
-    text, keyboard = await _render_contest_admin(lang)
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+@router.callback_query(F.data == "admin:promo:skipcond")
+async def promo_conditions_skipped(callback: CallbackQuery, state: FSMContext):
+    """Button twin of typing /skip — the same step, one tap instead."""
+    if not is_admin(callback.from_user.id):
+        return
+    await state.update_data(promo_conditions=None)
+    await callback.message.edit_text("3/5 — Shartlar o'tkazib yuborildi.")
+    await _ask_promo_image(callback.message, state)
     await callback.answer()
 
 
-@router.callback_query(F.data == "admin:contest:confirm", ContestAdminStates.confirming)
-async def confirm_contest_start(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    await state.clear()
+@router.message(PromoAdminStates.waiting_conditions, F.text)
+async def promo_conditions_entered(message: Message, state: FSMContext):
+    text = (message.text or "").strip()
+    if text == "/skip":
+        await state.update_data(promo_conditions=None)
+    else:
+        await state.update_data(promo_conditions=text[:2000])
+    await _ask_promo_image(message, state)
 
-    current = await get_referral_contest_state()
-    image_file_id = data.get("new_image_file_id") if data.get("media_touched") else current.get("image_file_id")
-    video_file_id = data.get("new_video_file_id") if data.get("media_touched") else current.get("video_file_id")
-    if data.get("media_touched") and data.get("new_image_file_id"):
-        video_file_id = None  # a fresh photo replaces any previously set video
-    elif data.get("media_touched") and data.get("new_video_file_id"):
-        image_file_id = None  # and vice versa
 
-    await start_referral_contest(
-        days=data["days"],
-        image_url=current.get("image_url"),  # website's own slot — untouched here
-        prize_1=data.get("prize_1") or None,
-        prize_2=data.get("prize_2") or None,
-        prize_3=data.get("prize_3") or None,
-        video_file_id=video_file_id,
-        image_file_id=image_file_id,
+async def _ask_promo_image(message: Message, state: FSMContext) -> None:
+    await state.set_state(PromoAdminStates.waiting_image)
+    await message.answer(
+        "4/5 — Aksiya rasmini yuboring.\n\n"
+        "Bu rasm aksiya ekranida, saytdagi aksiya oynasida va e'lon xabarida ko'rinadi.\n"
+        "Rasmsiz davom etish uchun /skip yoki quyidagi tugma.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="⏭ Rasmsiz davom etish", callback_data="admin:promo:skipimg"),
+        ]]),
     )
 
+
+@router.callback_query(F.data == "admin:promo:skipimg")
+async def promo_image_skipped_button(callback: CallbackQuery, state: FSMContext):
+    """Button twin of typing /skip at the photo step."""
+    if not is_admin(callback.from_user.id):
+        return
+    await state.update_data(promo_image_url=None)
+    await callback.message.edit_text("4/5 — Rasmsiz davom etilmoqda.")
+    await _ask_promo_first_rule(callback.message, state)
+    await callback.answer()
+
+
+@router.message(PromoAdminStates.waiting_image, F.photo)
+async def promo_image_received(message: Message, state: FSMContext):
+    """Store the photo in web_images (same table the website's uploads use) so
+    a single image_url works for the bot, the Mini App and the announcement.
+    A Telegram file_id alone would be useless to the Mini App."""
+    try:
+        image_url = await _promo_store_photo(message)
+    except Exception:
+        logger.exception("Aksiya photo upload failed")
+        await message.answer("⚠️ Rasmni saqlab bo'lmadi. Qayta yuboring yoki /skip bosing.")
+        return
+    await state.update_data(promo_image_url=image_url)
+    await message.answer("✅ Rasm saqlandi.")
+    await _ask_promo_first_rule(message, state)
+
+
+@router.message(PromoAdminStates.waiting_image, F.text == "/skip")
+async def promo_image_skipped(message: Message, state: FSMContext):
+    await state.update_data(promo_image_url=None)
+    await _ask_promo_first_rule(message, state)
+
+
+@router.message(PromoAdminStates.waiting_image)
+async def promo_image_invalid(message: Message, state: FSMContext):
+    await message.answer("Rasm yuboring yoki /skip bosing.")
+
+
+async def _promo_store_photo(message: Message) -> str:
+    """Download the largest size of a Telegram photo and put it in web_images,
+    returning the /img/N URL. Mirrors what the website's upload endpoint does,
+    just sourced from a chat message instead of a multipart form."""
+    import io as _io
+
+    photo = message.photo[-1]
+    buf = _io.BytesIO()
+    await message.bot.download(photo, destination=buf)
+    image_id = await save_web_image(buf.getvalue(), "image/jpeg")
+    return f"/img/{image_id}"
+
+
+async def _ask_promo_first_rule(message: Message, state: FSMContext) -> None:
+    await state.set_state(PromoAdminStates.waiting_trigger_query)
+    await message.answer(
+        "5/5 — Endi bonus qoidalarini qo'shamiz.\n\n"
+        "🎁 <b>Bonus qoidasi:</b> qaysi mahsulotdan qancha olinsa, qaysi bonus beriladi.\n"
+        "<i>Masalan: 1 kg bodom uniga 100 gr eritritol.</i>\n\n"
+        "Avval <b>asosiy mahsulot</b> nomini (yoki bir qismini) yozing:",
+        parse_mode="HTML",
+    )
+
+
+async def _promo_product_picker(message: Message, query: str, prefix: str) -> bool:
+    """Show up to 8 matching products as buttons. Returns False when nothing
+    matched, so the caller can keep the same state and let them retype."""
+    products, _ = await search_products(query, page=0, per_page=8)
+    if not products:
+        await message.answer("❌ Hech narsa topilmadi. Boshqa nom yozing:")
+        return False
+    lang = await get_user_language(message.from_user.id)
+    rows = [[InlineKeyboardButton(
+        text=f"{_promo_pname(p, lang)} ({get_unit_name(p['unit'], lang)})",
+        callback_data=f"{prefix}{p['id']}",
+    )] for p in products]
+    rows.append([InlineKeyboardButton(text="🔙 Bekor qilish", callback_data="admin:promo")])
+    await message.answer("Mahsulotni tanlang:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    return True
+
+
+@router.message(PromoAdminStates.waiting_trigger_query, F.text)
+async def promo_trigger_query(message: Message, state: FSMContext):
+    await _promo_product_picker(message, (message.text or "").strip(), "admin:promo:trig:")
+
+
+@router.callback_query(F.data.startswith("admin:promo:trig:"))
+async def promo_trigger_chosen(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+    product_id = int(callback.data.split(":")[3])
+    product = await get_product(product_id)
+    lang = (await state.get_data()).get("lang", "uz")
+    await state.update_data(rule_trigger_id=product_id, rule_trigger_name=_promo_pname(product, lang))
+    await state.set_state(PromoAdminStates.waiting_trigger_qty)
+    await callback.message.edit_text(
+        f"✅ Asosiy mahsulot: <b>{_promo_pname(product, lang)}</b>\n\n"
+        f"Necha <b>{get_unit_name(product['unit'], lang)}</b> olinganda bonus berilsin? "
+        f"(raqam kiriting, masalan: 1)",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(PromoAdminStates.waiting_trigger_qty, F.text)
+async def promo_trigger_qty(message: Message, state: FSMContext):
+    try:
+        qty = float((message.text or "").strip().replace(",", "."))
+        if qty <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("Musbat raqam kiriting (masalan: 1 yoki 0.5).")
+        return
+    await state.update_data(rule_trigger_qty=qty)
+    await state.set_state(PromoAdminStates.waiting_bonus_query)
+    await message.answer("🎁 Endi <b>bonus mahsulot</b> nomini yozing:", parse_mode="HTML")
+
+
+@router.message(PromoAdminStates.waiting_bonus_query, F.text)
+async def promo_bonus_query(message: Message, state: FSMContext):
+    await _promo_product_picker(message, (message.text or "").strip(), "admin:promo:bon:")
+
+
+@router.callback_query(F.data.startswith("admin:promo:bon:"))
+async def promo_bonus_chosen(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+    product_id = int(callback.data.split(":")[3])
+    product = await get_product(product_id)
+    lang = (await state.get_data()).get("lang", "uz")
+    await state.update_data(rule_bonus_id=product_id, rule_bonus_name=_promo_pname(product, lang))
+    await state.set_state(PromoAdminStates.waiting_bonus_amount)
+    await callback.message.edit_text(
+        f"✅ Bonus mahsulot: <b>{_promo_pname(product, lang)}</b>\n\n"
+        f"Qancha bonus berilsin? Miqdor va birlikni birga yozing.\n"
+        f"<i>Masalan: 100 gr — yoki 0.5 kg, 2 dona</i>\n\n"
+        f"Mumkin birliklar: {', '.join(PROMO_BONUS_UNITS)}",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(PromoAdminStates.waiting_bonus_amount, F.text)
+async def promo_bonus_amount(message: Message, state: FSMContext):
+    """Parses "100 gr" / "0.5 kg" / "2 dona" in one go — two separate prompts
+    for the number and the unit would double the length of an already long
+    wizard, and this shape is how the owner writes it anyway."""
+    import promotions
+
+    raw = (message.text or "").strip().lower().replace(",", ".")
+    parts = raw.split()
+    amount, unit = None, None
+    if len(parts) >= 2:
+        try:
+            amount = float(parts[0])
+            unit = parts[1]
+        except ValueError:
+            amount = None
+    if amount is None or amount <= 0 or unit not in PROMO_BONUS_UNITS:
+        await message.answer(
+            "Miqdor va birlikni birga yozing — masalan: <b>100 gr</b>\n"
+            f"Mumkin birliklar: {', '.join(PROMO_BONUS_UNITS)}",
+            parse_mode="HTML",
+        )
+        return
+
+    data = await state.get_data()
+    bonus_product = await get_product(data["rule_bonus_id"])
+    rules = list(data.get("promo_rules") or [])
+    rules.append({
+        "trigger_product_id": data["rule_trigger_id"],
+        "trigger_quantity": data["rule_trigger_qty"],
+        "bonus_product_id": data["rule_bonus_id"],
+        "bonus_amount": amount,
+        "bonus_unit": unit,
+        "bonus_stock_qty": promotions.to_stock_qty(amount, unit, bonus_product.get("unit") or "kg"),
+        "max_bonus_amount": None,
+        "_label": f"{data['rule_trigger_qty']:g} × {data['rule_trigger_name']} → {amount:g} {unit} {data['rule_bonus_name']}",
+    })
+    await state.update_data(promo_rules=rules)
+
+    listing = "\n".join(f"   • {r['_label']}" for r in rules)
+    await state.set_state(PromoAdminStates.waiting_trigger_query)
+    await message.answer(
+        f"✅ Qoida qo'shildi.\n\n🎁 <b>Hozirgi qoidalar:</b>\n{listing}\n\n"
+        f"Yana qoida qo'shish uchun keyingi <b>asosiy mahsulot</b> nomini yozing, "
+        f"yoki tugatish uchun quyidagi tugmani bosing.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="✅ Tugatish va saqlash", callback_data="admin:promo:save"),
+        ]]),
+    )
+
+
+@router.callback_query(F.data == "admin:promo:save")
+async def promo_save(callback: CallbackQuery, state: FSMContext):
+    """Saves the campaign INACTIVE. Going live is a separate, deliberate tap —
+    same as the website, so a half-finished draft never reaches buyers."""
+    if not is_admin(callback.from_user.id):
+        return
+    data = await state.get_data()
+    rules = data.get("promo_rules") or []
+    if not rules:
+        await callback.answer("Kamida bitta bonus qoidasi qo'shing", show_alert=True)
+        return
+
+    promo_id = await create_promotion(
+        name=data["promo_name"],
+        name_ru=None,
+        conditions=data.get("promo_conditions"),
+        conditions_ru=None,
+        days=data["promo_days"],
+        image_url=data.get("promo_image_url"),
+    )
+    await set_promotion_bonuses(promo_id, [{k: v for k, v in r.items() if not k.startswith("_")} for r in rules])
+    await state.clear()
+
     lang = await get_user_language(callback.from_user.id)
-    text, keyboard = await _render_contest_admin(lang)
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    await callback.answer("🚀 Boshlandi!" if lang != "ru" else "🚀 Запущено!")
+    text, keyboard = await _render_promo_admin(lang)
+    await callback.message.edit_text(
+        "✅ Aksiya saqlandi (hali boshlanmagan).\n\n" + text,
+        reply_markup=keyboard, parse_mode="HTML",
+    )
+    await callback.answer("✅ Saqlandi")
+
+
+# ───────────────────── swap the image on a live campaign ────────────────────
+
+@router.callback_query(F.data.startswith("admin:promo:image:"))
+async def promo_image_update_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+    promo_id = int(callback.data.split(":")[3])
+    lang = await get_user_language(callback.from_user.id)
+    await state.set_state(PromoAdminStates.waiting_image_update)
+    await state.update_data(lang=lang, promo_image_target=promo_id)
+    await callback.message.edit_text(
+        "🖼 Yangi rasmni yuboring.\n\nRasmni butunlay olib tashlash uchun /skip yoki quyidagi tugma.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🗑 Rasmni olib tashlash", callback_data="admin:promo:imgclear"),
+        ]]),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:promo:imgclear")
+async def promo_image_clear_button(callback: CallbackQuery, state: FSMContext):
+    """Button twin of typing /skip at the image-swap step."""
+    import promotions
+
+    if not is_admin(callback.from_user.id):
+        return
+    data = await state.get_data()
+    target = data.get("promo_image_target")
+    if not target:
+        await callback.answer("❌", show_alert=True)
+        return
+    await update_promotion(target, image_url=None)
+    await promotions.refresh()
+    await state.clear()
+    text, keyboard = await _render_promo_admin(data.get("lang", "uz"))
+    await callback.message.edit_text("🗑 Rasm olib tashlandi.\n\n" + text,
+                                     reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.message(PromoAdminStates.waiting_image_update, F.photo)
+async def promo_image_update_received(message: Message, state: FSMContext):
+    import promotions
+
+    data = await state.get_data()
+    try:
+        image_url = await _promo_store_photo(message)
+    except Exception:
+        logger.exception("Aksiya photo update failed")
+        await message.answer("⚠️ Rasmni saqlab bo'lmadi. Qayta yuboring yoki /skip bosing.")
+        return
+    await update_promotion(data["promo_image_target"], image_url=image_url)
+    await promotions.refresh()
+    await state.clear()
+    text, keyboard = await _render_promo_admin(data.get("lang", "uz"))
+    await message.answer("✅ Rasm yangilandi.\n\n" + text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.message(PromoAdminStates.waiting_image_update, F.text == "/skip")
+async def promo_image_update_cleared(message: Message, state: FSMContext):
+    import promotions
+
+    data = await state.get_data()
+    await update_promotion(data["promo_image_target"], image_url=None)
+    await promotions.refresh()
+    await state.clear()
+    text, keyboard = await _render_promo_admin(data.get("lang", "uz"))
+    await message.answer("🗑 Rasm olib tashlandi.\n\n" + text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.message(PromoAdminStates.waiting_image_update)
+async def promo_image_update_invalid(message: Message, state: FSMContext):
+    await message.answer("Rasm yuboring yoki /skip bosing.")
 
 
 # ===== BULK DISCOUNT =====

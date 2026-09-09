@@ -3,14 +3,20 @@ Start, language selection, main menu, and help handlers
 """
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart, CommandObject
+from aiogram.filters import CommandStart, CommandObject, Command
 from aiogram.fsm.context import FSMContext
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from database import create_user, get_user_language, update_user_language, get_user, is_user_banned, mark_kabinetim_intro_seen
+from database import (
+    create_user, get_user_language, update_user_language, get_user, is_user_banned,
+    mark_kabinetim_intro_seen, was_menu_keyboard_sent, mark_menu_keyboard_sent,
+)
 from locales import get_text
-from keyboards import language_keyboard, main_menu_keyboard, back_to_menu_keyboard
+from keyboards import (
+    language_keyboard, main_menu_keyboard, back_to_menu_keyboard,
+    persistent_menu_keyboard,
+)
 from config import ADMIN_IDS, SUPPORT_USERNAME
 
 _LANG_LABELS = {
@@ -18,6 +24,71 @@ _LANG_LABELS = {
 }
 
 router = Router()
+
+
+# Every localized label of the two persistent-keyboard buttons. Pressing one
+# arrives as an ordinary text message, so the handlers below have to recognise
+# the button by its text in whichever language the user picked.
+_MENU_BTN_TEXTS = {get_text("btn_kb_menu", lg) for lg in ("uz", "uz_cyr", "ru")}
+_CART_BTN_TEXTS = {get_text("btn_kb_cart", lg) for lg in ("uz", "uz_cyr", "ru")}
+
+
+async def ensure_menu_keyboard(bot, user_id: int, lang: str) -> None:
+    """Put the persistent 🏠/🛒 keyboard under this user's input box, once.
+
+    Telegram keeps a reply keyboard until it's replaced, so this only needs to
+    happen a single time per chat — users.menu_keyboard_sent records that it
+    did. Best-effort: a failure here must never derail /start."""
+    try:
+        if await was_menu_keyboard_sent(user_id):
+            return
+        await bot.send_message(
+            user_id,
+            get_text("persistent_kb_hint", lang),
+            reply_markup=persistent_menu_keyboard(lang),
+            parse_mode="HTML",
+        )
+        await mark_menu_keyboard_sent(user_id)
+    except Exception:
+        pass
+
+
+@router.message(F.text.in_(_MENU_BTN_TEXTS))
+async def menu_button_pressed(message: Message, state: FSMContext):
+    """🏠 Bosh menyu — the way home from anywhere, including out of a stuck
+    "waiting for X" flow (same escape-hatch behaviour as the inline
+    main_menu button, which is why this clears the FSM too)."""
+    await state.clear()
+    lang = await get_user_language(message.from_user.id)
+    await message.answer(
+        get_text("welcome", lang),
+        reply_markup=main_menu_keyboard(lang, is_admin=message.from_user.id in ADMIN_IDS),
+        parse_mode="HTML",
+    )
+
+
+@router.message(F.text.in_(_CART_BTN_TEXTS))
+async def cart_button_pressed(message: Message, state: FSMContext):
+    """🛒 Savat — jumps straight to the cart from any screen."""
+    await state.clear()
+    from handlers.cart import render_cart_message
+    lang = await get_user_language(message.from_user.id)
+    await render_cart_message(message, lang)
+
+
+@router.message(Command("menu"))
+async def cmd_menu(message: Message, state: FSMContext):
+    """/menu — the same landing spot as /start, minus the language prompt.
+    Registered in the bot's command list so typing "/" offers it."""
+    await state.clear()
+    lang = await get_user_language(message.from_user.id)
+    await ensure_menu_keyboard(message.bot, message.from_user.id, lang)
+    await message.answer(
+        get_text("welcome", lang),
+        reply_markup=main_menu_keyboard(lang, is_admin=message.from_user.id in ADMIN_IDS),
+        parse_mode="HTML",
+    )
+
 
 
 @router.message(CommandStart(deep_link=True))
@@ -41,7 +112,15 @@ async def _handle_start(message: Message, referrer_id: int | None):
         await message.answer(get_text("you_are_banned", lang))
         return
 
-    await ensure_registered(message.bot, message.from_user, referrer_id)
+    is_new = await ensure_registered(message.bot, message.from_user, referrer_id)
+    # Returning users get the persistent keyboard here — many have been using
+    # the bot since before it existed and have nothing under their input box.
+    # A brand-new user is skipped on purpose: they're about to pick a language
+    # one tap from now, and set_language sends it in that language instead, so
+    # doing it here too would just mean the same explainer twice.
+    if not is_new:
+        lang = await get_user_language(message.from_user.id)
+        await ensure_menu_keyboard(message.bot, message.from_user.id, lang)
     await message.answer(
         get_text("choose_language", "uz"),
         reply_markup=language_keyboard()
@@ -98,6 +177,21 @@ async def _process_new_user(bot, tg_user, referrer_id: int | None) -> None:
             pass
 
 
+async def _resend_menu_keyboard(bot, user_id: int, lang: str) -> None:
+    """Same as ensure_menu_keyboard but unconditional — used after a language
+    switch, where the already-sent keyboard is now in the wrong language."""
+    try:
+        await bot.send_message(
+            user_id,
+            get_text("persistent_kb_hint", lang),
+            reply_markup=persistent_menu_keyboard(lang),
+            parse_mode="HTML",
+        )
+        await mark_menu_keyboard_sent(user_id)
+    except Exception:
+        pass
+
+
 @router.callback_query(F.data.startswith("lang:"))
 async def set_language(callback: CallbackQuery):
     """Set user language"""
@@ -117,6 +211,9 @@ async def set_language(callback: CallbackQuery):
     )
     await update_user_language(callback.from_user.id, lang)
     is_admin = callback.from_user.id in ADMIN_IDS
+    # Re-send in the language just chosen, so the persistent buttons aren't
+    # left labelled in whatever the previous pick was.
+    await _resend_menu_keyboard(callback.bot, callback.from_user.id, lang)
     await callback.message.edit_text(
         get_text("welcome", lang),
         reply_markup=main_menu_keyboard(lang, is_admin=is_admin),
@@ -305,88 +402,54 @@ async def show_help(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == "keto_contest")
-async def show_keto_contest(callback: CallbackQuery):
-    """The always-present 'Keto musobaqasi' menu entry — shows the contest
-    photo, terms, prizes and a leaderboard window centered on the viewer
-    (5 ranks above/below) once an admin has started it via the admin panel,
-    or a 'coming soon' placeholder before launch. The share button is a
-    t.me/share/url deep link (carries the actual prizes), so tapping it opens
-    Telegram's own chat picker with the referral post pre-loaded, ready to
-    forward. If the admin has also uploaded a separate "how to participate"
-    guide video, it goes out as its own extra message after the main post."""
-    import referral_contest
+@router.callback_query(F.data == "promo")
+async def show_promo(callback: CallbackQuery):
+    """The "🎁 <aksiya nomi>" main-menu entry — the campaign's full terms and
+    every bonus rule spelled out, with its image when the admin uploaded one.
+
+    The button only appears while a campaign is running (see
+    keyboards.main_menu_keyboard), but a stale menu from before it ended can
+    still be tapped, so the "no aksiya" fallback is a real path, not dead code."""
+    import promotions
     from config import WEBAPP_URL
 
-    user_id = callback.from_user.id
-    lang = await get_user_language(user_id)
-    intro_text, detail_text, show_share, media, share_url, guide_video_file_id = (
-        await referral_contest.build_contest_screen(user_id, lang)
-    )
+    lang = await get_user_language(callback.from_user.id)
+    text = await promotions.screen_text(lang)
 
-    if not detail_text:
-        # Contest not started yet — a single placeholder message is enough.
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=get_text("btn_back_to_menu", lang), callback_data="main_menu"),
-        ]])
-        await _send_or_edit(callback, intro_text, keyboard)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=get_text("btn_catalog", lang), callback_data="catalog"),
+    ], [
+        InlineKeyboardButton(text=get_text("btn_back_to_menu", lang), callback_data="main_menu"),
+    ]])
+
+    if not text:
+        await _send_or_edit(callback, get_text("promo_none", lang), keyboard)
         await callback.answer()
         return
 
-    rows = []
-    if show_share and share_url:
-        rows.append([InlineKeyboardButton(text=get_text("btn_keto_contest_share", lang), url=share_url)])
-    rows.append([InlineKeyboardButton(text=get_text("btn_back_to_menu", lang), callback_data="main_menu")])
-    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+    promo = await promotions.get_active()
+    image_url = (promo or {}).get("image_url")
+    if image_url and not image_url.startswith("http") and WEBAPP_URL:
+        image_url = WEBAPP_URL.rstrip("/") + "/" + image_url.lstrip("/")
 
-    # Whatever message the button lived on (main menu, a reminder, ...) gets
-    # replaced by the contest screen — can't edit_text a photo in, so this
-    # always deletes + resends rather than reusing _send_or_edit.
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-
-    # One post, not two (owner request 2026-07-31) — merge into a single
-    # caption when it fits Telegram's 1024-char cap; the admin's prize text
-    # is free-form and can blow that on its own, so fall back to the
-    # original two-message layout rather than truncating anyone's prize copy.
-    combined = intro_text + "\n\n" + detail_text
-    CAPTION_LIMIT = 1024
-    single_post = len(combined) <= CAPTION_LIMIT
-
-    if media and media[0] == "video":
-        if single_post:
-            await callback.message.answer_video(media[1], caption=combined, parse_mode="HTML", reply_markup=keyboard)
-        else:
-            await callback.message.answer_video(media[1], caption=intro_text, parse_mode="HTML")
-            await callback.message.answer(detail_text, reply_markup=keyboard, parse_mode="HTML")
-    elif media and media[0] == "tg_photo":
-        if single_post:
-            await callback.message.answer_photo(media[1], caption=combined, parse_mode="HTML", reply_markup=keyboard)
-        else:
-            await callback.message.answer_photo(media[1], caption=intro_text, parse_mode="HTML")
-            await callback.message.answer(detail_text, reply_markup=keyboard, parse_mode="HTML")
-    elif media and media[0] == "photo" and WEBAPP_URL:
-        photo_url = f"{WEBAPP_URL}{media[1]}"
-        if single_post:
-            await callback.message.answer_photo(photo_url, caption=combined, parse_mode="HTML", reply_markup=keyboard)
-        else:
-            await callback.message.answer_photo(photo_url, caption=intro_text, parse_mode="HTML")
-            await callback.message.answer(detail_text, reply_markup=keyboard, parse_mode="HTML")
-    else:
-        await callback.message.answer(combined, reply_markup=keyboard, parse_mode="HTML")
-
-    if guide_video_file_id:
-        caption = (
-            "📹 Qanday ishtirok etish mumkin — video qo'llanma:" if lang != "ru"
-            else "📹 Как участвовать — видеоинструкция:"
-        )
+    if image_url and image_url.startswith("http"):
+        # A photo can't be edited into a text bubble — delete + resend.
+        # Telegram caps captions at 1024 chars, so a long shartlar block
+        # goes out as its own follow-up message instead of being truncated.
         try:
-            await callback.message.answer_video(guide_video_file_id, caption=caption, parse_mode="HTML")
+            await callback.message.delete()
         except Exception:
             pass
-
+        try:
+            if len(text) <= 1024:
+                await callback.message.answer_photo(image_url, caption=text, parse_mode="HTML", reply_markup=keyboard)
+            else:
+                await callback.message.answer_photo(image_url, parse_mode="HTML")
+                await callback.message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+        except Exception:
+            await callback.message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+    else:
+        await _send_or_edit(callback, text, keyboard)
     await callback.answer()
 
 

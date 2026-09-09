@@ -131,6 +131,23 @@
   .builder-list{display:flex;flex-direction:column;gap:8px;margin-top:6px}
   .b-row{display:grid;grid-template-columns:1fr 84px 34px;gap:8px;align-items:center}
   .b-row .del{border:none;background:var(--red-wash);color:var(--red);border-radius:9px;height:34px;font-weight:800}
+  .promo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px}
+  .promo-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;display:flex;flex-direction:column;gap:10px}
+  .promo-card.live{border-color:var(--green);box-shadow:0 0 0 2px var(--green-wash),var(--shadow)}
+  .promo-card h4{font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .promo-pill{font-size:11.5px;font-weight:800;padding:2px 9px;border-radius:999px;white-space:nowrap}
+  .promo-pill.on{background:var(--green-wash);color:var(--green)}
+  .promo-pill.off{background:var(--surface-2);color:var(--ink-3)}
+  .promo-terms{font-size:13px;color:var(--ink-2);white-space:pre-wrap;line-height:1.5}
+  .promo-rules{display:flex;flex-direction:column;gap:5px;font-size:13px}
+  .promo-rules li{list-style:none;background:var(--surface-2);border-radius:9px;padding:6px 10px}
+  .promo-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:4px}
+  /* Bonus rule row: trigger product + qty  →  bonus product + amount + unit + cap */
+  .r-row{display:grid;grid-template-columns:1fr 74px 22px 1fr 74px 82px 74px 34px;gap:6px;align-items:center}
+  .r-row .arrow{text-align:center;color:var(--ink-3);font-weight:800}
+  .r-row .del{border:none;background:var(--red-wash);color:var(--red);border-radius:9px;height:34px;font-weight:800}
+  .r-head{display:grid;grid-template-columns:1fr 74px 22px 1fr 74px 82px 74px 34px;gap:6px;font-size:11px;color:var(--ink-3);font-weight:700;margin-bottom:2px}
+  @media(max-width:760px){.r-row,.r-head{grid-template-columns:1fr 1fr;}.r-row .arrow,.r-head{display:none}}
   .calc{margin-top:14px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px;font-size:14px}
   .calc .line{display:flex;justify-content:space-between;gap:10px}
   .calc .line .lab{color:var(--ink-2)}
@@ -211,7 +228,7 @@
     <button class="tab active" data-view="dashboard">📊 Dashboard</button>
     <button class="tab" data-view="products">📦 Mahsulotlar</button>
     <button class="tab" data-view="sets">🎁 To'plamlar (Set)</button>
-    <button class="tab" data-view="contest">🏆 Musobaqa</button>
+    <button class="tab" data-view="promos">🎁 Aksiya / Bonus</button>
     <button class="tab" data-view="keto">🥑 Keto</button>
     <button class="tab" data-view="reklama">📣 Reklama</button>
     <button class="tab" data-view="expenses">📉 Chiqimlar</button>
@@ -299,54 +316,22 @@
     </div>
   </section>
 
-  <!-- ===== KETO MUSOBAQASI (referral contest) VIEW ===== -->
-  <section class="view" id="view-contest">
+  <!-- ===== AKSIYA / BONUS VIEW ===== -->
+  <section class="view" id="view-promos">
     <div class="toolbar">
-      <span class="count-pill" id="contestStatusPill"></span>
+      <span class="count-pill" id="promoStatusPill"></span>
+      <div class="spacer" style="margin-left:auto"></div>
+      <button class="btn btn-p" id="newPromoBtn">＋ Yangi aksiya</button>
     </div>
-    <div class="tbl-wrap" style="padding:20px;display:flex;flex-direction:column;gap:6px">
-      <p class="hint" style="margin-bottom:8px">
-        Har bir foydalanuvchiga o'z referal havolasi beriladi (bosh menyudagi "🏆 Keto musobaqasi" tugmasi orqali).
-        Boshlashdan oldin sovg'alarni to'ldiring — bitta o'rinda bir nechta sovg'a bo'lishi mumkin (har birini alohida qatorga yozing).
-      </p>
-      <label>Musobaqa surati</label>
-      <p class="hint" style="margin:2px 0 8px">Bu rasm har kunlik eslatma yuborilganda foydalanuvchilarga rasm bilan birga boradi. Video yuklansa, video ustunlik qiladi (rasm o'rniga video boradi).</p>
-      <div class="img-drop" id="contestImgDrop">
-        <div class="prev" id="contestImgPrev">🏆</div>
-        <div class="txt"><b>Rasm yuklash</b> — bosing yoki tashlang<br>JPG / PNG / WebP, 5 MB gacha</div>
-        <input type="file" id="contestImgFile" accept="image/jpeg,image/png,image/webp">
-      </div>
-      <input type="hidden" id="contestImgUrl">
-
-      <label style="margin-top:10px">Musobaqa videosi (ixtiyoriy)</label>
-      <p class="hint" style="margin:2px 0 8px">Video bot orqali Telegramga yuboriladi va faqat uning havolasi (file_id) saqlanadi — serverda hech qanday video fayl saqlanmaydi, shuning uchun bu bepul/arzon usul.</p>
-      <div class="img-drop" id="contestVidDrop">
-        <div class="prev" id="contestVidPrev">🎬</div>
-        <div class="txt"><b>Video yuklash</b> — bosing yoki tashlang<br>MP4 / MOV / WebM, 45 MB gacha</div>
-        <input type="file" id="contestVidFile" accept="video/mp4,video/quicktime,video/webm">
-      </div>
-      <input type="hidden" id="contestVidFileId">
-
-      <div class="form-grid">
-        <div><label>Davomiyligi (kun)</label><input type="number" id="contestDays" min="1" step="1" value="10"></div>
-        <div class="full"><label>🥇 1-o'rin sovg'asi</label><textarea id="contestPrize1" rows="2" maxlength="500" placeholder="Har bir sovg'ani alohida qatorga yozing"></textarea></div>
-        <div class="full"><label>🥈 2-o'rin sovg'asi</label><textarea id="contestPrize2" rows="2" maxlength="500"></textarea></div>
-        <div class="full"><label>🥉 3-o'rin sovg'asi</label><textarea id="contestPrize3" rows="2" maxlength="500"></textarea></div>
-      </div>
-
-      <div style="display:flex;gap:10px;margin-top:14px">
-        <button class="btn btn-p" id="contestStartBtn" type="button">🚀 Musobaqani boshlash</button>
-        <button class="btn btn-danger" id="contestStopBtn" type="button">⏹ To'xtatish</button>
-      </div>
-    </div>
-
-    <h3 style="margin:22px 0 10px;font-size:15px">📊 Reyting (jonli)</h3>
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr><th>#</th><th>Foydalanuvchi</th><th style="text-align:right">Taklif qilgan</th></tr></thead>
-        <tbody id="contestRows"></tbody>
-      </table>
-      <div class="empty" id="contestEmpty" style="display:none">Hozircha ishtirokchilar yo'q</div>
+    <p class="hint" style="margin:-6px 0 16px">
+      Aksiya yaratganingizda u <b>hech kimga ko'rinmaydi</b> — faqat "🚀 Boshlash" bosilganda ishga tushadi va
+      botda ham, saytda ham hamma joyda chiqa boshlaydi. Bir vaqtda faqat bitta aksiya faol bo'ladi:
+      yangisini boshlasangiz, eskisi avtomatik to'xtaydi. Belgilangan kun tugagach o'zi yakunlanadi.
+    </p>
+    <div class="promo-grid" id="promoGrid"></div>
+    <div class="empty" id="promoEmpty" style="display:none">
+      Hozircha aksiya yo'q. "＋ Yangi aksiya" bosing — nom, davomiylik (kun), shartlar yozing va
+      qaysi mahsulotga qaysi bonus berilishini belgilang (masalan: 1 kg bodom uniga 100 gr eritritol).
     </div>
   </section>
 
@@ -557,6 +542,48 @@
   </form>
 </div>
 
+<!-- ===== AKSIYA MODAL ===== -->
+<div class="modal-bg" id="promoModal">
+  <form class="modal" id="promoForm">
+    <h2 id="promoModalTitle">Yangi aksiya</h2>
+    <p class="hint">Saqlangan aksiya darhol ishga tushmaydi — ro'yxatdagi "🚀 Boshlash" tugmasi bosilgandan keyin faollashadi.</p>
+    <div class="form-grid">
+      <div class="full"><label>Aksiya nomi (UZ) *</label><input name="name" required maxlength="200" placeholder="Masalan: Bodom uni haftaligi"></div>
+      <div class="full"><label>Aksiya nomi (RU)</label><input name="name_ru" maxlength="200"></div>
+      <div><label>Davomiyligi (kun) *</label><input name="days" type="number" min="1" step="1" value="7" required></div>
+      <div class="full"><label>Aksiya shartlari (UZ)</label>
+        <textarea name="conditions" rows="3" maxlength="2000" placeholder="Masalan: Aksiya faqat yetkazib berish buyurtmalarida amal qiladi. Bonus savatga avtomatik qo'shiladi."></textarea></div>
+      <div class="full"><label>Aksiya shartlari (RU)</label><textarea name="conditions_ru" rows="3" maxlength="2000"></textarea></div>
+      <div class="full"><label>Aksiya rasmi (ixtiyoriy)</label>
+        <div class="img-drop" id="promoImgDrop">
+          <div class="prev" id="promoImgPrev">🎁</div>
+          <div class="txt"><b>Rasm yuklash</b> — bosing yoki tashlang<br>JPG / PNG / WebP, 5 MB gacha</div>
+          <input type="file" id="promoImgFile" accept="image/jpeg,image/png,image/webp">
+        </div>
+        <input type="hidden" name="image_url" id="promoImgUrl">
+      </div>
+    </div>
+
+    <label style="margin-top:12px">Bonus mahsulotlar</label>
+    <p class="hint" style="margin:2px 0 8px">
+      Har bir qator bitta qoida: <b>qaysi mahsulotdan qancha olinsa</b> → <b>qaysi bonus qancha beriladi</b>.
+      Bonus miqdorga qarab ko'payadi (1 kg → 100 gr bo'lsa, 3 kg → 300 gr). Xohlasangiz "Maks." ustuniga
+      chegara qo'ying. Bonus buyurtmaga 0 so'mlik qator bo'lib avtomatik qo'shiladi.
+    </p>
+    <div class="r-head">
+      <span>Qaysi mahsulot</span><span>Miqdor</span><span></span>
+      <span>Bonus mahsulot</span><span>Miqdor</span><span>Birlik</span><span>Maks.</span><span></span>
+    </div>
+    <div class="builder-list" id="ruleList"></div>
+    <button type="button" class="btn btn-o btn-sm" id="addRuleBtn" style="margin-top:8px">＋ Bonus qoidasi qo'shish</button>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-o" data-close>Bekor qilish</button>
+      <button type="submit" class="btn btn-p" id="promoSaveBtn">Saqlash</button>
+    </div>
+  </form>
+</div>
+
 <div class="toast" id="toast"></div>
 <div class="chart-tip" id="chartTip"></div>
 
@@ -564,7 +591,7 @@
 "use strict";
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const fmt=n=>Math.round(+n).toLocaleString('ru-RU').replace(/,/g,' ')+" so'm";
-let PRODUCTS=[], SETS=[], CATEGORIES=[], CONTEST=null, editingProdId=null, editingSetId=null;
+let PRODUCTS=[], SETS=[], CATEGORIES=[], PROMOS=[], editingProdId=null, editingSetId=null, editingPromoId=null;
 
 // Categories used to be a fixed client-side list; now admin-added ones come
 // from /admin/api/session (see database.categories), so the label map is
@@ -635,7 +662,7 @@ async function boot(){
   CAT_MAP={};CATEGORIES.forEach(c=>CAT_MAP[c.key]=c.name_uz);
   renderCatOptions();
   lastCatValue=CATEGORIES[0]?.key||null;
-  showShell();await Promise.all([loadDashboard(),loadProducts(),loadSets(),loadContest(),loadKeto()]);
+  showShell();await Promise.all([loadDashboard(),loadProducts(),loadSets(),loadPromos(),loadKeto()]);
 }
 
 /* ===== dashboard ===== */
@@ -773,7 +800,7 @@ $('#dashCustomDateBtn').addEventListener('click', () => {
 });
 
 /* ===== tabs ===== */
-const VIEWS=['dashboard','products','sets','contest','keto','reklama','expenses'];
+const VIEWS=['dashboard','products','sets','promos','keto','reklama','expenses'];
 function switchView(v){
   if(!VIEWS.includes(v))v='dashboard';
   localStorage.setItem('ketoshop_admin_view',v);
@@ -782,7 +809,7 @@ function switchView(v){
   if(v==='dashboard')loadDashboard();
   if(v==='products')loadProducts();
   if(v==='sets')loadSets();
-  if(v==='contest')loadContest();
+  if(v==='promos')loadPromos();
   if(v==='keto')loadKeto();
   if(v==='reklama')loadAds();
   if(v==='expenses')loadExpenses();
@@ -868,6 +895,7 @@ function bindUpload(dropId,fileId,urlId,prevId){
 }
 bindUpload('#prodImgDrop','#prodImgFile','#prodImgUrl','#prodImgPrev');
 bindUpload('#setImgDrop','#setImgFile','#setImgUrl','#setImgPrev');
+bindUpload('#promoImgDrop','#promoImgFile','#promoImgUrl','#promoImgPrev');
 
 /* ===== sets ===== */
 async function loadSets(){const d=await api('/admin/api/sets');SETS=d.sets||[];renderSets();}
@@ -965,27 +993,140 @@ window.toggleSet=async(id,on)=>{await api('/admin/api/sets/'+id,{method:'POST',b
 window.deleteSet=async id=>{if(!confirm("To'plam butunlay o'chirilsinmi?"))return;
   await api('/admin/api/sets/'+id+'/delete',{method:'POST'});toast('O’chirildi');await loadSets();};
 
-/* ===== Keto musobaqasi (referral contest) ===== */
-async function loadContest(){CONTEST=await api('/admin/api/contest/status');renderContest();}
-function renderContest(){
-  const c=CONTEST;
-  if(!c.started_at){$('#contestStatusPill').textContent='⚪ Hali boshlanmagan';}
-  else if(c.active){$('#contestStatusPill').textContent='🟢 Faol — tugaydi: '+new Date(c.ends_at).toLocaleString('ru-RU');}
-  else{$('#contestStatusPill').textContent='⚪ Yakunlangan / to\'xtatilgan';}
-  $('#contestStopBtn').style.display=c.active?'':'none';
-  $('#contestPrize1').value=c.prize_1||'';
-  $('#contestPrize2').value=c.prize_2||'';
-  $('#contestPrize3').value=c.prize_3||'';
-  if(c.image_url){$('#contestImgUrl').value=c.image_url;$('#contestImgPrev').innerHTML=`<img src="${c.image_url}">`;}
-  if(c.video_file_id){$('#contestVidFileId').value=c.video_file_id;$('#contestVidPrev').textContent='✅';}
-  const rows=c.leaderboard||[];
-  $('#contestEmpty').style.display=rows.length?'none':'block';
-  $('#contestRows').innerHTML=rows.map((r,i)=>{
-    const name=r.username?'@'+esc(r.username):(r.full_name?esc(r.full_name):('ID '+r.user_id));
-    const rank=i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
-    return `<tr><td>${rank}</td><td>${name}</td><td style="text-align:right" class="tnum">${r.invites}</td></tr>`;
+/* ===== Aksiya / Bonus =====
+   Campaigns are created inactive; "🚀 Boshlash" is what makes them visible in
+   the bot and the Mini App. Bonus amounts are entered in a human unit ("100
+   gr") — the server converts that to the bonus product's stock unit once, at
+   save time (see admin_web.py::_parse_bonus_rules). */
+const BONUS_UNITS=['gr','kg','ml','litr','dona','banka'];
+
+async function loadPromos(){const d=await api('/admin/api/promos');PROMOS=d.promos||[];renderPromos();}
+
+function promoDaysLeft(p){
+  if(!p.ends_at)return 0;
+  return Math.max(0,Math.ceil((new Date(p.ends_at)-new Date())/86400000));
+}
+
+function renderPromos(){
+  const live=PROMOS.find(p=>p.active);
+  $('#promoStatusPill').textContent=live
+    ?`🟢 Faol: ${live.name} — ${promoDaysLeft(live)} kun qoldi`
+    :'⚪ Hozircha faol aksiya yo\'q';
+  $('#promoEmpty').style.display=PROMOS.length?'none':'block';
+  $('#promoGrid').innerHTML=PROMOS.map(p=>{
+    const rules=(p.bonuses||[]).map(b=>
+      `<li>${esc(b.trigger_name)} — ${(+b.trigger_quantity)} → 🎁 <b>${(+b.bonus_amount)} ${esc(b.bonus_unit)}</b> ${esc(b.bonus_name)}`
+      +(b.max_bonus_amount?` <span style="color:var(--ink-3)">(maks. ${(+b.max_bonus_amount)} ${esc(b.bonus_unit)})</span>`:'')
+      +`</li>`).join('');
+    const pill=p.active
+      ?`<span class="promo-pill on">🟢 Faol · ${promoDaysLeft(p)} kun qoldi</span>`
+      :`<span class="promo-pill off">${p.started_at?'⏹ Yakunlangan':'⚪ Boshlanmagan'}</span>`;
+    const announced=p.announced_at
+      ?`<span class="promo-pill off">📤 E'lon qilingan</span>`:'';
+    return `<div class="promo-card${p.active?' live':''}">
+      <h4>🎁 ${esc(p.name)} ${pill} ${announced}</h4>
+      <div style="font-size:12.5px;color:var(--ink-3)">Davomiyligi: ${p.days} kun${p.ends_at&&p.active?' · tugaydi: '+new Date(p.ends_at).toLocaleString('ru-RU'):''}</div>
+      ${p.image_url?`<img src="${p.image_url}" style="width:100%;max-height:150px;object-fit:cover;border-radius:10px">`:''}
+      ${p.conditions?`<div class="promo-terms">${esc(p.conditions)}</div>`:''}
+      ${rules?`<ul class="promo-rules">${rules}</ul>`:'<div class="hint">⚠️ Bonus qoidasi qo\'shilmagan</div>'}
+      <div class="promo-actions">
+        ${p.active
+          ?`<button class="btn btn-danger btn-sm" onclick="stopPromo(${p.id})">⏹ To'xtatish</button>
+            <button class="btn btn-o btn-sm" onclick="announcePromo(${p.id})">📤 Hammaga e'lon qilish</button>`
+          :`<button class="btn btn-p btn-sm" onclick="startPromo(${p.id})">🚀 Boshlash</button>`}
+        <button class="btn btn-o btn-sm" onclick="openPromoModal(${p.id})">✏️ Tahrirlash</button>
+        <button class="btn btn-o btn-sm" onclick="deletePromo(${p.id})">🗑 O'chirish</button>
+      </div>
+    </div>`;
   }).join('');
 }
+
+function ruleRow(rule){
+  const row=document.createElement('div');row.className='r-row';
+  const prods=PRODUCTS.filter(p=>p.is_active);
+  const opts=(sel)=>prods.map(p=>`<option value="${p.id}" ${rule&&+rule===p.id?'selected':''}>${esc(p.name)}</option>`).join('');
+  row.innerHTML=`<select class="r-trig">${opts()}</select>
+    <input class="r-tqty" type="number" min="0.1" step="0.1" value="1" title="Necha dona/kg olinganda">
+    <span class="arrow">→</span>
+    <select class="r-bonus">${opts()}</select>
+    <input class="r-bamt" type="number" min="0.1" step="0.1" value="100" title="Bonus miqdori">
+    <select class="r-bunit">${BONUS_UNITS.map(u=>`<option value="${u}">${u}</option>`).join('')}</select>
+    <input class="r-bmax" type="number" min="0" step="0.1" placeholder="—" title="Maksimal bonus (ixtiyoriy)">
+    <button type="button" class="del" title="O'chirish">×</button>`;
+  if(rule){
+    row.querySelector('.r-trig').value=rule.trigger_product_id;
+    row.querySelector('.r-tqty').value=+rule.trigger_quantity;
+    row.querySelector('.r-bonus').value=rule.bonus_product_id;
+    row.querySelector('.r-bamt').value=+rule.bonus_amount;
+    row.querySelector('.r-bunit').value=rule.bonus_unit;
+    row.querySelector('.r-bmax').value=rule.max_bonus_amount?+rule.max_bonus_amount:'';
+  }
+  row.querySelector('.del').addEventListener('click',()=>row.remove());
+  return row;
+}
+$('#addRuleBtn').addEventListener('click',()=>$('#ruleList').appendChild(ruleRow()));
+
+window.openPromoModal=function(id){
+  editingPromoId=id||null;
+  const f=$('#promoForm');f.reset();
+  $('#ruleList').innerHTML='';$('#promoImgUrl').value='';$('#promoImgPrev').innerHTML='🎁';
+  $('#promoModalTitle').textContent=id?'Aksiyani tahrirlash':'Yangi aksiya';
+  if(id){
+    const p=PROMOS.find(x=>x.id===id);if(!p)return;
+    f.name.value=p.name||'';f.name_ru.value=p.name_ru||'';
+    f.days.value=p.days||7;
+    f.conditions.value=p.conditions||'';f.conditions_ru.value=p.conditions_ru||'';
+    if(p.image_url){$('#promoImgUrl').value=p.image_url;$('#promoImgPrev').innerHTML=`<img src="${p.image_url}">`;}
+    (p.bonuses||[]).forEach(b=>$('#ruleList').appendChild(ruleRow(b)));
+  }
+  if(!$('#ruleList').children.length)$('#ruleList').appendChild(ruleRow());
+  $('#promoModal').classList.add('open');
+};
+$('#newPromoBtn').addEventListener('click',()=>openPromoModal(null));
+
+$('#promoForm').addEventListener('submit',async e=>{
+  e.preventDefault();const f=e.target,btn=$('#promoSaveBtn');
+  const bonuses=$$('#ruleList .r-row').map(r=>({
+    trigger_product_id:+r.querySelector('.r-trig').value,
+    trigger_quantity:+r.querySelector('.r-tqty').value||1,
+    bonus_product_id:+r.querySelector('.r-bonus').value,
+    bonus_amount:+r.querySelector('.r-bamt').value||0,
+    bonus_unit:r.querySelector('.r-bunit').value,
+    max_bonus_amount:+r.querySelector('.r-bmax').value||null,
+  })).filter(b=>b.bonus_amount>0);
+  btn.disabled=true;
+  const body={name:f.name.value,name_ru:f.name_ru.value,days:+f.days.value||7,
+    conditions:f.conditions.value,conditions_ru:f.conditions_ru.value,
+    image_url:$('#promoImgUrl').value||null,bonuses};
+  try{
+    if(editingPromoId)await api('/admin/api/promos/'+editingPromoId,{method:'POST',body:JSON.stringify(body)});
+    else await api('/admin/api/promos',{method:'POST',body:JSON.stringify(body)});
+    closeModals();toast('✅ Aksiya saqlandi');await loadPromos();
+  }catch(err){toast('⚠️ '+err.message);}finally{btn.disabled=false;}
+});
+
+window.startPromo=async id=>{
+  const p=PROMOS.find(x=>x.id===id);
+  if(!confirm(`"${p.name}" aksiyasi hoziroq boshlansinmi?\n\n${p.days} kun davom etadi. Bot va saytda hamma joyda ko'rinadi, bonuslar savatga avtomatik qo'shila boshlaydi.`+(PROMOS.some(x=>x.active&&x.id!==id)?'\n\n⚠️ Hozirgi faol aksiya to\'xtatiladi.':'')))return;
+  try{await api('/admin/api/promos/'+id+'/start',{method:'POST',body:JSON.stringify({days:p.days})});toast('🚀 Aksiya boshlandi');await loadPromos();}
+  catch(err){toast('⚠️ '+err.message);}
+};
+window.stopPromo=async id=>{
+  if(!confirm("Aksiya hoziroq to'xtatilsinmi? Bonuslar berilmay qo'yadi."))return;
+  try{await api('/admin/api/promos/'+id+'/stop',{method:'POST'});toast("To'xtatildi");await loadPromos();}
+  catch(err){toast('⚠️ '+err.message);}
+};
+window.deletePromo=async id=>{
+  if(!confirm("Aksiya butunlay o'chirilsinmi? Berilgan buyurtmalardagi bonuslar saqlanib qoladi."))return;
+  try{await api('/admin/api/promos/'+id+'/delete',{method:'POST'});toast("O'chirildi");await loadPromos();}
+  catch(err){toast('⚠️ '+err.message);}
+};
+window.announcePromo=async id=>{
+  if(!confirm("Aksiya haqida BARCHA foydalanuvchilarga xabar yuborilsinmi? Bu bir necha daqiqa davom etadi."))return;
+  try{await api('/admin/api/promos/'+id+'/announce',{method:'POST'});toast("📤 Yuborish boshlandi — tugagach adminlarga hisobot keladi");
+    setTimeout(loadPromos,3000);}
+  catch(err){toast('⚠️ '+err.message);}
+};
 
 function renderAbcAnalysis(list){
   if(!list||!list.length){
@@ -1003,46 +1144,7 @@ function renderAbcAnalysis(list){
   }).join('');
 }
 
-function renderKetoStats(k){bindUpload('#contestImgDrop','#contestImgFile','#contestImgUrl','#contestImgPrev');}
-
-/* Video upload relays through the bot (no file storage on our side) — see
-   admin_web.py's api_contest_upload_video. Response is {file_id}, not a
-   URL, so there's nothing to preview beyond a checkmark. */
-(function bindVideoUpload(){
-  const drop=$('#contestVidDrop'),file=$('#contestVidFile'),prev=$('#contestVidPrev'),out=$('#contestVidFileId');
-  drop.addEventListener('click',()=>file.click());
-  drop.addEventListener('dragover',e=>{e.preventDefault();});
-  drop.addEventListener('drop',e=>{e.preventDefault();if(e.dataTransfer.files[0])upload(e.dataTransfer.files[0]);});
-  file.addEventListener('change',()=>{if(file.files[0])upload(file.files[0]);});
-  async function upload(f){
-    if(f.size>45*1024*1024){toast('⚠️ Video 45 MB dan katta');return;}
-    const fd=new FormData();fd.append('file',f);
-    prev.textContent='⏳';
-    const r=await fetch('/admin/api/contest/upload-video',{method:'POST',body:fd,credentials:'same-origin'});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok){toast('⚠️ '+(d.error||'Yuklash xatosi'));prev.textContent='🎬';return;}
-    out.value=d.file_id;prev.textContent='✅';toast('🎬 Video yuklandi');
-  }
-})();
-
-$('#contestStartBtn').addEventListener('click',async()=>{
-  if(!confirm("Musobaqani hoziroq boshlash kerakmi? Bosh menyudagi \"Keto musobaqasi\" tugmasi barcha foydalanuvchilarga to'liq shartlar+reyting bilan ochiladi va kunlik eslatmalar yuborila boshlaydi. Davom etamizmi?"))return;
-  const btn=$('#contestStartBtn');btn.disabled=true;
-  const body={
-    days:+$('#contestDays').value||10,
-    image_url:$('#contestImgUrl').value||null,
-    video_file_id:$('#contestVidFileId').value||null,
-    prize_1:$('#contestPrize1').value||null,
-    prize_2:$('#contestPrize2').value||null,
-    prize_3:$('#contestPrize3').value||null,
-  };
-  try{await api('/admin/api/contest/start',{method:'POST',body:JSON.stringify(body)});toast('🚀 Musobaqa boshlandi');await loadContest();}
-  catch(err){toast('⚠️ '+err.message);}finally{btn.disabled=false;}
-});
-$('#contestStopBtn').addEventListener('click',async()=>{
-  if(!confirm("Musobaqa hoziroq to'xtatilsinmi?"))return;
-  await api('/admin/api/contest/stop',{method:'POST'});toast("To'xtatildi");await loadContest();
-});
+function renderKetoStats(k){}
 
 /* ===== Keto-as-discount at checkout ===== */
 let KETO={redemption_enabled:false,balances:[]};
