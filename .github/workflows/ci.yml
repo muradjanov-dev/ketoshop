@@ -38,7 +38,7 @@ jobs:
           mods = [
               "config", "database", "locales", "keyboards", "bot",
               "webapp_server", "admin_web", "broadcast", "broadcast_tips",
-              "personal_recommend", "gamification", "referral_contest",
+              "personal_recommend", "gamification", "referral_contest", "promotions",
               "meta_ads", "meta_leads", "db_backup", "reports", "activity",
               "subscription_gate", "pg_storage", "state_guard", "translit",
               "translator", "nps_survey",
@@ -47,3 +47,6 @@ jobs:
               importlib.import_module(m)
               print("ok", m)
           PY
+
+      - name: Promotion regression tests
+        run: python -m unittest discover -s tests -v
