@@ -62,6 +62,12 @@ class PromotionRegressionTests(unittest.TestCase):
         self.assertIn('id="home-promo-banner"', html)
         self.assertIn("await loadPromo()", html)
 
+    def test_catalog_uses_the_current_webapp_url_setting(self) -> None:
+        source = Path("handlers/catalog.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("from config import BASE_URL", source)
+        self.assertIn("from config import WEBAPP_URL", source)
+
 
 if __name__ == "__main__":
     unittest.main()

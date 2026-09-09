@@ -435,8 +435,8 @@ async def show_set_detail(callback: CallbackQuery):
     
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     
-    from config import BASE_URL
-    photo_url = f"{BASE_URL}/api/photo/{s['image_url']}" if s.get("image_url") else None
+    from config import WEBAPP_URL
+    photo_url = f"{WEBAPP_URL}/api/photo/{s['image_url']}" if s.get("image_url") else None
     
     try:
         if photo_url:
