@@ -928,7 +928,14 @@ TEXTS = {
     "btn_edit_desc_ru": {"uz": "🇷🇺 Tavsif (rus)", "ru": "🇷🇺 Описание (рус)"},
     "btn_edit_unit": {"uz": "📐 O'lchov birligi", "ru": "📐 Единица измерения"},
     "btn_edit_b2b_price": {"uz": "🏢 Optom narx", "ru": "🏢 Оптовая цена"},
+    "btn_edit_b2b_only": {"uz": "🔒 Sotuv turi (B2B/Do'kon)", "ru": "🔒 Тип продажи (B2B/Магазин)"},
     "btn_find_product": {"uz": "🔎 Mahsulot qidirish", "ru": "🔎 Найти товар"},
+    "select_sale_type": {
+        "uz": "🏢 <b>Sotuv turini tanlang</b>:\n\n🏪 <b>Umumiy do'kon</b> — oddiy xaridorlar katalogida ko'rinadi.\n🏢 <b>Faqat B2B (Optom)</b> — faqat adminlarga ko'rinadi, oddiy mijozlardan yashiriladi.",
+        "ru": "🏢 <b>Выберите тип продажи</b>:\n\n🏪 <b>Общий магазин</b> — виден в обычном каталоге.\n🏢 <b>Только B2B (Оптом)</b> — виден только админам, скрыт от покупателей.",
+    },
+    "sale_type_all": {"uz": "🏪 Umumiy do'kon (hamma ko'radi)", "ru": "🏪 Общий магазин (видят все)"},
+    "sale_type_b2b": {"uz": "🏢 Faqat B2B / Optom (yopiq)", "ru": "🏢 Только B2B / Оптом (скрытый)"},
     "select_product_unit": {
         "uz": "📐 <b>O'lchov birligini tanlang</b>\n\n<i>Diqqat: kg va gramm mijozga «dona» bo'lib ko'rinadi.</i>",
         "ru": "📐 <b>Выберите единицу измерения</b>\n\n<i>Внимание: кг и граммы показываются покупателю как «шт».</i>",
