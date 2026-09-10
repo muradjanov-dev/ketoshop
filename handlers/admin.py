@@ -2403,21 +2403,33 @@ async def manual_pick_category(callback: CallbackQuery, state: FSMContext):
         return
     data = await state.get_data()
     lang = data.get("lang", "uz")
+    is_b2b = (data.get("order_type") == "b2b")
 
-    products, _total = await get_products_by_category(cat, page=0, per_page=50)
+    products, _total = await get_products_by_category(cat, page=0, per_page=50, include_b2b_only=is_b2b)
     if not products:
         await callback.answer(get_text("manual_no_products_in_cat", lang), show_alert=True)
         return
 
     rows = []
     for p in products:
-        d = active_discount(p.get("discount_percent"), p.get("discount_until"))
-        unit_price = effective_price(p["price"], d, p.get("discount_until"))
-        badge = f" 🔥-{d}%" if d > 0 else ""
-        rows.append([InlineKeyboardButton(
-            text=f"{p['name']} — {_fmt_price(unit_price)} so'm{badge}",
-            callback_data=f"manprod:{p['id']}",
-        )])
+        b2b_price = float(p.get("b2b_price") or 0)
+        is_only_b2b = bool(p.get("b2b_only"))
+        if is_b2b:
+            unit_label = p.get("unit") or "kg"
+            price_shown = b2b_price if b2b_price > 0 else p["price"]
+            tag = " 🏢[Optom]" if is_only_b2b else ""
+            rows.append([InlineKeyboardButton(
+                text=f"{p['name'][:22]} — {_fmt_price(price_shown)}/{unit_label}{tag}",
+                callback_data=f"manprod:{p['id']}",
+            )])
+        else:
+            d = active_discount(p.get("discount_percent"), p.get("discount_until"))
+            unit_price = effective_price(p["price"], d, p.get("discount_until"))
+            badge = f" 🔥-{d}%" if d > 0 else ""
+            rows.append([InlineKeyboardButton(
+                text=f"{p['name']} — {_fmt_price(unit_price)} so'm{badge}",
+                callback_data=f"manprod:{p['id']}",
+            )])
     rows.append([InlineKeyboardButton(
         text=get_text("btn_back", lang),
         callback_data="manualback",
@@ -2474,7 +2486,7 @@ async def manual_pick_product(callback: CallbackQuery, state: FSMContext):
             pending_product_id=pid,
             pending_product_name=product["name"],
             pending_product_price=b2b_price,
-            pending_product_unit="kg",
+            pending_product_unit=product.get("unit") or "kg",
             pending_bulk=True,
         )
         await state.set_state(AdminStates.manual_quantity)

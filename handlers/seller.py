@@ -23,6 +23,7 @@ from config import ADMIN_IDS
 from locales import get_text, get_category_name, get_unit_name, get_order_status, get_delivery_method_name, localize_product_text, CATEGORIES, UNITS
 from keyboards import (
     seller_panel_keyboard, category_select_keyboard, unit_select_keyboard,
+    sale_type_select_keyboard,
     seller_product_keyboard, confirm_delete_keyboard, seller_order_keyboard,
     back_to_menu_keyboard, main_menu_keyboard, post_edit_keyboard
 )
@@ -186,6 +187,7 @@ class AddProductStates(StatesGroup):
     waiting_price = State()
     waiting_cost_price = State()
     waiting_unit = State()
+    waiting_sale_type = State()
     waiting_quantity = State()
     waiting_photo = State()
     waiting_extra_media = State()
@@ -224,6 +226,7 @@ async def show_seller_panel(callback: CallbackQuery):
 async def start_add_product(callback: CallbackQuery, state: FSMContext):
     """Start adding a product — select category"""
     lang = await get_user_language(callback.from_user.id)
+    await state.clear()
     await state.set_state(AddProductStates.waiting_category)
     await state.update_data(lang=lang)
 
@@ -351,22 +354,41 @@ async def process_product_cost_price(message: Message, state: FSMContext):
             await message.answer(get_text("invalid_cost_price", lang))
             return
 
-    # Unit picker removed — sellers found litr/gramm/kg/… confusing, so every
-    # product now defaults to "piece" (dona) and the seller just enters a count.
-    # (select_unit below stays as a no-op fallback for any FSM mid-add at deploy.)
-    await state.update_data(cost_price=cost, unit="piece")
-    await state.set_state(AddProductStates.waiting_quantity)
-    await message.answer(get_text("enter_product_quantity", lang))
+    await state.update_data(cost_price=cost)
+    await state.set_state(AddProductStates.waiting_unit)
+    await message.answer(
+        get_text("select_product_unit", lang),
+        reply_markup=unit_select_keyboard(lang, prefix="unit"),
+        parse_mode="HTML"
+    )
 
 
 @router.callback_query(F.data.startswith("unit:"), AddProductStates.waiting_unit)
 async def select_unit(callback: CallbackQuery, state: FSMContext):
-    """Process unit selection"""
+    """Process unit selection, then ask for sale type (all vs b2b-only)"""
     unit = callback.data.split(":")[1]
     data = await state.get_data()
     lang = data.get("lang", "uz")
 
     await state.update_data(unit=unit)
+    await state.set_state(AddProductStates.waiting_sale_type)
+    await callback.message.edit_text(
+        get_text("select_sale_type", lang),
+        reply_markup=sale_type_select_keyboard(lang, prefix="saletype"),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("saletype:"), AddProductStates.waiting_sale_type)
+async def select_sale_type(callback: CallbackQuery, state: FSMContext):
+    """Process sale type selection (all vs b2b only)"""
+    stype = callback.data.split(":")[1]
+    b2b_only = (stype == "b2b")
+    data = await state.get_data()
+    lang = data.get("lang", "uz")
+
+    await state.update_data(b2b_only=b2b_only)
     await state.set_state(AddProductStates.waiting_quantity)
     await callback.message.edit_text(get_text("enter_product_quantity", lang))
     await callback.answer()
@@ -418,6 +440,22 @@ async def _save_product(message: Message, state: FSMContext, photo_id: str | Non
     data = await state.get_data()
     lang = data.get("lang", "uz")
 
+    name = (data.get("name") or "").strip()
+    if not name:
+        await state.clear()
+        await message.answer(
+            "⚠️ Mahsulot ma'lumotlari to'liq saqlanmadi yoki sessiya yangilandi. Iltimos, mahsulotni qaytadan kiriting."
+            if lang != "ru" else
+            "⚠️ Данные товара не сохранились полностью или сессия устарела. Пожалуйста, добавьте товар заново."
+        )
+        return
+
+    description = (data.get("description") or "").strip()
+    price = float(data.get("price", 0) or 0)
+    unit = data.get("unit") or "piece"
+    quantity = float(data.get("quantity", 0) or 0)
+    category = data.get("category") or "other"
+
     try:
         # Ensure seller exists in users table (may be missing after DB migration)
         from database import create_user
@@ -429,20 +467,23 @@ async def _save_product(message: Message, state: FSMContext, photo_id: str | Non
 
         # Auto-translate to Russian
         from translator import translate_product_fields
-        name_ru, desc_ru = await translate_product_fields(data["name"], data["description"])
+        name_ru, desc_ru = await translate_product_fields(name, description)
+
+        b2b_only = bool(data.get("b2b_only", False))
 
         product_id = await add_product(
             seller_id=message.from_user.id,
-            name=data["name"],
-            description=data["description"],
-            price=data["price"],
-            unit=data["unit"],
-            quantity=data["quantity"],
-            category=data["category"],
+            name=name,
+            description=description,
+            price=price,
+            unit=unit,
+            quantity=quantity,
+            category=category,
             photo_id=photo_id,
             name_ru=name_ru,
             description_ru=desc_ru,
             cost_price=data.get("cost_price", 0) or 0,
+            b2b_only=b2b_only,
         )
 
         await set_user_as_seller(message.from_user.id)
@@ -700,6 +741,10 @@ async def view_product(callback: CallbackQuery):
         available=product["quantity"],
         seller=product.get("seller_name", "—"),
     )
+    if product.get("b2b_only"):
+        badge = ("\n🔒 <b>Sotuv turi:</b> 🏢 Faqat B2B / Optom (do'kondan yashirilgan)" if lang != "ru"
+                 else "\n🔒 <b>Тип продажи:</b> 🏢 Только B2B / Оптом (скрыт из магазина)")
+        text += badge
     keyboard = seller_product_keyboard(lang, product_id, page=page)
     await _send_with_optional_photo(callback.message, text, keyboard, product.get("photo_id"))
     await callback.answer()
@@ -756,6 +801,9 @@ async def start_edit_product(callback: CallbackQuery, state: FSMContext):
             InlineKeyboardButton(text=get_text("btn_edit_category", lang), callback_data=f"editf:category:{product_id}"),
             InlineKeyboardButton(text=get_text("btn_edit_unit", lang), callback_data=f"editf:unit:{product_id}"),
         ],
+        [
+            InlineKeyboardButton(text=get_text("btn_edit_b2b_only", lang), callback_data=f"editf:b2b_only:{product_id}"),
+        ],
         [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=f"view_prod:{product_id}")],
     ])
 
@@ -801,6 +849,15 @@ async def select_edit_field(callback: CallbackQuery, state: FSMContext):
             callback.message,
             get_text("select_product_unit", lang),
             reply_markup=unit_select_keyboard(lang, prefix=f"editunit:{product_id}"),
+        )
+        await callback.answer()
+        return
+
+    if field == "b2b_only":
+        await _safe_edit_or_resend(
+            callback.message,
+            get_text("select_sale_type", lang),
+            reply_markup=sale_type_select_keyboard(lang, prefix=f"editsaletype:{product_id}"),
         )
         await callback.answer()
         return
@@ -898,6 +955,41 @@ async def process_edit_unit(callback: CallbackQuery, state: FSMContext):
     await send_my_products_after_edit(
         callback.message, callback.from_user.id, lang,
         prefix=("✅ Mahsulot yangilandi" if lang == "uz" else "✅ Товар обновлён"),
+        page=data.get("edit_page", 0),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("editsaletype:"))
+async def process_edit_saletype(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        await callback.answer("❌")
+        return
+    try:
+        product_id = int(parts[1])
+    except ValueError:
+        await callback.answer("❌")
+        return
+    stype = parts[2]
+    b2b_only = (stype == "b2b")
+
+    lang = await get_user_language(callback.from_user.id)
+    product = await get_product(product_id)
+    is_admin = callback.from_user.id in ADMIN_IDS
+    if not product or (product["seller_id"] != callback.from_user.id and not is_admin):
+        await callback.answer("❌", show_alert=True)
+        return
+
+    data = await state.get_data()
+    await update_product(product_id, b2b_only=b2b_only)
+    note = ("✅ Mahsulot faqat B2B (Optom) ga o'tkazildi" if b2b_only
+            else "✅ Mahsulot umumiy do'konga chiqarildi") if lang == "uz" else (
+            "✅ Товар переведен в только B2B (Оптом)" if b2b_only
+            else "✅ Товар выставлен в общий магазин")
+    await send_my_products_after_edit(
+        callback.message, callback.from_user.id, lang,
+        prefix=note,
         page=data.get("edit_page", 0),
     )
     await callback.answer()

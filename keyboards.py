@@ -340,6 +340,14 @@ def unit_select_keyboard(lang: str, prefix: str = "unit") -> InlineKeyboardMarku
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+def sale_type_select_keyboard(lang: str, prefix: str = "saletype") -> InlineKeyboardMarkup:
+    """Keyboard to choose whether a product is retail (in store) or B2B-only."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text("sale_type_all", lang), callback_data=f"{prefix}:all")],
+        [InlineKeyboardButton(text=get_text("sale_type_b2b", lang), callback_data=f"{prefix}:b2b")],
+    ])
+
+
 def seller_product_keyboard(lang: str, product_id: int, page: int = 0) -> InlineKeyboardMarkup:
     """The page param is threaded through edit/delete callbacks so the
     seller is returned to the same My Products page after they finish."""

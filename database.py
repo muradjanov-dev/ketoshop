@@ -359,6 +359,13 @@ async def init_db():
         except Exception:
             pass
 
+        # b2b_only: products hidden from retail buyers (Mini App, bot catalog)
+        # and only sold wholesale (B2B) by admins.
+        try:
+            await conn.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS b2b_only BOOLEAN DEFAULT FALSE")
+        except Exception:
+            pass
+
         # Add payment_method column to users
         try:
             await conn.execute("ALTER TABLE users ADD COLUMN payment_method TEXT DEFAULT 'cash'")
@@ -995,26 +1002,29 @@ async def set_user_as_seller(user_id: int):
 async def add_product(seller_id: int, name: str, description: str, price: float,
                       unit: str, quantity: float, category: str, photo_id: str = None,
                       name_ru: str = None, description_ru: str = None,
-                      cost_price: float = 0) -> int:
+                      cost_price: float = 0, b2b_only: bool = False) -> int:
     async with pool.acquire() as conn:
         return await conn.fetchval(
-            """INSERT INTO products (seller_id, name, description, price, unit, quantity, category, photo_id, name_ru, description_ru, cost_price)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id""",
-            seller_id, name, description, price, unit, quantity, category, photo_id, name_ru, description_ru, cost_price
+            """INSERT INTO products (seller_id, name, description, price, unit, quantity, category, photo_id, name_ru, description_ru, cost_price, b2b_only)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id""",
+            seller_id, name, description, price, unit, quantity, category, photo_id, name_ru, description_ru, cost_price, b2b_only
         )
 
 
-async def get_products_by_category(category: str, page: int = 0, per_page: int = 5) -> tuple[list[dict], int]:
+async def get_products_by_category(category: str, page: int = 0, per_page: int = 5,
+                                  include_b2b_only: bool = False) -> tuple[list[dict], int]:
+    b2b_filter = "" if include_b2b_only else " AND (p.b2b_only IS NOT TRUE)"
+    b2b_count_filter = "" if include_b2b_only else " AND (b2b_only IS NOT TRUE)"
     async with pool.acquire() as conn:
         total = await conn.fetchval(
-            "SELECT COUNT(*) FROM products WHERE category = $1 AND is_active = 1",
+            f"SELECT COUNT(*) FROM products WHERE category = $1 AND is_active = 1{b2b_count_filter}",
             category
         )
         rows = await conn.fetch(
-            """SELECT p.*, u.full_name as seller_name, u.username as seller_username
+            f"""SELECT p.*, u.full_name as seller_name, u.username as seller_username
                FROM products p
                JOIN users u ON p.seller_id = u.user_id
-               WHERE p.category = $1 AND p.is_active = 1
+               WHERE p.category = $1 AND p.is_active = 1{b2b_filter}
                ORDER BY LOWER(p.name) ASC, p.id ASC
                LIMIT $2 OFFSET $3""",
             category, per_page, page * per_page
@@ -1029,7 +1039,7 @@ async def get_discounted_products(page: int = 0, per_page: int = 5) -> tuple[lis
     Python helper, so a parameter is passed rather than relying on NOW()."""
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    where = ("WHERE p.is_active = 1 AND COALESCE(p.discount_percent, 0) > 0 "
+    where = ("WHERE p.is_active = 1 AND (p.b2b_only IS NOT TRUE) AND COALESCE(p.discount_percent, 0) > 0 "
              "AND (p.discount_until IS NULL OR p.discount_until > $1)")
     async with pool.acquire() as conn:
         total = await conn.fetchval(f"SELECT COUNT(*) FROM products p {where}", now)
@@ -1050,12 +1060,12 @@ async def get_all_products_paginated(page: int = 0, per_page: int = 20) -> tuple
     the catalog's "Hammasi/All" tab) — unlike get_top_ordered_products or
     the old ad-hoc per-category slice, this actually walks the whole table."""
     async with pool.acquire() as conn:
-        total = await conn.fetchval("SELECT COUNT(*) FROM products WHERE is_active = 1")
+        total = await conn.fetchval("SELECT COUNT(*) FROM products WHERE is_active = 1 AND (b2b_only IS NOT TRUE)")
         rows = await conn.fetch(
             """SELECT p.*, u.full_name as seller_name, u.username as seller_username
                FROM products p
                JOIN users u ON p.seller_id = u.user_id
-               WHERE p.is_active = 1
+               WHERE p.is_active = 1 AND (p.b2b_only IS NOT TRUE)
                ORDER BY LOWER(p.name) ASC, p.id ASC
                LIMIT $1 OFFSET $2""",
             per_page, page * per_page
@@ -1160,7 +1170,7 @@ async def bulk_set_category_discount(category: str, discount_percent: int,
 
 
 async def update_product(product_id: int, **kwargs):
-    allowed_columns = {"name", "description", "price", "unit", "quantity", "category", "photo_id", "is_active", "name_ru", "description_ru", "discount_percent", "discount_until", "low_stock_threshold", "cost_price", "b2b_price", "image_url"}
+    allowed_columns = {"name", "description", "price", "unit", "quantity", "category", "photo_id", "is_active", "name_ru", "description_ru", "discount_percent", "discount_until", "low_stock_threshold", "cost_price", "b2b_price", "image_url", "b2b_only"}
     async with pool.acquire() as conn:
         for key, value in kwargs.items():
             if key not in allowed_columns:
@@ -1775,7 +1785,7 @@ async def search_products(query: str, page: int = 0, per_page: int = 5) -> tuple
     async with pool.acquire() as conn:
         search_term = f"%{query}%"
         try:
-            where = """p.is_active = 1
+            where = """p.is_active = 1 AND (p.b2b_only IS NOT TRUE)
                    AND (p.name ILIKE $1 OR p.description ILIKE $1
                         OR word_similarity($2, p.name) > $3)"""
             total = await conn.fetchval(
@@ -1798,14 +1808,14 @@ async def search_products(query: str, page: int = 0, per_page: int = 5) -> tuple
             # pg_trgm not available — fall back to plain substring search.
             total = await conn.fetchval(
                 """SELECT COUNT(*) FROM products
-                   WHERE is_active = 1 AND (name ILIKE $1 OR description ILIKE $1)""",
+                   WHERE is_active = 1 AND (b2b_only IS NOT TRUE) AND (name ILIKE $1 OR description ILIKE $1)""",
                 search_term,
             )
             rows = await conn.fetch(
                 """SELECT p.*, u.full_name as seller_name, u.username as seller_username
                    FROM products p
                    JOIN users u ON p.seller_id = u.user_id
-                   WHERE p.is_active = 1 AND (p.name ILIKE $1 OR p.description ILIKE $1)
+                   WHERE p.is_active = 1 AND (p.b2b_only IS NOT TRUE) AND (p.name ILIKE $1 OR p.description ILIKE $1)
                    ORDER BY LOWER(p.name) ASC, p.id ASC
                    LIMIT $2 OFFSET $3""",
                 search_term, per_page, page * per_page,
@@ -2742,7 +2752,8 @@ async def get_b2b_products(only_priced: bool = False) -> list[dict]:
         rows = await conn.fetch(
             """SELECT id, name, name_ru, unit, quantity, category, price,
                       COALESCE(b2b_price, 0) AS b2b_price,
-                      COALESCE(cost_price, 0) AS cost_price
+                      COALESCE(cost_price, 0) AS cost_price,
+                      COALESCE(b2b_only, FALSE) AS b2b_only
                  FROM products
                 WHERE is_active = 1
                   AND ($1::bool IS NOT TRUE OR COALESCE(b2b_price, 0) > 0)
