@@ -41,6 +41,8 @@ ADMIN_COMMANDS = [
     BotCommand(command="ai", description="🤖 AI sotuvchi bilan suhbat"),
     BotCommand(command="ai_off", description="🤖 AI sotuvchini o'chirish"),
     BotCommand(command="ai_holat", description="🤖 AI sotuvchi holati"),
+    BotCommand(command="ai_orgat", description="🧠 AI ga yangi narsa o'rgatish"),
+    BotCommand(command="ai_bilim", description="🧠 AI bilimlari va javobsiz savollar"),
     BotCommand(command="tips_status", description="💡 Maslahatlar holati"),
     BotCommand(command="keto_status", description="🥑 Keto dasturi holati"),
     BotCommand(command="backup_now", description="💾 Bazadan nusxa olish"),

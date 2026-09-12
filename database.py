@@ -830,6 +830,35 @@ async def init_db():
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_ad_referrals_source ON ad_referrals(source, created_at)"
         )
+        # AI sotuvchi (ai_sales.py): kunlik token/$ sarfi — kun+model bo'yicha
+        # bitta qator, kunlik hisobot (targets.py) shundan o'qiydi.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS ai_usage (
+                day DATE NOT NULL,
+                model TEXT NOT NULL,
+                provider TEXT,
+                requests INTEGER NOT NULL DEFAULT 0,
+                input_tokens BIGINT NOT NULL DEFAULT 0,
+                cached_tokens BIGINT NOT NULL DEFAULT 0,
+                output_tokens BIGINT NOT NULL DEFAULT 0,
+                cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
+                PRIMARY KEY (day, model)
+            )
+        """)
+        # AI bilimlari: kind='fact' — admin o'rgatgan narsa, har suhbatda
+        # promptga tushadi; kind='question' — AI javobini bilmagan savol,
+        # admin ko'rib o'rgatishi uchun.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS ai_knowledge (
+                id SERIAL PRIMARY KEY,
+                kind TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_by BIGINT,
+                times INTEGER NOT NULL DEFAULT 1,
+                handled BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         # One row per paying order. UNIQUE(order_id) is what makes crediting
         # idempotent — an order bounced back and forth through 'delivered'
         # can never pay the blogger twice. order_no is the buyer's 1..N
@@ -4839,3 +4868,130 @@ async def get_repeat_top_products(since: datetime | None = None, limit: int = 10
             since, _customer_filter_ids(),
         )
     return _aggregate_items(rows)[:limit]
+
+
+# ===== AI SOTUVCHI: SARF VA BILIMLAR (2026-09-13) =====
+# Qoidalar ai_sales.py da, narxlar ai_provider.PRICES da — bu qatlam faqat
+# saqlaydi. Kun Toshkent vaqti bo'yicha: 23:30 dagi suhbat ertangi kunga
+# o'tib ketmasin, kunlik hisobot (targets.py, 20:00) ham shu kunni o'qiydi.
+
+_AI_DAY = "(NOW() AT TIME ZONE 'UTC' + INTERVAL '5 hours')::date"
+
+
+async def record_ai_usage(model: str, provider: str, input_tokens: int,
+                          cached_tokens: int, output_tokens: int, cost_usd: float) -> None:
+    """Bitta model chaqiruvini kunlik yig'indiga qo'shadi (kun+model bo'yicha)."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            f"""INSERT INTO ai_usage (day, model, provider, requests, input_tokens,
+                                      cached_tokens, output_tokens, cost_usd)
+                VALUES ({_AI_DAY}, $1, $2, 1, $3, $4, $5, $6)
+                ON CONFLICT (day, model) DO UPDATE SET
+                    requests      = ai_usage.requests + 1,
+                    input_tokens  = ai_usage.input_tokens + EXCLUDED.input_tokens,
+                    cached_tokens = ai_usage.cached_tokens + EXCLUDED.cached_tokens,
+                    output_tokens = ai_usage.output_tokens + EXCLUDED.output_tokens,
+                    cost_usd      = ai_usage.cost_usd + EXCLUDED.cost_usd""",
+            model, provider, int(input_tokens), int(cached_tokens), int(output_tokens),
+            float(cost_usd),
+        )
+
+
+async def get_ai_usage_today() -> list[dict]:
+    """Bugungi sarf, model bo'yicha."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT model, provider, requests, input_tokens, cached_tokens,
+                       output_tokens, cost_usd
+                  FROM ai_usage WHERE day = {_AI_DAY}
+                 ORDER BY cost_usd DESC"""
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_ai_usage_month() -> dict:
+    """Oy boshidan bugungacha jami — kunlik hisobotdagi 'oyda' qatori uchun."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""SELECT COALESCE(SUM(requests), 0)      AS requests,
+                       COALESCE(SUM(input_tokens), 0)  AS input_tokens,
+                       COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                       COALESCE(SUM(cost_usd), 0)      AS cost_usd
+                  FROM ai_usage
+                 WHERE day >= date_trunc('month', {_AI_DAY})::date"""
+        )
+        return dict(row) if row else {}
+
+
+async def add_ai_fact(text: str, created_by: int | None) -> int:
+    """Admin o'rgatgan fakt — AI har suhbatda shuni biladi."""
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            "INSERT INTO ai_knowledge (kind, text, created_by) VALUES ('fact', $1, $2) RETURNING id",
+            text, created_by,
+        )
+
+
+async def list_ai_facts() -> list[dict]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, text, created_by, created_at FROM ai_knowledge "
+            "WHERE kind = 'fact' ORDER BY id"
+        )
+        return [dict(r) for r in rows]
+
+
+async def delete_ai_knowledge(item_id: int) -> bool:
+    async with pool.acquire() as conn:
+        result = await conn.execute("DELETE FROM ai_knowledge WHERE id = $1", item_id)
+        return result.endswith(" 1")
+
+
+async def log_ai_question(text: str, user_id: int | None) -> int | None:
+    """AI javobini bilmagan savol. Bir xil savol bir kunda qayta-qayta
+    yozilmasin — takrorini sanab qo'yamiz, yangi qator ochmaymiz."""
+    text = (text or "").strip()[:500]
+    if not text:
+        return None
+    async with pool.acquire() as conn:
+        existing = await conn.fetchval(
+            f"""SELECT id FROM ai_knowledge
+                 WHERE kind = 'question' AND NOT handled
+                   AND LOWER(text) = LOWER($1)
+                   AND (created_at + INTERVAL '5 hours')::date = {_AI_DAY}""",
+            text,
+        )
+        if existing:
+            await conn.execute("UPDATE ai_knowledge SET times = times + 1 WHERE id = $1", existing)
+            return existing
+        return await conn.fetchval(
+            "INSERT INTO ai_knowledge (kind, text, created_by) VALUES ('question', $1, $2) RETURNING id",
+            text, user_id,
+        )
+
+
+async def list_ai_questions(limit: int = 20) -> list[dict]:
+    """Hali o'rgatilmagan savollar, eng ko'p so'ralgani birinchi."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, text, times, created_at FROM ai_knowledge "
+            "WHERE kind = 'question' AND NOT handled "
+            "ORDER BY times DESC, id DESC LIMIT $1",
+            limit,
+        )
+        return [dict(r) for r in rows]
+
+
+async def count_ai_questions_today() -> int:
+    async with pool.acquire() as conn:
+        return int(await conn.fetchval(
+            f"""SELECT COALESCE(SUM(times), 0) FROM ai_knowledge
+                 WHERE kind = 'question'
+                   AND (created_at + INTERVAL '5 hours')::date = {_AI_DAY}"""
+        ) or 0)
+
+
+async def mark_ai_question_handled(item_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE ai_knowledge SET handled = TRUE WHERE id = $1 AND kind = 'question'", item_id)

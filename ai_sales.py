@@ -20,7 +20,7 @@ ko'radi (2026-09-12).
 
 HOZIRCHA FAQAT ADMINLARDA. AI_SALES_ADMIN_ONLY=0 qo'yilmaguncha /ai faqat
 ADMIN_IDS uchun ochiq — avval o'zingiz sinab ko'rasiz, keyin mijozlarga
-ochasiz. Kalitsiz (ANTHROPIC_API_KEY) modul umuman jim: meta_leads.py bilan
+ochasiz. Kalitsiz (OPENAI_API_KEY yoki ANTHROPIC_API_KEY) modul umuman jim: meta_leads.py bilan
 bir xil xulq, deploy tokensiz ham buzilmaydi.
 
 QANDAY ISHLAYDI
@@ -28,7 +28,22 @@ QANDAY ISHLAYDI
              Matndan tashqari: 📍 lokatsiya, 📞 kontakt va chek rasmi ham
              o'sha suhbatga tushadi.
   /ai_off    — o'chiradi, bot odatdagidek tugmalar bilan ishlaydi
-  /ai_holat  — model, sessiyalar, narx sozlamalari
+  /ai_holat  — model, sessiyalar, bugungi sarf ($ va token)
+  /ai_orgat <matn> — AI ga yangi narsa o'rgatish (adminlar)
+  /ai_bilim  — o'rgatilganlar va AI javob bera olmagan savollar
+  /ai_unut <id> — o'rgatilganini o'chirish
+
+O'RGANIB BORISH. Model o'zi o'qitilmaydi — buning o'rniga do'kon bilimi
+bazada o'sib boradi: AI javobini bilmagan savolni `javobsiz_savol` bilan
+yozib qo'yadi, admin /ai_bilim da ko'radi va /ai_orgat bilan javobni
+o'rgatadi. O'rgatilgan hamma narsa keyingi suhbatdan boshlab promptda turadi.
+Kunlik hisobotda (targets.py, 20:00) bugun nechta savol javobsiz qolgani
+ko'rinadi.
+
+AKSIYA. Faol aksiya katalog bilan birga promptga tushadi, savat vositalari
+esa promotions.compute_near_misses bilan "yana 1 ta olsa sovg'a" ni aniq
+hisoblab qaytaradi — AI aksiyani o'zidan to'qimaydi. Qoidasi: bir marta,
+bosimsiz eslatish, "yo'q" deyilsa qaytib gapirmaslik.
 
 Modelga butun katalog (nomi, narxi, qoldig'i) tizim promptida beriladi — 105
 mahsulot ~3K token, 5 daqiqaga keshlanadi — shuning uchun u narx yoki mahsulot
@@ -39,8 +54,9 @@ chegirmasi va ombor hisobi tugmali yo'l bilan bir xil ishlaydi.
 
 Env vars
 --------
-ANTHROPIC_API_KEY     majburiy — busiz modul o'chiq.
-AI_SALES_MODEL        default "claude-opus-5".
+OPENAI_API_KEY        yoki ANTHROPIC_API_KEY — bittasi majburiy, busiz modul o'chiq.
+AI_PROVIDER           openai | anthropic. Bo'sh = qaysi kalit bor bo'lsa (ai_provider.py).
+AI_SALES_MODEL        default: openai -> "gpt-5.5", anthropic -> "claude-opus-5".
 AI_SALES_EFFORT       default "low" — suhbat uchun tez va arzon.
 AI_SALES_ADMIN_ONLY   default "1". "0" — hamma mijozga ochiq.
 AI_SALES_MAX_TURNS    bitta javobdagi vosita chaqiruvlari chegarasi (default 6).
@@ -57,6 +73,7 @@ from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
+import ai_provider
 import database
 from config import (ADMIN_IDS, BOT_USERNAME, PAYMENT_CARD_NUMBER,
                     PAYMENT_RECIPIENT_NAME, SUPPORT_PHONES)
@@ -64,9 +81,9 @@ from config import (ADMIN_IDS, BOT_USERNAME, PAYMENT_CARD_NUMBER,
 logger = logging.getLogger(__name__)
 router = Router()
 
-API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
-MODEL = os.getenv("AI_SALES_MODEL", "claude-opus-5").strip()
 EFFORT = os.getenv("AI_SALES_EFFORT", "low").strip()
+PROVIDER = ai_provider.build(os.getenv("AI_SALES_MODEL", "").strip(), EFFORT)
+MODEL = PROVIDER.model if PROVIDER else ""
 ADMIN_ONLY = os.getenv("AI_SALES_ADMIN_ONLY", "1").strip() != "0"
 MAX_TURNS = max(2, int(os.getenv("AI_SALES_MAX_TURNS", "6")))
 GROUP_CHATS = {
@@ -81,28 +98,17 @@ SESSION_TTL = 3 * 3600    # 3 soat jim tursa, suhbat unutiladi
 HISTORY_LIMIT = 40        # oxirgi 40 xabar — undan oldingisi kesiladi
 DEFAULT_DELIVERY = "self"  # Ketoshop kuryeri
 
-_client = None
 _catalog_cache: tuple[float, str] | None = None
 _sessions: dict[int, dict] = {}
 _group_last: dict[int, float] = {}   # chat_id -> oxirgi javob vaqti (cooldown)
 
 
 def is_enabled() -> bool:
-    return bool(API_KEY)
+    return PROVIDER is not None
 
 
 def _allowed(user_id: int) -> bool:
     return (not ADMIN_ONLY) or user_id in ADMIN_IDS
-
-
-def _get_client():
-    """Klient birinchi so'rovda yaratiladi — kalitsiz deployda anthropic
-    paketiga umuman tegilmaydi."""
-    global _client
-    if _client is None:
-        from anthropic import AsyncAnthropic
-        _client = AsyncAnthropic(api_key=API_KEY)
-    return _client
 
 
 def _fmt(n) -> str:
@@ -140,7 +146,86 @@ async def _catalog_text() -> str:
     return text
 
 
-def _system_prompt(catalog: str) -> list[dict]:
+async def _step(state: dict, rules: str, catalog: str, tools, **kwargs):
+    """PROVIDER.step + sarfni bazaga yozish. Hisob yozilmay qolsa ham suhbat
+    to'xtamasin — xarajat statistikasi javobdan muhim emas."""
+    turn = await PROVIDER.step(state, rules, catalog, tools, **kwargs)
+    usage = getattr(turn, "usage", None)
+    if usage and (usage.input or usage.output):
+        try:
+            cost = ai_provider.estimate_cost(PROVIDER.model, usage.input, usage.cached, usage.output)
+            await database.record_ai_usage(PROVIDER.model, PROVIDER.name, usage.input,
+                                           usage.cached, usage.output, cost)
+        except Exception:
+            logger.warning("AI usage could not be recorded", exc_info=True)
+    return turn
+
+
+_knowledge_cache: tuple[float, str] | None = None
+
+
+def invalidate_knowledge() -> None:
+    global _knowledge_cache
+    _knowledge_cache = None
+
+
+async def _knowledge_text() -> str:
+    """Admin o'rgatgan faktlar. Katalog bilan bir xil 5 daqiqalik kesh, lekin
+    /ai_orgat va /ai_unut darrov tozalaydi — o'rgatilgan narsa keyingi
+    xabardan ishlasin."""
+    global _knowledge_cache
+    now = time.time()
+    if _knowledge_cache and now - _knowledge_cache[0] < CATALOG_TTL:
+        return _knowledge_cache[1]
+    try:
+        facts = await database.list_ai_facts()
+    except Exception:
+        logger.warning("AI knowledge could not be loaded", exc_info=True)
+        facts = []
+    text = "\n".join(f"- {f['text']}" for f in facts)
+    _knowledge_cache = (now, text)
+    return text
+
+
+async def _promo_text() -> str:
+    """Faol aksiya — nomi, necha kun qolgani va qoidalari. Aksiya yo'q bo'lsa
+    bo'sh: model yo'q aksiyani eslatmasligi uchun blok umuman chiqmaydi."""
+    try:
+        import promotions
+        promo = await promotions.get_active()
+        if not promo:
+            return ""
+        lines = [f"Nomi: {promotions.promo_name(promo, 'uz')}",
+                 f"Tugashiga: {promotions.days_left(promo)} kun"]
+        conditions = (promotions.promo_conditions(promo, "uz") or "").strip()
+        if conditions:
+            lines.append(f"Shartlari: {conditions}")
+        for rule in promo.get("bonuses") or []:
+            lines.append("- " + promotions.rule_line(rule, "uz"))
+        return "\n".join(lines)
+    except Exception:
+        logger.warning("Active promotion could not be loaded for AI", exc_info=True)
+        return ""
+
+
+async def _dynamic_block(catalog: str) -> str:
+    """Promptning o'zgaruvchan qismi: katalog, faol aksiya, o'rgatilgan
+    bilimlar. Qoidalar (o'zgarmas) alohida — kesh shunday yaxshi ishlaydi."""
+    parts = ["KATALOG (id | nomi | narxi | qoldiq):\n" + catalog]
+    promo = await _promo_text()
+    parts.append("FAOL AKSIYA:\n" + promo if promo else "FAOL AKSIYA: hozir yo'q.")
+    knowledge = await _knowledge_text()
+    if knowledge:
+        parts.append("DO'KON BILIMLARI (adminlar o'rgatgan — shularga tayan, "
+                     "katalogdan keyin eng ishonchli manba):\n" + knowledge)
+    return "\n\n".join(parts)
+
+
+def _catalog_block(catalog: str) -> str:
+    return "KATALOG (id | nomi | narxi | qoldiq):\n" + catalog
+
+
+def _sales_rules() -> str:
     """Tizim prompti ikki bo'lakda: o'zgarmas qoidalar (keshlanadi) va
     katalog (5 daqiqada bir yangilanadi, o'zi ham keshlanadi)."""
     rules = (
@@ -176,6 +261,25 @@ def _system_prompt(catalog: str) -> list[dict]:
         "- Maslahatni har doim katalogdagi aniq mahsulotga ulab qo'y — bu maqola emas, "
         "savdo suhbati. Masalan: 'bodom uni bilan pishiriladi, bizda 1 kg — 149 000 so'm'.\n"
         "- Kaloriya, uglevod yoki tarkib raqamlarini bilmasang, o'ylab topma.\n\n"
+        "AKSIYA — BOSIMSIZ ESLATISH\n"
+        "- Pastda 'FAOL AKSIYA' bo'lsa, mijoz mos mahsulotni olayotganda uni bir marta, "
+        "yumshoq eslatib o't. Aksiya haqida faqat o'sha blokdagi va savat vositasi "
+        "qaytargan 'AKSIYA:' qatoridagi aniq ma'lumotni ayt — o'zingdan shart, "
+        "sovg'a yoki muddat to'qima.\n"
+        "- Savat vositasi 'yana N ta olsa sovg'a' desa, taklif qil, lekin tanlovni "
+        "mijozga qoldir. Masalan: 'Aytgancha, yana bitta olsangiz 100 gr eritritol "
+        "sovg'a qo'shilarkan — hozir qo'shaymi yoki keyingi safarga qoldiramizmi?'\n"
+        "- MAJBURLAMA va MANIPULYATSIYA QILMA: 'shoshiling', 'faqat bugun', 'boy "
+        "berasiz', 'oxirgi imkoniyat' kabi gaplar yo'q. Aksiya tugashiga kun kam "
+        "qolgan bo'lsa ham shunchaki faktni ayt.\n"
+        "- Mijoz 'yo'q' yoki 'keyinroq' desa — hurmat qil, xo'p de va shu suhbatda "
+        "aksiyani qaytib tilga olma.\n\n"
+        "BILMAGAN SAVOL — O'RGANISH UCHUN YOZIB QO'Y\n"
+        "- Savolga katalogda ham, 'DO'KON BILIMLARI' da ham javob bo'lmasa: "
+        "javobsiz_savol vositasini chaqirib savolni qisqa yozib qo'y, keyin mijozga "
+        "raqamimizni ber. Adminlar shu savollarni ko'rib seni o'rgatadi.\n"
+        "- Oddiy salom, rahmat, 'qalaysiz' kabi gaplarni yozma — faqat haqiqiy "
+        "javobsiz savolni.\n\n"
         "SALOMLASHISH — BIRINCHI XABAR\n"
         "- Mijoz salom bermay to'g'ridan-to'g'ri gap boshlasa, javobni shunday boshla:\n"
         "  'Assalomu alaykum, Keto shopga xush kelibsiz!'\n"
@@ -232,14 +336,24 @@ def _system_prompt(catalog: str) -> list[dict]:
         "gapir, shifokor o'rnini bosma. Kasallik haqida so'rashsa shifokorga "
         "murojaat qilishni ayt va raqamimizni ber.\n"
     )
-    return [
-        {"type": "text", "text": rules, "cache_control": {"type": "ephemeral"}},
-        {"type": "text", "text": "KATALOG (id | nomi | narxi | qoldiq):\n" + catalog,
-         "cache_control": {"type": "ephemeral"}},
-    ]
+    return rules
 
 
-TOOLS = [
+_TOOL_SPECS = [
+    {
+        "name": "javobsiz_savol",
+        "description": "Mijozning javobini bilmagan savolini adminlar ko'rishi uchun "
+                       "yozib qo'yadi. Mijozga hech narsa ko'rinmaydi — keyin o'zing "
+                       "raqamimizni berasan.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"savol": {"type": "string",
+                                     "description": "Savolning qisqa mazmuni"}},
+            "required": ["savol"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
     {
         "name": "savatga_qoshish",
         "description": "Mahsulotni mijozning savatiga qo'shadi. Katalogdagi id ni ishlat. "
@@ -296,6 +410,13 @@ TOOLS = [
     },
 ]
 
+# Neytral ko'rinish — OpenAI va Anthropic har biri o'z formatiga chizadi
+# (ai_provider.*Provider.render_tools).
+TOOLS = [
+    ai_provider.Tool(t["name"], t["description"], t["input_schema"], t.get("strict", False))
+    for t in _TOOL_SPECS
+]
+
 
 # ──────────────────────────────── vositalar ─────────────────────────────────
 
@@ -313,7 +434,36 @@ async def _tool_add(user_id: int, args: dict) -> str:
                 f"{product.get('unit') or 'dona'} qolgan. Mijozga shuni ayt.")
     await database.add_to_cart(user_id, product_id=product_id, quantity=qty)
     return (f"OK: {product['name']} — {qty:g} {product.get('unit') or 'dona'} "
-            f"savatga qo'shildi.")
+            f"savatga qo'shildi.") + await _promo_hint(user_id)
+
+
+async def _promo_hint(user_id: int) -> str:
+    """Savat aksiya bonusiga yaqin bo'lsa aniq raqam bilan qator qaytaradi.
+    promotions.compute_near_misses — savat ostidagi "Bonusga oz qoldi" bloki
+    bilan bir xil hisob, ya'ni AI tugmali oqim aytmagan narsani aytmaydi."""
+    try:
+        import promotions
+        promo = await promotions.get_active()
+        if not promo:
+            return ""
+        items = [{"product_id": i.get("product_id"), "quantity": i.get("cart_quantity"),
+                  "is_set": bool(i.get("set_id"))}
+                 for i in await database.get_cart(user_id)]
+        misses = promotions.compute_near_misses(promo, items)
+        if not misses:
+            return ""
+        lines = []
+        for m in misses[:2]:
+            need = f"{promotions.fmt_amount(m['needed'])} {promotions.trigger_unit_label(m, 'uz')}"
+            bonus_name = promotions.bonus_display_name(m.get("bonus_name"), m.get("bonus_unit"))
+            bonus = (f"{promotions.fmt_amount(m['bonus_amount'])} "
+                     f"{promotions.unit_label(m['bonus_unit'], 'uz')} {bonus_name}")
+            lines.append(f"yana {need} {m.get('trigger_name')} olsa -> {bonus} sovg'a")
+        return ("\nAKSIYA: " + "; ".join(lines) +
+                ". Mijozga bir marta, bosimsiz taklif qil yoki keyingi safarga qoldirishni so'ra.")
+    except Exception:
+        logger.warning("Promo hint failed for %s", user_id, exc_info=True)
+        return ""
 
 
 async def _tool_cart(user_id: int) -> str:
@@ -327,7 +477,7 @@ async def _tool_cart(user_id: int) -> str:
         lines.append(f"- {item['name']}: {item['cart_quantity']:g} {item['unit']} = "
                      f"{_fmt(line_total)} so'm (id {item.get('product_id')})")
     lines.append(f"JAMI: {_fmt(total)} so'm (yetkazish narxi hisobga olinmagan)")
-    return "\n".join(lines)
+    return "\n".join(lines) + await _promo_hint(user_id)
 
 
 async def _tool_remove(user_id: int, args: dict) -> str:
@@ -457,6 +607,10 @@ async def _run_tool(bot: Bot, message: Message, name: str, args: dict) -> str:
         return await _tool_remove(user_id, args)
     if name == "buyurtma_rasmiylashtirish":
         return await _tool_order(bot, message, args)
+    if name == "javobsiz_savol":
+        await database.log_ai_question(str(args.get("savol") or ""), user_id)
+        return ("OK: savol adminlarga yozib qo'yildi. Endi mijozga uzr so'rab "
+                "raqamimizni ber.")
     return f"Xato: '{name}' degan vosita yo'q."
 
 
@@ -472,7 +626,7 @@ def _session(user_id: int) -> dict:
     _prune_sessions()
     session = _sessions.get(user_id)
     if session is None:
-        session = {"messages": [], "last": time.time(), "orders": 0,
+        session = {"ai": {}, "last": time.time(), "orders": 0,
                    "location": None, "phone": None, "awaiting_cheque": None}
         _sessions[user_id] = session
     return session
@@ -481,61 +635,44 @@ def _session(user_id: int) -> dict:
 async def _respond(bot: Bot, message: Message, user_text: str) -> str:
     """Bitta mijoz xabari -> bitta javob. Ichida vosita chaqiruvlari tsikli:
     model savatga soladi/buyurtma beradi, natijani o'qiydi va yakuniy matnni
-    yozadi. MAX_TURNS — cheksiz tsiklga qarshi to'siq."""
+    yozadi. MAX_TURNS — cheksiz tsiklga qarshi to'siq. Model qaysi
+    provayderdan ekani bu yerda ahamiyatsiz — ai_provider.step() ikkalasini
+    bir xil Turn ga keltiradi."""
     session = _session(message.from_user.id)
     session["last"] = time.time()
-    history = session["messages"]
-    history.append({"role": "user", "content": user_text})
-    if len(history) > HISTORY_LIMIT:
-        del history[: len(history) - HISTORY_LIMIT]
+    state = session.setdefault("ai", {})
+    rules, catalog = _sales_rules(), await _dynamic_block(await _catalog_text())
 
-    client = _get_client()
-    system = _system_prompt(await _catalog_text())
-
+    turn = await _step(state, rules, catalog, TOOLS, user=user_text,
+                               max_tokens=MAX_TOKENS, history_limit=HISTORY_LIMIT)
     reply_text = ""
-    for _ in range(MAX_TURNS):
-        response = await client.messages.create(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            system=system,
-            tools=TOOLS,
-            output_config={"effort": EFFORT},
-            messages=history,
-        )
-        history.append({"role": "assistant", "content": response.content})
-
-        if response.stop_reason == "refusal":
+    for attempt in range(MAX_TURNS):
+        if turn.refused:
             logger.warning("AI sales refusal for user %s", message.from_user.id)
             return ("Kechirasiz, bu savolga bu yerda javob bera olmayman.\n"
                     "Batafsil ma'lumot olish uchun: " + SUPPORT_PHONES)
-
-        reply_text = "\n".join(
-            block.text for block in response.content if block.type == "text"
-        ).strip()
-
-        if response.stop_reason != "tool_use":
+        reply_text = turn.text or reply_text
+        if not turn.calls:
             return reply_text
 
         results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
+        for call in turn.calls:
             try:
-                output = await _run_tool(bot, message, block.name, dict(block.input))
+                output = await _run_tool(bot, message, call.name, call.args)
                 is_error = output.startswith("Xato:")
             except Exception:
-                logger.exception("AI tool %s failed", block.name)
+                logger.exception("AI tool %s failed", call.name)
                 output, is_error = "Xato: ichki nosozlik.", True
-            results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": output,
-                "is_error": is_error,
-            })
-        # Hamma natija BITTA user xabarida qaytadi — bo'lib yuborilsa model
-        # keyingi safar parallel chaqiruvni tashlab ketadi.
-        history.append({"role": "user", "content": results})
+            results.append(ai_provider.ToolResult(call.id, output, is_error))
 
+        if attempt == MAX_TURNS - 1:
+            break
+        turn = await _step(state, rules, catalog, TOOLS, results=results,
+                                   max_tokens=MAX_TOKENS, history_limit=HISTORY_LIMIT)
+
+    # Chegara: oxirgi vosita natijalari modelga qaytmadi. OpenAI zanjirida
+    # javobsiz function_call qolsa keyingi xabar 400 beradi — tozalaymiz.
+    ai_provider.reset(state)
     logger.warning("AI sales hit the tool-turn limit for user %s", message.from_user.id)
     return reply_text or ("Bir daqiqa kutib turing.\n"
                           "Batafsil ma'lumot olish uchun: " + SUPPORT_PHONES)
@@ -548,7 +685,7 @@ async def cmd_ai_on(message: Message):
     if not _allowed(message.from_user.id):
         return
     if not is_enabled():
-        await message.answer("⚠️ ANTHROPIC_API_KEY o'rnatilmagan — AI sotuvchi o'chiq.")
+        await message.answer("⚠️ AI kaliti (OPENAI_API_KEY) o'rnatilmagan — AI sotuvchi o'chiq.")
         return
     _sessions.pop(message.from_user.id, None)   # har /ai yangi suhbat
     _session(message.from_user.id)
@@ -584,18 +721,129 @@ async def cmd_ai_status(message: Message):
     lines = [
         "🤖 <b>AI sotuvchi</b>", "",
         f"Holat: {'✅ yoqilgan' if is_enabled() else '⚠️ kalit yo`q (o`chiq)'}",
-        f"Model: <code>{html.escape(MODEL)}</code> (effort: {EFFORT})",
+        f"Provayder: <b>{PROVIDER.name if PROVIDER else '—'}</b> · "
+        f"model <code>{html.escape(MODEL or '—')}</code> (effort: {EFFORT})",
         f"Kirish: {'faqat adminlar' if ADMIN_ONLY else 'hamma mijozlar'}",
         f"Ochiq suhbatlar: {len(_sessions)}",
         f"Guruh rejimi: {('✅ ' + str(len(GROUP_CHATS)) + ' ta guruh') if GROUP_CHATS else '⚪ o`chiq'}"
         f" (mention/reply, {GROUP_COOLDOWN}s tanaffus)",
         f"Katalogda: {len(catalog.splitlines()) if catalog else 0} ta mahsulot",
+    ]
+    try:
+        lines += [""] + usage_lines(await database.get_ai_usage_today(),
+                                    await database.get_ai_usage_month())
+    except Exception:
+        logger.warning("AI usage lookup failed", exc_info=True)
+    lines += [
         "",
         "<i>Mijozlarga ochish uchun Railway'da AI_SALES_ADMIN_ONLY=0 qo'ying.</i>",
         "<i>Guruhda javob berishi uchun AI_GROUP_CHATS=-100... qo'ying. "
         "Guruhda sotuv yo'q — faqat savol-javob, xarid uchun botga yo'naltiradi.</i>",
     ]
     await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+def fmt_tokens(n) -> str:
+    n = int(n or 0)
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.2f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}K"
+    return str(n)
+
+
+def usage_lines(today: list[dict], month: dict) -> list[str]:
+    """Bugungi va oylik AI sarfi — /ai_holat ham, kunlik hisobot (targets.py)
+    ham shu matnni ishlatadi, ikki joyda ikki xil raqam chiqmasin."""
+    lines = ["🤖 <b>AI sarfi bugun</b>"]
+    if not today:
+        lines.append("   Bugun AI ishlatilmadi — $0.00")
+    for row in today:
+        known = ai_provider.price_for(row["model"]) is not None
+        cost = f"${float(row['cost_usd']):.2f}" if known else "narx noma'lum"
+        lines.append(
+            f"   <code>{html.escape(row['model'])}</code> — {int(row['requests'])} so'rov · "
+            f"{fmt_tokens(row['input_tokens'])} kirish "
+            f"({fmt_tokens(row['cached_tokens'])} keshdan) · "
+            f"{fmt_tokens(row['output_tokens'])} chiqish · <b>{cost}</b>"
+        )
+    if month and int(month.get("requests") or 0):
+        lines.append(
+            f"   Oy boshidan: {int(month['requests'])} so'rov · "
+            f"{fmt_tokens(int(month['input_tokens']) + int(month['output_tokens']))} token · "
+            f"<b>${float(month['cost_usd']):.2f}</b>"
+        )
+    return lines
+
+
+@router.message(Command("ai_orgat"))
+async def cmd_ai_teach(message: Message):
+    """/ai_orgat Yetkazib berish Toshkent ichida 1 kunda, 25 000 so'm."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2 or len(parts[1].strip()) < 5:
+        await message.answer(
+            "🧠 <b>AI ga o'rgatish</b>\n\n"
+            "Buyruqdan keyin AI bilishi kerak bo'lgan narsani yozing:\n"
+            "<code>/ai_orgat Yetkazib berish Toshkent ichida 1 kunda, 25 000 so'm</code>\n"
+            "<code>/ai_orgat Eritritol shakar o'rniga 1:1 ishlatiladi</code>\n\n"
+            "Keyingi xabardan boshlab AI buni biladi. Ro'yxat: /ai_bilim",
+            parse_mode="HTML",
+        )
+        return
+    fact = parts[1].strip()[:1000]
+    item_id = await database.add_ai_fact(fact, message.from_user.id)
+    invalidate_knowledge()
+    await message.answer(
+        f"✅ O'rgatildi (#{item_id}). Keyingi suhbatdan boshlab AI buni biladi.\n"
+        f"O'chirish: <code>/ai_unut {item_id}</code>",
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("ai_bilim"))
+async def cmd_ai_knowledge(message: Message):
+    """O'rgatilganlar + AI javob bera olmagan savollar. Savol ostidagi raqam
+    bilan /ai_orgat qilinsa ham, /ai_unut qilinsa ham ro'yxatdan chiqadi."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    facts = await database.list_ai_facts()
+    questions = await database.list_ai_questions(limit=15)
+
+    lines = ["🧠 <b>AI bilimlari</b>", ""]
+    if facts:
+        for f in facts[-30:]:
+            lines.append(f"<code>#{f['id']}</code> {html.escape(f['text'][:200])}")
+    else:
+        lines.append("Hozircha hech narsa o'rgatilmagan.")
+    lines += ["", "❓ <b>AI javob bera olmagan savollar</b>"]
+    if questions:
+        for q in questions:
+            times = f" ×{q['times']}" if int(q["times"]) > 1 else ""
+            lines.append(f"<code>#{q['id']}</code> {html.escape(q['text'][:200])}{times}")
+        lines += ["", "<i>Javobini o'rgatish: /ai_orgat &lt;javob&gt;, keyin savolni "
+                      "ro'yxatdan olib tashlash: /ai_unut &lt;raqam&gt;</i>"]
+    else:
+        lines.append("Yo'q — AI hamma savolga javob topgan.")
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@router.message(Command("ai_unut"))
+async def cmd_ai_forget(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 2 or not parts[1].lstrip("#").isdigit():
+        await message.answer("Raqamini yozing: <code>/ai_unut 12</code> (ro'yxat: /ai_bilim)",
+                             parse_mode="HTML")
+        return
+    item_id = int(parts[1].lstrip("#"))
+    if await database.delete_ai_knowledge(item_id):
+        invalidate_knowledge()
+        await message.answer(f"🗑 #{item_id} o'chirildi.")
+    else:
+        await message.answer(f"#{item_id} topilmadi.")
 
 
 def _has_session(message: Message) -> bool:
@@ -695,6 +943,7 @@ async def _reply(bot: Bot, message: Message, user_text: str) -> None:
         reply = await _respond(bot, message, user_text)
     except Exception:
         logger.exception("AI sales turn failed for user %s", message.from_user.id)
+        ai_provider.reset(_session(message.from_user.id).setdefault("ai", {}))
         await message.answer("Kechirasiz, kichik nosozlik bo'ldi.\n"
                              "Batafsil ma'lumot olish uchun: " + SUPPORT_PHONES)
         return
@@ -713,10 +962,10 @@ async def _reply(bot: Bot, message: Message, user_text: str) -> None:
 # pul turadi.
 
 GROUP_HISTORY_LIMIT = 16
-_group_history: dict[int, list] = {}
+_group_history: dict[int, dict] = {}   # chat_id -> provayder holati
 
 
-def _group_system(catalog: str) -> list[dict]:
+def _group_rules() -> str:
     rules = (
         "Sen Ketoshop (@" + BOT_USERNAME + ") do'konining guruhdagi yordamchisisan. "
         "Ketoshop Toshkentda keto va PP mahsulotlari sotadi.\n\n"
@@ -748,6 +997,10 @@ def _group_system(catalog: str) -> list[dict]:
         "- Emoji ni oz ishlat — javobiga bittadan ko'p emas.\n"
         "- Suhbatni davom ettir: oldingi xabarlarni hisobga ol, savol berilsa "
         "javob ber, hazilga hazil bilan javob berishing mumkin.\n\n"
+        "AKSIYA\n"
+        "- Pastda 'FAOL AKSIYA' bo'lsa va savol mavzuga tegsa, bir jumlada eslatib "
+        "o't. Bosim yo'q, 'shoshiling' yo'q — faqat fakt va 'buyurtma uchun botga "
+        "yozing'.\n\n"
         "NIMA HAQIDA GAPIRASAN\n"
         "- Keto va to'g'ri ovqatlanish: nima mumkin, nima yo'q, un/shakar o'rniga nima, "
         "qanday pishiriladi — qisqa va foydali javob ber.\n"
@@ -761,11 +1014,7 @@ def _group_system(catalog: str) -> list[dict]:
         "operatorga yozishni taklif qil.\n"
         "- Siyosat, din va shaxsiy mavzulardan chetlan.\n"
     )
-    return [
-        {"type": "text", "text": rules, "cache_control": {"type": "ephemeral"}},
-        {"type": "text", "text": "KATALOG (id | nomi | narxi | qoldiq):\n" + catalog,
-         "cache_control": {"type": "ephemeral"}},
-    ]
+    return rules
 
 
 def _group_trigger(message: Message) -> bool:
@@ -788,24 +1037,20 @@ def _group_trigger(message: Message) -> bool:
 
 
 async def _group_respond(chat_id: int, author: str, text: str) -> str:
-    history = _group_history.setdefault(chat_id, [])
-    history.append({"role": "user", "content": f"{author}: {text}"})
-    if len(history) > GROUP_HISTORY_LIMIT:
-        del history[: len(history) - GROUP_HISTORY_LIMIT]
-
-    response = await _get_client().messages.create(
-        model=MODEL,
-        max_tokens=400,                      # guruh javobi qisqa bo'lishi kerak
-        system=_group_system(await _catalog_text()),
-        output_config={"effort": EFFORT},
-        messages=history,
-    )
-    if response.stop_reason == "refusal":
-        history.pop()
+    """Guruh savoliga javob. tools=None — ataylab: guruhda savat ham, buyurtma
+    ham yo'q, ya'ni u yerdan hech narsa sotib bo'lmaydi."""
+    state = _group_history.setdefault(chat_id, {})
+    try:
+        turn = await _step(
+            state, _group_rules(), await _dynamic_block(await _catalog_text()), None,
+            user=f"{author}: {text}", max_tokens=400, history_limit=GROUP_HISTORY_LIMIT,
+        )
+    except Exception:
+        ai_provider.reset(state)
+        raise
+    if turn.refused:
         return ""
-    reply = "\n".join(b.text for b in response.content if b.type == "text").strip()
-    history.append({"role": "assistant", "content": reply or "…"})
-    return reply
+    return turn.text
 
 
 @router.message(_group_trigger, F.text)

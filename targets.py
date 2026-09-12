@@ -26,7 +26,9 @@ target. The owner changes it in the panel when it drifts.
 
 Where it sits in the day (Asia/Tashkent), alongside the buyer-facing pushes:
     13:00  mid-day  — "bugun 4 ta, yana 6 ta kerak"
-    20:00  yakun    — how the day closed, and where the month stands
+    20:00  yakun    — how the day closed, and where the month stands, plus
+                      what the AI sales assistant cost today (owner request
+                      2026-09-13: "$ da, nechta token va qaysi model")
 These go to ADMINS ONLY, so they are outside the two-push-a-day ceiling that
 governs broadcasts to buyers (see daily_interest.py).
 
@@ -99,6 +101,16 @@ async def snapshot() -> dict:
 
     remaining_uzs = max(0.0, monthly_uzs - month_profit)
 
+    # AI sarfi — hisobot uchun qo'shimcha, shuning uchun o'qilmay qolsa ham
+    # asosiy maqsad xabari baribir ketadi.
+    ai_today, ai_month, ai_questions = [], {}, 0
+    try:
+        ai_today = await database.get_ai_usage_today()
+        ai_month = await database.get_ai_usage_month()
+        ai_questions = await database.count_ai_questions_today()
+    except Exception:
+        logger.warning("AI usage for the daily report could not be loaded", exc_info=True)
+
     return {
         "date": today,
         "month_first": first,
@@ -122,6 +134,9 @@ async def snapshot() -> dict:
         "days_total": days_total,
         "usd_rate": usd_rate,
         "enabled": bool(state.get("enabled", True)),
+        "ai_today": ai_today,
+        "ai_month": ai_month,
+        "ai_questions": ai_questions,
     }
 
 
@@ -177,7 +192,30 @@ def build_message(snap: dict, slot: int) -> str:
     lines.append("")
     lines.append(f"📊 Oy boshidan: {snap['month_orders']} ta sotuv · "
                  f"{fmt_sum(snap['month_revenue'])} so'm tushum")
+
+    # Kun yakunida AI xarajati. AI umuman ishlatilmagan va yoqilmagan bo'lsa
+    # blok chiqmaydi — bo'sh "$0.00" har kuni ko'z o'ngida turmasin.
+    if not midday:
+        ai_block = _ai_block(snap)
+        if ai_block:
+            lines += [""] + ai_block
     return "\n".join(lines)
+
+
+def _ai_block(snap: dict) -> list[str]:
+    today, month = snap.get("ai_today") or [], snap.get("ai_month") or {}
+    questions = int(snap.get("ai_questions") or 0)
+    try:
+        import ai_sales
+        enabled = ai_sales.is_enabled()
+        lines = ai_sales.usage_lines(today, month)
+    except Exception:
+        return []
+    if not (today or int((month or {}).get("requests") or 0) or enabled):
+        return []
+    if questions:
+        lines.append(f"   ❓ AI javob bera olmagan savollar: <b>{questions} ta</b> — /ai_bilim")
+    return lines
 
 
 async def progress_screen() -> str:
