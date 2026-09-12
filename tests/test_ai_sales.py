@@ -206,18 +206,52 @@ class AiSalesToolLoopTest(_ProviderSwap):
         self.assertIn(ai_sales.SUPPORT_PHONES, reply)
 
 
-class AiSalesGateTest(unittest.TestCase):
+class AiSalesGateTest(_ProviderSwap):
+    """Kim AI ga tushadi, kim operatorga (support_relay) — FILTR darajasida."""
+
+    def setUp(self):
+        ai_sales._sessions.clear()
+        ai_sales._opted_out.clear()
+        self.use([])                       # kalit bor holat (is_enabled True)
+        self.addCleanup(setattr, ai_sales, "ADMIN_ONLY", ai_sales.ADMIN_ONLY)
+        self.addCleanup(setattr, ai_sales, "AUTOSTART", ai_sales.AUTOSTART)
+
     def tearDown(self):
         ai_sales._sessions.clear()
+        ai_sales._opted_out.clear()
 
-    def test_text_filter_ignores_users_without_a_session(self):
-        """Suhbat yoqilmagan bo'lsa handler UMUMAN mos kelmasligi kerak —
-        aks holda xabar support_relay ga yetib bormaydi."""
-        message = _FakeMessage()
-        self.assertFalse(ai_sales._has_session(message))
-        ai_sales._sessions[message.from_user.id] = {"ai": {}, "last": 0, "orders": 0}
-        expected = ai_sales._allowed(message.from_user.id) and ai_sales.is_enabled()
-        self.assertEqual(ai_sales._has_session(message), expected)
+    def test_admin_plain_text_reaches_ai_without_typing_ai_first(self):
+        ai_sales.ADMIN_ONLY, ai_sales.AUTOSTART = True, True
+        self.addCleanup(setattr, ai_sales, "ADMIN_IDS", ai_sales.ADMIN_IDS)
+        ai_sales.ADMIN_IDS = [777]
+        self.assertTrue(ai_sales._has_session(_FakeMessage("salom")))
+
+    def test_customers_still_go_to_the_operators_in_admin_only_mode(self):
+        ai_sales.ADMIN_ONLY, ai_sales.AUTOSTART = True, True
+        self.addCleanup(setattr, ai_sales, "ADMIN_IDS", ai_sales.ADMIN_IDS)
+        ai_sales.ADMIN_IDS = [1]                        # 777 admin emas
+        self.assertFalse(ai_sales._has_session(_FakeMessage("salom")))
+
+    def test_ai_off_sends_the_admin_back_to_the_operators(self):
+        ai_sales.ADMIN_ONLY, ai_sales.AUTOSTART = True, True
+        self.addCleanup(setattr, ai_sales, "ADMIN_IDS", ai_sales.ADMIN_IDS)
+        ai_sales.ADMIN_IDS = [777]
+        ai_sales._opted_out.add(777)
+        self.assertFalse(ai_sales._has_session(_FakeMessage("salom")))
+
+    def test_no_key_means_everything_goes_to_the_operators(self):
+        ai_sales.PROVIDER = None
+        self.addCleanup(setattr, ai_sales, "ADMIN_IDS", ai_sales.ADMIN_IDS)
+        ai_sales.ADMIN_IDS = [777]
+        self.assertFalse(ai_sales._has_session(_FakeMessage("salom")))
+
+    def test_autostart_off_restores_the_ai_command_only_behaviour(self):
+        ai_sales.ADMIN_ONLY, ai_sales.AUTOSTART = True, False
+        self.addCleanup(setattr, ai_sales, "ADMIN_IDS", ai_sales.ADMIN_IDS)
+        ai_sales.ADMIN_IDS = [777]
+        self.assertFalse(ai_sales._has_session(_FakeMessage("salom")))
+        ai_sales._session(777)
+        self.assertTrue(ai_sales._has_session(_FakeMessage("salom")))
 
 
 class AiSalesLocationAndPaymentTest(unittest.TestCase):

@@ -91,6 +91,10 @@ GROUP_CHATS = {
     if part.lstrip("-").isdigit()
 }
 GROUP_COOLDOWN = max(0, int(os.getenv("AI_GROUP_COOLDOWN", "20")))
+# Egasi "salom" yozib javob kutdi (2026-09-13): /ai ni bilmagan odam uchun AI
+# yo'qdek. Shuning uchun ruxsati bor foydalanuvchining oddiy matni /ai siz ham
+# AI ga tushadi. "0" — eski xulq, faqat /ai dan keyin.
+AUTOSTART = os.getenv("AI_SALES_AUTOSTART", "1").strip() != "0"
 
 MAX_TOKENS = 800          # javoblar qisqa — bu ham ortig'i bilan yetadi
 CATALOG_TTL = 300         # katalog snapshotini 5 daqiqa saqlaymiz
@@ -101,6 +105,7 @@ DEFAULT_DELIVERY = "self"  # Ketoshop kuryeri
 _catalog_cache: tuple[float, str] | None = None
 _sessions: dict[int, dict] = {}
 _group_last: dict[int, float] = {}   # chat_id -> oxirgi javob vaqti (cooldown)
+_opted_out: set[int] = set()         # /ai_off bosganlar — avtomatik ochilmaydi
 
 
 def is_enabled() -> bool:
@@ -687,6 +692,7 @@ async def cmd_ai_on(message: Message):
     if not is_enabled():
         await message.answer("⚠️ AI kaliti (OPENAI_API_KEY) o'rnatilmagan — AI sotuvchi o'chiq.")
         return
+    _opted_out.discard(message.from_user.id)
     _sessions.pop(message.from_user.id, None)   # har /ai yangi suhbat
     _session(message.from_user.id)
     if ADMIN_ONLY:
@@ -708,8 +714,10 @@ async def cmd_ai_on(message: Message):
 async def cmd_ai_off(message: Message):
     if not _allowed(message.from_user.id):
         return
-    had = _sessions.pop(message.from_user.id, None) is not None
-    await message.answer("🤖 AI sotuvchi o'chirildi." if had else "AI sotuvchi yoqilmagan edi.")
+    _sessions.pop(message.from_user.id, None)
+    _opted_out.add(message.from_user.id)
+    await message.answer("🤖 AI sotuvchi o'chirildi — endi xabarlaringiz operatorlarga boradi. "
+                         "Qayta yoqish: /ai")
 
 
 @router.message(Command("ai_holat"))
@@ -852,7 +860,13 @@ def _has_session(message: Message) -> bool:
     "ishlangan" hisoblanadi va support_relay ga yetib bormaydi. Ya'ni suhbat
     yoqilmagan odamning savoli jimgina yo'qolardi."""
     user = message.from_user
-    return bool(user and user.id in _sessions and is_enabled() and _allowed(user.id))
+    if not (user and is_enabled() and _allowed(user.id)):
+        return False
+    if user.id in _sessions:
+        return True
+    # /ai siz ham: ruxsati bor odam yozsa suhbat o'zi ochiladi (on_text ichida
+    # _session() yaratadi). /ai_off bosgan odam operatorga qaytgan bo'ladi.
+    return AUTOSTART and user.id not in _opted_out
 
 
 @router.message(_has_session, F.text & ~F.text.startswith("/"))
