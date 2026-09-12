@@ -690,7 +690,9 @@ async def cmd_ai_on(message: Message):
     if not _allowed(message.from_user.id):
         return
     if not is_enabled():
-        await message.answer("⚠️ AI kaliti (OPENAI_API_KEY) o'rnatilmagan — AI sotuvchi o'chiq.")
+        await message.answer("⚠️ AI kaliti (OPENAI_API_KEY) serverda o'rnatilmagan — AI sotuvchi "
+                             "o'chiq. Dasturchi server sozlamalariga qo'shib, botni qayta "
+                             "ishga tushirishi kerak.")
         return
     _opted_out.discard(message.from_user.id)
     _sessions.pop(message.from_user.id, None)   # har /ai yangi suhbat
@@ -744,8 +746,8 @@ async def cmd_ai_status(message: Message):
         logger.warning("AI usage lookup failed", exc_info=True)
     lines += [
         "",
-        "<i>Mijozlarga ochish uchun Railway'da AI_SALES_ADMIN_ONLY=0 qo'ying.</i>",
-        "<i>Guruhda javob berishi uchun AI_GROUP_CHATS=-100... qo'ying. "
+        "<i>Mijozlarga ochish: server sozlamalarida AI_SALES_ADMIN_ONLY=0.</i>",
+        "<i>Guruhda javob berishi uchun server sozlamalarida AI_GROUP_CHATS=-100... "
         "Guruhda sotuv yo'q — faqat savol-javob, xarid uchun botga yo'naltiradi.</i>",
     ]
     await message.answer("\n".join(lines), parse_mode="HTML")
