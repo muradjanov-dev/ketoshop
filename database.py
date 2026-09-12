@@ -4,6 +4,7 @@ Database layer using asyncpg (PostgreSQL)
 import asyncpg
 import json
 import os
+from datetime import datetime
 from config import DATABASE_URL, ADMIN_IDS
 
 pool: asyncpg.Pool | None = None
@@ -811,6 +812,23 @@ async def init_db():
         """)
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_blogger_referrals_blogger ON blogger_referrals(blogger_id)"
+        )
+        # Reklama manbasi (ad_sources.py) — who walked in through which
+        # Facebook/Instagram ad. One row per user, written once at
+        # registration: PRIMARY KEY(user_id) means the first ad link a person
+        # opens is the one they're attributed to, exactly like a blogger
+        # referral. `source` is the /start payload ('fb_eritritol1'), `payload`
+        # keeps the raw text in case a link was mistyped and we want to see how.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS ad_referrals (
+                user_id BIGINT PRIMARY KEY REFERENCES users(user_id),
+                source TEXT NOT NULL,
+                payload TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ad_referrals_source ON ad_referrals(source, created_at)"
         )
         # One row per paying order. UNIQUE(order_id) is what makes crediting
         # idempotent — an order bounced back and forth through 'delivered'
@@ -4482,3 +4500,342 @@ async def last_support_reply(buyer_id: int) -> dict | None:
             buyer_id,
         )
         return dict(row) if row else None
+
+
+# ===== REKLAMA MANBASI (ad deep-link attribution, ad_sources.py) =====
+# Business rules live in ad_sources.py — this layer is only storage.
+
+async def record_ad_referral(user_id: int, source: str, payload: str | None = None) -> bool:
+    """Tie a brand-new user to the ad link they arrived through. False when
+    they already have a source — PRIMARY KEY(user_id) means the first ad a
+    person clicks is the only one that ever counts."""
+    async with pool.acquire() as conn:
+        try:
+            await conn.execute(
+                "INSERT INTO ad_referrals (user_id, source, payload) VALUES ($1, $2, $3)",
+                user_id, source, payload,
+            )
+            return True
+        except (asyncpg.UniqueViolationError, asyncpg.ForeignKeyViolationError):
+            return False
+
+
+async def get_ad_source_for_user(user_id: int) -> dict | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM ad_referrals WHERE user_id = $1", user_id)
+        return dict(row) if row else None
+
+
+async def get_ad_source_stats(since: datetime | None = None) -> list[dict]:
+    """Per-source funnel: how many people the link brought in, how many of
+    them ever bought, and what those buyers have actually paid us.
+
+    Revenue counts DELIVERED orders only and excludes admin-keyed manual/B2B
+    rows (the same basis as the blogger payout and the dashboard), so the
+    number here is money in hand, not money ordered. `since` filters on when
+    the user joined, not when they ordered — a click in July that pays off in
+    September still belongs to July's ad."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT a.source,
+                       COUNT(*)                                   AS users,
+                       COUNT(*) FILTER (WHERE t.orders > 0)       AS buyers,
+                       COALESCE(SUM(t.orders), 0)                 AS orders,
+                       COALESCE(SUM(t.revenue), 0)                AS revenue,
+                       MIN(a.created_at)                          AS first_seen,
+                       MAX(a.created_at)                          AS last_seen
+                  FROM ad_referrals a
+                  LEFT JOIN LATERAL (
+                       SELECT COUNT(*) AS orders, COALESCE(SUM(o.total), 0) AS revenue
+                         FROM orders o
+                        WHERE o.user_id = a.user_id
+                          AND o.status = 'delivered'
+                          AND {_REAL_ORDER}
+                  ) t ON TRUE
+                 WHERE ($1::timestamp IS NULL OR a.created_at >= $1)
+                 GROUP BY a.source
+                 ORDER BY users DESC, revenue DESC""",
+            since,
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_ad_source_users(source: str, limit: int = 50) -> list[dict]:
+    """Everyone who came in through one ad link, newest first, with what
+    they have bought — the drill-down behind a row of get_ad_source_stats."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT a.user_id, a.created_at, u.full_name, u.username, u.phone,
+                       COALESCE(t.orders, 0) AS orders, COALESCE(t.revenue, 0) AS revenue
+                  FROM ad_referrals a
+                  JOIN users u ON u.user_id = a.user_id
+                  LEFT JOIN LATERAL (
+                       SELECT COUNT(*) AS orders, COALESCE(SUM(o.total), 0) AS revenue
+                         FROM orders o
+                        WHERE o.user_id = a.user_id
+                          AND o.status = 'delivered'
+                          AND {_REAL_ORDER}
+                  ) t ON TRUE
+                 WHERE a.source = $1
+                 ORDER BY a.created_at DESC
+                 LIMIT $2""",
+            source, limit,
+        )
+        return [dict(r) for r in rows]
+
+
+# ===== REFERAL VA QAYTA SOTUV STATISTIKASI (2026-09-12) =====
+# Ikkala panel ham (bot: referral_stats.py, sayt: admin_web.py) shu
+# funksiyalarni chaqiradi — hisob bir joyda tursin, ikki xil raqam chiqmasin.
+
+def _customer_filter_ids() -> list[int]:
+    """Adminlar va ichki do'kon akkauntlari mijoz sifatida hisoblanmaydi —
+    _activity_excluded_ids bilan bir xil ro'yxat."""
+    return _activity_excluded_ids()
+
+
+async def get_referral_channel_stats(since: datetime | None = None) -> list[dict]:
+    """Har bir foydalanuvchi qaysi kanaldan kelganini va o'sha kanal qancha
+    pul keltirganini qaytaradi.
+
+    Kanallar: 'bloger' (blogger_referrals), 'reklama' (ad_referrals),
+    'dost' (referrals — mijozning o'z havolasi), 'togridan' (havolasiz).
+    Bittadan ortiq kanalga tushib qolgan odam yuqoridagi tartib bo'yicha
+    bittasiga yoziladi — amalda /start payload bitta bo'lgani uchun bu deyarli
+    uchramaydi, lekin jami hech qachon ikki marta sanalmasligi kerak.
+
+    `since` — foydalanuvchi QO'SHILGAN vaqt bo'yicha filtr, buyurtma vaqti
+    emas: iyulda kelib sentyabrda sotib olgan odam iyul kanaliga tegishli."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""WITH base AS (
+                    SELECT u.user_id,
+                           CASE WHEN br.user_id IS NOT NULL THEN 'bloger'
+                                WHEN ar.user_id IS NOT NULL THEN 'reklama'
+                                WHEN r.referred_user_id IS NOT NULL THEN 'dost'
+                                ELSE 'togridan' END AS channel
+                      FROM users u
+                      LEFT JOIN blogger_referrals br ON br.user_id = u.user_id
+                      LEFT JOIN ad_referrals ar ON ar.user_id = u.user_id
+                      LEFT JOIN referrals r ON r.referred_user_id = u.user_id
+                     WHERE ($1::timestamp IS NULL OR u.created_at >= $1)
+                       AND u.user_id <> ALL($2::bigint[])
+                )
+                SELECT b.channel,
+                       COUNT(*)                             AS users,
+                       COUNT(*) FILTER (WHERE t.orders > 0) AS buyers,
+                       COALESCE(SUM(t.orders), 0)           AS orders,
+                       COALESCE(SUM(t.revenue), 0)          AS revenue
+                  FROM base b
+                  LEFT JOIN LATERAL (
+                       SELECT COUNT(*) AS orders, COALESCE(SUM(o.total), 0) AS revenue
+                         FROM orders o
+                        WHERE o.user_id = b.user_id
+                          AND o.status = 'delivered'
+                          AND {_REAL_ORDER}
+                  ) t ON TRUE
+                 GROUP BY b.channel""",
+            since, _customer_filter_ids(),
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_top_referrers(since: datetime | None = None, limit: int = 5) -> list[dict]:
+    """Eng ko'p do'st taklif qilgan mijozlar (referrals jadvali)."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT r.referrer_user_id AS user_id, COUNT(*) AS invites,
+                      u.full_name, u.username
+                 FROM referrals r
+                 JOIN users u ON u.user_id = r.referrer_user_id
+                WHERE ($1::timestamp IS NULL OR r.created_at >= $1)
+                  AND r.referrer_user_id <> ALL($2::bigint[])
+                  AND r.referred_user_id <> ALL($2::bigint[])
+                GROUP BY r.referrer_user_id, u.full_name, u.username
+                ORDER BY invites DESC, user_id
+                LIMIT $3""",
+            since, _customer_filter_ids(), limit,
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_blogger_referral_leaders(since: datetime | None = None,
+                                        limit: int = 5) -> list[dict]:
+    """Davr ichida eng ko'p mijoz olib kelgan blogerlar — get_bloggers_with_
+    stats dan farqi shuki, bu yerda davr bo'yicha filtr bor."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT b.id, b.name, b.code, b.active,
+                       COUNT(r.user_id) AS referred,
+                       COALESCE(SUM(t.revenue), 0) AS revenue
+                  FROM bloggers b
+                  JOIN blogger_referrals r ON r.blogger_id = b.id
+                  LEFT JOIN LATERAL (
+                       SELECT COALESCE(SUM(o.total), 0) AS revenue
+                         FROM orders o
+                        WHERE o.user_id = r.user_id
+                          AND o.status = 'delivered'
+                          AND {_REAL_ORDER}
+                  ) t ON TRUE
+                 WHERE ($1::timestamp IS NULL OR r.created_at >= $1)
+                 GROUP BY b.id, b.name, b.code, b.active
+                 ORDER BY referred DESC, revenue DESC
+                 LIMIT $2""",
+            since, limit,
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_retention_summary(since: datetime | None = None) -> dict:
+    """Qayta sotuv manzarasi: nechta mijoz bir marta, nechtasi 2-3, nechtasi
+    4+ marta olgan, qayta sotuvdan tushgan pul va o'rtacha chek.
+
+    Faqat YETKAZILGAN buyurtmalar, admin qo'lda kiritgan va B2B qatorlarsiz —
+    boshqa hisobotlar bilan bir xil asos."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""WITH per_user AS (
+                    SELECT o.user_id, COUNT(*) AS orders, SUM(o.total) AS revenue
+                      FROM orders o
+                     WHERE o.status = 'delivered' AND {_REAL_ORDER}
+                       AND ($1::timestamp IS NULL OR o.created_at >= $1)
+                       AND o.user_id <> ALL($2::bigint[])
+                     GROUP BY o.user_id
+                )
+                SELECT COUNT(*)                                        AS customers,
+                       COUNT(*) FILTER (WHERE orders = 1)              AS once,
+                       COUNT(*) FILTER (WHERE orders BETWEEN 2 AND 3)  AS few,
+                       COUNT(*) FILTER (WHERE orders >= 4)             AS loyal,
+                       COALESCE(SUM(orders), 0)                        AS orders,
+                       COALESCE(SUM(revenue), 0)                       AS revenue,
+                       COALESCE(SUM(orders) FILTER (WHERE orders > 1), 0)  AS repeat_orders,
+                       COALESCE(SUM(revenue) FILTER (WHERE orders > 1), 0) AS repeat_revenue
+                  FROM per_user""",
+            since, _customer_filter_ids(),
+        )
+        return dict(row) if row else {}
+
+
+async def get_repeat_customers(since: datetime | None = None, limit: int = 20,
+                                offset: int = 0, min_orders: int = 2,
+                                sort: str = "revenue") -> tuple[list[dict], int]:
+    """Mijozlar ro'yxati: kim necha marta qaytib keldi, qancha pul qoldirdi,
+    oxirgi marta qachon olgan. `sort` — 'revenue' | 'orders' | 'recent'."""
+    order_by = {
+        "orders": "orders DESC, revenue DESC",
+        "recent": "last_order DESC",
+    }.get(sort, "revenue DESC, orders DESC")
+    async with pool.acquire() as conn:
+        base = f"""SELECT o.user_id, COUNT(*) AS orders, SUM(o.total) AS revenue,
+                          MIN(o.created_at) AS first_order, MAX(o.created_at) AS last_order
+                     FROM orders o
+                    WHERE o.status = 'delivered' AND {_REAL_ORDER}
+                      AND ($1::timestamp IS NULL OR o.created_at >= $1)
+                      AND o.user_id <> ALL($2::bigint[])
+                    GROUP BY o.user_id
+                   HAVING COUNT(*) >= $3"""
+        total = await conn.fetchval(
+            f"SELECT COUNT(*) FROM ({base}) x", since, _customer_filter_ids(), min_orders)
+        rows = await conn.fetch(
+            f"""SELECT c.*, u.full_name, u.username, u.phone,
+                       EXTRACT(DAY FROM (NOW() - c.last_order))::int AS days_since,
+                       ROUND((c.revenue / NULLIF(c.orders, 0))::numeric) AS avg_check
+                  FROM ({base}) c
+                  JOIN users u ON u.user_id = c.user_id
+                 ORDER BY {order_by}
+                 LIMIT $4 OFFSET $5""",
+            since, _customer_filter_ids(), min_orders, limit, offset,
+        )
+        return [dict(r) for r in rows], int(total or 0)
+
+
+def _aggregate_items(rows: list) -> list[dict]:
+    """orders.items (JSON matn) -> mahsulot bo'yicha yig'indi. SQL emas,
+    Python — get_top_products ham shunday qiladi: bitta buzuq JSON butun
+    hisobotni yiqitmasin, va aksiya sovg'alarini (is_bonus) chetlab o'tamiz."""
+    agg: dict = {}
+    for r in rows:
+        raw = r["items"]
+        try:
+            items = json.loads(raw) if isinstance(raw, str) else (raw or [])
+        except (TypeError, ValueError):
+            continue
+        for it in items or []:
+            if it.get("is_bonus"):
+                continue
+            key = it.get("product_id") or it.get("set_id") or it.get("name")
+            if key is None:
+                continue
+            entry = agg.setdefault(key, {
+                "product_id": it.get("product_id"),
+                "name": it.get("name", "—"),
+                "unit": it.get("unit", ""),
+                "quantity": 0.0,
+                "amount": 0.0,
+                "times": 0,
+            })
+            qty = float(it.get("quantity") or 0)
+            entry["quantity"] += qty
+            entry["amount"] += float(it.get("price") or 0) * qty
+            entry["times"] += 1
+    return sorted(agg.values(), key=lambda e: e["amount"], reverse=True)
+
+
+async def get_customer_purchase_profile(user_id: int) -> dict:
+    """Bitta mijozning to'liq savdo tarixi: nechta buyurtma, qancha pul,
+    birinchi/oxirgi xarid, buyurtmalar oralig'idagi o'rtacha kun va ASOSAN
+    nima olishi."""
+    async with pool.acquire() as conn:
+        head = await conn.fetchrow(
+            f"""SELECT COUNT(*) AS orders, COALESCE(SUM(o.total), 0) AS revenue,
+                       MIN(o.created_at) AS first_order, MAX(o.created_at) AS last_order
+                  FROM orders o
+                 WHERE o.user_id = $1 AND o.status = 'delivered' AND {_REAL_ORDER}""",
+            user_id,
+        )
+        rows = await conn.fetch(
+            f"""SELECT o.items FROM orders o
+                 WHERE o.user_id = $1 AND o.status = 'delivered' AND {_REAL_ORDER}""",
+            user_id,
+        )
+        user = await conn.fetchrow(
+            "SELECT user_id, full_name, username, phone FROM users WHERE user_id = $1",
+            user_id,
+        )
+
+    profile = dict(head or {})
+    profile["user"] = dict(user) if user else {"user_id": user_id}
+    profile["products"] = _aggregate_items(rows)
+    orders = int(profile.get("orders") or 0)
+    profile["avg_check"] = (float(profile.get("revenue") or 0) / orders) if orders else 0
+    first, last = profile.get("first_order"), profile.get("last_order")
+    # Buyurtmalar orasidagi o'rtacha kun — "qachon yana keladi" degan savolga
+    # eng arzon javob. Bitta buyurtmada ma'nosi yo'q, shuning uchun None.
+    profile["avg_gap_days"] = (
+        round((last - first).days / (orders - 1)) if orders > 1 and first and last else None
+    )
+    return profile
+
+
+async def get_repeat_top_products(since: datetime | None = None, limit: int = 10,
+                                   repeat_only: bool = True) -> list[dict]:
+    """Qayta keladigan mijozlar asosan nima olishini ko'rsatadi — ya'ni
+    do'konni ushlab turadigan mahsulotlar. repeat_only=False bo'lsa hamma
+    yetkazilgan buyurtmalar bo'yicha."""
+    repeat_clause = ""
+    if repeat_only:
+        repeat_clause = """AND o.user_id IN (
+                    SELECT user_id FROM orders
+                     WHERE status = 'delivered'
+                       AND COALESCE(source, 'bot') NOT IN ('manual', 'b2b')
+                     GROUP BY user_id HAVING COUNT(*) > 1)"""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT o.items FROM orders o
+                 WHERE o.status = 'delivered' AND {_REAL_ORDER}
+                   AND ($1::timestamp IS NULL OR o.created_at >= $1)
+                   AND o.user_id <> ALL($2::bigint[])
+                   {repeat_clause}""",
+            since, _customer_filter_ids(),
+        )
+    return _aggregate_items(rows)[:limit]

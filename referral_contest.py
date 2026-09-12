@@ -205,15 +205,21 @@ async def award_referral(referrer_id: int, referred_id: int, bot: Bot) -> None:
 
 async def notify_admins_new_user(bot: Bot, new_user_id: int, username: str | None,
                                   full_name: str | None, referrer_id: int | None,
-                                  blogger: dict | None = None) -> None:
+                                  blogger: dict | None = None,
+                                  ad_source: str | None = None) -> None:
     """Fired for every brand-new registration, referred or not (owner
     request 2026-07-30: wants to see who joins and who invited them).
 
     `blogger` is set when they arrived through a partner blogger's link
-    (bloggers.py) — that's the strongest attribution there is, so it wins
-    over the plain user-to-user referral below."""
+    (bloggers.py) and `ad_source` when they came from a Facebook/Instagram ad
+    link (ad_sources.py) — both are paid acquisition and beat the plain
+    user-to-user referral below. They are mutually exclusive by construction:
+    one /start payload can only parse as one of the two."""
     who = _display_name(username, full_name, new_user_id)
-    if blogger:
+    if ad_source:
+        ref_line = (f"🔗 Keldi: 📣 <b>reklama</b>\n"
+                    f"   manba: <code>{ad_source}</code>")
+    elif blogger:
         ref_line = (f"🔗 Taklif qilgan: 📢 <b>{blogger['name']}</b> (bloger)\n"
                     f"   havola: <code>?start={blogger['code']}</code>")
     elif referrer_id:

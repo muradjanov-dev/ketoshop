@@ -1265,6 +1265,50 @@ async def serve_image(request: web.Request):
     )
 
 
+# ──────────────────── qayta sotuv + referal statistikasi ─────────────────────
+# Bot paneli (retention_stats.py / referral_stats.py) bilan bir xil
+# funksiyalarni chaqiradi — sayt va bot bir xil raqamni ko'rsatishi uchun.
+
+def _retention_since(period: str):
+    from datetime import datetime, timedelta
+    days = {"30d": 30, "90d": 90, "365d": 365}.get(period)
+    return datetime.utcnow() - timedelta(days=days) if days else None
+
+
+@require_auth
+async def api_retention(request: web.Request):
+    """Qayta sotuv tabi uchun hamma narsa bitta chaqiruvda: umumiy manzara,
+    qaytib kelgan mijozlar ro'yxati, ular nima olishi va referal kanallari."""
+    period = request.query.get("period", "all")
+    sort = request.query.get("sort", "revenue")
+    if sort not in ("revenue", "orders", "recent"):
+        sort = "revenue"
+    since = _retention_since(period)
+
+    summary, (customers, total), products, channels = await asyncio.gather(
+        database.get_retention_summary(since),
+        database.get_repeat_customers(since, limit=100, sort=sort, min_orders=1),
+        database.get_repeat_top_products(since, limit=10),
+        database.get_referral_channel_stats(since),
+    )
+    return _json({
+        "summary": summary,
+        "customers": customers,
+        "total": total,
+        "products": products,
+        "channels": channels,
+        "period": period,
+        "sort": sort,
+    })
+
+
+@require_auth
+async def api_retention_customer(request: web.Request):
+    """Bitta mijozning savdo profili — jadvaldagi qatorni bosganda ochiladi."""
+    user_id = int(request.match_info["user_id"])
+    return _json({"profile": await database.get_customer_purchase_profile(user_id)})
+
+
 # ─────────────────────────────── wiring ─────────────────────────────────────
 
 def setup_admin_routes(app: web.Application):
@@ -1301,6 +1345,8 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/ads/status", api_ads_status)
     app.router.add_get("/admin/api/ads/leads", api_ads_leads)
     app.router.add_post("/admin/api/ads/leads/{lead_id}/handled", api_ads_lead_handled)
+    app.router.add_get("/admin/api/retention", api_retention)
+    app.router.add_get("/admin/api/retention/customer/{user_id:\\d+}", api_retention_customer)
     app.router.add_get("/admin/api/bloggers", api_bloggers_list)
     app.router.add_post("/admin/api/bloggers", api_bloggers_create)
     app.router.add_get("/admin/api/bloggers/suggest", api_bloggers_suggest)

@@ -37,6 +37,10 @@ from handlers.courier import router as courier_router
 from bloggers import router as bloggers_router
 from meta_leads import router as meta_leads_router
 from meta_ads import router as meta_ads_router
+from ad_sources import router as ad_sources_router
+from ai_sales import router as ai_sales_router
+from referral_stats import router as referral_stats_router
+from retention_stats import router as retention_stats_router
 
 from webapp_server import create_webapp
 
@@ -188,6 +192,9 @@ async def main():
     # brauzerdagi FB profiliga bog'liq; bu esa token bilan ishlaydi,
     # shuning uchun statistika har doim qo'l ostida bo'ladi.
     dp.include_router(meta_ads_router)
+    dp.include_router(ad_sources_router)
+    dp.include_router(referral_stats_router)
+    dp.include_router(retention_stats_router)
     dp.include_router(search_router)
     dp.include_router(catalog_router)
     dp.include_router(reviews_router)
@@ -201,6 +208,9 @@ async def main():
     dp.include_router(bloggers_router)
     # Catch-all for free text that no state/handler above claimed — must stay
     # last so it never steals a message a real flow was waiting on.
+    # AI sotuvchi support_relay dan oldin: hech kim ushlamagan matnni avval
+    # AI ko'radi (suhbat yoqilgan bo'lsa), yoqilmagan bo'lsa relay oladi.
+    dp.include_router(ai_sales_router)
     dp.include_router(support_relay_router)
 
     # Start aiohttp web server for Mini App

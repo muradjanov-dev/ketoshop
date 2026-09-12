@@ -118,12 +118,14 @@ class SubscriptionGateMiddleware(BaseMiddleware):
                 try:
                     import referral_contest
                     import bloggers
+                    import ad_sources
                     from handlers.start import ensure_registered
 
                     payload = _pending_start_payload.pop(user.id, None)
                     referrer_id = referral_contest.parse_ref_payload(payload)
                     blogger_code = bloggers.parse_payload(payload)
-                    await ensure_registered(bot, user, referrer_id, blogger_code)
+                    ad_source = ad_sources.parse_payload(payload)
+                    await ensure_registered(bot, user, referrer_id, blogger_code, ad_source)
                 except Exception:
                     logger.warning("Deferred registration failed for user %s", user.id, exc_info=True)
                 try:

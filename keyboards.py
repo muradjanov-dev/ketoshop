@@ -31,9 +31,16 @@ BUYER_COMMANDS = [
 ADMIN_COMMANDS = [
     BotCommand(command="admin", description="🛠 Admin panel"),
     BotCommand(command="blogerlar", description="📢 Blogerlar (hamkorlar)"),
+    BotCommand(command="referallar", description="📊 Referal statistikasi"),
+    BotCommand(command="qayta_sotuv", description="🔁 Qayta sotuv statistikasi"),
     BotCommand(command="xabarlar", description="💬 Botga yozilgan xabarlar"),
     BotCommand(command="reklama", description="📣 Reklama statistikasi"),
+    BotCommand(command="reklama_manba", description="🔗 Reklama manbalari (kim keldi)"),
+    BotCommand(command="reklama_havola", description="🔗 Reklama havolasi yasash"),
     BotCommand(command="leads", description="📋 Yangi leadlar"),
+    BotCommand(command="ai", description="🤖 AI sotuvchi bilan suhbat"),
+    BotCommand(command="ai_off", description="🤖 AI sotuvchini o'chirish"),
+    BotCommand(command="ai_holat", description="🤖 AI sotuvchi holati"),
     BotCommand(command="tips_status", description="💡 Maslahatlar holati"),
     BotCommand(command="keto_status", description="🥑 Keto dasturi holati"),
     BotCommand(command="backup_now", description="💾 Bazadan nusxa olish"),
@@ -542,6 +549,7 @@ def admin_stats_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text=get_text("btn_admin_targets", lang), callback_data="admin:targets"),
+            InlineKeyboardButton(text="🔁 Qayta sotuv", callback_data="admin:retention"),
         ],
         [
             InlineKeyboardButton(text=get_text("btn_admin_excel", lang), callback_data="admin:excel"),
@@ -598,6 +606,7 @@ def admin_marketing_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="📢 Blogerlar", callback_data="admin:bloger"),
+            InlineKeyboardButton(text="📊 Referallar", callback_data="admin:referrals"),
         ],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")],
     ])

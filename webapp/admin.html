@@ -232,6 +232,7 @@
     <button class="tab" data-view="keto">🥑 Keto</button>
     <button class="tab" data-view="bloggers">📢 Blogerlar</button>
     <button class="tab" data-view="reklama">📣 Reklama</button>
+    <button class="tab" data-view="retention">🔁 Qayta sotuv</button>
     <button class="tab" data-view="expenses">📉 Chiqimlar</button>
   </div>
 
@@ -437,6 +438,91 @@
     </div>
   </section>
 
+  <!-- ===== QAYTA SOTUV (retention) VIEW ===== -->
+  <section class="view" id="view-retention">
+    <div class="toolbar">
+      <span class="count-pill" id="retCount">Mijozlar: —</span>
+      <div class="spacer" style="margin-left:auto"></div>
+      <button class="btn btn-o btn-sm" id="retRefreshBtn" type="button">🔄 Yangilash</button>
+    </div>
+    <p class="hint" style="margin:-6px 0 16px">
+      Bu yerda <b>bor mijozga qayta sotuv</b> ko'rinadi: kim necha marta qaytib keldi,
+      qancha pul qoldirdi, oxirgi marta qachon olgan va asosan nima oladi. Hisob faqat
+      <b>yetkazilgan</b> buyurtmalar bo'yicha — admin qo'lda kiritgan va B2B qatorlar,
+      shuningdek admin/ichki akkauntlar hisobga olinmaydi.
+    </p>
+
+    <div class="period-switch" id="retPeriod">
+      <button data-period="30d">30 kun</button>
+      <button data-period="90d">3 oy</button>
+      <button data-period="365d">1 yil</button>
+      <button class="active" data-period="all">Hammasi</button>
+    </div>
+
+    <div class="kpi-grid" id="retKpis"></div>
+
+    <div class="dash-card" style="margin-top:16px">
+      <h3>👥 Mijozlar</h3>
+      <div class="period-switch" id="retSort" style="margin:10px 0">
+        <button class="active" data-sort="revenue">💰 Pul bo'yicha</button>
+        <button data-sort="orders">🔁 Xaridlar soni</button>
+        <button data-sort="recent">🕒 Oxirgi xarid</button>
+      </div>
+      <div class="tbl-wrap">
+        <table class="data-table" style="font-size:13.5px">
+          <thead><tr>
+            <th>Mijoz</th><th>Telefon</th>
+            <th style="text-align:right">Xaridlar</th>
+            <th style="text-align:right">Jami</th>
+            <th style="text-align:right">O'rtacha chek</th>
+            <th style="text-align:right">Oxirgi xarid</th>
+          </tr></thead>
+          <tbody id="retRows"></tbody>
+        </table>
+        <div class="empty" id="retEmpty" style="display:none">Hozircha yetkazilgan buyurtma yo'q.</div>
+      </div>
+    </div>
+
+    <div class="dash-card" style="margin-top:16px">
+      <h3>🛒 Qaytib keladiganlar nima oladi</h3>
+      <p class="hint" style="margin:4px 0 10px">
+        Ikki va undan ko'p marta xarid qilgan mijozlarning savatidan yig'ilgan —
+        do'konni ushlab turgan mahsulotlar shular.
+      </p>
+      <div class="tbl-wrap">
+        <table class="data-table" style="font-size:13.5px">
+          <thead><tr>
+            <th>Mahsulot</th>
+            <th style="text-align:right">Miqdor</th>
+            <th style="text-align:right">Necha marta</th>
+            <th style="text-align:right">Summa</th>
+          </tr></thead>
+          <tbody id="retProdRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="dash-card" style="margin-top:16px">
+      <h3>📊 Mijozlar qayerdan keldi</h3>
+      <p class="hint" style="margin:4px 0 10px">
+        Bloger havolasi, reklama havolasi (<code>?start=fb_…</code>), mijozning do'stiga
+        bergan havolasi yoki havolasiz — har biri qancha XARIDOR va qancha pul keltirgani.
+      </p>
+      <div class="tbl-wrap">
+        <table class="data-table" style="font-size:13.5px">
+          <thead><tr>
+            <th>Kanal</th>
+            <th style="text-align:right">Kelgan</th>
+            <th style="text-align:right">Xarid qilgan</th>
+            <th style="text-align:right">Konversiya</th>
+            <th style="text-align:right">Tushum</th>
+          </tr></thead>
+          <tbody id="retChanRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <!-- ===== REKLAMA (Meta Ads) VIEW ===== -->
   <section class="view" id="view-reklama">
     <div class="toolbar">
@@ -536,6 +622,17 @@
 </div>
 
 <!-- ===== EXPENSE MODAL ===== -->
+<!-- ===== MIJOZ PROFILI MODALI (qayta sotuv) ===== -->
+<div class="modal-bg" id="custModal">
+  <div class="modal" style="max-width:760px">
+    <h2 id="custTitle">Mijoz</h2>
+    <div id="custBody"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-o" data-close>Yopish</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="expModal">
   <form class="modal" id="expForm">
     <h2 id="expModalTitle">Yangi chiqim kiritish</h2>
@@ -916,7 +1013,7 @@ $('#dashCustomDateBtn').addEventListener('click', () => {
 });
 
 /* ===== tabs ===== */
-const VIEWS=['dashboard','products','sets','promos','keto','bloggers','reklama','expenses'];
+const VIEWS=['dashboard','products','sets','promos','keto','bloggers','reklama','retention','expenses'];
 function switchView(v){
   if(!VIEWS.includes(v))v='dashboard';
   localStorage.setItem('ketoshop_admin_view',v);
@@ -929,6 +1026,7 @@ function switchView(v){
   if(v==='keto')loadKeto();
   if(v==='bloggers')loadBloggers();
   if(v==='reklama')loadAds();
+  if(v==='retention')loadRetention();
   if(v==='expenses')loadExpenses();
 }
 $$('.tab').forEach(t=>t.addEventListener('click',()=>switchView(t.dataset.view)));
@@ -1492,6 +1590,108 @@ $('#adsRefreshBtn').addEventListener('click',()=>{adsLoaded=true;loadAds();});
   const t=document.querySelector('.tab[data-view="reklama"]');
   if(t)t.addEventListener('click',()=>{if(!adsLoaded){adsLoaded=true;loadAds();}});
 })();
+
+
+/* ===== qayta sotuv (retention) ===== */
+/* Bot panelidagi /qayta_sotuv bilan bir xil hisob — ikkalasi ham
+   database.get_retention_summary va sheriklarini chaqiradi. */
+let RET_PERIOD='all', RET_SORT='revenue', retLoaded=false;
+const CHAN_LABELS={bloger:'📢 Bloger havolasi',reklama:'📣 Reklama havolasi',
+                   dost:"🤝 Do'st taklifi",togridan:"➡️ Havolasiz (to'g'ridan)"};
+
+function retPct(part,whole){return whole?Math.round(part/whole*100)+'%':'0%';}
+
+async function loadRetention(){
+  const d=await api(`/admin/api/retention?period=${RET_PERIOD}&sort=${RET_SORT}`);
+  const s=d.summary||{}, customers=+s.customers||0, orders=+s.orders||0;
+  const revenue=+s.revenue||0, few=+s.few||0, loyal=+s.loyal||0;
+  const returning=few+loyal;
+
+  $('#retCount').textContent=`Mijozlar: ${customers}`;
+  $('#retKpis').innerHTML=[
+    {lab:'Xaridorlar', val:customers+' ta'},
+    {lab:'Qaytib kelgan', val:`${returning} ta · ${retPct(returning,customers)}`},
+    {lab:'Qayta sotuv tushumi', val:fmtSom(+s.repeat_revenue||0)},
+    {lab:"O'rtacha chek", val:fmtSom(orders?revenue/orders:0)},
+    {lab:'1 mijozga', val:(customers?(orders/customers).toFixed(1):'0')+' buyurtma'},
+    {lab:'4+ marta olgan', val:loyal+' ta'},
+  ].map(k=>`<div class="kpi-card"><div class="lab">${k.lab}</div>
+             <div class="val">${k.val}</div></div>`).join('');
+
+  const rows=d.customers||[];
+  $('#retEmpty').style.display=rows.length?'none':'';
+  $('#retRows').innerHTML=rows.map(c=>`
+    <tr style="cursor:pointer" onclick="openCustomer(${c.user_id})">
+      <td>${esc(c.full_name||(c.username?'@'+c.username:'ID '+c.user_id))}</td>
+      <td>${esc(c.phone||'—')}</td>
+      <td class="tnum" style="text-align:right">${c.orders}</td>
+      <td class="tnum" style="text-align:right">${fmtSom(+c.revenue)}</td>
+      <td class="tnum" style="text-align:right">${fmtSom(+c.avg_check||0)}</td>
+      <td class="tnum" style="text-align:right">${c.days_since==null?'—':c.days_since+' kun oldin'}</td>
+    </tr>`).join('');
+
+  $('#retProdRows').innerHTML=(d.products||[]).map(p=>`
+    <tr><td>${esc(p.name)}</td>
+      <td class="tnum" style="text-align:right">${(+p.quantity).toLocaleString('ru-RU')}</td>
+      <td class="tnum" style="text-align:right">${p.times}</td>
+      <td class="tnum" style="text-align:right">${fmtSom(+p.amount)}</td></tr>`).join('')
+    || '<tr><td colspan="4" style="color:var(--ink-3)">Ma\'lumot yo\'q</td></tr>';
+
+  const chans={};(d.channels||[]).forEach(c=>chans[c.channel]=c);
+  $('#retChanRows').innerHTML=Object.keys(CHAN_LABELS).map(key=>{
+    const c=chans[key]||{users:0,buyers:0,revenue:0};
+    return `<tr><td>${CHAN_LABELS[key]}</td>
+      <td class="tnum" style="text-align:right">${+c.users||0}</td>
+      <td class="tnum" style="text-align:right">${+c.buyers||0}</td>
+      <td class="tnum" style="text-align:right">${retPct(+c.buyers||0,+c.users||0)}</td>
+      <td class="tnum" style="text-align:right">${fmtSom(+c.revenue||0)}</td></tr>`;
+  }).join('');
+}
+
+window.openCustomer=async function(userId){
+  const box=$('#custBody');
+  box.innerHTML='<p style="color:var(--ink-3)">Yuklanmoqda…</p>';
+  $('#custModal').classList.add('open');
+  try{
+    const d=await api('/admin/api/retention/customer/'+userId);
+    const p=d.profile||{}, u=p.user||{};
+    const dt=v=>v?new Date(v).toLocaleDateString('ru-RU'):'—';
+    $('#custTitle').textContent=u.full_name||(u.username?'@'+u.username:'ID '+userId);
+    box.innerHTML=`
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card"><div class="lab">Xaridlar</div><div class="val">${p.orders||0} ta</div></div>
+        <div class="kpi-card"><div class="lab">Jami</div><div class="val">${fmtSom(+p.revenue||0)}</div></div>
+        <div class="kpi-card"><div class="lab">O'rtacha chek</div><div class="val">${fmtSom(+p.avg_check||0)}</div></div>
+        <div class="kpi-card"><div class="lab">Xaridlar orasi</div><div class="val">${p.avg_gap_days==null?'—':p.avg_gap_days+' kun'}</div></div>
+      </div>
+      <p style="font-size:13.5px;color:var(--ink-2);margin-bottom:10px">
+        📅 Birinchi xarid: <b>${dt(p.first_order)}</b> · Oxirgi xarid: <b>${dt(p.last_order)}</b>
+        ${u.phone?' · 📞 <b>'+esc(u.phone)+'</b>':''}
+        ${u.username?' · 💬 <a href="https://t.me/'+esc(u.username)+'" target="_blank">@'+esc(u.username)+'</a>':''}
+      </p>
+      <div class="tbl-wrap"><table class="data-table" style="font-size:13.5px">
+        <thead><tr><th>Mahsulot</th><th style="text-align:right">Miqdor</th>
+          <th style="text-align:right">Marta</th><th style="text-align:right">Summa</th></tr></thead>
+        <tbody>${(p.products||[]).map(it=>`<tr><td>${esc(it.name)}</td>
+          <td class="tnum" style="text-align:right">${(+it.quantity).toLocaleString('ru-RU')}</td>
+          <td class="tnum" style="text-align:right">${it.times}</td>
+          <td class="tnum" style="text-align:right">${fmtSom(+it.amount)}</td></tr>`).join('')
+          || '<tr><td colspan="4" style="color:var(--ink-3)">Yetkazilgan buyurtma yo\'q</td></tr>'}
+        </tbody></table></div>`;
+  }catch(err){
+    box.innerHTML='<p style="color:var(--red)">⚠️ '+esc(err.message)+'</p>';
+  }
+};
+
+$$('#retPeriod button').forEach(b=>b.addEventListener('click',()=>{
+  $$('#retPeriod button').forEach(x=>x.classList.toggle('active',x===b));
+  RET_PERIOD=b.dataset.period;loadRetention();
+}));
+$$('#retSort button').forEach(b=>b.addEventListener('click',()=>{
+  $$('#retSort button').forEach(x=>x.classList.toggle('active',x===b));
+  RET_SORT=b.dataset.sort;loadRetention();
+}));
+$('#retRefreshBtn').addEventListener('click',loadRetention);
 
 /* ===== expenses ===== */
 let EXPENSES=[];

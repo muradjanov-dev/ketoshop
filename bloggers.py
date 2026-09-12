@@ -67,8 +67,10 @@ DEFAULT_MAX_ORDERS = 10    # per referred buyer
 TZ_OFFSET = timedelta(hours=5)   # Asia/Tashkent, fixed UTC+5, no DST
 
 # 'ref123456789' is the Keto musobaqasi referral payload (referral_contest.py)
-# — a blogger code must never be able to shadow one.
+# — a blogger code must never be able to shadow one. 'fb_'/'ig_'/'ad_' belong
+# to the Facebook ad links (ad_sources.py) for the same reason.
 _RESERVED_PREFIXES = ("ref",)
+_AD_PREFIXES = ("fb_", "ig_", "ad_")
 _CODE_RE = re.compile(r"^[a-z0-9_]{2,48}$")
 
 # Uzbek Latin niceties before the generic strip: o'/g' are letters, not
@@ -160,6 +162,8 @@ def parse_payload(payload: str | None) -> str | None:
         return None
     candidate = candidate.lower().replace("-", "_")
     if candidate.startswith("ref") and candidate[3:].isdigit():
+        return None
+    if candidate.startswith(_AD_PREFIXES):
         return None
     return candidate
 
@@ -680,6 +684,7 @@ async def _render_admin_list() -> tuple[str, InlineKeyboardMarkup]:
     rows = [[InlineKeyboardButton(text=f"📊 {b['name']}", callback_data=f"admin:bloger:view:{b['id']}")]
             for b in rows_data[:20]]
     rows.append([InlineKeyboardButton(text="➕ Yangi bloger", callback_data="admin:bloger:new")])
+    rows.append([InlineKeyboardButton(text="📊 Referal statistikasi", callback_data="admin:referrals")])
     rows.append([InlineKeyboardButton(text="🌐 Saytda ochish", url=f"{WEBAPP_URL}/admin")])
     rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_menu:marketing")])
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
@@ -720,6 +725,8 @@ async def _render_admin_view(blogger_id: int) -> tuple[str, InlineKeyboardMarkup
 
     bid = blogger_id
     rows = [
+        [InlineKeyboardButton(text="🔗 Havolani yuborish",
+                              callback_data=f"admin:bloger:send:{bid}")],
         [InlineKeyboardButton(text="👥 Mijozlari", callback_data=f"admin:bloger:buyers:{bid}"),
          InlineKeyboardButton(text="🧾 Buyurtmalari", callback_data=f"admin:bloger:orders:{bid}")],
         [InlineKeyboardButton(text="💯 Foizni o'zgartirish", callback_data=f"admin:bloger:edit:percent:{bid}"),
@@ -1098,3 +1105,55 @@ async def admin_bloger_edit_save(message: Message, state: FSMContext, bot: Bot):
     text, keyboard = await _render_admin_view(blogger_id)
     await message.answer("✅ Saqlandi.")
     await message.answer(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+
+
+# ─────────────────────── havolani blogerga yetkazish ────────────────────────
+
+def share_text(blogger: dict) -> str:
+    """Blogerga o'zi uchun tayyor xabar — admin nusxalab yoki forward qilib
+    yuborishi uchun. notify_registered bilan bir xil gap, lekin DM emas,
+    admin qo'liga beriladi (Telegram id hali ma'lum bo'lmaganda yagona yo'l)."""
+    percent = _pct(blogger["percent"])
+    return "\n\n".join([
+        "🤝 <b>Ketoshop bloger dasturi</b>",
+        f"🔗 Sizning shaxsiy havolangiz:\n<code>{link(blogger['code'])}</code>",
+        f"💰 Shu havola orqali kelgan har bir mijozning dastlabki "
+        f"<b>{blogger['max_orders']} ta</b> xarididan olingan foydaning "
+        f"<b>{percent}%</b> keshbek sifatida balansingizga tushadi.",
+        "🛒 Keshbekni Ketoshopdan mahsulot sotib olishda ishlatishingiz mumkin.",
+    ])
+
+
+@router.callback_query(F.data.startswith("admin:bloger:send:"))
+async def admin_bloger_send_link(callback: CallbackQuery, bot: Bot):
+    """Havolani blogerning o'ziga yuboradi. Telegram id bo'lmasa — adminga
+    tayyor xabar beradi, u forward qiladi: bloger hali botga kirmagan bo'lishi
+    mumkin va bu normal holat (bloggers.user_id ixtiyoriy)."""
+    if not _is_admin(callback.from_user.id):
+        return
+    blogger_id = int(callback.data.rsplit(":", 1)[1])
+    blogger = await database.get_blogger(blogger_id)
+    if not blogger:
+        await callback.answer("Bloger topilmadi", show_alert=True)
+        return
+
+    user_id = blogger.get("user_id")
+    if not user_id:
+        await callback.answer()
+        await callback.message.answer(
+            "🆔 Bu blogerning Telegram ID si kiritilmagan — pastdagi xabarni "
+            "nusxalab yoki forward qilib o'zingiz yuboring:",
+            parse_mode=ParseMode.HTML,
+        )
+        await callback.message.answer(share_text(blogger), parse_mode=ParseMode.HTML)
+        return
+
+    try:
+        await notify_registered(blogger, bot)
+    except Exception:
+        logger.warning("Link DM to blogger %s failed", blogger_id, exc_info=True)
+        await callback.answer("Yuborilmadi — bloger botni bloklagan bo'lishi mumkin",
+                              show_alert=True)
+        await callback.message.answer(share_text(blogger), parse_mode=ParseMode.HTML)
+        return
+    await callback.answer("✅ Havola blogerga yuborildi")

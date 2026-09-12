@@ -119,15 +119,19 @@ async def cmd_help(message: Message, state: FSMContext):
 
 @router.message(CommandStart(deep_link=True))
 async def cmd_start_deep_link(message: Message, command: CommandObject):
-    """A /start carrying a payload — either a blogger's personal link
+    """A /start carrying a payload — a Facebook/Instagram ad link
+    (?start=fb_<reklama>, see ad_sources.py), a blogger's personal link
     (?start=<bloger nomi>, see bloggers.py) or the older Keto musobaqasi
-    share link (?start=ref<user_id>). The two payload shapes can't collide:
-    bloggers.parse_payload refuses anything that looks like 'ref<digits>'."""
+    share link (?start=ref<user_id>). The three shapes can't collide: the ad
+    prefixes are reserved, and bloggers.parse_payload refuses both those and
+    anything that looks like 'ref<digits>'."""
     import referral_contest
     import bloggers
+    import ad_sources
     referrer_id = referral_contest.parse_ref_payload(command.args)
     blogger_code = bloggers.parse_payload(command.args)
-    await _handle_start(message, referrer_id, blogger_code)
+    ad_source = ad_sources.parse_payload(command.args)
+    await _handle_start(message, referrer_id, blogger_code, ad_source)
 
 
 @router.message(CommandStart())
@@ -137,14 +141,16 @@ async def cmd_start(message: Message):
 
 
 async def _handle_start(message: Message, referrer_id: int | None,
-                        blogger_code: str | None = None):
+                        blogger_code: str | None = None,
+                        ad_source: str | None = None):
     # Check if user is banned
     if await is_user_banned(message.from_user.id):
         lang = await get_user_language(message.from_user.id)
         await message.answer(get_text("you_are_banned", lang))
         return
 
-    is_new = await ensure_registered(message.bot, message.from_user, referrer_id, blogger_code)
+    is_new = await ensure_registered(message.bot, message.from_user, referrer_id,
+                                     blogger_code, ad_source)
     # Returning users get the persistent keyboard here — many have been using
     # the bot since before it existed and have nothing under their input box.
     # A brand-new user is skipped on purpose: they're about to pick a language
@@ -160,7 +166,8 @@ async def _handle_start(message: Message, referrer_id: int | None,
 
 
 async def ensure_registered(bot, tg_user, referrer_id: int | None = None,
-                             blogger_code: str | None = None) -> bool:
+                             blogger_code: str | None = None,
+                             ad_source: str | None = None) -> bool:
     """Create the user row if this is their very first contact with the bot,
     wiring up referral crediting + the owner's "who joined / who invited
     them" admin notification. Returns True if a new row was created.
@@ -179,12 +186,13 @@ async def ensure_registered(bot, tg_user, referrer_id: int | None = None,
         full_name=tg_user.full_name,
         language="uz",
     )
-    await _process_new_user(bot, tg_user, referrer_id, blogger_code)
+    await _process_new_user(bot, tg_user, referrer_id, blogger_code, ad_source)
     return True
 
 
 async def _process_new_user(bot, tg_user, referrer_id: int | None,
-                             blogger_code: str | None = None) -> None:
+                             blogger_code: str | None = None,
+                             ad_source: str | None = None) -> None:
     """Best-effort: referral crediting + the owner's "who joined / who
     invited them" notification must never block registration itself."""
     import referral_contest
@@ -206,10 +214,18 @@ async def _process_new_user(bot, tg_user, referrer_id: int | None,
         import bloggers
         blogger = await bloggers.attach_new_user(blogger_code, tg_user.id, bot)
 
+    # Facebook/Instagram ad link (ad_sources.py) — the same shape as the
+    # blogger attribution above, and equally self-guarded. A payload can only
+    # ever be one of the two, so at most one of these actually records.
+    source = None
+    if ad_source:
+        import ad_sources
+        source = await ad_sources.attach_new_user(ad_source, tg_user.id, ad_source)
+
     try:
         await referral_contest.notify_admins_new_user(
             bot, tg_user.id, tg_user.username, tg_user.full_name, valid_referrer,
-            blogger,
+            blogger, source,
         )
     except Exception:
         pass
