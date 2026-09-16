@@ -218,10 +218,10 @@ async def _after_add(user_id: int, lang: str) -> tuple[InlineKeyboardMarkup, str
     carries the running count and total, so the badge is visible even when
     the confirmation bubble scrolls away."""
     count, total = await get_cart_badge(user_id)
+    # Two buttons only (owner, 2026-09-17): finish the order, or keep shopping.
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=get_text("btn_checkout", lang), callback_data="checkout")],
-        [InlineKeyboardButton(text=get_text("btn_view_cart", lang), callback_data="cart")],
-        [InlineKeyboardButton(text=get_text("btn_continue_shopping", lang), callback_data="catalog")],
+        [InlineKeyboardButton(text=get_text("btn_checkout", lang), callback_data="added:checkout")],
+        [InlineKeyboardButton(text=get_text("cart_add_more_btn", lang), callback_data="added:more")],
     ])
     toast = get_text("added_to_cart_toast", lang,
                      n=count, total=f"{int(total):,}".replace(",", " "))
@@ -268,6 +268,27 @@ async def send_added_to_cart(bot: Bot, user_id: int, name: str, lang: str | None
     except Exception:
         import logging
         logging.getLogger(__name__).exception("added-to-cart message failed for %s", user_id)
+
+
+def _untrack_added_bubble(callback: CallbackQuery) -> None:
+    """A tap on the bubble turns it into the checkout or catalog screen — from
+    then on it must never be deleted as a stale "qo'shildi" message, or the
+    buyer's next add would wipe the very screen they're using."""
+    if _LAST_ADDED_MSG.get(callback.from_user.id) == callback.message.message_id:
+        _LAST_ADDED_MSG.pop(callback.from_user.id, None)
+
+
+@router.callback_query(F.data == "added:checkout")
+async def added_checkout(callback: CallbackQuery, state: FSMContext):
+    _untrack_added_bubble(callback)
+    await start_checkout(callback, state)
+
+
+@router.callback_query(F.data == "added:more")
+async def added_more(callback: CallbackQuery):
+    _untrack_added_bubble(callback)
+    from handlers.catalog import show_catalog
+    await show_catalog(callback)
 
 
 @router.callback_query(F.data.startswith("add_cart:"))
