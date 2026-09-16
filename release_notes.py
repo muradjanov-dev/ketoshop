@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 RELEASE_KEY = "2026-09-17-oson-buyurtma-sovga-ombor"
 TZ_OFFSET = timedelta(hours=5)
 SEND_WINDOW = (8, 22)          # never wake admins at night
+# Owner asked for this release's notes to go out right away (2026-09-17,
+# "hoziroq yubor"), so the daytime window is skipped for it. Set back to
+# False for the next release.
+SEND_NOW = True
 CHECK_EVERY = 300
 
 NOTES = (
@@ -84,7 +88,7 @@ def _now_tk() -> datetime:
 
 
 async def send_if_due(bot: Bot) -> bool:
-    if not (SEND_WINDOW[0] <= _now_tk().hour < SEND_WINDOW[1]):
+    if not SEND_NOW and not (SEND_WINDOW[0] <= _now_tk().hour < SEND_WINDOW[1]):
         return False
     if not await database.claim_release_notes(RELEASE_KEY):
         return False                    # already sent for this release
