@@ -14,7 +14,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from database import get_orders_for_export, get_all_cost_prices, format_local_dt, item_cost_qty
+from database import get_orders_for_export, get_all_cost_prices, get_set_costs, format_local_dt, line_cost
 from locales import get_delivery_method_name, get_order_status
 
 
@@ -94,7 +94,8 @@ PERIOD_LABELS = {
 }
 
 
-def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float]) -> None:
+def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float],
+                  set_costs: dict[int, float] | None = None) -> None:
     ws.title = "Buyurtmalar" if lang == "uz" else "Заказы"
     headers_uz = [
         "Buyurtma №", "Sana", "Mijoz", "Telefon",
@@ -123,10 +124,11 @@ def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float])
             qty = float(it.get("quantity") or 0)
             price = float(it.get("price") or 0)
             line_total = qty * price
-            pid = it.get("product_id")
-            unit_cost = cost_map.get(int(pid), 0.0) if pid else 0.0
-            line_cost = unit_cost * item_cost_qty(it)
-            line_profit = line_total - line_cost
+            # Shared costing rule (database.line_cost) — sets are costed from
+            # their components instead of 0.
+            cost, _ = line_cost(it, cost_map, set_costs or {})
+            unit_cost = (cost / qty) if qty else 0.0
+            line_profit = line_total - cost
 
             ws.cell(row=row, column=1,  value=int(o["id"]))
             ws.cell(row=row, column=2,  value=_fmt_dt(o.get("created_at")))
@@ -159,7 +161,7 @@ def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float])
 
 
 def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
-                   cost_map: dict[int, float]) -> None:
+                   cost_map: dict[int, float], set_costs: dict[int, float] | None = None) -> None:
     ws.title = "Xulosa" if lang == "uz" else "Сводка"
 
     delivered = [o for o in orders if o.get("status") == "delivered"]
@@ -172,10 +174,7 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
     total_cost = 0.0
     for o in delivered:
         for it in (o.get("items_data") or []):
-            pid = it.get("product_id")
-            if not pid:
-                continue
-            total_cost += cost_map.get(int(pid), 0.0) * item_cost_qty(it)
+            total_cost += line_cost(it, cost_map, set_costs or {})[0]
     profit = revenue - total_cost
     margin_pct = (profit / revenue * 100) if revenue else 0
 
@@ -234,11 +233,12 @@ async def generate_orders_excel(period: str = "all", lang: str = "uz") -> tuple[
     orders = await get_orders_for_export(period)
     # One DB call → in-memory map; avoids N+1 lookups while iterating items.
     cost_map = await get_all_cost_prices()
+    set_costs = await get_set_costs()
 
     wb = Workbook()
-    _orders_sheet(wb.active, orders, lang, cost_map)
+    _orders_sheet(wb.active, orders, lang, cost_map, set_costs)
     summary = wb.create_sheet()
-    _summary_sheet(summary, orders, lang, period, cost_map)
+    _summary_sheet(summary, orders, lang, period, cost_map, set_costs)
 
     buf = BytesIO()
     wb.save(buf)

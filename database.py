@@ -1411,6 +1411,26 @@ def item_cost_qty(item: dict) -> float:
     return float(item.get("quantity") or 0)
 
 
+def line_cost(item: dict, cost_map: dict, set_costs: dict) -> tuple[float, bool]:
+    """(cost of goods for one order line, whether that cost is actually known).
+
+    The one costing rule for every profit figure (Statistika, Maqsadlar, the
+    Excel report). A set line carries no product id — its cost is the sum of
+    its components (get_set_costs); before 2026-09-17 the dashboards costed
+    sets at 0 and overstated profit on every set sold. `known` is False when
+    a paid line's product has no cost_price filled in, so the reports can say
+    how much of the profit is guesswork."""
+    if item.get("is_gift"):
+        return 0.0, True
+    if item.get("is_set"):
+        set_id = item.get("set_id") or item.get("product_id") or item.get("id")
+        cost = float(set_costs.get(int(set_id), 0.0)) if set_id else 0.0
+        return cost * float(item.get("quantity") or 0), cost > 0
+    pid = item.get("product_id") or item.get("id")
+    unit_cost = float(cost_map.get(int(pid), 0) or 0) if pid else 0.0
+    return unit_cost * item_cost_qty(item), unit_cost > 0 or bool(item.get("is_bonus"))
+
+
 async def get_cart(user_id: int) -> list[dict]:
     async with pool.acquire() as conn:
         # fetch products
@@ -2251,16 +2271,25 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
             SELECT COUNT(*)                                            AS total,
                    COUNT(*) FILTER (WHERE status = 'pending')          AS pending,
                    COUNT(*) FILTER (WHERE status = 'confirmed')        AS confirmed,
-                   COUNT(*) FILTER (WHERE status = 'delivered')        AS delivered,
-                   COUNT(*) FILTER (WHERE status = 'cancelled')        AS cancelled,
-                   COALESCE(SUM(total) FILTER (WHERE status = 'delivered'), 0)
-                       AS revenue,
-                   COALESCE(SUM(total) FILTER (WHERE status = 'delivered'
-                                                 AND source = 'b2b'), 0)
-                       AS b2b_revenue,
-                   COUNT(*) FILTER (WHERE status = 'delivered' AND source = 'b2b')
-                       AS b2b_orders
+                   COUNT(*) FILTER (WHERE status = 'cancelled')        AS cancelled
               FROM orders{where}
+        """, *args)
+
+        # Money is earned when the order is DELIVERED, so revenue, cost and
+        # profit follow delivered_at, not created_at (2026-09-17). Counting by
+        # creation day put an order placed on the 30th and delivered on the
+        # 2nd into the wrong month, and made "bugungi foyda" nearly always ~0
+        # or negative: only orders both placed and delivered today counted,
+        # while today's expenses were subtracted in full. created_at stands in
+        # for rows that never got a delivered_at stamp.
+        delivered_and = order_where.replace("created_at", "COALESCE(delivered_at, created_at)")
+        money_row = await conn.fetchrow(f"""
+            SELECT COUNT(*)                                     AS delivered,
+                   COALESCE(SUM(total), 0)                      AS revenue,
+                   COALESCE(SUM(total) FILTER (WHERE source = 'b2b'), 0) AS b2b_revenue,
+                   COUNT(*) FILTER (WHERE source = 'b2b')       AS b2b_orders
+              FROM orders
+             WHERE status = 'delivered'{delivered_and}
         """, *args)
 
         if where:
@@ -2284,26 +2313,29 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         # so this stays in Python: a malformed row must be skipped, not blow up
         # a dashboard, and casting text to jsonb in SQL cannot be made to skip.
         orders_rows = await conn.fetch(
-            f"SELECT items FROM orders WHERE status = 'delivered'{order_where}", *args
+            f"SELECT items FROM orders WHERE status = 'delivered'{delivered_and}", *args
         )
         cost_map = {
             row["id"]: row["cost_price"] or 0
             for row in await conn.fetch("SELECT id, cost_price FROM products")
         }
+    set_costs = await get_set_costs()
 
     product_cost_total = 0.0
+    missing_cost = set()
     for r in orders_rows:
         try:
             for item in json.loads(r["items"] or "[]"):
-                pid = item.get("id") or item.get("product_id")
-                if pid in cost_map:
-                    product_cost_total += cost_map[pid] * item_cost_qty(item)
+                cost, known = line_cost(item, cost_map, set_costs)
+                product_cost_total += cost
+                if not known:
+                    missing_cost.add(item.get("name") or "?")
         except Exception:
             # One unreadable order must not cost the whole report.
             continue
 
-    revenue = int(orders_row["revenue"] or 0)
-    orders_delivered = int(orders_row["delivered"])
+    revenue = int(money_row["revenue"] or 0)
+    orders_delivered = int(money_row["delivered"])
     product_cost_total = int(product_cost_total)
     profit = revenue - expenses_total - product_cost_total
 
@@ -2322,11 +2354,14 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         "orders_cancelled": int(orders_row["cancelled"]),
         "revenue": revenue,
         "aov": int(revenue / orders_delivered) if orders_delivered else 0,
-        "b2b_revenue": int(orders_row["b2b_revenue"] or 0),
-        "b2b_orders": int(orders_row["b2b_orders"]),
+        "b2b_revenue": int(money_row["b2b_revenue"] or 0),
+        "b2b_orders": int(money_row["b2b_orders"]),
         "expenses": expenses_total,
         "product_cost": product_cost_total,
         "profit": profit,
+        # Products sold in the window with no cost_price — their cost counts
+        # as 0, so profit is overstated by exactly what they really cost.
+        "missing_cost_products": sorted(missing_cost),
     }
 
 # ===== MAQSADLAR / TARGETS (2026-09-02) =====

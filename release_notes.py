@@ -24,60 +24,57 @@ from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
-RELEASE_KEY = "2026-09-17-oson-buyurtma-sovga-ombor"
+RELEASE_KEY = "2026-09-17-qayta-sotuv-keto-yetkazish"
 TZ_OFFSET = timedelta(hours=5)
 SEND_WINDOW = (8, 22)          # never wake admins at night
-# Owner asked for this release's notes to go out right away (2026-09-17,
-# "hoziroq yubor"), so the daytime window is skipped for it. Set back to
-# False for the next release.
-SEND_NOW = True
+# This release was deployed at night, so it waits for 08:00 — set True only
+# when the owner asks for notes to go out right away.
+SEND_NOW = False
 CHECK_EVERY = 300
 
 NOTES = (
-    "🆕 <b>Botga yangi imkoniyatlar qo'shildi</b>\n\n"
+    "🆕 <b>Oxirgi yangiliklardan keyin qo'shilganlar</b>\n\n"
 
-    "🛒 <b>Buyurtma berish osonlashdi</b>\n"
-    "• Mahsulot savatga qo'shilganda «✅ … savatingizga qo'shildi» xabari keladi — "
-    "savatdagi soni, summasi va [Buyurtma berish] [Savat] tugmalari bilan "
-    "(botda ham, Mini App'da ham)\n"
-    "• Telefon raqami bir tugma bilan yuboriladi — yozish shart emas\n"
-    "• Ixtiyoriy qadamlarda «⏭ O'tkazib yuborish» tugmasi\n"
-    "• «⚡ Tezkor buyurtma» — avval buyurtma bergan mijoz saqlangan manzil va "
-    "to'lov usuli bilan 2 bosishda buyurtma beradi\n"
-    "• Har qadamda «Qadam 2/6», savat tugmasida mahsulot soni va summasi\n\n"
+    "🚚 <b>Bepul yetkazib berish</b>\n"
+    "Toshkent bo'ylab Ketoshop kuryeri <b>800 000 so'm va undan yuqori</b> "
+    "buyurtmaga bepul (botda ham, Mini App'da ham). Savatda «yana X so'm — bepul» "
+    "eslatmasi chiqadi.\n\n"
 
-    "🎁 <b>Eritritol 100gr sovg'asi — 30 kun</b>\n"
-    "• Botda <b>111 000 so'm va undan yuqori</b> har bir buyurtmaga avtomatik "
-    "qo'shiladi (bir kunda necha marta bo'lsa ham)\n"
-    "• Bugun <b>09:00</b> da barcha mijozlarga e'lon qilinadi va shundan boshlanadi\n"
-    "• Adminlar va do'kon akkauntlari buyurtmasiga qo'shilmaydi\n"
-    "• Yetkazilgan har bir sovg'a <b>Chiqimlar</b>ga avtomatik yoziladi "
-    "(«🎁 Sovg'a: Eritritol 100gr — buyurtma #…»)\n"
-    "• Buyurtma xabarida «🎁 BONUS» qatori chiqadi — qadoqlashda qo'shishni unutmang\n"
-    "• Holati: /sovga\n\n"
+    "🔁 <b>Qayta sotuv xabarlari</b> — har kuni 09:30\n"
+    "• «Kokos unini 26 kun oldin olgan edingiz — tugab qolmadimi?» + bir tugmada qayta buyurtma\n"
+    "• 2-buyurtmaga sovg'a: 1-buyurtmadan 3 kun keyin, 14 kun amal qiladi\n"
+    "• 30 / 60 / 90 kun kelmagan mijozga «sog'indik» (60 va 90 da sovg'a bilan)\n"
+    "• Mijozga 7 kunda ko'pi bilan 1 ta; o'sha kuni boshqa tavsiya xabari bormaydi\n"
+    "• Natija: /qaytarish · ko'rish: /qaytarish_test\n\n"
 
-    "🔔 <b>Tashlab ketilgan savat eslatmasi</b>\n"
-    "Savatga mahsulot solib buyurtma bermagan mijozga 3 va 24 soatdan keyin "
-    "eslatma boradi (faqat 09:00–21:00). Natijasi: /savat_eslatma\n\n"
+    "🎁 <b>Shaxsiy sovg'a</b> — Eritritol 100 gr, summa shart emas. "
+    "Bitta buyurtmaga faqat bitta sovg'a (aksiya sovg'asi bilan qo'shilmaydi).\n\n"
 
-    "📦 <b>Ombor ogohlantirishlari</b>\n"
-    "Mahsulot <b>tugasa yoki 5 tadan kam qolsa</b> — barcha adminlarga xabar "
-    "keladi, har safar shu chegaraga tushganda. Bugun kunduzi hozirgi holat "
-    "bo'yicha bitta umumiy ro'yxat ham keladi. Istalgan payt: /ombor\n\n"
+    "🥑 <b>Keto tangachalar</b>\n"
+    "• Keshbek darajaga qarab: Bronza 0.5% · Kumush 1% · Oltin 2% · Olmos 3%\n"
+    "• Yangi darajaga chiqqanga 30 kunlik sovg'a\n"
+    "• Mahsulot, savat va Mini App'da «🥑 +N Keto» belgisi\n"
+    "• <b>18.09 soat 17:30</b> da hammaga sodda tushuntirish ketadi va "
+    "tangachalarni sarflash yoqiladi (1 Keto = 1 so'm). Ko'rish: /keto_tushuntirish\n"
+    "• Tuzatildi: yetkazilgan buyurtmadan keyin Keto tabrik xabari kelmay qolardi\n\n"
 
-    "🍳 <b>Shaxsiy tavsiyalar yangilandi</b>\n"
-    "• Endi <b>har 2 kunda</b>, kunduzi\n"
-    "• Katalogdagi barcha 116 mahsulot uchun retseptlar, mijoz olgan "
-    "mahsulotlaridan kelib chiqib\n"
-    "• Profili yo'q yangi mahsulot bo'lsa, yuborishdan keyin adminlarga ro'yxat keladi\n\n"
+    "🧺 <b>«Siz olgan X bilan boshqalar Y ham olishyapti»</b> tavsiyasi — "
+    "tugmalar bilan, yetkazilgan buyurtma xabarida. Buyurtmalarim'da «🔁 takrorlash» tugmasi.\n\n"
 
-    "🛡 <b>Guruhda havola qo'riqchisi</b>\n"
-    "Bot guruhga «Xabarlarni o'chirish» huquqi bilan admin qilinsa, "
-    "adminlardan boshqa hech kim havola tashlay olmaydi — havolali xabar o'chiriladi.\n\n"
+    "🌐 <b>Til</b>\n"
+    "Keto maslahatlari endi kirillchilarga kirillda, ruslarga ruscha boradi; "
+    "Keto va aksiya xabarlari ham har kimning o'z tilida.\n\n"
 
-    "📊 <b>Foyda hisobi tuzatildi</b>\n"
-    "Aksiya bonuslari tannarxi noto'g'ri (gramm soni bo'yicha) hisoblanardi — "
-    "tuzatildi. O'tgan aksiya davrlaridagi foyda raqamlari to'g'rilanib, ko'payishi mumkin.\n\n"
+    "🛡 <b>Guruh</b>: havola o'chirilganda «Iltimos, guruhda havola tarqatmang…» "
+    "deb muloyim yoziladi.\n\n"
+
+    "📊 <b>Foyda va maqsadlar tuzatildi</b>\n"
+    "• Dollar kursi har kuni Markaziy bankdan olinadi (bugun 11 797 so'm; oldin 12 800 turgan edi)\n"
+    "• To'plam (set) mahsulotlar tannarxi 0 hisoblanib, foyda oshib ko'rinardi — tuzatildi "
+    "(sayt Dashboard, Maqsadlar, Excel hisobot)\n"
+    "• Tushum va foyda endi buyurtma <b>yetkazilgan kuni</b> bo'yicha — «bugungi foyda» "
+    "endi to'g'ri chiqadi\n"
+    "• Tannarxi kiritilmagan mahsulot sotilsa, maqsad xabarida ogohlantirish chiqadi\n\n"
 
     "Hammasi serverga yuklandi va ishlayapti ✅"
 )

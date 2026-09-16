@@ -203,7 +203,10 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
             row = await conn.fetchrow("SELECT * FROM orders WHERE id = $1 AND courier_id = $2", order_id, callback.from_user.id)
             if row:
                 if action == "delivered":
-                    await conn.execute("UPDATE orders SET status = 'delivered' WHERE id = $1", order_id)
+                    await conn.execute(
+                        "UPDATE orders SET status = 'delivered', "
+                        "delivered_at = COALESCE(delivered_at, CURRENT_TIMESTAMP) WHERE id = $1",
+                        order_id)
                     await callback.answer("Yetkazib berildi!", show_alert=True)
                     user_lang = await database.get_user_language(row["user_id"])
                     try:

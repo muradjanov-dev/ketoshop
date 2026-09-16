@@ -20,9 +20,10 @@ Definitions, chosen to match the numbers the admin screens already show:
     behind sales by the delivery time, on purpose: money that has not been
     delivered has not been earned.
 
-The dollar target is converted at a rate stored alongside it rather than
-fetched, because a target that silently moves with the exchange rate is not a
-target. The owner changes it in the panel when it drifts.
+The dollar target is converted at TODAY's Central Bank of Uzbekistan rate
+(owner, 2026-09-17: "dollar kursini hozirgi kursdan hisobla"). It is fetched
+from cbu.uz a few times a day and saved into targets_state.usd_rate, so a
+cbu.uz outage falls back to the last real rate instead of a stale default.
 
 Where it sits in the day (Asia/Tashkent), alongside the buyer-facing pushes:
     13:00  mid-day  — "bugun 4 ta, yana 6 ta kerak"
@@ -40,6 +41,7 @@ Public API:
 """
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta
 
 from aiogram import Bot
@@ -68,6 +70,40 @@ def fmt_usd(value: float) -> str:
     return f"${int(round(value or 0)):,}".replace(",", " ")
 
 
+CBU_USD_URL = "https://cbu.uz/uz/arkhiv-kursov-valyut/json/USD/"
+RATE_TTL = 3 * 3600
+_rate_cache: tuple[float, float | None, str | None] = (0.0, None, None)
+
+
+async def current_usd_rate() -> tuple[float | None, str | None]:
+    """(so'm per $1, the rate's date as dd.mm.yyyy) from the Central Bank, or
+    (None, None) when cbu.uz can't be reached. Cached for RATE_TTL; every
+    fresh rate is also stored as the fallback."""
+    global _rate_cache
+    ts, rate, day = _rate_cache
+    if rate and time.monotonic() - ts < RATE_TTL:
+        return rate, day
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+            async with session.get(CBU_USD_URL) as resp:
+                data = await resp.json(content_type=None)
+        row = data[0] if isinstance(data, list) and data else {}
+        rate = float(str(row.get("Rate", "")).replace(",", "."))
+        if not 1_000 < rate < 100_000:             # never trust a garbled value
+            raise ValueError(f"implausible USD rate {rate!r}")
+        day = row.get("Date")
+        _rate_cache = (time.monotonic(), rate, day)
+        try:
+            await database.set_targets(usd_rate=rate)
+        except Exception:
+            logger.warning("Could not store the fetched USD rate", exc_info=True)
+        return rate, day
+    except Exception:
+        logger.warning("CBU USD rate unavailable — using the stored rate", exc_info=True)
+        return None, None
+
+
 def _days_in_month(day) -> int:
     nxt = (day.replace(day=28) + timedelta(days=4)).replace(day=1)
     return (nxt - timedelta(days=1)).day
@@ -91,7 +127,8 @@ async def snapshot() -> dict:
                 - int(day_stats.get("orders_cancelled") or 0))
 
     daily_target = int(state.get("daily_orders") or 10)
-    usd_rate = float(state.get("usd_rate") or 12800)
+    live_rate, rate_date = await current_usd_rate()
+    usd_rate = live_rate or float(state.get("usd_rate") or 12800)
     monthly_usd = float(state.get("monthly_profit_usd") or 2000)
     monthly_uzs = monthly_usd * usd_rate
 
@@ -133,6 +170,8 @@ async def snapshot() -> dict:
         "days_left": days_left,
         "days_total": days_total,
         "usd_rate": usd_rate,
+        "usd_rate_date": rate_date,
+        "missing_cost_products": month_stats.get("missing_cost_products") or [],
         "enabled": bool(state.get("enabled", True)),
         "ai_today": ai_today,
         "ai_month": ai_month,
@@ -180,8 +219,15 @@ def build_message(snap: dict, slot: int) -> str:
                  f"{fmt_usd(snap['monthly_target_usd'])}</b>")
     lines.append(f"{_bar(snap['month_profit'], snap['monthly_target_uzs'])}  "
                  f"{_percent(snap['month_profit'], snap['monthly_target_uzs'])}%")
+    rate_src = (f"Markaziy bank, {snap['usd_rate_date']}" if snap.get("usd_rate_date")
+                else "oxirgi saqlangan kurs")
     lines.append(f"   ({fmt_sum(snap['month_profit'])} so'm · "
-                 f"1$ = {fmt_sum(snap['usd_rate'])} so'm)")
+                 f"1$ = {fmt_sum(snap['usd_rate'])} so'm, {rate_src})")
+    missing = snap.get("missing_cost_products") or []
+    if missing:
+        names = ", ".join(missing[:5]) + (f" va yana {len(missing) - 5} ta" if len(missing) > 5 else "")
+        lines.append(f"⚠️ Tannarxi kiritilmagan: {names} — foyda shular tannarxicha "
+                     f"yuqori ko'rsatilgan. Admin panelda «Asl narx»ni to'ldiring.")
     if snap["remaining_uzs"] <= 0:
         lines.append("🏆 <b>Oylik maqsad bajarildi!</b>")
     else:
