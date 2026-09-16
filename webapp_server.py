@@ -538,7 +538,31 @@ async def api_cart_add(request: web.Request):
     elif set_id:
         set_id = int(set_id)
 
+    # Whether this product/set was already in the cart — only a NEW line gets
+    # the "savatingizga qo'shildi" chat message, so the Mini App's own stepper
+    # (which also posts here) doesn't send one per tap.
+    from database import get_cart_line_for_product, get_cart_line_for_set
+    if product_id:
+        _line, before = await get_cart_line_for_product(user_id, product_id)
+    else:
+        _line, before = await get_cart_line_for_set(user_id, set_id) if set_id else (None, 0)
+
     await add_to_cart(user_id, product_id=product_id, quantity=quantity, set_id=set_id)
+
+    if not before:
+        import asyncio
+        from handlers.cart import send_added_to_cart
+        from locales import localize_product_text
+        lang = request.get("user_lang", "uz")
+        if product_id:
+            item = product
+        else:
+            from database import get_set
+            item = await get_set(set_id) or {}
+        name = localize_product_text(item.get("name"), item.get("name_ru"), lang) or item.get("name") or ""
+        # Fire-and-forget: the Mini App gets its "ok" immediately; the chat
+        # message follows a moment later.
+        asyncio.create_task(send_added_to_cart(request.app["bot"], user_id, name, lang))
     return _json({"ok": True})
 
 

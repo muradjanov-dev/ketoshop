@@ -679,6 +679,15 @@ async def init_db():
             )
         """)
 
+        # One row per release whose "nima yangi" notes went to the admins
+        # (release_notes.py) — claimed before sending, so it goes out once.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS release_notes_sent (
+                key TEXT PRIMARY KEY,
+                sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # ===== Ombor ogohlantirishlari (stock_alerts.py, 2026-09-17) =====
         # Last level each product was alerted at (ok / low / out). An alert fires
         # only when a product gets worse than this; restocking resets it.
@@ -2457,6 +2466,15 @@ async def claim_gift_stock_alert(key: str, day) -> bool:
                 WHERE key = $1 AND out_of_stock_alerted_on IS DISTINCT FROM $2
             RETURNING key""",
             key, day,
+        )
+        return row is not None
+
+
+async def claim_release_notes(key: str) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "INSERT INTO release_notes_sent (key) VALUES ($1) ON CONFLICT (key) DO NOTHING RETURNING key",
+            key,
         )
         return row is not None
 

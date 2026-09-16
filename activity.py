@@ -100,7 +100,8 @@ class ActivityMiddleware(BaseMiddleware):
                 label = _label_for_callback(event.data)
                 if label:
                     _fire(event.from_user.id, "callback", label)
-            elif isinstance(event, Message) and event.from_user:
+            elif isinstance(event, Message) and event.from_user and event.chat.type == "private":
+                # Group chatter (link_guard.py) isn't engagement with the bot.
                 _fire(event.from_user.id, "message", "message")
         except Exception:
             logger.exception("Activity middleware failed")

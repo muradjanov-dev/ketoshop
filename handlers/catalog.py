@@ -4,7 +4,7 @@ Catalog browsing and product viewing
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
-from database import get_active_sets_for_catalog, get_set, get_bonus_trigger_product_ids
+from database import get_active_sets_for_catalog, get_set, get_bonus_trigger_product_ids, get_cart_line_for_set
 from database import (
     get_user_language, get_products_by_category, get_discounted_products,
     get_product, get_product_rating, add_product_view,
@@ -249,7 +249,18 @@ async def detail_increment(callback: CallbackQuery):
         return
     await add_to_cart(callback.from_user.id, pid, 1)  # merges into existing line
     await _refresh_detail_keyboard(callback, pid, bc, page)
-    await callback.answer()
+    from handlers.cart import send_added_to_cart
+    if current <= 0:
+        # First time this product goes in: its own "savatingizga qo'shildi"
+        # message with the cart + checkout buttons. Further ➕ taps only toast,
+        # so stepping 1 → 5 doesn't send five messages.
+        name = localize_product_text(product.get("name"), product.get("name_ru"), lang)
+        await send_added_to_cart(callback.bot, callback.from_user.id, name, lang)
+        await callback.answer("✅")
+    else:
+        count, total = await get_cart_badge(callback.from_user.id)
+        await callback.answer(get_text("added_to_cart_toast", lang, n=count,
+                                       total=f"{int(total):,}".replace(",", " ")))
 
 
 @router.callback_query(F.data.startswith("detail_dec:"))
@@ -465,7 +476,15 @@ async def set_increment(callback: CallbackQuery):
     set_id = int(parts[1])
     page = int(parts[2])
     
+    _line, before = await get_cart_line_for_set(callback.from_user.id, set_id)
     await add_to_cart(callback.from_user.id, set_id=set_id, quantity=1)
+    if not before:
+        from handlers.cart import send_added_to_cart
+        lang = await get_user_language(callback.from_user.id)
+        the_set = await get_set(set_id)
+        if the_set:
+            name = localize_product_text(the_set.get("name"), the_set.get("name_ru"), lang)
+            await send_added_to_cart(callback.bot, callback.from_user.id, name, lang)
     
     parts[0] = "set"
     callback.data = ":".join(parts)

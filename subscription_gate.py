@@ -103,6 +103,11 @@ class SubscriptionGateMiddleware(BaseMiddleware):
         user = getattr(event, "from_user", None)
         if user is None or user.id in ADMIN_IDS:
             return await handler(event, data)
+        # The gate is about using the bot one-on-one. In a group the bot also
+        # sees every member's message (link_guard.py) — nagging each of them
+        # there about the channel would spam the whole group.
+        if isinstance(event, Message) and event.chat.type != "private":
+            return await handler(event, data)
 
         bot = data["bot"]
         # Best-effort language hint before any DB record exists — Telegram's

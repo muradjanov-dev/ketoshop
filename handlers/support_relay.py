@@ -259,7 +259,7 @@ async def send_freeform_reply(message: Message, state: FSMContext, bot: Bot):
     await message.answer("✅ Yuborildi.")
 
 
-@router.message(F.text)
+@router.message(F.text, F.chat.type == "private")
 async def relay_freeform_text(message: Message, bot: Bot):
     text = (message.text or "").strip()
     # Stray/mistyped commands aren't "chatting with the bot" — leave those alone.

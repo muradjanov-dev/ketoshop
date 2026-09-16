@@ -33,6 +33,7 @@ from handlers.delivery import router as delivery_router
 from handlers.admin import router as admin_router
 from handlers.broadcast_admin import router as broadcast_admin_router
 from handlers.support_relay import router as support_relay_router
+from link_guard import router as link_guard_router
 from handlers.courier import router as courier_router
 from bloggers import router as bloggers_router
 from meta_leads import router as meta_leads_router
@@ -182,6 +183,9 @@ async def main():
     # to be stuck mid-FSM in some other flow — e.g. search's "waiting_query"
     # state has no text filter, so without this a stray "/nps_test" typed
     # while mid-search gets swallowed as a search query instead of a command)
+    # Group link guard first — a non-admin's link in a group is deleted
+    # before any other handler can react to it (see link_guard.py).
+    dp.include_router(link_guard_router)
     dp.include_router(webapp_data_router)
     dp.include_router(start_router)
     dp.include_router(broadcast_admin_router)
@@ -292,6 +296,10 @@ async def main():
     from stock_alerts import scheduler_loop as stock_alerts_loop
     stock_alerts_task = asyncio.create_task(stock_alerts_loop(bot))
 
+    # "Nima yangi" — this release's notes to every admin, once, in daytime.
+    from release_notes import scheduler_loop as release_notes_loop
+    release_notes_task = asyncio.create_task(release_notes_loop(bot))
+
     # Start polling
     logger.info("Bot started! Press Ctrl+C to stop.")
     try:
@@ -307,6 +315,7 @@ async def main():
         gift_task.cancel()
         cart_reminder_task.cancel()
         stock_alerts_task.cancel()
+        release_notes_task.cancel()
         meta_leads_task.cancel()
         meta_ads_task.cancel()
         if runner:

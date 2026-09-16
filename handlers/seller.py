@@ -31,6 +31,7 @@ from keyboards import (
 router = Router()
 
 
+
 def _clean_number(text: str) -> str:
     """Clean number input: handle both comma-as-decimal and comma-as-thousand separator.
     '1,5' or '1.5' → '1.5'   (decimal)

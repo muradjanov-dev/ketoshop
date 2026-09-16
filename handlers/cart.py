@@ -228,6 +228,48 @@ async def _after_add(user_id: int, lang: str) -> tuple[InlineKeyboardMarkup, str
     return keyboard, toast
 
 
+# user_id -> message_id of the latest "savatingizga qo'shildi" bubble. Only one
+# is kept in the chat: adding ten products replaces the bubble ten times
+# instead of stacking ten messages. In-memory on purpose — after a restart the
+# old bubble simply stays, nothing breaks.
+_LAST_ADDED_MSG: dict[int, int] = {}
+
+
+async def send_added_to_cart(bot: Bot, user_id: int, name: str, lang: str | None = None) -> None:
+    """"✅ X savatingizga qo'shildi" + live cart total + one-tap checkout/cart
+    buttons, as its own chat message (owner, 2026-09-17: every product added
+    must say so and carry the cart link). Used by the catalog card, sets and
+    the Mini App; best-effort — a failure here never undoes the add."""
+    try:
+        lang = lang or await get_user_language(user_id)
+        count, total = await get_cart_badge(user_id)
+        if lang == "ru":
+            text = (f"✅ <b>{_escape_html(name)}</b> — добавлен в вашу корзину!\n\n"
+                    f"🛒 В корзине: <b>{count} шт</b> · <b>{int(total):,} сум</b>").replace(",", " ")
+        else:
+            text = (f"✅ <b>{_escape_html(name)}</b> savatingizga qo'shildi!\n\n"
+                    f"🛒 Savatda: <b>{count} ta</b> · <b>{int(total):,} so'm</b>").replace(",", " ")
+            if lang == "uz_cyr":
+                from translit import lat_to_cyr
+                text = lat_to_cyr(text)
+        hint = await gift_campaign.cart_hint(user_id, total, lang)
+        if hint:
+            text += "\n\n" + hint
+        keyboard, _toast = await _after_add(user_id, lang)
+
+        old = _LAST_ADDED_MSG.pop(user_id, None)
+        if old:
+            try:
+                await bot.delete_message(user_id, old)
+            except Exception:
+                pass
+        sent = await bot.send_message(user_id, text, reply_markup=keyboard, parse_mode="HTML")
+        _LAST_ADDED_MSG[user_id] = sent.message_id
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("added-to-cart message failed for %s", user_id)
+
+
 @router.callback_query(F.data.startswith("add_cart:"))
 async def add_one_to_cart(callback: CallbackQuery):
     """Add 1 of the product to the cart straight away — no quantity prompt.
@@ -246,15 +288,8 @@ async def add_one_to_cart(callback: CallbackQuery):
 
     await add_to_cart(callback.from_user.id, product_id, 1)
 
-    keyboard, toast = await _after_add(callback.from_user.id, lang)
-    # New message (not edit): the product card may be a photo bubble.
-    await callback.message.answer(
-        get_text("added_to_cart", lang,
-            name=product["name"], quantity=1,
-            unit=get_display_unit(product["unit"], lang)),
-        reply_markup=keyboard,
-        parse_mode="HTML",
-    )
+    _kb, toast = await _after_add(callback.from_user.id, lang)
+    await send_added_to_cart(callback.bot, callback.from_user.id, product["name"], lang)
     await callback.answer(toast)
 
 
