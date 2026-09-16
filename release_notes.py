@@ -33,6 +33,9 @@ NOTES = (
     "🆕 <b>Botga yangi imkoniyatlar qo'shildi</b>\n\n"
 
     "🛒 <b>Buyurtma berish osonlashdi</b>\n"
+    "• Mahsulot savatga qo'shilganda «✅ … savatingizga qo'shildi» xabari keladi — "
+    "savatdagi soni, summasi va [Buyurtma berish] [Savat] tugmalari bilan "
+    "(botda ham, Mini App'da ham)\n"
     "• Telefon raqami bir tugma bilan yuboriladi — yozish shart emas\n"
     "• Ixtiyoriy qadamlarda «⏭ O'tkazib yuborish» tugmasi\n"
     "• «⚡ Tezkor buyurtma» — avval buyurtma bergan mijoz saqlangan manzil va "
