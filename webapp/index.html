@@ -4158,6 +4158,16 @@ function renderCartPage() {
     });
   }
 
+  // 111 000 so'm gift campaign: "add X more and get Eritritol 100gr free".
+  // Server sends plain text (tags stripped) only while the cart is below the
+  // threshold; once it qualifies the gift is listed in the 🎁 block above.
+  if (cartData.gift_hint) {
+    const gift = document.createElement('div');
+    gift.className = 'cart-nudge';
+    gift.innerHTML = '<div class="cart-nudge-row"><span>' + escapeHtml(cartData.gift_hint) + '</span></div>';
+    container.appendChild(gift);
+  }
+
   // Remove buttons
   container.querySelectorAll('.remove-btn').forEach(btn => {
     btn.onclick = async (e) => {

@@ -111,7 +111,7 @@ async def tips_set(message: Message, command: CommandObject):
 #   /reco_test    — preview YOUR own personalized message (only to you)
 #   /reco_now     — send everyone their personalized message right now
 # ─────────────────────────────────────────────────────────────────────────────
-from personal_recommend import send_personal_batch, build_personal_message, _shop_button
+from personal_recommend import send_personal_batch, build_personal_message, reco_keyboard
 
 
 @router.message(Command("reco_status"))
@@ -127,7 +127,7 @@ async def reco_status(message: Message):
         f"Mos oluvchilar (buyurtma qilganlar): <b>{len(buyers)}</b> ta\n"
         f"Sikl (rotatsiya): {state['cycle']}\n"
         f"Oxirgi yuborilgan: {last_str}\n"
-        f"Jadval: har 4 kunda, 10:00 (Toshkent) — maslahatlar kuni bilan to'g'ri kelsa, ertasiga suriladi",
+        f"Jadval: har 2 kunda, 10:00 (Toshkent) — maslahatlar kuni bilan to'g'ri kelsa, ertasiga suriladi",
         parse_mode=ParseMode.HTML,
     )
 
@@ -135,7 +135,7 @@ async def reco_status(message: Message):
 @router.message(Command("reco_on"))
 async def reco_on(message: Message):
     await database.set_reco_enabled(True)
-    await message.answer("🟢 Shaxsiy tavsiyalar <b>yoqildi</b> (har 4 kunda).", parse_mode=ParseMode.HTML)
+    await message.answer("🟢 Shaxsiy tavsiyalar <b>yoqildi</b> (har 2 kunda).", parse_mode=ParseMode.HTML)
 
 
 @router.message(Command("reco_off"))
@@ -158,7 +158,7 @@ async def reco_test(message: Message):
         return
     await message.answer("👁 <b>Sizning shaxsiy xabaringiz (faqat sizga):</b>", parse_mode=ParseMode.HTML)
     await message.answer(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True,
-                          reply_markup=_shop_button(lang))
+                          reply_markup=reco_keyboard(lang, orders))
 
 
 @router.message(Command("reco_now"))

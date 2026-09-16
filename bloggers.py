@@ -232,10 +232,11 @@ async def order_profit(order: dict) -> float:
             unit_cost = float(set_costs.get(int(set_id), 0.0)) if set_id else 0.0
         else:
             pid = item.get("product_id") or item.get("id")
-            # A bonus line's stock_quantity is what actually leaves the shelf
-            # (e.g. 0.1 kg for a "100 gr" gift) — see promotions.to_stock_qty.
-            if item.get("is_bonus"):
-                qty = float(item.get("stock_quantity") or qty)
+            # Shared costing rule (database.item_cost_qty): bonus lines by
+            # stock_quantity, and the 100 000 so'm gift not at all — it's booked
+            # in Chiqimlar as Ketoshop's own expense, so it must not shrink the
+            # blogger's cut.
+            qty = database.item_cost_qty(item)
             unit_cost = float(cost_map.get(int(pid), 0.0)) if pid else 0.0
         profit += revenue - unit_cost * qty
     return profit

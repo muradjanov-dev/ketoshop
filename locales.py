@@ -147,6 +147,17 @@ TEXTS = {
         "ru": "✅ <b>{name}</b> добавлен в корзину ({quantity} {unit})",
     },
     "btn_view_cart": {"uz": "🛍 Savatga o'tish", "ru": "🛍 Перейти в корзину"},
+    # Cart shortcut with a live badge — a buyer who can see "3 ta · 245 000
+    # so'm" on the button knows there is something waiting and what it costs,
+    # which the bare "Savatga o'tish" never told them.
+    "btn_view_cart_badge": {
+        "uz": "🛒 Savat · {n} ta · {total} so'm",
+        "ru": "🛒 Корзина · {n} шт · {total} сум",
+    },
+    "added_to_cart_toast": {
+        "uz": "✅ Savatda: {n} ta · {total} so'm",
+        "ru": "✅ В корзине: {n} шт · {total} сум",
+    },
     "btn_continue_shopping": {"uz": "🔙 Xaridni davom ettirish", "ru": "🔙 Продолжить покупки"},
     "btn_custom_qty": {"uz": "✏️ Boshqa miqdor", "ru": "✏️ Другое количество"},
     "enter_custom_qty": {
@@ -548,6 +559,23 @@ TEXTS = {
     "btn_sets": {"uz": "🎁 To'plamlar", "ru": "🎁 Наборы"},
     "btn_clear_cart": {"uz": "🗑 Savatni tozalash", "ru": "🗑 Очистить корзину"},
     "btn_checkout": {"uz": "✅ Buyurtma berish", "ru": "✅ Оформить заказ"},
+    # One-tap repeat checkout: saved phone + address + last order's delivery
+    # and payment choices, straight to the confirm screen.
+    "btn_quick_order": {
+        "uz": "⚡ Tezkor buyurtma (1 bosishda)",
+        "ru": "⚡ Быстрый заказ (в 1 нажатие)",
+    },
+    "btn_skip_step": {"uz": "⏭ O'tkazib yuborish", "ru": "⏭ Пропустить"},
+    "btn_share_phone": {"uz": "📱 Raqamimni yuborish", "ru": "📱 Отправить мой номер"},
+    "quick_order_unavailable": {
+        "uz": ("⚡ Tezkor buyurtma uchun avval bitta oddiy buyurtma berishingiz kerak "
+               "— manzil va to'lov usulingiz saqlanadi, keyingi safar bir bosishda bo'ladi."),
+        "ru": ("⚡ Для быстрого заказа сначала оформите один обычный заказ — "
+               "адрес и способ оплаты сохранятся, и в следующий раз хватит одного нажатия."),
+    },
+    # "Qadam 2/4" — a buyer who can see the flow ends in four steps finishes
+    # it; one who can't assumes it goes on forever and drops out.
+    "checkout_step": {"uz": "<i>Qadam {n}/{total}</i>\n\n", "ru": "<i>Шаг {n}/{total}</i>\n\n"},
     "btn_remove_item": {"uz": "❌ O'chirish", "ru": "❌ Удалить"},
     "cart_cleared": {
         "uz": "🗑 Savat tozalandi",
@@ -564,8 +592,14 @@ TEXTS = {
         "ru": "👤 Введите ваше имя:",
     },
     "enter_phone": {
-        "uz": "📱 Telefon raqamingizni kiriting (masalan: +998901234567):",
-        "ru": "📱 Введите номер телефона (например: +998901234567):",
+        "uz": ("📱 <b>Telefon raqamingiz</b>\n\n"
+               "Pastdagi <b>📱 Raqamimni yuborish</b> tugmasini bosing — "
+               "yozib o'tirish shart emas.\n"
+               "Yoki qo'lda kiriting: +998901234567"),
+        "ru": ("📱 <b>Ваш номер телефона</b>\n\n"
+               "Нажмите кнопку <b>📱 Отправить мой номер</b> ниже — "
+               "набирать не нужно.\n"
+               "Или введите вручную: +998901234567"),
     },
     "enter_address": {
         "uz": "📍 Yetkazib berish manzilini kiriting:",
@@ -608,13 +642,13 @@ TEXTS = {
             "📝 <b>Manzil bo'yicha qo'shimcha izoh</b>\n\n"
             "Kuryer telefoni bog'lana olmasa ham sizni topishi uchun yozing:\n"
             "uy/xonadon raqami, qavat, kirish, mo'ljal va h.k.\n\n"
-            "Agar kerak bo'lmasa <b>/skip</b> yuboring."
+            "Kerak bo'lmasa — pastdagi <b>⏭ O'tkazib yuborish</b> tugmasini bosing."
         ),
         "ru": (
             "📝 <b>Дополнительный комментарий к адресу</b>\n\n"
             "Чтобы курьер нашёл вас даже при недоступном телефоне, укажите:\n"
             "номер дома/квартиры, этаж, подъезд, ориентир и т.п.\n\n"
-            "Если не нужно — отправьте <b>/skip</b>."
+            "Если не нужно — нажмите <b>⏭ Пропустить</b> ниже."
         ),
     },
     "address_note_too_long": {
@@ -625,12 +659,12 @@ TEXTS = {
         "uz": (
             "📞 <b>Qo'shimcha telefon raqami</b>\n\n"
             "Asosiy telefoningiz bog'lanmasa, kuryer shu raqamga qo'ng'iroq qiladi.\n\n"
-            "Raqamni +998901234567 ko'rinishida kiriting yoki <b>/skip</b> yuboring."
+            "Raqamni +998901234567 ko'rinishida kiriting yoki <b>⏭ O'tkazib yuborish</b> tugmasini bosing."
         ),
         "ru": (
             "📞 <b>Дополнительный номер телефона</b>\n\n"
             "Если основной телефон недоступен, курьер позвонит на этот номер.\n\n"
-            "Введите номер в формате +998901234567 или отправьте <b>/skip</b>."
+            "Введите номер в формате +998901234567 или нажмите <b>⏭ Пропустить</b>."
         ),
     },
     "btn_share_location": {

@@ -15,8 +15,8 @@ from aiogram.fsm.state import State, StatesGroup
 
 from database import (
     get_user_language, get_product, add_to_cart, get_cart,
-    clear_cart, remove_from_cart, get_cart_total,
-    get_cart_item, set_cart_quantity,
+    clear_cart, remove_from_cart, get_cart_total, get_cart_badge,
+    get_cart_item, set_cart_quantity, get_last_order_prefs,
     set_order_cheque,
     create_order, get_user_orders, get_order, get_user,
     update_user_info, effective_price, active_discount,
@@ -27,9 +27,10 @@ from locales import get_text, get_unit_name, get_display_unit, get_order_status,
 from keyboards import (
     quantity_keyboard, cart_keyboard, back_to_menu_keyboard,
     main_menu_keyboard, payment_method_keyboard, delivery_method_keyboard,
-    persistent_menu_keyboard,
+    persistent_menu_keyboard, skip_step_keyboard, phone_request_keyboard,
 )
 from config import PAYMENT_PROVIDER_TOKEN, ADMIN_IDS, PAYMENT_CARD_NUMBER, PAYMENT_RECIPIENT_NAME
+import gift_campaign
 
 router = Router()
 
@@ -208,6 +209,25 @@ def buyer_contact_link(user_id: int | None, username: str | None, name: str | No
 
 # ===== ADD TO CART =====
 
+async def _after_add(user_id: int, lang: str) -> tuple[InlineKeyboardMarkup, str]:
+    """(keyboard, toast) for "added to cart".
+
+    The keyboard leads with ✅ Buyurtma berish: buyers who already knew what
+    they wanted were going cart → checkout as two separate taps, and many
+    simply never found the second one (owner report, 2026-09-17). The toast
+    carries the running count and total, so the badge is visible even when
+    the confirmation bubble scrolls away."""
+    count, total = await get_cart_badge(user_id)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text("btn_checkout", lang), callback_data="checkout")],
+        [InlineKeyboardButton(text=get_text("btn_view_cart", lang), callback_data="cart")],
+        [InlineKeyboardButton(text=get_text("btn_continue_shopping", lang), callback_data="catalog")],
+    ])
+    toast = get_text("added_to_cart_toast", lang,
+                     n=count, total=f"{int(total):,}".replace(",", " "))
+    return keyboard, toast
+
+
 @router.callback_query(F.data.startswith("add_cart:"))
 async def add_one_to_cart(callback: CallbackQuery):
     """Add 1 of the product to the cart straight away — no quantity prompt.
@@ -226,10 +246,7 @@ async def add_one_to_cart(callback: CallbackQuery):
 
     await add_to_cart(callback.from_user.id, product_id, 1)
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=get_text("btn_view_cart", lang), callback_data="cart")],
-        [InlineKeyboardButton(text=get_text("btn_continue_shopping", lang), callback_data="catalog")],
-    ])
+    keyboard, toast = await _after_add(callback.from_user.id, lang)
     # New message (not edit): the product card may be a photo bubble.
     await callback.message.answer(
         get_text("added_to_cart", lang,
@@ -238,7 +255,7 @@ async def add_one_to_cart(callback: CallbackQuery):
         reply_markup=keyboard,
         parse_mode="HTML",
     )
-    await callback.answer("✅")
+    await callback.answer(toast)
 
 
 @router.callback_query(F.data.startswith("qty:"))
@@ -256,16 +273,7 @@ async def add_item_to_cart(callback: CallbackQuery):
 
     await add_to_cart(callback.from_user.id, product_id, quantity)
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=get_text("btn_view_cart", lang),
-            callback_data="cart"
-        )],
-        [InlineKeyboardButton(
-            text=get_text("btn_continue_shopping", lang),
-            callback_data="catalog"
-        )],
-    ])
+    keyboard, toast = await _after_add(callback.from_user.id, lang)
 
     await callback.message.edit_text(
         get_text("added_to_cart", lang,
@@ -276,7 +284,7 @@ async def add_item_to_cart(callback: CallbackQuery):
         reply_markup=keyboard,
         parse_mode="HTML"
     )
-    await callback.answer("✅")
+    await callback.answer(toast)
 
 
 # ===== CUSTOM QUANTITY =====
@@ -337,10 +345,7 @@ async def process_custom_quantity(message: Message, state: FSMContext):
 
     await add_to_cart(message.from_user.id, product_id, quantity)
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=get_text("btn_view_cart", lang), callback_data="cart")],
-        [InlineKeyboardButton(text=get_text("btn_continue_shopping", lang), callback_data="catalog")],
-    ])
+    keyboard, _toast = await _after_add(message.from_user.id, lang)
 
     await message.answer(
         get_text("added_to_cart", lang,
@@ -354,6 +359,94 @@ async def process_custom_quantity(message: Message, state: FSMContext):
 
 
 # ===== VIEW CART =====
+
+async def _quick_order_prefs(user_id: int) -> dict | None:
+    """Everything ⚡ Tezkor buyurtma needs, or None when this buyer can't use it.
+
+    Requires a saved phone + a saved address with parseable coordinates inside
+    Uzbekistan, and a previous bot order to take the delivery/payment choices
+    from. Anything missing and the buyer simply gets the normal wizard — the
+    shortcut never guesses at a delivery address."""
+    user = await get_user(user_id)
+    if not user or not user.get("phone") or not user.get("address"):
+        return None
+
+    m = re.match(r"📍\s*([-\d.]+),\s*([-\d.]+)", user["address"])
+    if not m:
+        return None
+    lat, lng = float(m.group(1)), float(m.group(2))
+    # Bounding box only — this runs on every cart render (every +/- tap
+    # included), and the authoritative verify_uzbekistan() hits Nominatim over
+    # the network. The quick_order handler runs that once, on the actual tap.
+    if not _is_in_uzbekistan(lat, lng):
+        return None
+
+    last = await get_last_order_prefs(user_id)
+    if not last or not last.get("delivery_method") or not last.get("payment_method"):
+        return None
+
+    online_only = not _is_tashkent(lat, lng) or last["delivery_method"] == "yandex_taxi"
+    payment_method = "online" if online_only else last["payment_method"]
+    return {
+        "lang": None,  # filled in by the caller
+        "phone": user["phone"],
+        "address": user["address"],
+        "latitude": lat,
+        "longitude": lng,
+        "online_only": online_only,
+        "in_tashkent": _is_tashkent(lat, lng),
+        "delivery_method": last["delivery_method"],
+        "payment_method": payment_method,
+        "address_note": last.get("address_note"),
+        "secondary_phone": last.get("secondary_phone"),
+    }
+
+
+async def _quick_order_ready(user_id: int) -> bool:
+    return await _quick_order_prefs(user_id) is not None
+
+
+@router.callback_query(F.data == "quick_order")
+async def quick_order(callback: CallbackQuery, state: FSMContext):
+    """One tap from cart to the confirm screen for a repeat buyer: phone,
+    address, delivery method and payment are all replayed from what they
+    chose last time. They still see and confirm the full summary — nothing
+    is ordered behind their back, they just skip re-answering six prompts."""
+    lang = await get_user_language(callback.from_user.id)
+
+    cart_items = await get_cart(callback.from_user.id)
+    if not cart_items:
+        await callback.message.edit_text(
+            get_text("cart_empty", lang),
+            reply_markup=main_menu_keyboard(lang),
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
+    prefs = await _quick_order_prefs(callback.from_user.id)
+    if not prefs:
+        # Their saved details went stale between rendering the button and this
+        # tap — fall back to the normal wizard rather than dead-ending. The
+        # notice goes as a message, not an alert: start_checkout answers the
+        # callback query itself and Telegram rejects a second answer.
+        await callback.message.answer(get_text("quick_order_unavailable", lang), parse_mode="HTML")
+        await start_checkout(callback, state)
+        return
+
+    # Authoritative country check, once, here — _quick_order_prefs only did
+    # the cheap bounding box so cart rendering stays network-free.
+    if not await verify_uzbekistan(prefs["latitude"], prefs["longitude"]):
+        await callback.message.answer(get_text("quick_order_unavailable", lang), parse_mode="HTML")
+        await start_checkout(callback, state)
+        return
+
+    prefs["lang"] = lang
+    await state.set_data(prefs)
+    await state.set_state(CheckoutStates.confirming)
+    await _show_order_confirmation(callback, state, lang)
+    await callback.answer()
+
 
 @router.callback_query(F.data == "cart")
 async def show_cart(callback: CallbackQuery):
@@ -413,7 +506,11 @@ async def build_cart_view(user_id: int, lang: str):
         for it in cart_items
     ]
     promo = await promotions.get_active()
-    text += promotions.bonus_lines_text(promotions.compute_bonuses(promo, bonus_input), lang)
+    # The 111 000 so'm gift (gift_campaign.py) sits in the same 🎁 block as
+    # aksiya bonuses the moment the cart qualifies — the buyer sees it land
+    # in their basket, exactly as the owner asked, before they ever check out.
+    gifts = await gift_campaign.gift_lines(user_id, [{"price": total, "quantity": 1}])
+    text += promotions.bonus_lines_text(promotions.compute_bonuses(promo, bonus_input) + gifts, lang)
 
     text += get_text("cart_total", lang, total=f"{int(total):,}".replace(",", " "))
     if saved_total > 0:
@@ -423,7 +520,13 @@ async def build_cart_view(user_id: int, lang: str):
     # the cart, so it reads as a heads-up rather than an ad. Placed after the
     # total so it can never push the price out of view.
     text += promotions.near_miss_text(promotions.compute_near_misses(promo, bonus_input), lang)
-    return text, cart_keyboard(lang, cart_items)
+    # Below the threshold: "yana 15 000 so'm — sovg'a". Above it the gift is
+    # already listed in the 🎁 block, so no second line.
+    if not gifts:
+        hint = await gift_campaign.cart_hint(user_id, total, lang)
+        if hint:
+            text += "\n" + hint + "\n"
+    return text, cart_keyboard(lang, cart_items, quick_order=await _quick_order_ready(user_id))
 
 
 async def render_cart_message(message: Message, lang: str):
@@ -555,7 +658,33 @@ async def remove_cart_item(callback: CallbackQuery):
 
 
 # ===== CHECKOUT FLOW =====
-# Flow: checkout → saved info? → payment method → phone → location → create order
+
+# The wizard's longest path: phone → location → note → delivery → backup
+# phone → payment. Numbering is fixed rather than per-path, so a buyer with
+# saved details starting at "Qadam 3/6" can see how much is already done.
+CHECKOUT_STEPS = 6
+
+
+def _step(lang: str, n: int) -> str:
+    """"Qadam n/6" prefix. Without it buyers had no idea the flow was finite
+    and abandoned it midway (owner report, 2026-09-17)."""
+    return get_text("checkout_step", lang, n=n, total=CHECKOUT_STEPS)
+
+
+async def _ask_phone(target, lang: str) -> None:
+    """Prompt for the phone with Telegram's one-tap contact-share keyboard.
+    Always a fresh message: a reply keyboard can't be attached to an edit."""
+    answer = target.answer if hasattr(target, "answer") else target.message.answer
+    await answer(
+        _step(lang, 1) + get_text("enter_phone", lang),
+        reply_markup=phone_request_keyboard(lang),
+        parse_mode="HTML",
+    )
+
+# Flow: checkout → saved info? → phone → location → address note →
+#       delivery method → backup phone → payment → confirm → create order.
+# Saved info skips phone+location; ⚡ quick_order skips everything up to
+# confirm. The two optional steps (note, backup phone) each carry a ⏭ button.
 
 @router.callback_query(F.data == "checkout")
 async def start_checkout(callback: CallbackQuery, state: FSMContext):
@@ -598,10 +727,7 @@ async def start_checkout(callback: CallbackQuery, state: FSMContext):
         )
     else:
         await state.set_state(CheckoutStates.waiting_phone)
-        await callback.message.edit_text(
-            get_text("enter_phone", lang),
-            parse_mode="HTML"
-        )
+        await _ask_phone(callback.message, lang)
     await callback.answer()
 
 
@@ -614,10 +740,7 @@ async def use_saved_info(callback: CallbackQuery, state: FSMContext):
     user = await get_user(callback.from_user.id)
     if not user or not user.get("phone") or not user.get("address"):
         await state.set_state(CheckoutStates.waiting_phone)
-        await callback.message.edit_text(
-            get_text("enter_phone", lang),
-            parse_mode="HTML"
-        )
+        await _ask_phone(callback.message, lang)
         await callback.answer()
         return
 
@@ -654,7 +777,8 @@ async def use_saved_info(callback: CallbackQuery, state: FSMContext):
     # courier may need fresh details for *this* delivery.
     await state.set_state(CheckoutStates.waiting_address_note)
     await callback.message.edit_text(
-        get_text("enter_address_note", lang),
+        _step(lang, 3) + get_text("enter_address_note", lang),
+        reply_markup=skip_step_keyboard(lang, "skip_step:note"),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -667,11 +791,44 @@ async def enter_new_info(callback: CallbackQuery, state: FSMContext):
     lang = data.get("lang", "uz")
 
     await state.set_state(CheckoutStates.waiting_phone)
-    await callback.message.edit_text(
-        get_text("enter_phone", lang),
-        parse_mode="HTML"
-    )
+    await _ask_phone(callback.message, lang)
     await callback.answer()
+
+
+@router.message(CheckoutStates.waiting_phone, F.contact)
+async def process_shared_contact(message: Message, state: FSMContext):
+    """Phone arriving from the 📱 share-contact button — one tap, no typing,
+    and no format to get wrong. Registered ahead of the text handler below,
+    which would otherwise swallow a contact message and crash on its empty
+    .text. Someone else's contact card is rejected: the courier has to be
+    able to reach the person who placed the order."""
+    data = await state.get_data()
+    lang = data.get("lang", "uz")
+
+    if message.contact.user_id != message.from_user.id:
+        await message.answer(get_text("invalid_phone", lang))
+        return
+
+    phone = message.contact.phone_number.strip()
+    if not phone.startswith("+"):
+        phone = "+" + phone
+    await _phone_accepted(message, state, lang, phone)
+
+
+async def _phone_accepted(message: Message, state: FSMContext, lang: str, phone: str) -> None:
+    """Save the number and move on to the location step — shared by the typed
+    and the shared-contact entry points."""
+    await state.update_data(phone=phone)
+    await update_user_info(message.from_user.id, phone=phone)
+    await state.set_state(CheckoutStates.waiting_location)
+
+    location_kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=get_text("btn_share_location", lang), request_location=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+    await message.answer(_step(lang, 2) + get_text("enter_location", lang),
+                         reply_markup=location_kb, parse_mode="HTML")
 
 
 @router.message(CheckoutStates.waiting_phone)
@@ -680,23 +837,13 @@ async def process_phone(message: Message, state: FSMContext):
     data = await state.get_data()
     lang = data.get("lang", "uz")
 
-    phone = message.text.strip()
+    phone = (message.text or "").strip()
     # Simple Uzbek phone validation
     if not re.match(r'^\+?998\d{9}$', phone.replace(" ", "").replace("-", "")):
         await message.answer(get_text("invalid_phone", lang))
         return
 
-    await state.update_data(phone=phone)
-    await update_user_info(message.from_user.id, phone=phone)
-    await state.set_state(CheckoutStates.waiting_location)
-
-    # Show keyboard with location share button
-    location_kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=get_text("btn_share_location", lang), request_location=True)]],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
-    await message.answer(get_text("enter_location", lang), reply_markup=location_kb, parse_mode="HTML")
+    await _phone_accepted(message, state, lang, phone)
 
 
 @router.message(CheckoutStates.waiting_location, F.location)
@@ -768,7 +915,9 @@ async def _advance_after_location(target, state: FSMContext, lat: float, lng: fl
 
     await state.set_state(CheckoutStates.waiting_address_note)
     if hasattr(target, "answer"):
-        await target.answer(get_text("enter_address_note", lang), parse_mode="HTML")
+        await target.answer(_step(lang, 3) + get_text("enter_address_note", lang),
+                            reply_markup=skip_step_keyboard(lang, "skip_step:note"),
+                            parse_mode="HTML")
 
 
 @router.callback_query(F.data == "loc_confirm:yes", CheckoutStates.confirming_location)
@@ -832,15 +981,36 @@ async def process_address_note(message: Message, state: FSMContext):
     else:
         note = raw
 
+    await _address_note_accepted(message, state, lang, note)
+
+
+async def _address_note_accepted(message: Message, state: FSMContext,
+                                 lang: str, note: str | None) -> None:
+    """Save the note (or the lack of one) and ask for the delivery method —
+    shared by the typed answer and the ⏭ skip button."""
+    data = await state.get_data()
     await state.update_data(address_note=note)
     in_tashkent = data.get("in_tashkent", False)
 
     await state.set_state(CheckoutStates.waiting_delivery_method)
     await message.answer(
-        get_text("choose_delivery", lang),
+        _step(lang, 4) + get_text("choose_delivery", lang),
         reply_markup=delivery_method_keyboard(lang, in_tashkent=in_tashkent),
         parse_mode="HTML",
     )
+
+
+@router.callback_query(F.data == "skip_step:note", CheckoutStates.waiting_address_note)
+async def skip_address_note(callback: CallbackQuery, state: FSMContext):
+    """⏭ on the optional address comment."""
+    data = await state.get_data()
+    lang = data.get("lang", "uz")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await _address_note_accepted(callback.message, state, lang, None)
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("delivery:"), CheckoutStates.waiting_delivery_method)
@@ -855,7 +1025,8 @@ async def process_delivery_method(callback: CallbackQuery, state: FSMContext):
     await state.update_data(delivery_method=method)
     await state.set_state(CheckoutStates.waiting_secondary_phone)
     await callback.message.edit_text(
-        get_text("enter_secondary_phone", lang),
+        _step(lang, 5) + get_text("enter_secondary_phone", lang),
+        reply_markup=skip_step_keyboard(lang, "skip_step:phone2"),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -877,6 +1048,14 @@ async def process_secondary_phone(message: Message, state: FSMContext):
             return
         secondary = cleaned
 
+    await _secondary_phone_accepted(message, state, lang, secondary)
+
+
+async def _secondary_phone_accepted(message: Message, state: FSMContext,
+                                    lang: str, secondary: str | None) -> None:
+    """Save the backup number (or the lack of one) and ask for payment —
+    shared by the typed answer and the ⏭ skip button."""
+    data = await state.get_data()
     await state.update_data(secondary_phone=secondary)
     delivery_method = data.get("delivery_method")
     # Yandex Taxi drivers aren't our staff — they can't take cash, so force
@@ -889,10 +1068,23 @@ async def process_secondary_phone(message: Message, state: FSMContext):
             parse_mode="HTML",
         )
     await message.answer(
-        get_text("choose_payment", lang),
+        _step(lang, 6) + get_text("choose_payment", lang),
         reply_markup=payment_method_keyboard(lang, online_only=online_only),
         parse_mode="HTML",
     )
+
+
+@router.callback_query(F.data == "skip_step:phone2", CheckoutStates.waiting_secondary_phone)
+async def skip_secondary_phone(callback: CallbackQuery, state: FSMContext):
+    """⏭ on the optional courier-backup number."""
+    data = await state.get_data()
+    lang = data.get("lang", "uz")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await _secondary_phone_accepted(callback.message, state, lang, None)
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("pay:"), CheckoutStates.waiting_payment_method)
@@ -916,6 +1108,13 @@ async def cancel_order(callback: CallbackQuery, state: FSMContext):
     """Cancel checkout"""
     lang = await get_user_language(callback.from_user.id)
     await state.clear()
+    # Checkout swaps the persistent 🏠/🛒 keyboard for one-shot phone/location
+    # ones; bailing out mid-flow must put it back, or the buyer is left with a
+    # stale prompt keyboard and no way home.
+    try:
+        await callback.message.answer("🏠", reply_markup=persistent_menu_keyboard(lang))
+    except Exception:
+        pass
     await callback.message.edit_text(
         get_text("order_cancelled", lang),
         reply_markup=main_menu_keyboard(lang),
@@ -1183,6 +1382,10 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     # the priced item list is rendered.
     import promotions
     bonuses = await promotions.bonuses_for_items(items_data)
+    # 111 000 so'm gift — appended after the aksiya bonuses so the threshold is
+    # measured on the paid goods only. Rides in items_data like any bonus, so
+    # create_order freezes it and the seller sees it while packing.
+    bonuses += await gift_campaign.gift_lines(user_id, items_data)
     items_data.extend(bonuses)
 
     items_subtotal = sum(item["price"] * item["quantity"] for item in items_data)
@@ -1212,6 +1415,12 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     items_text += promotions.near_miss_text(
         promotions.compute_near_misses(await promotions.get_active(), items_data), lang
     )
+    # Last chance before placing the order: "yana 8 000 so'm — sovg'a". The
+    # confirm screen has an "add more products" button right under it.
+    if not any(b.get("is_gift") for b in bonuses):
+        hint = await gift_campaign.cart_hint(user_id, items_subtotal, lang)
+        if hint:
+            items_text += "\n" + hint + "\n"
 
     payment_method = data["payment_method"]
     payment_label = get_text("btn_pay_cash", lang) if payment_method == "cash" else get_text("btn_pay_online", lang)
@@ -1774,33 +1983,19 @@ async def _forward_cheque_to_admins(bot: Bot, order_id: int, customer_name: str,
 
 
 async def notify_low_stock(bot: Bot, low_stock: list[dict]) -> None:
-    """Push one alert per just-crossed product to every admin, in parallel.
-    Logs failures instead of swallowing — an admin who blocked the bot is
-    routine; anything else we want to see."""
-    import asyncio
-    import logging
-    logger = logging.getLogger(__name__)
-
+    """A checkout just pushed products past the stock limit — run the stock
+    watcher right away so admins hear about it within seconds. The watcher
+    (stock_alerts.py) is the single place alerts come from: it also covers
+    stock changes outside checkout and never repeats an alert for a product
+    that is still at the same level."""
     if not low_stock:
         return
-
-    async def _send_one(admin_id: int, item: dict) -> None:
-        admin_lang = await get_user_language(admin_id)
-        qty = item["quantity"]
-        qty_str = str(int(qty)) if float(qty).is_integer() else f"{qty:.1f}"
-        key = "out_of_stock_alert" if qty <= 0 else "low_stock_alert"
-        try:
-            await bot.send_message(
-                chat_id=admin_id,
-                text=get_text(key, admin_lang, name=item["name"], quantity=qty_str),
-                parse_mode="HTML",
-            )
-        except Exception as exc:
-            # Bot blocked / chat not started → fine. Anything else → worth logging.
-            logger.warning("Low-stock alert to admin %s failed: %s", admin_id, exc)
-
-    tasks = [_send_one(admin_id, item) for admin_id in ADMIN_IDS for item in low_stock]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    import stock_alerts
+    try:
+        await stock_alerts.check_now(bot)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Immediate stock check failed")
 
 
 async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang: str):

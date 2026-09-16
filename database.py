@@ -652,6 +652,75 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Gift giveaways are booked here automatically, one row per delivered
+        # order (gift_campaign.py). The unique order id is what makes that
+        # booking idempotent: the reconcile loop can run every few minutes and
+        # an order can never be charged twice.
+        await conn.execute("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS gift_order_id INTEGER")
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_gift_order "
+            "ON expenses(gift_order_id) WHERE gift_order_id IS NOT NULL"
+        )
+
+        # ===== Sovg'a kampaniyasi (2026-09-17) =====
+        # One row per campaign key. started_at is stamped the first time the
+        # bot boots with the campaign in the code, so a restart or redeploy
+        # never restarts the 30-day clock; ends_at is set when the 09:00
+        # announcement goes out, giving buyers a full 30 days from the moment
+        # they're told about it.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS gift_campaigns (
+                key TEXT PRIMARY KEY,
+                started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                announced_at TIMESTAMP,
+                ends_at TIMESTAMP,
+                ended_notified_at TIMESTAMP,
+                out_of_stock_alerted_on DATE
+            )
+        """)
+
+        # ===== Ombor ogohlantirishlari (stock_alerts.py, 2026-09-17) =====
+        # Last level each product was alerted at (ok / low / out). An alert fires
+        # only when a product gets worse than this; restocking resets it.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS stock_alert_levels (
+                product_id INTEGER PRIMARY KEY,
+                level TEXT NOT NULL,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS stock_alert_meta (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                initialized_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                summary_pending BOOLEAN NOT NULL DEFAULT TRUE
+            )
+        """)
+
+        # ===== Tashlab ketilgan savat (2026-09-17) =====
+        # updated_at is added WITHOUT back-filling existing rows: carts that
+        # were already sitting in the table at deploy time stay NULL and are
+        # never reminded about, so switching the feature on can't blast every
+        # months-old abandoned cart at once. Only activity after the deploy
+        # counts.
+        await conn.execute("ALTER TABLE cart ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP")
+        await conn.execute("ALTER TABLE cart ALTER COLUMN updated_at SET DEFAULT CURRENT_TIMESTAMP")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS cart_reminders (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                stage INTEGER NOT NULL,
+                cart_updated_at TIMESTAMP NOT NULL,
+                cart_total DOUBLE PRECISION NOT NULL DEFAULT 0,
+                sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                converted_order_id INTEGER,
+                converted_total DOUBLE PRECISION,
+                UNIQUE (user_id, stage, cart_updated_at)
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cart_reminders_sent ON cart_reminders(sent_at)"
+        )
 
         # ===== Maqsadlar / targets (2026-09-02) =====
         # Owner's two numbers: 10 sales a day, $2 000 net profit a month.
@@ -1275,7 +1344,7 @@ async def add_to_cart(user_id: int, product_id: int = None, quantity: float = 1,
                 user_id, set_id
             )
             if existing:
-                await conn.execute("UPDATE cart SET quantity = quantity + $1 WHERE id = $2", quantity, existing["id"])
+                await conn.execute("UPDATE cart SET quantity = quantity + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", quantity, existing["id"])
             else:
                 await conn.execute("INSERT INTO cart (user_id, set_id, quantity) VALUES ($1, $2, $3)", user_id, set_id, quantity)
         else:
@@ -1284,7 +1353,7 @@ async def add_to_cart(user_id: int, product_id: int = None, quantity: float = 1,
                 user_id, product_id
             )
             if existing:
-                await conn.execute("UPDATE cart SET quantity = quantity + $1 WHERE id = $2", quantity, existing["id"])
+                await conn.execute("UPDATE cart SET quantity = quantity + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", quantity, existing["id"])
             else:
                 await conn.execute("INSERT INTO cart (user_id, product_id, quantity) VALUES ($1, $2, $3)", user_id, product_id, quantity)
 
@@ -1304,15 +1373,34 @@ async def set_cart_product_quantity(user_id: int, product_id: int = None, quanti
         if set_id is not None:
             existing = await conn.fetchrow("SELECT id FROM cart WHERE user_id = $1 AND set_id = $2", user_id, set_id)
             if existing:
-                await conn.execute("UPDATE cart SET quantity = $1 WHERE id = $2", quantity, existing["id"])
+                await conn.execute("UPDATE cart SET quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", quantity, existing["id"])
             else:
                 await conn.execute("INSERT INTO cart (user_id, set_id, quantity) VALUES ($1, $2, $3)", user_id, set_id, quantity)
         else:
             existing = await conn.fetchrow("SELECT id FROM cart WHERE user_id = $1 AND product_id = $2", user_id, product_id)
             if existing:
-                await conn.execute("UPDATE cart SET quantity = $1 WHERE id = $2", quantity, existing["id"])
+                await conn.execute("UPDATE cart SET quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", quantity, existing["id"])
             else:
                 await conn.execute("INSERT INTO cart (user_id, product_id, quantity) VALUES ($1, $2, $3)", user_id, product_id, quantity)
+
+def item_cost_qty(item: dict) -> float:
+    """How many stock units of an order line to charge as COST OF GOODS.
+
+    The one rule every profit calculation shares (admin stats, blogger payout,
+    both Excel sheets), so they can't drift apart:
+      * gift lines (gift_campaign.py) cost 0 here — the owner books them in
+        Chiqimlar instead (2026-09-17), and charging them in both places would
+        take the same Eritritol off the profit twice;
+      * aksiya bonus lines are charged by stock_quantity, what actually left
+        the shelf. Their `quantity` is the DISPLAY amount ("100" for 100 gr),
+        so costing by it overstated a 100 gr bonus a hundred- or thousand-fold;
+      * everything else by its quantity."""
+    if item.get("is_gift"):
+        return 0.0
+    if item.get("is_bonus"):
+        return float(item.get("stock_quantity") or item.get("quantity") or 0)
+    return float(item.get("quantity") or 0)
+
 
 async def get_cart(user_id: int) -> list[dict]:
     async with pool.acquire() as conn:
@@ -1358,7 +1446,7 @@ async def remove_from_cart(cart_id: int):
 
 async def set_cart_quantity(cart_id: int, quantity: float) -> None:
     async with pool.acquire() as conn:
-        await conn.execute("UPDATE cart SET quantity = $1 WHERE id = $2", quantity, cart_id)
+        await conn.execute("UPDATE cart SET quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", quantity, cart_id)
 
 async def get_cart_item(cart_id: int) -> dict | None:
     async with pool.acquire() as conn:
@@ -1400,6 +1488,39 @@ async def get_cart_total(user_id: int) -> float:
         from database import effective_price
         return effective_price(item["price"], item.get("discount_percent"), item.get("discount_until"))
     return sum(price(item) * item["cart_quantity"] for item in cart)
+
+
+async def get_cart_badge(user_id: int) -> tuple[int, float]:
+    """(line count, total so'm) for the cart in ONE query — feeds the "🛒 Savat
+    · 3 ta · 245 000 so'm" shortcut label. Replaces the get_cart_count +
+    get_cart_total pair at the browsing call sites, which cost three queries
+    between them for the same numbers."""
+    cart = await get_cart(user_id)
+    total = 0.0
+    for item in cart:
+        if item.get("is_set"):
+            unit_price = float(item["price"])
+        else:
+            unit_price = effective_price(item["price"], item.get("discount_percent"),
+                                         item.get("discount_until"))
+        total += unit_price * item["cart_quantity"]
+    return len(cart), total
+
+
+async def get_last_order_prefs(user_id: int) -> dict | None:
+    """Delivery/payment choices from the buyer's most recent bot order — what
+    the ⚡ Tezkor buyurtma button replays so a repeat buyer never re-answers
+    questions they've already answered. None when they've never ordered."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT payment_method, delivery_method, address_note, secondary_phone,
+                      address, latitude, longitude
+               FROM orders
+               WHERE user_id = $1 AND COALESCE(source, 'bot') <> 'manual'
+               ORDER BY created_at DESC LIMIT 1""",
+            user_id,
+        )
+        return dict(row) if row else None
 
 
 # ===== ORDER OPERATIONS =====
@@ -2167,7 +2288,7 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
             for item in json.loads(r["items"] or "[]"):
                 pid = item.get("id") or item.get("product_id")
                 if pid in cost_map:
-                    product_cost_total += cost_map[pid] * item.get("quantity", 0)
+                    product_cost_total += cost_map[pid] * item_cost_qty(item)
         except Exception:
             # One unreadable order must not cost the whole report.
             continue
@@ -2293,6 +2414,281 @@ async def add_expense(name: str, amount: float) -> int:
             "INSERT INTO expenses (name, amount) VALUES ($1, $2) RETURNING id",
             name, amount
         )
+
+async def get_gift_campaign(key: str) -> dict | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM gift_campaigns WHERE key = $1", key)
+        return dict(row) if row else None
+
+
+async def ensure_gift_campaign(key: str) -> dict:
+    """Create the campaign row on first boot; a later boot just reads it."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO gift_campaigns (key) VALUES ($1) ON CONFLICT (key) DO NOTHING", key
+        )
+        row = await conn.fetchrow("SELECT * FROM gift_campaigns WHERE key = $1", key)
+        return dict(row)
+
+
+async def mark_gift_announced(key: str, days: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE gift_campaigns
+                  SET announced_at = CURRENT_TIMESTAMP,
+                      ends_at = CURRENT_TIMESTAMP + make_interval(days => $2)
+                WHERE key = $1 AND announced_at IS NULL""",
+            key, days,
+        )
+
+
+async def mark_gift_ended_notified(key: str) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE gift_campaigns SET ended_notified_at = CURRENT_TIMESTAMP WHERE key = $1", key
+        )
+
+
+async def claim_gift_stock_alert(key: str, day) -> bool:
+    """True exactly once per Tashkent day — the out-of-stock admin alert."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """UPDATE gift_campaigns SET out_of_stock_alerted_on = $2
+                WHERE key = $1 AND out_of_stock_alerted_on IS DISTINCT FROM $2
+            RETURNING key""",
+            key, day,
+        )
+        return row is not None
+
+
+async def get_stock_snapshot() -> list[dict]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, name, COALESCE(quantity, 0) AS quantity, unit, low_stock_threshold
+                 FROM products WHERE is_active = 1 ORDER BY id"""
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_stock_alert_levels() -> dict[int, str]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT product_id, level FROM stock_alert_levels")
+        return {int(r["product_id"]): r["level"] for r in rows}
+
+
+async def set_stock_alert_levels(levels: dict[int, str]) -> None:
+    if not levels:
+        return
+    async with pool.acquire() as conn:
+        await conn.executemany(
+            """INSERT INTO stock_alert_levels (product_id, level) VALUES ($1, $2)
+               ON CONFLICT (product_id) DO UPDATE
+                  SET level = EXCLUDED.level, updated_at = CURRENT_TIMESTAMP""",
+            list(levels.items()),
+        )
+
+
+async def stock_alerts_initialized() -> bool:
+    async with pool.acquire() as conn:
+        return bool(await conn.fetchval("SELECT 1 FROM stock_alert_meta WHERE id = 1"))
+
+
+async def init_stock_alerts() -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO stock_alert_meta (id) VALUES (1) ON CONFLICT (id) DO NOTHING"
+        )
+
+
+async def claim_stock_summary() -> bool:
+    """True exactly once — the first-run summary of what's already low/out."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """UPDATE stock_alert_meta SET summary_pending = FALSE
+                WHERE id = 1 AND summary_pending RETURNING id"""
+        )
+        return row is not None
+
+
+async def get_product_category_map() -> dict[str, str]:
+    """{lower-cased product name: category} for every product, active or not —
+    order items only store the name, so that's the join key the personal
+    recommendations use to fall back to a product's category."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT name, category FROM products WHERE category IS NOT NULL")
+        return {(r["name"] or "").strip().lower(): r["category"] for r in rows}
+
+
+async def find_products_by_name_fragment(fragment: str) -> list[dict]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, name, name_ru, price, unit, photo_id,
+                      COALESCE(quantity, 0) AS quantity,
+                      COALESCE(cost_price, 0) AS cost_price
+                 FROM products
+                WHERE is_active = 1 AND name ILIKE $1
+                ORDER BY id""",
+            f"%{fragment}%",
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_unbooked_gift_orders(limit: int = 200) -> list[dict]:
+    """Delivered orders that carry a gift line but have no Chiqimlar row yet.
+    The LIKE is only a cheap pre-filter; callers parse items to be sure."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT o.id, o.items, o.delivered_at
+                 FROM orders o
+                WHERE o.status = 'delivered'
+                  AND o.items LIKE '%is_gift%'
+                  AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.gift_order_id = o.id)
+                ORDER BY o.id
+                LIMIT $1""",
+            limit,
+        )
+        return [dict(r) for r in rows]
+
+
+async def book_gift_expense(order_id: int, name: str, amount: float) -> bool:
+    """Book one gift into Chiqimlar. False if this order was already booked."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO expenses (name, amount, gift_order_id) VALUES ($1, $2, $3)
+               ON CONFLICT (gift_order_id) WHERE gift_order_id IS NOT NULL DO NOTHING
+               RETURNING id""",
+            name, amount, order_id,
+        )
+        return row is not None
+
+
+async def get_gift_campaign_stats(key: str) -> dict:
+    """Orders that received the gift since the campaign started, and what the
+    booked giveaways cost so far."""
+    async with pool.acquire() as conn:
+        camp = await conn.fetchrow("SELECT started_at FROM gift_campaigns WHERE key = $1", key)
+        if not camp:
+            return {"orders": 0, "delivered": 0, "cost": 0.0, "revenue": 0.0}
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) AS orders,
+                      COUNT(*) FILTER (WHERE status = 'delivered') AS delivered,
+                      COALESCE(SUM(total) FILTER (WHERE status <> 'cancelled'), 0) AS revenue
+                 FROM orders
+                WHERE created_at >= $1 AND items LIKE '%is_gift%'""",
+            camp["started_at"],
+        )
+        cost = await conn.fetchval(
+            "SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE gift_order_id IS NOT NULL "
+            "AND created_at >= $1",
+            camp["started_at"],
+        )
+        return {"orders": int(row["orders"]), "delivered": int(row["delivered"]),
+                "revenue": float(row["revenue"]), "cost": float(cost or 0)}
+
+
+# ===== Tashlab ketilgan savat (abandoned_cart.py) =====
+
+async def get_idle_carts(min_idle_minutes: int, max_idle_minutes: int) -> list[dict]:
+    """Buyers whose cart has been untouched for [min, max] minutes.
+
+    last_touch is the newest updated_at in the cart — any add, +/- or removal
+    of a line resets the clock. Rows still NULL (carts that predate the
+    feature) are ignored entirely, see the migration note in init_db."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT user_id, MAX(updated_at) AS last_touch
+                 FROM cart
+                GROUP BY user_id
+               HAVING MAX(updated_at) IS NOT NULL
+                  AND MAX(updated_at) <= CURRENT_TIMESTAMP - make_interval(mins => $1)
+                  AND MAX(updated_at) >= CURRENT_TIMESTAMP - make_interval(mins => $2)""",
+            min_idle_minutes, max_idle_minutes,
+        )
+        return [dict(r) for r in rows]
+
+
+async def cart_reminder_sent(user_id: int, stage: int, cart_updated_at) -> bool:
+    async with pool.acquire() as conn:
+        return bool(await conn.fetchval(
+            "SELECT 1 FROM cart_reminders WHERE user_id = $1 AND stage = $2 AND cart_updated_at = $3",
+            user_id, stage, cart_updated_at,
+        ))
+
+
+async def ordered_since(user_id: int, since) -> bool:
+    async with pool.acquire() as conn:
+        return bool(await conn.fetchval(
+            "SELECT 1 FROM orders WHERE user_id = $1 AND created_at >= $2 LIMIT 1",
+            user_id, since,
+        ))
+
+
+async def record_cart_reminder(user_id: int, stage: int, cart_updated_at, cart_total: float) -> bool:
+    """Claim the (user, stage, cart state) slot. False = someone already sent it."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO cart_reminders (user_id, stage, cart_updated_at, cart_total)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (user_id, stage, cart_updated_at) DO NOTHING
+               RETURNING id""",
+            user_id, stage, cart_updated_at, cart_total,
+        )
+        return row is not None
+
+
+async def attribute_cart_reminder_conversions(window_days: int = 7) -> int:
+    """Credit each reminder with the first order its buyer placed after it
+    (within window_days). Only the latest reminder before that order gets the
+    credit, so a 3h + 24h pair converting once counts as one sale."""
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """WITH firsts AS (
+                   SELECT r.id AS rid, r.sent_at,
+                          (SELECT o.id FROM orders o
+                            WHERE o.user_id = r.user_id
+                              AND o.created_at >= r.sent_at
+                              AND o.created_at <= r.sent_at + make_interval(days => $1)
+                              AND o.status <> 'cancelled'
+                            ORDER BY o.created_at LIMIT 1) AS oid
+                     FROM cart_reminders r
+                    WHERE r.converted_order_id IS NULL
+                      AND r.sent_at >= CURRENT_TIMESTAMP - make_interval(days => $1)
+               ), latest AS (
+                   SELECT DISTINCT ON (f.oid) f.rid, f.oid
+                     FROM firsts f
+                    WHERE f.oid IS NOT NULL
+                      AND NOT EXISTS (SELECT 1 FROM cart_reminders x
+                                       WHERE x.converted_order_id = f.oid)
+                    ORDER BY f.oid, f.sent_at DESC
+               )
+               UPDATE cart_reminders r
+                  SET converted_order_id = l.oid,
+                      converted_total = (SELECT total FROM orders WHERE id = l.oid)
+                 FROM latest l
+                WHERE r.id = l.rid""",
+            window_days,
+        )
+        try:
+            return int(result.split()[-1])
+        except (ValueError, IndexError):
+            return 0
+
+
+async def get_cart_reminder_stats(days: int) -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) AS sent,
+                      COUNT(*) FILTER (WHERE stage = 1) AS stage1,
+                      COUNT(*) FILTER (WHERE stage = 2) AS stage2,
+                      COUNT(converted_order_id) AS converted,
+                      COALESCE(SUM(cart_total), 0) AS reminded_value,
+                      COALESCE(SUM(converted_total), 0) AS converted_value
+                 FROM cart_reminders
+                WHERE sent_at >= CURRENT_TIMESTAMP - make_interval(days => $1)""",
+            days,
+        )
+        return {k: (float(v) if "value" in k else int(v)) for k, v in dict(row).items()}
+
 
 async def get_expenses(limit: int = 50) -> list[dict]:
     async with pool.acquire() as conn:

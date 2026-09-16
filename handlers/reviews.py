@@ -11,7 +11,7 @@ from config import ADMIN_IDS
 from database import (
     get_user_language, get_product, get_product_reviews, get_product_rating,
     has_user_reviewed, has_user_purchased, add_review, get_order, get_user,
-    get_cart_count,
+    get_cart_badge,
 )
 from locales import get_text
 from keyboards import (
@@ -60,10 +60,10 @@ async def show_reviews(callback: CallbackQuery):
             date = str(r["created_at"])[:10] if r.get("created_at") else ""
             text += f"{stars} — <b>{user_name}</b>\n{comment}\n<i>{date}</i>\n\n"
 
-    cart_count = await get_cart_count(callback.from_user.id)
+    cart_count, cart_total = await get_cart_badge(callback.from_user.id)
     await callback.message.answer(
         text,
-        reply_markup=review_back_keyboard(lang, product_id, cart_count),
+        reply_markup=review_back_keyboard(lang, product_id, cart_count, cart_total),
         parse_mode="HTML"
     )
     await callback.answer()

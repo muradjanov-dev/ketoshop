@@ -8,6 +8,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
 from decimal import Decimal
 from pathlib import Path
@@ -471,6 +472,12 @@ async def api_cart(request: web.Request):
     ]
     promo = await promotions.get_active()
     bonuses = promotions.compute_bonuses(promo, bonus_input)
+    # The 111 000 so'm gift shows up in the Mini App's existing 🎁 block the
+    # moment the cart qualifies; below it, gift_hint tells how much is left.
+    import gift_campaign
+    gifts = await gift_campaign.gift_lines(user_id, [{"price": total, "quantity": 1}])
+    bonuses = bonuses + gifts
+    gift_hint = "" if gifts else await gift_campaign.cart_hint(user_id, total, lang)
     misses = promotions.compute_near_misses(promo, bonus_input)
 
     def _nm(m):
@@ -502,6 +509,8 @@ async def api_cart(request: web.Request):
         ],
         "bonuses_value": round(promotions.bonuses_total_value(bonuses)),
         "near_misses": [_nm(m) for m in misses[:3]],
+        # Plain text (HTML tags stripped) for the Mini App's nudge area.
+        "gift_hint": re.sub(r"<[^>]+>", "", gift_hint),
     })
 
 
@@ -649,6 +658,9 @@ async def api_checkout(request: web.Request):
     # admin's order notification shows them to whoever packs the box. They add
     # nothing to the totals (price is 0).
     items_data.extend(await promotions.bonuses_for_items(items_data))
+    # 111 000 so'm gift (gift_campaign.py) — same line shape, same freeze.
+    import gift_campaign
+    items_data.extend(await gift_campaign.gift_lines(user_id, items_data))
 
     total = sum(item["price"] * item["quantity"] for item in items_data)
     subtotal = total  # product-only, before delivery fee — what Keto earns off of

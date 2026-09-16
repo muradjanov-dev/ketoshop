@@ -10,7 +10,7 @@ from database import (
     get_product, get_product_rating, add_product_view,
     effective_price, active_discount,
     get_cart_line_for_product, add_to_cart, set_cart_quantity, remove_from_cart,
-    get_cart_count,
+    get_cart_count, get_cart_badge,
 )
 from locales import get_text, get_category_name, get_unit_name, get_display_unit, localize_product_text
 from keyboards import categories_keyboard, back_to_menu_keyboard, cart_shortcut_row
@@ -26,8 +26,8 @@ async def show_catalog(callback: CallbackQuery):
     """Show product categories"""
     lang = await get_user_language(callback.from_user.id)
     text = get_text("categories_title", lang)
-    cart_count = await get_cart_count(callback.from_user.id)
-    keyboard = categories_keyboard(lang, cart_count)
+    cart_count, cart_total = await get_cart_badge(callback.from_user.id)
+    keyboard = categories_keyboard(lang, cart_count, cart_total)
 
     if callback.message.photo:
         try:
@@ -192,8 +192,8 @@ async def _detail_keyboard(user_id: int, product_id: int, back_category: str,
 
     # cart_qty > 0 already means this product is in the cart — reuse it to
     # skip an extra query when this product alone justifies the shortcut.
-    cart_count = 1 if cart_qty > 0 else await get_cart_count(user_id)
-    cart_row = cart_shortcut_row(lang, cart_count)
+    cart_count, cart_total = await get_cart_badge(user_id)
+    cart_row = cart_shortcut_row(lang, cart_count, cart_total)
 
     back_cb = f"cat:{back_category}:{back_page}" if back_category else "catalog"
     rows = [primary_row, [InlineKeyboardButton(text=get_text("btn_reviews", lang), callback_data=f"reviews:{product_id}")]]
@@ -285,11 +285,12 @@ async def _show_product_list(callback: CallbackQuery, category: str, page: int):
     else:
         products, total = await get_products_by_category(category, page=page, per_page=PRODUCTS_PER_PAGE)
     total_pages = max(1, (total + PRODUCTS_PER_PAGE - 1) // PRODUCTS_PER_PAGE)
-    cart_count = await get_cart_count(callback.from_user.id)
+    cart_count, cart_total = await get_cart_badge(callback.from_user.id)
 
     # Where the back button and the empty-state keyboard should point.
     back_cb = "main_menu" if is_discounts else "catalog"
-    empty_kb = back_to_menu_keyboard(lang, cart_count) if is_discounts else categories_keyboard(lang, cart_count)
+    empty_kb = (back_to_menu_keyboard(lang, cart_count, cart_total) if is_discounts
+                else categories_keyboard(lang, cart_count, cart_total))
 
     if not products:
         empty_text = get_text("no_discounts", lang) if is_discounts else get_text("no_products", lang)
@@ -362,7 +363,7 @@ async def _show_product_list(callback: CallbackQuery, category: str, page: int):
     if nav_row:
         buttons.append(nav_row)
 
-    cart_row = cart_shortcut_row(lang, cart_count)
+    cart_row = cart_shortcut_row(lang, cart_count, cart_total)
     if cart_row:
         buttons.append(cart_row)
 
@@ -407,7 +408,7 @@ async def show_set_detail(callback: CallbackQuery):
     text = "\n".join(desc_lines)
     
     # Keyboard
-    cart_count = await get_cart_count(callback.from_user.id)
+    cart_count, cart_total = await get_cart_badge(callback.from_user.id)
     buttons = []
     
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -427,7 +428,7 @@ async def show_set_detail(callback: CallbackQuery):
     else:
         buttons.append([InlineKeyboardButton(text=get_text("btn_add_to_cart", lang), callback_data=f"set_inc:{set_id}:{page}")])
         
-    cart_row = cart_shortcut_row(lang, cart_count)
+    cart_row = cart_shortcut_row(lang, cart_count, cart_total)
     if cart_row:
         buttons.append(cart_row)
         

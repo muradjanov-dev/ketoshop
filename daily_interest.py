@@ -21,7 +21,7 @@ two days running.
 
 Where it sits in the day (all Asia/Tashkent):
     08:00  tips broadcast, every 2 days           (broadcast.py)
-    10:00  personal recommendations, every 4 days (personal_recommend.py)
+    10:00  personal recommendations, every 2 days (personal_recommend.py)
     12:00  aksiya "bugungi sovg'alar", daily      (promotions.py)
     18:00  THIS — daily, unless TWO of the above already went out today.
            A veto on "anything else went out" would have made it dead code,

@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 # Rotating framing lines for the browse-only (most-viewed-product) spotlight
 # — added 2026-07-27 so buyers who've never ordered still get reached every
-# 4 days, via what they've actually looked at rather than order history.
+# 2 days, via what they've actually looked at rather than order history.
 # The underlying product/description doesn't change often, so instead of
 # content variants (like the order-based recipes) we rotate the intro line;
 # once all are exhausted the never-repeat guarantee below just skips them
@@ -82,21 +82,17 @@ def _product_button(product: dict, lang: str) -> "InlineKeyboardMarkup":
     ]])
 
 
-def _shop_button(lang: str) -> "InlineKeyboardMarkup | None":
-    if not WEBAPP_URL:
-        return None
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=get_text("btn_store", lang), web_app=WebAppInfo(url=WEBAPP_URL))
-    ]])
-
 # Same cadence conventions as the tips broadcaster, but a different hour so the
 # two 2-day messages don't land on top of each other.
 TZ_OFFSET = timedelta(hours=5)   # Asia/Tashkent, fixed UTC+5
 SEND_HOUR = 10                   # 10:00 Tashkent (tips go at 08:00)
-# Owner request (2026-07-04): personal recos go every 4 days, and NEVER on a
+# Owner request (2026-07-04): personal recos NEVER land on a
 # day the 2-day tips broadcast fired — if the days collide, we slip to the
-# next day. (4 is a multiple of 2, so without the slip they'd always collide.)
-INTERVAL_DAYS = 4
+# next day.
+# Interval cut from 4 to 2 days on 2026-09-17 (owner request). Tips also run
+# every 2 days, so the first send after the change may collide and slip one
+# day — after that the two stay on opposite days and never meet again.
+INTERVAL_DAYS = 2
 CHECK_EVERY = 900                # re-check every 15 min
 MAX_VARIANT_TRIES = 24           # rotation offsets to try before skipping a buyer
 SEND_DELAY = 0.05                # ~20 msgs/sec, under Telegram limits
@@ -105,333 +101,41 @@ SEND_DELAY = 0.05                # ~20 msgs/sec, under Telegram limits
 # ─────────────────────────────────────────────────────────────────────────────
 # Content library
 #
-# Each "profile" describes a family of products the shop sells. `match` is a
-# list of lowercase substrings looked up in the product NAME (works even if the
-# product was later deleted, since we only need the stored order item name).
-# `benefits` and `recipes` each carry uz + ru; the scheduler rotates through
-# them by cycle so a returning buyer sees fresh content each time.
+# Lives in reco_content.py — profiles for every product family the shop sells,
+# combo recipes that need several of them at once, complementary-ingredient
+# suggestions, and the message copy. Imported here rather than inlined so the
+# shop owner can rewrite recipes without touching the scheduler.
 # ─────────────────────────────────────────────────────────────────────────────
-PROFILES = [
-    {
-        "key": "almond_flour",
-        "emoji": "🥜",
-        "match": ["bodom", "mindal", "almond", "миндал", "бодом"],
-        "name": {"uz": "Bodom uni", "ru": "Миндальная мука"},
-        "benefits": [
-            {"uz": "Bodom uni — past uglevodli, oqsil va sog'lom yog'larga boy. Un o'rnida ishlatsangiz, qonda shakar keskin ko'tarilmaydi va to'yimlilik uzoq saqlanadi.",
-             "ru": "Миндальная мука — низкоуглеводная, богата белком и полезными жирами. Заменяя обычную муку, вы избегаете скачков сахара и дольше остаётесь сытыми."},
-            {"uz": "E vitamini va magniyga boy — teri, soch va yurak salomatligi uchun foydali. Glutensiz, shuning uchun hazm qilish osonroq.",
-             "ru": "Богата витамином E и магнием — полезна для кожи, волос и сердца. Без глютена, поэтому легче усваивается."},
-        ],
-        "recipes": [
-            {"uz": "<b>Keto bodom keksi</b>\n• 200g bodom uni, 3 tuxum, 50g eritilgan sariyog', 60g eritritol, 1 ch.q. pishirish kukuni.\n• Aralashtiring, 180°C da 25 daqiqa yoping. Ustiga bir chimdim tuz — ta'mni ochadi.",
-             "ru": "<b>Кето-кекс из миндаля</b>\n• 200г миндальной муки, 3 яйца, 50г топлёного масла, 60г эритрита, 1 ч.л. разрыхлителя.\n• Смешайте, выпекайте при 180°C 25 минут. Щепотка соли раскроет вкус."},
-            {"uz": "<b>Bodom pancake (PP nonushta)</b>\n• 100g bodom uni, 2 tuxum, 3 osh q. suv/sut, bir chimdim tuz.\n• Xamirni quyuq qiling, kam yog'da ikkala tomonini qizarting. Ustiga chia yoki kokos qirindisi seping.",
-             "ru": "<b>Миндальные панкейки (ПП-завтрак)</b>\n• 100г миндальной муки, 2 яйца, 3 ст.л. воды/молока, щепотка соли.\n• Сделайте густое тесто, обжарьте с двух сторон на малом масле. Посыпьте чиа или кокосом."},
-            {"uz": "<b>Glutensiz bodom noni</b>\n• 250g bodom uni, 4 tuxum, 1 ch.q. soda, 1 osh q. olma sirkasi, tuz.\n• Qo'shib, non qolipida 180°C da 35 daqiqa yoping. Sendvich uchun ideal.",
-             "ru": "<b>Безглютеновый миндальный хлеб</b>\n• 250г миндальной муки, 4 яйца, 1 ч.л. соды, 1 ст.л. яблочного уксуса, соль.\n• Смешайте, выпекайте в форме при 180°C 35 минут. Идеален для сэндвичей."},
-        ],
-    },
-    {
-        "key": "coconut",
-        "emoji": "🥥",
-        "match": ["kokos", "coconut", "кокос", "kakos"],
-        "name": {"uz": "Kokos mahsulotlari", "ru": "Кокосовые продукты"},
-        "benefits": [
-            {"uz": "Kokos tarkibidagi MCT yog'lari tez energiyaga aylanadi va ketoz holatini qo'llab-quvvatlaydi. Ochlik hissi kamayadi.",
-             "ru": "MCT-жиры кокоса быстро превращаются в энергию и поддерживают состояние кетоза. Снижают чувство голода."},
-            {"uz": "Kokos qirindisi tolaga boy — hazmni yaxshilaydi va shirinliklarga uglevodsiz shirin ta'm beradi.",
-             "ru": "Кокосовая стружка богата клетчаткой — улучшает пищеварение и придаёт десертам сладость без углеводов."},
-        ],
-        "recipes": [
-            {"uz": "<b>Keto \"Bounty\" konfeti</b>\n• 100g kokos qirindisi, 40g eritilgan kokos yog'i, 30g eritritol, ozgina vanil.\n• Aralashtirib, kichik shariklar yasang, muzlatkichda 30 daqiqa saqlang. Xohlasangiz keto shokoladga bo'ktiring.",
-             "ru": "<b>Кето-конфеты «Баунти»</b>\n• 100г кокосовой стружки, 40г топлёного кокосового масла, 30г эритрита, ваниль.\n• Скатайте шарики, охладите 30 минут. По желанию — в кето-шоколаде."},
-            {"uz": "<b>Kokosli smuzi</b>\n• 200ml kokos suti, bir hovuch muzlatilgan mevalar, 1 osh q. chia, bir chimdim tuz.\n• Blenderda urib iching — to'yimli va yengil nonushta.",
-             "ru": "<b>Кокосовое смузи</b>\n• 200мл кокосового молока, горсть замороженных ягод, 1 ст.л. чиа, щепотка соли.\n• Взбейте в блендере — сытный лёгкий завтрак."},
-        ],
-    },
-    {
-        "key": "bran_pp",
-        "emoji": "🌾",
-        "match": ["kepak", "otrub", "отруб", "bug'doy", "bugdoy", "pp un", "пп мук"],
-        "name": {"uz": "Kepak va PP unlar", "ru": "Отруби и ПП-мука"},
-        "benefits": [
-            {"uz": "Kepak — tabiiy tola manbai. Ichak ishini yaxshilaydi, to'yimlilikni uzaytiradi va umumiy kaloriyani kamaytiradi.",
-             "ru": "Отруби — источник натуральной клетчатки. Улучшают работу кишечника, продлевают сытость и снижают калорийность."},
-            {"uz": "PP unlar oddiy oq unga nisbatan sekin hazm bo'ladi — energiya bir tekis taqsimlanadi, ortiqcha ishtaha bosiladi.",
-             "ru": "ПП-мука усваивается медленнее белой — энергия распределяется ровно, аппетит под контролем."},
-        ],
-        "recipes": [
-            {"uz": "<b>PP kepakli non</b>\n• 3 osh q. kepak, 2 tuxum, 2 osh q. tvorog, tuz, soda.\n• Aralashtirib, qolipda yoki tovada yoping. Yengil, tolaga boy nonushta noni.",
-             "ru": "<b>ПП-хлеб с отрубями</b>\n• 3 ст.л. отрубей, 2 яйца, 2 ст.л. творога, соль, сода.\n• Смешайте и запеките. Лёгкий хлеб с клетчаткой на завтрак."},
-            {"uz": "<b>Kepakli syrniki</b>\n• 200g tvorog, 1 tuxum, 2 osh q. kepak, shirinlashtirgich.\n• Kichik kulchalar yasab, kam yog'da qizarting. Ustiga tabiiy yogurt.",
-             "ru": "<b>Сырники с отрубями</b>\n• 200г творога, 1 яйцо, 2 ст.л. отрубей, подсластитель.\n• Сформируйте, обжарьте на малом масле. Сверху — натуральный йогурт."},
-        ],
-    },
-    {
-        "key": "oils",
-        "emoji": "🫒",
-        # "saryog"/"sariyog" spelled out because plain "yog" would swallow
-        # "yogurt"; the apostrophe-less spellings are common in the catalog.
-        "match": ["yog'", "yog ", "saryog", "sariyog", "moy", "масло", "oil",
-                  "avokado", "zaytun", "olive"],
-        "name": {"uz": "Sog'lom yog'lar", "ru": "Полезные масла"},
-        "benefits": [
-            {"uz": "Sifatli o'simlik yog'lari — keto ratsionining asosi. Ular yog'da eruvchi vitaminlarni (A, D, E, K) o'zlashtirishga yordam beradi.",
-             "ru": "Качественные растительные масла — основа кето-рациона. Помогают усваивать жирорастворимые витамины (A, D, E, K)."},
-            {"uz": "Sovuq bosim yog'lari salatlar uchun ideal; kokos yog'i esa yuqori haroratda qovurishga chidamli.",
-             "ru": "Масла холодного отжима идеальны для салатов; кокосовое масло устойчиво к высоким температурам при жарке."},
-        ],
-        "recipes": [
-            {"uz": "<b>Keto salat sousi</b>\n• 3 osh q. zaytun/avokado yog'i, 1 osh q. olma sirkasi, tuz, murch, xantal.\n• Chayqatib aralashtiring — har qanday yashil salatga jonli ta'm.",
-             "ru": "<b>Кето-заправка для салата</b>\n• 3 ст.л. оливкового/авокадо масла, 1 ст.л. яблочного уксуса, соль, перец, горчица.\n• Взболтайте — оживит любой зелёный салат."},
-            {"uz": "<b>Kokos yog'ida qovurilgan tuxum</b>\n• Kokos yog'ini qizdiring, tuxumni yoki avokado bilan qovuring, Himalay tuzi seping. To'yimli keto nonushta.",
-             "ru": "<b>Яйца на кокосовом масле</b>\n• Разогрейте кокосовое масло, обжарьте яйца (можно с авокадо), посыпьте гималайской солью. Сытный кето-завтрак."},
-        ],
-    },
-    {
-        "key": "vinegar",
-        "emoji": "🍎",
-        "match": ["sirka", "uksus", "уксус", "vinegar"],
-        "name": {"uz": "Olma sirkasi", "ru": "Яблочный уксус"},
-        "benefits": [
-            {"uz": "Ovqatdan oldin bir choy qoshiq olma sirkasi (bir stakan suvda) qondagi shakarning keskin ko'tarilishini yumshatishga yordam beradi.",
-             "ru": "Чайная ложка яблочного уксуса в стакане воды перед едой помогает смягчить резкий подъём сахара в крови."},
-            {"uz": "Ishtahani muvozanatlaydi va hazmni qo'llab-quvvatlaydi. Salat souslariga tabiiy nordonlik beradi.",
-             "ru": "Балансирует аппетит и поддерживает пищеварение. Придаёт салатам натуральную кислинку."},
-        ],
-        "recipes": [
-            {"uz": "<b>Tetiklashtiruvchi ichimlik</b>\n• 1 stakan suv, 1 ch.q. olma sirkasi, bir chimdim Himalay tuzi, xohlasangiz ozgina eritritol.\n• Ovqatdan 15 daqiqa oldin iching.",
-             "ru": "<b>Бодрящий напиток</b>\n• Стакан воды, 1 ч.л. яблочного уксуса, щепотка гималайской соли, по желанию эритрит.\n• Пейте за 15 минут до еды."},
-            {"uz": "<b>Tez marinad</b>\n• Bodring/karam/piyozni olma sirkasi, tuz va sув bilan 30 daqiqa marinadlang. Yog'li taomlarga yengil garnitura.",
-             "ru": "<b>Быстрый маринад</b>\n• Огурцы/капусту/лук замаринуйте в яблочном уксусе с солью и водой на 30 минут. Лёгкий гарнир к жирным блюдам."},
-        ],
-    },
-    {
-        "key": "seeds",
-        "emoji": "🌱",
-        "match": ["chia", "чиа", "zig'ir", "zigir", "lyon", "лён", "len", "kunjut", "sesame", "кунжут", "urug'", "urug ", "semech", "семеч", "seed"],
-        "name": {"uz": "Urug'lar (chia, zig'ir…)", "ru": "Семена (чиа, лён…)"},
-        "benefits": [
-            {"uz": "Chia va zig'ir urug'i omega-3 va eruvchi tolaga boy — yurak salomatligi va uzoq to'yimlilik uchun.",
-             "ru": "Чиа и семена льна богаты омега-3 и растворимой клетчаткой — для здоровья сердца и долгой сытости."},
-            {"uz": "Suvda bo'kkanda gelga aylanadi — ochlikni bosadi va ichak ishini yaxshilaydi.",
-             "ru": "Разбухая в воде, превращаются в гель — утоляют голод и улучшают работу кишечника."},
-        ],
-        "recipes": [
-            {"uz": "<b>Chia puding</b>\n• 3 osh q. chia, 200ml kokos/bodom suti, shirinlashtirgich, vanil.\n• Aralashtirib, tunda muzlatkichda qoldiring. Ertalab ustiga mevalar — tayyor keto nonushta.",
-             "ru": "<b>Чиа-пудинг</b>\n• 3 ст.л. чиа, 200мл кокосового/миндального молока, подсластитель, ваниль.\n• Смешайте, оставьте на ночь в холодильнике. Утром — ягоды сверху."},
-            {"uz": "<b>Zig'irli kraker</b>\n• 4 osh q. zig'ir urug'i + 4 osh q. suv 10 daqiqa turadi, tuz va ziravor qo'shing.\n• Yupqa yoyib, 150°C da 40 daqiqa quriting. Xrustaydigan keto gazak.",
-             "ru": "<b>Льняные крекеры</b>\n• 4 ст.л. семян льна + 4 ст.л. воды на 10 минут, соль и специи.\n• Раскатайте тонко, сушите при 150°C 40 минут. Хрустящий кето-снек."},
-        ],
-    },
-    {
-        "key": "salt",
-        "emoji": "🧂",
-        "match": ["tuz", "соль", "sol ", "himalay", "гималай", "salt"],
-        "name": {"uz": "Himalay tuzi", "ru": "Гималайская соль"},
-        "benefits": [
-            {"uz": "Keto davrida organizm ko'proq natriy yo'qotadi. Himalay tuzi elektrolit muvozanatini tiklaydi va \"keto grip\" (holsizlik, bosh og'rig'i) ni kamaytiradi.",
-             "ru": "На кето организм теряет больше натрия. Гималайская соль восстанавливает баланс электролитов и снижает «кето-грипп» (слабость, головную боль)."},
-            {"uz": "Tarkibida 80 dan ortiq mineral bor — oddiy tuzga qaraganda tabiiyroq va boy ta'mli.",
-             "ru": "Содержит более 80 минералов — натуральнее и богаче по вкусу, чем обычная соль."},
-        ],
-        "recipes": [
-            {"uz": "<b>Uy elektrolit ichimligi</b>\n• 500ml suv, 1/4 ch.q. Himalay tuzi, yarim limon sharbati, ozgina eritritol.\n• Kun davomida ho'plab iching — ayniqsa keto boshida foydali.",
-             "ru": "<b>Домашний электролитный напиток</b>\n• 500мл воды, 1/4 ч.л. гималайской соли, сок половины лимона, немного эритрита.\n• Пейте в течение дня — особенно полезно в начале кето."},
-        ],
-    },
-    {
-        "key": "sweeteners",
-        "emoji": "🍬",
-        "match": ["eritritol", "эритрит", "stevia", "стеви", "shirin", "podslast", "подсласт", "shakar o'rn", "sweeten"],
-        "name": {"uz": "Shirinlashtirgichlar", "ru": "Подсластители"},
-        "benefits": [
-            {"uz": "Eritritol va steviya deyarli 0 kaloriyali va qondagi shakarni ko'tarmaydi — shirinlikni yeb, ketozdan chiqmaysiz.",
-             "ru": "Эритрит и стевия почти без калорий и не поднимают сахар — можно сладкое, не выходя из кетоза."},
-            {"uz": "Tishlarga zararsiz va oddiy shakarga to'liq muqobil. Pishiriqlarda 1:1 nisbatda ishlatish mumkin.",
-             "ru": "Безопасны для зубов и полностью заменяют сахар. В выпечке используются 1:1."},
-        ],
-        "recipes": [
-            {"uz": "<b>Keto issiq shokolad</b>\n• 200ml kokos suti, 1 osh q. kakao, eritritol, bir chimdim tuz.\n• Isiting va aralashtiring — shakarsiz shirin kechki ichimlik.",
-             "ru": "<b>Кето горячий шоколад</b>\n• 200мл кокосового молока, 1 ст.л. какао, эритрит, щепотка соли.\n• Подогрейте и размешайте — сладкий вечерний напиток без сахара."},
-        ],
-    },
-    {
-        "key": "honey",
-        "emoji": "🍯",
-        "match": ["asal", "мёд", "med ", "honey"],
-        "name": {"uz": "Asal", "ru": "Мёд"},
-        "benefits": [
-            {"uz": "Tabiiy asal — antioksidant va mineralga boy. Keto rejimida oz miqdorda, oddiy shakar o'rnida ishlatilsa foydaliroq.",
-             "ru": "Натуральный мёд богат антиоксидантами и минералами. На кето — в небольшом количестве, как замена обычному сахару."},
-        ],
-        "recipes": [
-            {"uz": "<b>Tomoq uchun issiq ichimlik</b>\n• Iliq suv, 1 ch.q. asal, yarim limon, ozgina zanjabil. Sovuq kunlarda immunitet uchun.",
-             "ru": "<b>Тёплый напиток для горла</b>\n• Тёплая вода, 1 ч.л. мёда, половина лимона, немного имбиря. Для иммунитета в холода."},
-        ],
-    },
-]
+from reco_content import (
+    PROFILES, DEFAULT_PROFILE, COMBOS, PAIRINGS, PAIRINGS_DEFAULT, LABELS,
+    CATEGORY_GENERIC_PROFILES, CATEGORY_PROFILE_KEYS,
+)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Complementary-ingredient suggestions (cross-recommendations).
-#
-# Keyed by the buyer's dominant profile: "you buy X — these ingredients pair
-# with it". Each suggestion carries the profile key it belongs to, so we can
-# skip suggesting things the buyer already purchases. All items are product
-# families the shop actually stocks.
-# ─────────────────────────────────────────────────────────────────────────────
-PAIRINGS: dict[str, list[dict]] = {
-    "almond_flour": [
-        {"profile": "sweeteners", "emoji": "🍬",
-         "name": {"uz": "Eritritol", "ru": "Эритрит"},
-         "why": {"uz": "bodom unidan keto keks va pechene tayyorlashda shakar o'rnini bosadi — kaloriyasiz shirinlik",
-                 "ru": "заменит сахар в кето-выпечке из миндальной муки — сладость без калорий"}},
-        {"profile": "seeds", "emoji": "🌱",
-         "name": {"uz": "Chia urug'i", "ru": "Семена чиа"},
-         "why": {"uz": "pishiriqlarga qo'shsangiz tola va omega-3 qo'shiladi, xamir yaxshi bog'lanadi",
-                 "ru": "добавит клетчатку и омега-3 в выпечку, хорошо связывает тесто"}},
-        {"profile": "coconut", "emoji": "🥥",
-         "name": {"uz": "Kokos qirindisi", "ru": "Кокосовая стружка"},
-         "why": {"uz": "bodomli keks va pancake ustiga sepish uchun — tabiiy shirin ta'm",
-                 "ru": "посыпка для кексов и панкейков — натуральная сладость"}},
-    ],
-    "coconut": [
-        {"profile": "almond_flour", "emoji": "🥜",
-         "name": {"uz": "Bodom uni", "ru": "Миндальная мука"},
-         "why": {"uz": "kokos bilan juftlikda keto shirinliklarning asosiy poydevori",
-                 "ru": "в паре с кокосом — основа кето-десертов"}},
-        {"profile": "sweeteners", "emoji": "🍬",
-         "name": {"uz": "Eritritol", "ru": "Эритрит"},
-         "why": {"uz": "kokosli konfet va pudinglarga shakarsiz shirinlik beradi",
-                 "ru": "придаст кокосовым конфетам сладость без сахара"}},
-        {"profile": "seeds", "emoji": "🌱",
-         "name": {"uz": "Chia urug'i", "ru": "Семена чиа"},
-         "why": {"uz": "kokos suti bilan chia puding — eng oson keto nonushta",
-                 "ru": "чиа-пудинг на кокосовом молоке — самый простой кето-завтрак"}},
-    ],
-    "bran_pp": [
-        {"profile": "seeds", "emoji": "🌱",
-         "name": {"uz": "Zig'ir urug'i", "ru": "Семена льна"},
-         "why": {"uz": "kepakli nonga qo'shilsa tola va omega-3 yana ham oshadi",
-                 "ru": "добавит хлебу с отрубями ещё больше клетчатки и омега-3"}},
-        {"profile": "vinegar", "emoji": "🍎",
-         "name": {"uz": "Olma sirkasi", "ru": "Яблочный уксус"},
-         "why": {"uz": "PP xamirturushsiz nonda sodani faollashtiradi — non yumshoq chiqadi",
-                 "ru": "активирует соду в ПП-выпечке — хлеб получается пышным"}},
-        {"profile": "oils", "emoji": "🫒",
-         "name": {"uz": "Zaytun yog'i", "ru": "Оливковое масло"},
-         "why": {"uz": "PP taomlarga sog'lom yog' qo'shadi — vitaminlar yaxshi so'riladi",
-                 "ru": "полезные жиры к ПП-блюдам — витамины усваиваются лучше"}},
-    ],
-    "oils": [
-        {"profile": "vinegar", "emoji": "🍎",
-         "name": {"uz": "Olma sirkasi", "ru": "Яблочный уксус"},
-         "why": {"uz": "yog' bilan 3:1 nisbatda — mukammal salat sousi",
-                 "ru": "с маслом в пропорции 3:1 — идеальная заправка для салата"}},
-        {"profile": "salt", "emoji": "🧂",
-         "name": {"uz": "Himalay tuzi", "ru": "Гималайская соль"},
-         "why": {"uz": "sog'lom yog'lar bilan tayyorlangan taomlarga mineral qo'shadi",
-                 "ru": "добавит минералы блюдам на полезных маслах"}},
-        {"profile": "seeds", "emoji": "🌱",
-         "name": {"uz": "Kunjut urug'i", "ru": "Кунжут"},
-         "why": {"uz": "yog'li salatlarga xrust va kalsiy beradi",
-                 "ru": "хруст и кальций для салатов с маслом"}},
-    ],
-    "vinegar": [
-        {"profile": "oils", "emoji": "🫒",
-         "name": {"uz": "Zaytun / avokado yog'i", "ru": "Оливковое масло / масло авокадо"},
-         "why": {"uz": "sirka bilan birga klassik vinegret sousi bo'ladi",
-                 "ru": "вместе с уксусом — классическая заправка винегрет"}},
-        {"profile": "salt", "emoji": "🧂",
-         "name": {"uz": "Himalay tuzi", "ru": "Гималайская соль"},
-         "why": {"uz": "ertalabki sirka ichimligiga qo'shsangiz elektrolitlar tiklanadi",
-                 "ru": "в утренний напиток с уксусом — для восстановления электролитов"}},
-    ],
-    "seeds": [
-        {"profile": "coconut", "emoji": "🥥",
-         "name": {"uz": "Kokos suti / qirindisi", "ru": "Кокосовое молоко / стружка"},
-         "why": {"uz": "chia puding uchun eng mos asos",
-                 "ru": "лучшая основа для чиа-пудинга"}},
-        {"profile": "sweeteners", "emoji": "🍬",
-         "name": {"uz": "Eritritol", "ru": "Эритрит"},
-         "why": {"uz": "urug'li puding va smuzilarni shakarsiz shirin qiladi",
-                 "ru": "подсластит пудинги и смузи без сахара"}},
-        {"profile": "almond_flour", "emoji": "🥜",
-         "name": {"uz": "Bodom uni", "ru": "Миндальная мука"},
-         "why": {"uz": "urug'lar bilan birga keto non va krakerlar uchun asos",
-                 "ru": "с семенами — основа кето-хлеба и крекеров"}},
-    ],
-    "salt": [
-        {"profile": "vinegar", "emoji": "🍎",
-         "name": {"uz": "Olma sirkasi", "ru": "Яблочный уксус"},
-         "why": {"uz": "tuz bilan birga ertalabki elektrolit ichimligining asosi",
-                 "ru": "с солью — основа утреннего электролитного напитка"}},
-        {"profile": "oils", "emoji": "🫒",
-         "name": {"uz": "Sog'lom yog'lar", "ru": "Полезные масла"},
-         "why": {"uz": "keto ratsionda tuz va yog' — energiya va mineral juftligi",
-                 "ru": "на кето соль и жиры — пара для энергии и минералов"}},
-    ],
-    "sweeteners": [
-        {"profile": "almond_flour", "emoji": "🥜",
-         "name": {"uz": "Bodom uni", "ru": "Миндальная мука"},
-         "why": {"uz": "eritritol bilan birga to'liq keto pishiriq to'plami",
-                 "ru": "с эритритом — полный набор для кето-выпечки"}},
-        {"profile": "coconut", "emoji": "🥥",
-         "name": {"uz": "Kokos qirindisi", "ru": "Кокосовая стружка"},
-         "why": {"uz": "shirinlashtirgich bilan uy sharoitida 'Bounty' konfeti chiqadi",
-                 "ru": "с подсластителем получаются домашние конфеты «Баунти»"}},
-    ],
-    "honey": [
-        {"profile": "seeds", "emoji": "🌱",
-         "name": {"uz": "Urug'lar aralashmasi", "ru": "Смесь семян"},
-         "why": {"uz": "asal bilan birga tabiiy energiya batonchiklari tayyorlanadi",
-                 "ru": "с мёдом — натуральные энергетические батончики"}},
-        {"profile": "bran_pp", "emoji": "🌾",
-         "name": {"uz": "Kepak", "ru": "Отруби"},
-         "why": {"uz": "asalli granola va nonushta aralashmalari uchun tola manbai",
-                 "ru": "источник клетчатки для медовой гранолы и завтраков"}},
-    ],
-    "healthy": [
-        {"profile": "salt", "emoji": "🧂",
-         "name": {"uz": "Himalay tuzi", "ru": "Гималайская соль"},
-         "why": {"uz": "har qanday sog'lom oshxonaning asosi — 80+ mineral",
-                 "ru": "основа любой здоровой кухни — 80+ минералов"}},
-        {"profile": "oils", "emoji": "🫒",
-         "name": {"uz": "Sovuq bosim yog'lari", "ru": "Масла холодного отжима"},
-         "why": {"uz": "salat va tayyor taomlar uchun sog'lom yog' manbai",
-                 "ru": "источник полезных жиров для салатов и готовых блюд"}},
-    ],
-}
-
-
-# Fallback for products that don't match any profile above.
-DEFAULT_PROFILE = {
-    "key": "healthy",
-    "emoji": "🥗",
-    "name": {"uz": "Sog'lom mahsulotlar", "ru": "Здоровые продукты"},
-    "benefits": [
-        {"uz": "Tabiiy, kam qayta ishlangan mahsulotlar organizmni toza oziqlantiradi — energiya barqaror, ishtaha nazoratda bo'ladi.",
-         "ru": "Натуральные, минимально обработанные продукты питают организм чисто — стабильная энергия и контроль аппетита."},
-    ],
-    "recipes": [
-        {"uz": "<b>Sog'lom kosa (buddha bowl)</b>\n• Yashil barglar, qaynatilgan tuxum yoki tovuq, avokado, urug'lar, olma sirkasi + yog' sousi.\n• Tez, to'yimli va muvozanatli tushlik.",
-         "ru": "<b>Здоровая тарелка (боул)</b>\n• Зелень, варёное яйцо или курица, авокадо, семена, заправка из масла и яблочного уксуса.\n• Быстрый, сытный и сбалансированный обед."},
-    ],
-}
+# Combos are matched most-specific-first: a buyer who orders almond flour,
+# cocoa AND sweetener should get the brownie, not the two-ingredient cookie.
+_COMBOS_BY_SPECIFICITY = sorted(COMBOS, key=lambda c: -len(c["needs"]))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Message building
 # ─────────────────────────────────────────────────────────────────────────────
-def _loc(entry: dict, lang: str) -> str:
-    """Pick uz/ru text from a {uz, ru} entry; transliterate for uz_cyr."""
+def _loc(entry: dict, lang: str, **fmt) -> str:
+    """Pick uz/ru text from a {uz, ru} entry; transliterate for uz_cyr.
+
+    Cyrillic-Uzbek buyers read the same Latin source, converted at render time
+    — so every string in reco_content.py only ever has to be written twice
+    (uz + ru), never three times. Formatting is applied BEFORE transliteration
+    so interpolated names and counts are converted along with the copy."""
     if lang == "ru":
-        return entry.get("ru") or entry.get("uz", "")
+        text = entry.get("ru") or entry.get("uz", "")
+        return text.format(**fmt) if fmt else text
+
     text = entry.get("uz", "")
+    if fmt:
+        text = text.format(**fmt)
     if lang == "uz_cyr" and text:
         from translit import lat_to_cyr
-        return lat_to_cyr(text)
+        text = lat_to_cyr(text)
     return text
 
 
@@ -448,6 +152,10 @@ def _aggregate_products(orders: list[dict]) -> list[tuple[str, float]]:
         except (ValueError, TypeError):
             continue
         for it in items or []:
+            # Free aksiya bonuses and campaign gifts weren't CHOSEN by the
+            # buyer, so they never headline "Siz tanlagan mahsulotlar".
+            if it.get("is_bonus") or it.get("is_gift"):
+                continue
             name = (it.get("name") or "").strip()
             if not name:
                 continue
@@ -459,8 +167,8 @@ def _aggregate_products(orders: list[dict]) -> list[tuple[str, float]]:
     return sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
 
 
-def _profile_for(name: str) -> dict:
-    """Match a product name to a content profile (keyword lookup), else default.
+def name_profile(name: str) -> dict | None:
+    """The profile a product NAME matches by keyword, or None.
 
     Some products are keyed into the shop in Cyrillic ("Зайтун ёғи совуқ
     сиқим"), which used to fall through to the generic profile even though a
@@ -477,7 +185,37 @@ def _profile_for(name: str) -> dict:
     for prof in PROFILES:
         if any(kw in variant for kw in prof["match"] for variant in variants):
             return prof
-    return DEFAULT_PROFILE
+    return None
+
+
+# {lower-cased product name: shop category}, loaded from the live catalogue by
+# refresh_categories() before every batch/preview. Lets a product whose name no
+# profile recognises still get content for its own category instead of the
+# generic note — so products added through the admin panel are covered the day
+# they appear, without anyone editing reco_content.py.
+_CATEGORY_BY_NAME: dict[str, str] = {}
+_PROFILE_BY_KEY = {p["key"]: p for p in PROFILES}
+_PROFILE_BY_KEY.update({p["key"]: p for p in CATEGORY_GENERIC_PROFILES.values()})
+
+
+async def refresh_categories() -> None:
+    global _CATEGORY_BY_NAME
+    try:
+        _CATEGORY_BY_NAME = await database.get_product_category_map()
+    except Exception:
+        logger.exception("Could not load product categories for recommendations")
+
+
+def category_profile(name: str) -> dict | None:
+    cat = _CATEGORY_BY_NAME.get((name or "").strip().lower())
+    key = CATEGORY_PROFILE_KEYS.get(cat) if cat else None
+    return _PROFILE_BY_KEY.get(key) if key else None
+
+
+def _profile_for(name: str) -> dict:
+    """Name keyword match first (most precise), then the product's shop
+    category, then the generic default."""
+    return name_profile(name) or category_profile(name) or DEFAULT_PROFILE
 
 
 def _pick(seq: list, cycle: int):
@@ -485,64 +223,122 @@ def _pick(seq: list, cycle: int):
     return seq[cycle % len(seq)] if seq else None
 
 
-# Section labels, greeting, and the closing "bonus" note — the closing text is
-# the one the shop owner asked to send verbatim.
-LABELS = {
-    "header": {
-        "uz": "🎁 <b>Sizga maxsus — buyurtmalaringiz asosida</b>",
-        "ru": "🎁 <b>Специально для вас — на основе ваших заказов</b>",
-    },
-    "intro": {
-        "uz": "Assalomu alaykum! Siz tanlagan mahsulotlarni tahlil qildik va aynan Siz uchun retsept hamda foydali maslahatlar tayyorladik. 👇",
-        "ru": "Здравствуйте! Мы проанализировали выбранные вами товары и подготовили рецепт и полезные советы именно для вас. 👇",
-    },
-    "your_picks": {
-        "uz": "🛒 <b>Sizning tanlovingiz:</b>",
-        "ru": "🛒 <b>Ваш выбор:</b>",
-    },
-    "recipe": {
-        "uz": "👨‍🍳 <b>Siz uchun retsept</b>",
-        "ru": "👨‍🍳 <b>Рецепт для вас</b>",
-    },
-    "benefit": {
-        "uz": "💡 <b>Nega bu foydali?</b>",
-        "ru": "💡 <b>Чем это полезно?</b>",
-    },
-    "pairs": {
-        "uz": "🧺 <b>Bularni ham sinab ko'ring</b> — mahsulotlaringizga ajoyib hamroh:",
-        "ru": "🧺 <b>Попробуйте также</b> — отлично дополнит ваши продукты:",
-    },
-    "pairs_footer": {
-        "uz": "Bularning barchasini do'konimizdan topasiz 😊",
-        "ru": "Всё это вы найдёте в нашем магазине 😊",
-    },
-    "closing": {
-        "uz": ("🙏 <b>Ketoshopni tanlaganingiz uchun tashakkur!</b>\n"
-               "Buyurtmalar tarixingiz asosida Sizga bonus tariqasida foydali "
-               "ma'lumotlarni har 4 kunda berib boramiz. Yanada ko'proq foyda "
-               "olsangiz — biz xursandmiz. Sizga sog'lom hayot va baxt tilaymiz!\n"
-               "<i>Hurmat bilan, Ketoshop jamoasi.</i>"),
-        "ru": ("🙏 <b>Спасибо, что выбрали Ketoshop!</b>\n"
-               "На основе истории ваших заказов мы дарим вам полезные материалы "
-               "каждые 4 дня. Будем рады, если это принесёт вам ещё больше пользы. "
-               "Желаем вам здоровья и счастья!\n"
-               "<i>С уважением, команда Ketoshop.</i>"),
-    },
-}
+def _owned_keys(products: list[tuple[str, float]]) -> set[str]:
+    return {_profile_for(name)["key"] for name, _ in products}
+
+
+def _recipe_pool(star: dict, owned: set[str]) -> list[tuple[str, dict]]:
+    """(heading label key, recipe) candidates for this buyer, best first.
+
+    Combo recipes the buyer can actually cook — every family in `needs` is one
+    they order — come first, so the message leads with something built from
+    their basket as a whole rather than from one product in it. The star
+    profile's own recipes follow as the always-available fallback."""
+    pool = [("recipe_combo", c["recipe"])
+            for c in _COMBOS_BY_SPECIFICITY if c["needs"] <= owned]
+    pool += [("recipe_single", r) for r in star["recipes"]]
+    return pool
+
+
+def _buyer_name(orders: list[dict]) -> str | None:
+    """First name off the most recent order, or None. Anything that doesn't
+    look like a name (a phone number someone typed into the name field, a
+    stray digit) is dropped rather than pasted into the greeting."""
+    for o in orders:
+        raw = (o.get("customer_name") or "").strip()
+        if not raw or len(raw) > 40:
+            continue
+        first = raw.split()[0]
+        if len(first) < 2 or any(ch.isdigit() for ch in first):
+            continue
+        # An HTML-special character would be escaped into an entity, and the
+        # uz_cyr pass transliterates entities into nonsense (&amp; -> &амп;).
+        # No real first name needs them, so drop the name instead.
+        if any(ch in first for ch in "&<>"):
+            continue
+        return first
+    return None
+
+
+def _ru_plural(n: int, one: str, few: str, many: str) -> str:
+    """Russian count agreement — 1 заказ / 2 заказа / 5 заказов. Without it the praise
+    line read "уже 2 раз", which undercuts a message whose whole point is
+    that it was written for this one person."""
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
+
+def _praise(lang: str, orders: list[dict]) -> str:
+    """Warm, specific thanks — the shop owner's ask (2026-09-17) was that these
+    messages read as written by Ketoshop for this one person, and that they
+    credit the buyer for choosing a healthier life rather than just selling."""
+    n = len(orders)
+    if n <= 1:
+        return _loc(LABELS["praise_first"], lang)
+    if n < 5:
+        return _loc(LABELS["praise_regular"], lang, n=n,
+                    word=_ru_plural(n, "раз", "раза", "раз"))
+    return _loc(LABELS["praise_loyal"], lang, n=n,
+                word=_ru_plural(n, "заказ", "заказа", "заказов"))
+
+
+def shop_term_for(key: str) -> str:
+    """Catalogue search term behind the CTA button for a profile key."""
+    for prof in PROFILES:
+        if prof["key"] == key:
+            return prof.get("shop") or prof["name"]["uz"]
+    return DEFAULT_PROFILE["shop"]
+
+
+# Product names that fell through to DEFAULT_PROFILE in the latest batch. The
+# catalogue grows through the admin panel without anyone touching
+# reco_content.py, so a new product would otherwise quietly get the generic
+# "healthy products" note forever. _tick reports these to the admins after
+# every send — that list IS the to-do for the next profile to write.
+LAST_UNCOVERED: set[str] = set()
+
+
+def uncovered_report() -> str:
+    """Admin-facing block listing products with no content profile, or ''."""
+    if not LAST_UNCOVERED:
+        return ""
+    names = sorted(LAST_UNCOVERED)
+    shown = "\n".join(f"• {html.escape(n)}" for n in names[:15])
+    more = f"\n… va yana {len(names) - 15} ta" if len(names) > 15 else ""
+    return ("\n\n⚠️ <b>Maxsus retsept profili yo'q mahsulotlar</b> "
+            "(kategoriyasi bo'yicha retsept oldi — aniqroq bo'lishi uchun reco_content.py ga profil qo'shsa bo'ladi):\n"
+            + shown + more)
+
+
+def star_profile_for(orders: list[dict]) -> dict | None:
+    """The profile the buyer's message is built around — what the CTA button
+    shops for. None when there's no recognizable history."""
+    products = _aggregate_products(orders)
+    if not products:
+        return None
+    return _profile_for(products[0][0])
 
 
 def build_personal_message(lang: str, orders: list[dict], cycle: int) -> str | None:
     """Compose one buyer's personalized message, or None if they have no
-    recognizable order history."""
+    recognizable order history.
+
+    Shape (rebuilt 2026-09-17):
+        from Ketoshop, for you  →  greeting by name  →  thanks for choosing a
+        healthy life, with their real order count  →  what they bought  →  a
+        recipe built from those products  →  why it's good for them  →  what
+        pairs with it  →  call to action  →  sign-off.
+    """
     products = _aggregate_products(orders)
     if not products:
         return None
 
-    # The buyer's most-ordered product headlines this send; its profile drives
-    # the recipe. A second, differently-profiled product (if any) adds a bonus
-    # benefit so the note reflects the breadth of what they buy.
     star_name = products[0][0]
     star_profile = _profile_for(star_name)
+    owned = _owned_keys(products)
 
     second_profile = None
     for name, _ in products[1:]:
@@ -555,16 +351,25 @@ def build_personal_message(lang: str, orders: list[dict], cycle: int) -> str | N
         return html.escape(s, quote=False)
 
     lines: list[str] = []
+
+    # 1. Who it's from and who it's for.
     lines.append(_loc(LABELS["header"], lang))
     lines.append("")
-    lines.append(_loc(LABELS["intro"], lang))
+
+    name = _buyer_name(orders)
+    lines.append(_loc(LABELS["greet_named"], lang, name=esc(name)) if name
+                 else _loc(LABELS["greet"], lang))
     lines.append("")
 
-    # Buyer's top products (up to 3), each with its profile emoji.
+    # 2. Sincere, specific thanks.
+    lines.append(_praise(lang, orders))
+    lines.append("")
+
+    # 3. Their own basket, echoed back with each family's emoji.
     lines.append(_loc(LABELS["your_picks"], lang))
-    for name, _qty in products[:3]:
-        prof = _profile_for(name)
-        lines.append(f"{prof['emoji']} {esc(name)}")
+    for pname, _qty in products[:4]:
+        prof = _profile_for(pname)
+        lines.append(f"{prof['emoji']} {esc(pname)}")
     lines.append("")
 
     # Content rotation uses a MIXED-RADIX decomposition of `cycle` — recipe is
@@ -573,19 +378,21 @@ def build_personal_message(lang: str, orders: list[dict], cycle: int) -> str | N
     # often just 2); decomposing walks the full Cartesian product of variants,
     # which the never-repeat dedupe in send_personal_batch depends on to find
     # fresh messages for as long as possible.
-    r_len = max(1, len(star_profile["recipes"]))
-    b_len = max(1, len(star_profile["benefits"]))
-    recipe = _pick(star_profile["recipes"], cycle % r_len)
+    pool = _recipe_pool(star_profile, owned)
+    r_len = max(1, len(pool))
+    heading_key, recipe = pool[cycle % r_len] if pool else ("recipe_single", None)
     if recipe:
-        lines.append(_loc(LABELS["recipe"], lang))
+        lines.append(_loc(LABELS[heading_key], lang))
         lines.append(_loc(recipe, lang))
         lines.append("")
 
-    # Benefits — star product, plus one from a second profile when available.
-    lines.append(_loc(LABELS["benefit"], lang))
+    # 5. Why it's good for them — star family, plus a second one when they buy
+    #    from more than one, so the note reflects the breadth of the basket.
+    b_len = max(1, len(star_profile["benefits"]))
     rest = cycle // r_len
     star_benefit = _pick(star_profile["benefits"], rest % b_len)
     rest //= b_len
+    lines.append(_loc(LABELS["benefit"], lang))
     if star_benefit:
         lines.append(f"{star_profile['emoji']} {_loc(star_benefit, lang)}")
     if second_profile:
@@ -596,12 +403,9 @@ def build_personal_message(lang: str, orders: list[dict], cycle: int) -> str | N
             lines.append(f"{second_profile['emoji']} {_loc(sb, lang)}")
     lines.append("")
 
-    # Complementary ingredients the buyer does NOT already purchase — cross-
-    # recommendations tied to their dominant product, with the reason each one
-    # pairs well. Rotated by the remaining digits; capped at 2 per message.
-    owned_keys = {_profile_for(name)["key"] for name, _ in products}
-    candidates = [s for s in PAIRINGS.get(star_profile["key"], [])
-                  if s["profile"] not in owned_keys]
+    # 6. Complementary ingredients they DON'T already buy.
+    candidates = [s for s in PAIRINGS.get(star_profile["key"], PAIRINGS_DEFAULT)
+                  if s["profile"] not in owned]
     if candidates:
         start = rest % len(candidates)
         picked = [candidates[(start + i) % len(candidates)]
@@ -609,11 +413,34 @@ def build_personal_message(lang: str, orders: list[dict], cycle: int) -> str | N
         lines.append(_loc(LABELS["pairs"], lang))
         for s in picked:
             lines.append(f"{s['emoji']} <b>{_loc(s['name'], lang)}</b> — {_loc(s['why'], lang)}")
-        lines.append(_loc(LABELS["pairs_footer"], lang))
         lines.append("")
 
+    # 7. Call to action, then the sign-off.
+    lines.append(_loc(LABELS["cta"], lang))
+    lines.append("")
     lines.append(_loc(LABELS["closing"], lang))
     return "\n".join(lines)
+
+
+def reco_keyboard(lang: str, orders: list[dict]) -> "InlineKeyboardMarkup":
+    """Buttons under a personal recommendation.
+
+    Top row shops the buyer's own dominant family (reco_shop: runs that
+    profile's catalogue search — see handlers/search.py), so the recipe they
+    just read is one tap from the products it needs. The Mini App button
+    follows when the shop has one. Without a star profile — or without a
+    WEBAPP_URL — whichever rows are meaningful still render."""
+    rows = []
+    star = star_profile_for(orders)
+    if star:
+        rows.append([InlineKeyboardButton(
+            text=_loc(LABELS["btn_shop_profile"], lang, name=_loc(star["name"], lang)),
+            callback_data=f"reco_shop:{star['key']}",
+        )])
+    if WEBAPP_URL:
+        rows.append([InlineKeyboardButton(
+            text=get_text("btn_store", lang), web_app=WebAppInfo(url=WEBAPP_URL))])
+    return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -644,6 +471,7 @@ async def send_personal_batch(bot: Bot, only_user: int | None = None) -> tuple[i
     "barcha foydalanuvchilar", not just past buyers)."""
     state = await database.get_reco_state()
     cycle = state.get("cycle", 0)
+    await refresh_categories()
 
     if only_user is not None:
         user_ids = [only_user]
@@ -663,6 +491,10 @@ async def send_personal_batch(bot: Bot, only_user: int | None = None) -> tuple[i
     for uid in user_ids:
         try:
             orders = await database.get_user_orders(uid)
+            if record:
+                for pname, _ in _aggregate_products(orders):
+                    if name_profile(pname) is None:
+                        LAST_UNCOVERED.add(pname)
             lang = langs.get(uid, "uz")
 
             seen = await database.get_reco_hashes(uid) if record else set()
@@ -680,7 +512,9 @@ async def send_personal_batch(bot: Bot, only_user: int | None = None) -> tuple[i
                 continue
 
             delivered = False
-            markup = _shop_button(lang)
+            # CTA under every personal reco — the recipe above is one tap from
+            # the products it calls for (owner request 2026-09-17).
+            markup = reco_keyboard(lang, orders)
             try:
                 await bot.send_message(uid, text, parse_mode=ParseMode.HTML, disable_web_page_preview=True,
                                         reply_markup=markup)
@@ -772,13 +606,18 @@ async def _tick(bot: Bot):
         return
 
     last = state["last_sent_at"]
+    now_tk = _now_tk()
+    if now_tk.hour < SEND_HOUR:
+        # Daytime only (owner, 2026-09-17: "kunduz kunidan boshla"). This also
+        # covers the first send after arming, which used to go out on the very
+        # next check — at 02:00 if that's when the bot was deployed.
+        return
     if last is None:
         due = True  # first send after arming — goes out on the next check
     else:
-        now_tk = _now_tk()
         last_tk = last + TZ_OFFSET
         elapsed_days = (now_tk.date() - last_tk.date()).days
-        due = elapsed_days >= INTERVAL_DAYS and now_tk.hour >= SEND_HOUR
+        due = elapsed_days >= INTERVAL_DAYS
 
     if not due:
         return
@@ -796,12 +635,14 @@ async def _tick(bot: Bot):
     except Exception:
         logger.exception("Could not read tips state; sending reco anyway")
 
+    LAST_UNCOVERED.clear()
     sent, failed = await send_personal_batch(bot)
     await database.advance_reco()
     await _notify_admins(
         bot,
         f"🎁 Shaxsiy tavsiyalar yuborildi.\n"
-        f"✅ {sent} ta yetkazildi, ⚠️ {failed} ta yetmadi.",
+        f"✅ {sent} ta yetkazildi, ⚠️ {failed} ta yetmadi."
+        + uncovered_report(),
     )
     logger.info("Personal recommendations sent: %d ok, %d failed", sent, failed)
 

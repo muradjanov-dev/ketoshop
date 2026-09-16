@@ -39,6 +39,8 @@ from meta_leads import router as meta_leads_router
 from meta_ads import router as meta_ads_router
 from ad_sources import router as ad_sources_router
 from ai_sales import router as ai_sales_router
+from abandoned_cart import router as abandoned_cart_router
+from stock_alerts import router as stock_alerts_router
 from referral_stats import router as referral_stats_router
 from retention_stats import router as retention_stats_router
 
@@ -206,6 +208,10 @@ async def main():
     dp.include_router(courier_router)
     # Bloger kabineti — /bloger and the partner's own stats screens.
     dp.include_router(bloggers_router)
+    # /savat_eslatma and /sovga admin stats — before the AI/relay catch-alls.
+    dp.include_router(abandoned_cart_router)
+    # /ombor — current low / out-of-stock list.
+    dp.include_router(stock_alerts_router)
     # Catch-all for free text that no state/handler above claimed — must stay
     # last so it never steals a message a real flow was waiting on.
     # AI sotuvchi support_relay dan oldin: hech kim ushlamagan matnni avval
@@ -271,6 +277,21 @@ async def main():
     from targets import scheduler_loop as targets_scheduler_loop
     targets_task = asyncio.create_task(targets_scheduler_loop(bot))
 
+    # Sovg'a kampaniyasi — 100 gr Eritritol on every 111 000 so'm+ order for
+    # 30 days, starting with the 09:00 announcement. Books every delivered
+    # gift into Chiqimlar.
+    from gift_campaign import scheduler_loop as gift_scheduler_loop
+    gift_task = asyncio.create_task(gift_scheduler_loop(bot))
+
+    # Tashlab ketilgan savat — 3 h and 24 h reminders with one-tap checkout.
+    from abandoned_cart import scheduler_loop as cart_reminder_loop
+    cart_reminder_task = asyncio.create_task(cart_reminder_loop(bot))
+
+    # Ombor ogohlantirishlari — every admin hears when a product runs low (<5)
+    # or out, each time it reaches that level, from any code path.
+    from stock_alerts import scheduler_loop as stock_alerts_loop
+    stock_alerts_task = asyncio.create_task(stock_alerts_loop(bot))
+
     # Start polling
     logger.info("Bot started! Press Ctrl+C to stop.")
     try:
@@ -283,6 +304,9 @@ async def main():
         promo_task.cancel()
         interest_task.cancel()
         targets_task.cancel()
+        gift_task.cancel()
+        cart_reminder_task.cancel()
+        stock_alerts_task.cancel()
         meta_leads_task.cancel()
         meta_ads_task.cancel()
         if runner:

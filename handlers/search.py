@@ -6,7 +6,7 @@ from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKe
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from database import get_user_language, search_products, effective_price, active_discount, get_cart_count
+from database import get_user_language, search_products, effective_price, active_discount, get_cart_badge
 from locales import get_text, get_unit_name, get_display_unit, localize_product_text
 from keyboards import back_to_menu_keyboard, cart_shortcut_row
 
@@ -49,6 +49,23 @@ async def process_search(message: Message, state: FSMContext):
     await _show_search_results(message, query, lang, page=0, user_id=message.from_user.id)
 
 
+@router.callback_query(F.data.startswith("reco_shop:"))
+async def reco_shop(callback: CallbackQuery):
+    """Call to action under a personal recommendation (personal_recommend.py).
+
+    Runs the catalogue search for the product family that message was built
+    around, so the recipe the buyer just read is one tap from the ingredients
+    it needs instead of a hunt through the categories."""
+    from personal_recommend import shop_term_for
+
+    key = callback.data.split(":", 1)[1]
+    lang = await get_user_language(callback.from_user.id)
+    await _show_search_results(callback.message, shop_term_for(key), lang,
+                               page=0, is_callback=True,
+                               user_id=callback.from_user.id)
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("search_page:"))
 async def search_navigate(callback: CallbackQuery):
     """Navigate search result pages"""
@@ -66,12 +83,12 @@ async def _show_search_results(message: Message, query: str, lang: str, page: in
                                 is_callback: bool = False, user_id: int | None = None):
     """Show search results with pagination"""
     products, total = await search_products(query, page=page, per_page=SEARCH_PER_PAGE)
-    cart_count = await get_cart_count(user_id) if user_id is not None else 0
+    cart_count, cart_total = (await get_cart_badge(user_id)) if user_id is not None else (0, 0)
 
     if not products:
         await message.answer(
             get_text("search_empty", lang, query=query),
-            reply_markup=back_to_menu_keyboard(lang, cart_count),
+            reply_markup=back_to_menu_keyboard(lang, cart_count, cart_total),
             parse_mode="HTML"
         )
         return
@@ -126,7 +143,7 @@ async def _show_search_results(message: Message, query: str, lang: str, page: in
         text=get_text("btn_search", lang),
         callback_data="search"
     )])
-    cart_row = cart_shortcut_row(lang, cart_count)
+    cart_row = cart_shortcut_row(lang, cart_count, cart_total)
     if cart_row:
         buttons.append(cart_row)
     buttons.append([InlineKeyboardButton(

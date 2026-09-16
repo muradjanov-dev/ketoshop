@@ -77,6 +77,12 @@ _SINGLES = {
     "X": "Х", "Y": "Й", "Z": "З",
 }
 
+# Word-initial e/E. The lookbehind covers letters and every apostrophe form we
+# accept, so mid-word "e" (keksa, energiya) is untouched; a stash placeholder
+# is a private-use char, not a letter, so "<b>Eng" still counts as word-initial.
+_WORD_INITIAL_E_RE = re.compile(r"(?<![A-Za-z'ʻ’])[eE]")
+
+
 # Private-use range — guaranteed not to appear in real text.
 _PH_OPEN = ""
 _PH_CLOSE = ""
@@ -123,6 +129,13 @@ def lat_to_cyr(text: str) -> str:
     for lat, cyr in _DIGRAPHS:
         if lat in text:
             text = text.replace(lat, cyr)
+
+    # Word-initial "e" is э in Uzbek Cyrillic, not е: emas → эмас, eng → энг,
+    # eritritol → эритритол. Applied after the digraph pass so "ye"/"Ye" has
+    # already become е/Е (yetarli → етарли stays correct), and before the
+    # single-letter pass, which leaves э/Э alone since they aren't Latin.
+    # A preceding letter or apostrophe means we're mid-word, so it stays е.
+    text = _WORD_INITIAL_E_RE.sub(lambda m: "Э" if m.group(0) == "E" else "э", text)
 
     # Then single-letter substitution
     text = "".join(_SINGLES.get(ch, ch) for ch in text)

@@ -14,7 +14,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from database import get_orders_for_export, get_all_cost_prices, format_local_dt
+from database import get_orders_for_export, get_all_cost_prices, format_local_dt, item_cost_qty
 from locales import get_delivery_method_name, get_order_status
 
 
@@ -125,7 +125,7 @@ def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float])
             line_total = qty * price
             pid = it.get("product_id")
             unit_cost = cost_map.get(int(pid), 0.0) if pid else 0.0
-            line_cost = unit_cost * qty
+            line_cost = unit_cost * item_cost_qty(it)
             line_profit = line_total - line_cost
 
             ws.cell(row=row, column=1,  value=int(o["id"]))
@@ -175,8 +175,7 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
             pid = it.get("product_id")
             if not pid:
                 continue
-            qty = float(it.get("quantity") or 0)
-            total_cost += cost_map.get(int(pid), 0.0) * qty
+            total_cost += cost_map.get(int(pid), 0.0) * item_cost_qty(it)
     profit = revenue - total_cost
     margin_pct = (profit / revenue * 100) if revenue else 0
 

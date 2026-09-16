@@ -33,6 +33,9 @@ ADMIN_COMMANDS = [
     BotCommand(command="blogerlar", description="📢 Blogerlar (hamkorlar)"),
     BotCommand(command="referallar", description="📊 Referal statistikasi"),
     BotCommand(command="qayta_sotuv", description="🔁 Qayta sotuv statistikasi"),
+    BotCommand(command="savat_eslatma", description="🛒 Tashlab ketilgan savat eslatmalari"),
+    BotCommand(command="sovga", description="🎁 Sovg'a kampaniyasi (Eritritol)"),
+    BotCommand(command="ombor", description="📦 Tugagan va kam qolgan mahsulotlar"),
     BotCommand(command="xabarlar", description="💬 Botga yozilgan xabarlar"),
     BotCommand(command="reklama", description="📣 Reklama statistikasi"),
     BotCommand(command="reklama_manba", description="🔗 Reklama manbalari (kim keldi)"),
@@ -130,17 +133,29 @@ def main_menu_keyboard(lang: str, is_admin: bool = False) -> InlineKeyboardMarku
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def cart_shortcut_row(lang: str, cart_count: int) -> list[InlineKeyboardButton]:
+def cart_shortcut_row(lang: str, cart_count: int,
+                      cart_total: float = 0) -> list[InlineKeyboardButton]:
     """Single-button row linking straight to the cart — appended to browsing
     keyboards (categories, product lists, product detail, search) so buyers
     who've already added something don't have to go back to the main menu.
-    Empty list when the cart has nothing in it (nothing to jump to)."""
+    Empty list when the cart has nothing in it (nothing to jump to).
+
+    With cart_total the label carries a live badge ("🛒 Savat · 3 ta ·
+    245 000 so'm") — buyers were adding products and then losing track of
+    whether anything was actually waiting (owner report, 2026-09-17)."""
     if cart_count <= 0:
         return []
-    return [InlineKeyboardButton(text=get_text("btn_view_cart", lang), callback_data="cart")]
+    if cart_total and cart_total > 0:
+        label = get_text("btn_view_cart_badge", lang,
+                         n=cart_count,
+                         total=f"{int(cart_total):,}".replace(",", " "))
+    else:
+        label = get_text("btn_view_cart", lang)
+    return [InlineKeyboardButton(text=label, callback_data="cart")]
 
 
-def categories_keyboard(lang: str, cart_count: int = 0) -> InlineKeyboardMarkup:
+def categories_keyboard(lang: str, cart_count: int = 0,
+                       cart_total: float = 0) -> InlineKeyboardMarkup:
     buttons = []
     for i in range(0, len(CATEGORIES), 2):
         row = []
@@ -156,7 +171,7 @@ def categories_keyboard(lang: str, cart_count: int = 0) -> InlineKeyboardMarkup:
         callback_data="cat:sets"
     )])
 
-    cart_row = cart_shortcut_row(lang, cart_count)
+    cart_row = cart_shortcut_row(lang, cart_count, cart_total)
     if cart_row:
         buttons.append(cart_row)
     buttons.append([InlineKeyboardButton(text=get_text("btn_back_to_menu", lang), callback_data="main_menu")])
@@ -230,7 +245,8 @@ def quantity_keyboard(lang: str, product_id: int, unit: str = "", available: flo
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def cart_keyboard(lang: str, cart_items: list) -> InlineKeyboardMarkup:
+def cart_keyboard(lang: str, cart_items: list,
+                  quick_order: bool = False) -> InlineKeyboardMarkup:
     buttons = []
 
     # Per-item row: ➖ | name ×qty | ➕ | ❌
@@ -254,6 +270,14 @@ def cart_keyboard(lang: str, cart_items: list) -> InlineKeyboardMarkup:
     buttons.append([
         InlineKeyboardButton(text=get_text("btn_clear_cart", lang), callback_data="clear_cart"),
     ])
+    # ⚡ Tezkor buyurtma sits ABOVE the normal checkout for buyers who've
+    # ordered before: it replays their saved phone/address and last order's
+    # delivery+payment choices straight to the confirm screen, turning a
+    # seven-step wizard into two taps. Everyone else only sees the normal one.
+    if quick_order:
+        buttons.append([
+            InlineKeyboardButton(text=get_text("btn_quick_order", lang), callback_data="quick_order"),
+        ])
     buttons.append([
         InlineKeyboardButton(text=get_text("btn_checkout", lang), callback_data="checkout"),
     ])
@@ -262,6 +286,34 @@ def cart_keyboard(lang: str, cart_items: list) -> InlineKeyboardMarkup:
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def skip_step_keyboard(lang: str, callback_data: str) -> InlineKeyboardMarkup:
+    """"⏭ O'tkazib yuborish" for the optional checkout steps (address note,
+    backup phone). They used to be answerable only by TYPING "/skip", which
+    buyers never discovered — they stalled there instead of finishing the
+    order (owner report, 2026-09-17). Typing still works."""
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=get_text("btn_skip_step", lang), callback_data=callback_data),
+    ]])
+
+
+def phone_request_keyboard(lang: str) -> ReplyKeyboardMarkup:
+    """One-tap phone sharing. Telegram hands us the buyer's own number on a
+    single tap, which is both faster and more accurate than asking them to
+    type "+998..." into a chat — the step where most checkouts were dying."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=get_text("btn_share_phone", lang), request_contact=True)],
+            # The way home rides along: a reply keyboard replaces the
+            # persistent 🏠/🛒 one, so a buyer who changes their mind here
+            # would otherwise be left with a single contact button and no
+            # visible exit (see persistent_menu_keyboard for why that matters).
+            [KeyboardButton(text=get_text("btn_kb_menu", lang))],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
 
 
 def payment_method_keyboard(lang: str, online_only: bool = False) -> InlineKeyboardMarkup:
@@ -290,9 +342,10 @@ def delivery_method_keyboard(lang: str, in_tashkent: bool) -> InlineKeyboardMark
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def back_to_menu_keyboard(lang: str, cart_count: int = 0) -> InlineKeyboardMarkup:
+def back_to_menu_keyboard(lang: str, cart_count: int = 0,
+                          cart_total: float = 0) -> InlineKeyboardMarkup:
     buttons = []
-    cart_row = cart_shortcut_row(lang, cart_count)
+    cart_row = cart_shortcut_row(lang, cart_count, cart_total)
     if cart_row:
         buttons.append(cart_row)
     buttons.append([InlineKeyboardButton(text=get_text("btn_back_to_menu", lang), callback_data="main_menu")])
@@ -436,11 +489,12 @@ def rating_keyboard(product_id: int) -> InlineKeyboardMarkup:
     ])
 
 
-def review_back_keyboard(lang: str, product_id: int, cart_count: int = 0) -> InlineKeyboardMarkup:
+def review_back_keyboard(lang: str, product_id: int, cart_count: int = 0,
+                         cart_total: float = 0) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(text=get_text("btn_write_review", lang), callback_data=f"write_review:{product_id}")],
     ]
-    cart_row = cart_shortcut_row(lang, cart_count)
+    cart_row = cart_shortcut_row(lang, cart_count, cart_total)
     if cart_row:
         buttons.append(cart_row)
     buttons.append([InlineKeyboardButton(text=get_text("btn_back_to_menu", lang), callback_data="main_menu")])
