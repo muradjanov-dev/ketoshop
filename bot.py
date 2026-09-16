@@ -41,6 +41,8 @@ from meta_ads import router as meta_ads_router
 from ad_sources import router as ad_sources_router
 from ai_sales import router as ai_sales_router
 from abandoned_cart import router as abandoned_cart_router
+from retention import router as retention_router
+from keto_explainer import router as keto_explainer_router
 from stock_alerts import router as stock_alerts_router
 from referral_stats import router as referral_stats_router
 from retention_stats import router as retention_stats_router
@@ -93,6 +95,9 @@ async def main():
 
     # Initialize database
     await init_db()
+    # Qayta sotuv tables (retention.py) — before any handler can read an offer.
+    import retention
+    await retention.ensure_schema()
     logger.info("Database initialized")
 
     # Categories used to be a hardcoded list (locales.py); now admins can add
@@ -214,6 +219,8 @@ async def main():
     dp.include_router(bloggers_router)
     # /savat_eslatma and /sovga admin stats — before the AI/relay catch-alls.
     dp.include_router(abandoned_cart_router)
+    dp.include_router(retention_router)
+    dp.include_router(keto_explainer_router)
     # /ombor — current low / out-of-stock list.
     dp.include_router(stock_alerts_router)
     # Catch-all for free text that no state/handler above claimed — must stay
@@ -291,6 +298,16 @@ async def main():
     from abandoned_cart import scheduler_loop as cart_reminder_loop
     cart_reminder_task = asyncio.create_task(cart_reminder_loop(bot))
 
+    # Qayta sotuv — one personal message a week at most: "tugab qolmadimi?",
+    # 2nd-order gift, win-back. Daily at 09:30, see retention.py.
+    from retention import scheduler_loop as retention_loop
+    retention_task = asyncio.create_task(retention_loop(bot))
+
+    # One-off, 18.09.2026 17:30: explain Keto coins to everyone in plain words
+    # and switch spending on (keto_explainer.py).
+    from keto_explainer import scheduler_loop as keto_explainer_loop
+    keto_explainer_task = asyncio.create_task(keto_explainer_loop(bot))
+
     # Ombor ogohlantirishlari — every admin hears when a product runs low (<5)
     # or out, each time it reaches that level, from any code path.
     from stock_alerts import scheduler_loop as stock_alerts_loop
@@ -314,6 +331,8 @@ async def main():
         targets_task.cancel()
         gift_task.cancel()
         cart_reminder_task.cancel()
+        retention_task.cancel()
+        keto_explainer_task.cancel()
         stock_alerts_task.cancel()
         release_notes_task.cancel()
         meta_leads_task.cancel()

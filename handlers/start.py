@@ -370,11 +370,15 @@ async def build_kabinetim_view(bot, user_id: int, lang: str, user: dict):
 
     level = profile["level"]
     next_level = profile["next_level"]
-    level_label = level["label"]["ru"] if lang == "ru" else level["label"]["uz"]
-    level_line = f"{level['emoji']} <b>{level_label}</b>"
+    # Level + its cashback, and the way to the next one in so'm rather than
+    # Keto points (sadoqat darajalari, 2026-09-17) — in the buyer's own script.
+    rate = gamification.rate_label(gamification.earn_rate(profile["lifetime"]))
+    level_line = f"{level['emoji']} " + gamification._L(lang)(
+        f"<b>{level['label']['uz']}</b> · keshbek {rate}",
+        f"<b>{level['label']['ru']}</b> · кешбэк {rate}",
+    )
     if next_level:
-        remaining = next_level["threshold"] - profile["lifetime"]
-        progress_line = get_text("kabinetim_progress", lang, remaining=f"{remaining:,}".replace(",", " "))
+        progress_line = gamification.next_level_progress(profile["lifetime"], lang)
     else:
         progress_line = get_text("kabinetim_top_level", lang)
 
@@ -432,8 +436,9 @@ async def show_achievements(callback: CallbackQuery):
     lines = [get_text("achievements_title", lang,
                        unlocked=profile["achievements_unlocked"], total=profile["achievements_total"])]
     for ach in gamification.ACHIEVEMENTS:
-        title = ach["title"]["uz" if lang != "ru" else "ru"]
-        desc = ach["desc"]["uz" if lang != "ru" else "ru"]
+        pick = gamification._L(lang)
+        title = pick(ach["title"]["uz"], ach["title"]["ru"])
+        desc = pick(ach["desc"]["uz"], ach["desc"]["ru"])
         if ach["code"] in unlocked_codes:
             lines.append(get_text("achievement_unlocked", lang, emoji=ach["emoji"], title=title, desc=desc))
         else:

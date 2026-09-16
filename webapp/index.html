@@ -242,6 +242,12 @@
     background: rgba(232,114,44,0.14); color: #C4571B;
     font-size: 11px; font-weight: 700; line-height: 1.35;
   }
+  .keto-badge {
+    display: inline-block; margin-top: 5px; padding: 3px 8px; border-radius: 8px;
+    background: rgba(76,175,80,0.16); color: #3E9B4F;
+    font-size: 11px; font-weight: 700; line-height: 1.35;
+  }
+  .keto-badge::before { content: "F951  "; }
   .detail-bonus {
     margin-top: 8px; padding: 10px 12px; border-radius: 12px;
     background: rgba(232,114,44,0.12); color: #C4571B;
@@ -3022,6 +3028,9 @@ let cartData = { items: [], total: 0 };
 // keto.enabled/balance come from /api/keto/status; keto.redeem is what the
 // buyer chose to apply (0 unless they opt in via the checkout UI).
 let keto = { enabled: false, balance: 0, redeem: 0 };
+// This buyer's Keto cashback rate (0.005 = 0.5%) for the "+N Keto" badges;
+// 0 hides them. Loaded once at startup from /api/keto/status.
+let ketoRate = 0;
 let searchTimeout = null;
 let favorites = JSON.parse(localStorage.getItem('ketoshop_fav') || '{}'); // { productId: { product data } }
 let homeProductsCache = {}; // { catKey: products[] }
@@ -3104,8 +3113,13 @@ document.querySelectorAll('.tab-item').forEach(tab => {
     }
   }).catch(() => { /* use local fallback */ });
 
+  const ketoRatePromise = api('/api/keto/status')
+    .then(s => { ketoRate = (s && s.rate) || 0; })
+    .catch(() => { /* no badges */ });
+
   try {
     categories = await api('/api/categories');
+    await ketoRatePromise;
     await loadPromo();
     renderHomePage();
     renderCatalogCategories();
@@ -3233,6 +3247,16 @@ function closePromoSheet() {
 /** 🎁 pill for a product card — p.bonus is the server-rendered rule line. */
 function bonusBadgeHtml(p) {
   return p && p.bonus ? '<div class="bonus-badge">' + escapeHtml(p.bonus) + '</div>' : '';
+}
+
+// "+250 Keto" — the coins this purchase brings back, shown like a bonus.
+// Same rounding as the server's award (floor of amount x rate).
+function ketoAmount(amount) {
+  return ketoRate > 0 ? Math.floor((amount || 0) * ketoRate) : 0;
+}
+function ketoBadgeHtml(amount) {
+  const n = ketoAmount(amount);
+  return n > 0 ? '<div class="keto-badge">+' + formatPrice(n) + ' Keto</div>' : '';
 }
 
 // ===== HOME PAGE =====
@@ -3451,6 +3475,7 @@ function createCarouselCard(p) {
     '<div class="card-price">' + priceHtml(p) + '</div>' +
     savingHtml(p) +
     bonusBadgeHtml(p) +
+    ketoBadgeHtml(p.price) +
     descHtml;
 
   // Fav button click (stop propagation so card click doesn't fire)
@@ -3656,6 +3681,7 @@ function createProductCard(p) {
     '<div class="card-price">' + priceHtml(p) + '</div>' +
     savingHtml(p) +
     bonusBadgeHtml(p) +
+    ketoBadgeHtml(p.price) +
     descHtml2 +
     soonBadge;
 
@@ -3718,7 +3744,7 @@ async function openDetail(productId, isSet = false) {
     qty = 1;
 
     document.getElementById('detail-name').textContent = p.name;
-    document.getElementById('detail-price').innerHTML = priceHtml(p);
+    document.getElementById('detail-price').innerHTML = priceHtml(p) + ketoBadgeHtml(p.price);
 
     const savingEl = document.getElementById('detail-saving');
     const dPct = p.discount_percent || 0;
@@ -4073,7 +4099,7 @@ function renderCartPage() {
     el.innerHTML = photoHtml +
       '<div class="item-info">' +
         '<div class="item-name">' + escapeHtml(item.name) + '</div>' +
-        '<div class="item-meta">' + priceMeta + '</div>' +
+        '<div class="item-meta">' + priceMeta + ketoBadgeHtml(item.total) + '</div>' +
         stepper +
       '</div>' +
       '<div class="item-price">' + formatPrice(item.total) + '</div>' +

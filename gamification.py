@@ -40,6 +40,12 @@ logger = logging.getLogger(__name__)
 
 EARN_RATE = 0.005  # 0.5% of product subtotal, as Keto (owner: 2026-07-27, down from 1%)
 
+# Sadoqat darajalari (2026-09-17): the higher the buyer's level, the bigger
+# the cashback on their next order — the rate is taken from the level they
+# held BEFORE the order, so crossing a threshold pays off from the next one.
+# Bronza keeps the original EARN_RATE.
+EARN_RATES = {"bronze": EARN_RATE, "silver": 0.01, "gold": 0.02, "diamond": 0.03}
+
 TZ_OFFSET = timedelta(hours=5)  # Asia/Tashkent, fixed UTC+5, no DST
 PIN_REFRESH_HOUR = 0            # fires shortly after 00:00 Tashkent (checked every 15 min, like db_backup.py)
 CHECK_EVERY = 900
@@ -85,6 +91,72 @@ LEVELS = [
     {"code": "silver",   "threshold": 3_000,  "emoji": "🥈", "label": {"uz": "Kumush", "ru": "Серебро"}},
     {"code": "bronze",   "threshold": 0,      "emoji": "🥉", "label": {"uz": "Bronza", "ru": "Бронза"}},
 ]
+
+
+def _L(lang: str):
+    """uz / uz_cyr / ru picker — every buyer reads their own script."""
+    def pick(uz: str, ru: str) -> str:
+        if lang == "ru":
+            return ru
+        if lang == "uz_cyr":
+            from translit import lat_to_cyr
+            return lat_to_cyr(uz)
+        return uz
+    return pick
+
+
+def earn_rate(keto_lifetime: int) -> float:
+    return EARN_RATES.get(get_level(keto_lifetime)["code"], EARN_RATE)
+
+
+def rate_label(rate: float) -> str:
+    pct = rate * 100
+    return f"{pct:.1f}".rstrip("0").rstrip(".") + "%"
+
+
+def keto_for(amount_som: float, rate: float) -> int:
+    """Keto a purchase of `amount_som` earns — the exact rounding
+    award_keto_for_order uses, so the badge never promises more."""
+    return int(float(amount_som or 0) * rate)
+
+
+async def buyer_rate(user_id: int) -> float | None:
+    """The cashback rate to SHOW this buyer next to prices ("🥑 +250 Keto"),
+    or None when there is nothing to show (program switched off, or a shop
+    account that never earns)."""
+    if user_id in database.LEADERBOARD_EXCLUDED_USER_IDS:
+        return None
+    try:
+        if not await is_enabled():
+            return None
+        user = await database.get_user(user_id)
+    except Exception:
+        logger.warning("Keto rate lookup failed for %s", user_id, exc_info=True)
+        return None
+    return earn_rate(int((user or {}).get("keto_lifetime") or 0))
+
+
+def reward_badge(keto: int) -> str:
+    """'🥑+250' — the compact tag after a cart line; same in every language."""
+    return f"🥑+{_fmt(keto)}" if keto > 0 else ""
+
+
+def product_reward_line(keto: int, rate: float, lang: str) -> str:
+    if keto <= 0:
+        return ""
+    return _L(lang)(
+        f"🥑 <b>+{_fmt(keto)} Keto</b> tangacha qaytadi (keshbek {rate_label(rate)})",
+        f"🥑 <b>+{_fmt(keto)} Keto</b> монеток вернётся (кешбэк {rate_label(rate)})",
+    )
+
+
+def order_reward_line(keto: int, lang: str) -> str:
+    if keto <= 0:
+        return ""
+    return _L(lang)(
+        f"🥑 Bu xariddan Sizga <b>+{_fmt(keto)} Keto</b> tangacha qaytadi",
+        f"🥑 С этой покупки вам вернётся <b>+{_fmt(keto)} Keto</b>",
+    )
 
 
 def get_level(keto_lifetime: int) -> dict:
@@ -228,6 +300,16 @@ ACHIEVEMENTS = [
 ]
 
 
+async def _lifetime_spend(user_id: int) -> float:
+    """So'm spent on the buyer's own delivered orders (manual/B2B excluded)."""
+    async with database.pool.acquire() as conn:
+        return float(await conn.fetchval(
+            "SELECT COALESCE(SUM(total), 0) FROM orders WHERE user_id = $1 AND status = 'delivered' "
+            "AND COALESCE(source, 'bot') NOT IN ('manual', 'b2b')",
+            user_id,
+        ) or 0)
+
+
 async def _check_new_achievements(user_id: int, ctx: dict) -> list[dict]:
     unlocked = await database.get_user_achievement_codes(user_id)
     newly = []
@@ -261,24 +343,34 @@ def _is_eligible(order: dict) -> bool:
 
 
 def build_award_message(lang: str, amount: int, new_balance: int, level: dict,
-                         leveled_up: bool, new_achievements: list[dict]) -> str:
-    L = lambda uz, ru: uz if lang != "ru" else ru
+                         leveled_up: bool, new_achievements: list[dict],
+                         lifetime: int | None = None, extra: str = "") -> str:
+    L = _L(lang)
     lines = [
         L("🎉 <b>Tabriklaymiz! Sizga Keto berildi!</b>", "🎉 <b>Поздравляем! Вам начислены Keto!</b>"),
         L(f"🥑 +{_fmt(amount)} Keto", f"🥑 +{_fmt(amount)} Keto"),
         L(f"💰 Joriy balansingiz: <b>{_fmt(new_balance)} Keto</b>",
           f"💰 Ваш баланс: <b>{_fmt(new_balance)} Keto</b>"),
-        L(f"{level['emoji']} Darajangiz: <b>{level['label']['uz' if lang != 'ru' else 'ru']}</b>",
+        L(f"{level['emoji']} Darajangiz: <b>{level['label']['uz']}</b>",
           f"{level['emoji']} Ваш уровень: <b>{level['label']['ru']}</b>"),
     ]
     if leveled_up:
+        new_rate = rate_label(EARN_RATES.get(level["code"], EARN_RATE))
         lines.append(L(
-            f"🎊 Yangi daraja ochildi: {level['emoji']} <b>{level['label']['uz']}</b>!",
-            f"🎊 Новый уровень открыт: {level['emoji']} <b>{level['label']['ru']}</b>!",
+            f"🎊 Yangi daraja ochildi: {level['emoji']} <b>{level['label']['uz']}</b>!\n"
+            f"Endi har buyurtmangizdan <b>{new_rate}</b> Keto qaytadi.",
+            f"🎊 Новый уровень открыт: {level['emoji']} <b>{level['label']['ru']}</b>!\n"
+            f"Теперь с каждого заказа возвращается <b>{new_rate}</b> Keto.",
         ))
+    if extra:
+        lines.append(extra)
+    if lifetime is not None:
+        progress = next_level_progress(lifetime, lang)
+        if progress:
+            lines.append(progress)
     for ach in new_achievements:
-        title = ach["title"]["uz" if lang != "ru" else "ru"]
-        desc = ach["desc"]["uz" if lang != "ru" else "ru"]
+        title = ach["title"]["ru" if lang == "ru" else "uz"]
+        desc = ach["desc"]["ru" if lang == "ru" else "uz"]
         lines.append(L(
             f"🏆 Yangi yutuq: <b>{ach['emoji']} {title}</b>\n<i>{desc}</i>",
             f"🏆 Новое достижение: <b>{ach['emoji']} {title}</b>\n<i>{desc}</i>",
@@ -302,13 +394,12 @@ async def award_keto_for_order(order: dict, bot: Bot) -> None:
             return
 
         subtotal = _order_subtotal(order)
-        amount = int(subtotal * EARN_RATE)
-        if amount <= 0:
-            return
-
         user_id = order["user_id"]
         prev_user = await database.get_user(user_id)
         prev_lifetime = int(prev_user.get("keto_lifetime") or 0) if prev_user else 0
+        amount = int(subtotal * earn_rate(prev_lifetime))
+        if amount <= 0:
+            return
 
         credited = await database.credit_keto(
             user_id, order["id"], amount, kind="order",
@@ -329,12 +420,41 @@ async def award_keto_for_order(order: dict, bot: Bot) -> None:
             "orders_delivered": orders_delivered,
             "keto_lifetime": new_lifetime,
             "order_total": subtotal,
+            # The "1/5/10 million klub" checks read this. It was never passed,
+            # so their KeyError aborted the award right after the Keto was
+            # credited — no message, no pin refresh (found 2026-09-17).
+            "lifetime_spend": await _lifetime_spend(user_id),
         })
 
         lang = await database.get_user_language(user_id)
-        text = build_award_message(lang, amount, new_balance, level, leveled_up, new_achievements)
+        # A new level also opens a personal gift (retention.py) — announced
+        # here, inside the award, so it never costs the buyer another push.
+        extra = ""
+        if leveled_up:
+            import retention
+            extra = await retention.levelup_offer_line(user_id, lang)
+        if await is_redemption_enabled(user_id):
+            spend = _L(lang)(
+                f"🛒 Tangachalarni keyingi buyurtmada pul o'rniga ishlatishingiz mumkin: 1 Keto = 1 so'm.",
+                f"🛒 Монетки можно потратить в следующем заказе вместо денег: 1 Keto = 1 сум.",
+            )
+            extra = f"{extra}\n\n{spend}" if extra else spend
+        text = build_award_message(lang, amount, new_balance, level, leveled_up, new_achievements,
+                                   lifetime=new_lifetime, extra=extra)
+        # "Siz olgan X bilan boshqalar Y ham olishyapti" + a button to each —
+        # the moment the order is in their hands is when it's most relevant.
+        import json
+        import retention
+        raw = order.get("items")
+        items = json.loads(raw) if isinstance(raw, str) else (raw or [])
+        also_text, also_rows = await retention.also_bought_for_order(user_id, items, lang)
+        markup = None
+        if also_text:
+            text += "\n\n" + also_text
+            from aiogram.types import InlineKeyboardMarkup
+            markup = InlineKeyboardMarkup(inline_keyboard=also_rows)
         try:
-            await bot.send_message(user_id, text, parse_mode="HTML")
+            await bot.send_message(user_id, text, parse_mode="HTML", reply_markup=markup)
         except Exception:
             logger.warning("Keto award message failed for user %s", user_id, exc_info=True)
 
@@ -343,16 +463,34 @@ async def award_keto_for_order(order: dict, bot: Bot) -> None:
         logger.exception("award_keto_for_order failed for order %s", order.get("id"))
 
 
+def next_level_progress(lifetime: int, lang: str) -> str:
+    """'📈 Kumush darajasigacha ~120 000 so'mlik xarid' — Keto points turned
+    into the money a buyer actually thinks in, at their current rate."""
+    nxt = get_next_level(lifetime)
+    if not nxt:
+        return ""
+    remaining = nxt["threshold"] - lifetime
+    som = remaining / earn_rate(lifetime)
+    som = int(-(-som // 10_000) * 10_000)          # round up to 10 000
+    return _L(lang)(
+        f"📈 {nxt['emoji']} {nxt['label']['uz']} darajasigacha: ~<b>{_fmt(som)} so'm</b>lik xarid "
+        f"(keshbek {rate_label(EARN_RATES[nxt['code']])} bo'ladi)",
+        f"📈 До уровня {nxt['emoji']} {nxt['label']['ru']}: покупки на ~<b>{_fmt(som)} сум</b> "
+        f"(кешбэк станет {rate_label(EARN_RATES[nxt['code']])})",
+    )
+
+
 def build_pin_text(lang: str, full_name: str | None, balance: int, lifetime: int) -> str:
     level = get_level(lifetime)
     next_level = get_next_level(lifetime)
-    L = lambda uz, ru: uz if lang != "ru" else ru
+    L = _L(lang)
     name = full_name or L("Xaridor", "Покупатель")
     lines = [
         L("🥑 <b>Keto kartam</b>", "🥑 <b>Моя карта Keto</b>"),
         f"👤 {name}",
         L(f"💰 Balans: <b>{_fmt(balance)} Keto</b>", f"💰 Баланс: <b>{_fmt(balance)} Keto</b>"),
-        f"{level['emoji']} " + L(f"Daraja: <b>{level['label']['uz']}</b>", f"Уровень: <b>{level['label']['ru']}</b>"),
+        f"{level['emoji']} " + L(f"Daraja: <b>{level['label']['uz']}</b> · keshbek {rate_label(earn_rate(lifetime))}",
+                                 f"Уровень: <b>{level['label']['ru']}</b> · кешбэк {rate_label(earn_rate(lifetime))}"),
     ]
     if next_level:
         remaining = next_level["threshold"] - lifetime

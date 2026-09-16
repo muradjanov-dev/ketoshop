@@ -480,6 +480,24 @@ def bonuses_total_value(bonuses: list[dict]) -> float:
     return sum(float(b.get("bonus_value") or 0) for b in bonuses)
 
 
+def _cyr_if_needed(text: str, lang: str) -> str:
+    """Cyrillic-Uzbek buyers read the Latin copy transliterated — every
+    buyer in their own script (owner, 2026-09-17). Idempotent."""
+    if lang != "uz_cyr" or not text:
+        return text
+    from translit import lat_to_cyr
+    return lat_to_cyr(text)
+
+
+def _cyr_keyboard(markup, lang: str):
+    if lang != "uz_cyr" or markup is None:
+        return markup
+    for row in markup.inline_keyboard:
+        for button in row:
+            button.text = _cyr_if_needed(button.text, lang)
+    return markup
+
+
 def bonus_lines_text(bonuses: list[dict], lang: str) -> str:
     """Bonus block appended to the cart, the order-confirm screen and the
     admin's new-order notification. Empty string when there are none, so
@@ -495,6 +513,11 @@ def bonus_lines_text(bonuses: list[dict], lang: str) -> str:
                  if lang != "ru" else
                  "💚 Стоимость подарков: <b>{v} сум</b> — для вас бесплатно!")
         block += label.format(v=fmt_sum(total)) + "\n"
+    if lang == "uz_cyr":
+        # Every buyer reads their own script (owner, 2026-09-17). Idempotent,
+        # so a caller that transliterates the whole message later is fine.
+        from translit import lat_to_cyr
+        block = lat_to_cyr(block)
     return block
 
 
@@ -604,7 +627,7 @@ async def announce(bot: Bot, promo: dict) -> tuple[int, int]:
     sent = failed = 0
     for user_id in user_ids:
         lang = langs.get(user_id, "uz")
-        text = _announcement_text(promo, lang)
+        text = _cyr_if_needed(_announcement_text(promo, lang), lang)
         try:
             if promo.get("image_url"):
                 # image_url is our own /img/N route; Telegram can't fetch a
@@ -782,7 +805,8 @@ async def _showcase_tick(bot: Bot) -> None:
     langs = await database.get_user_languages(user_ids)
     # Both message bodies are identical for everyone reading the same
     # language, so render the three of them once instead of 844 times.
-    bodies = {lang: (showcase_text(promo, picked, lang), showcase_keyboard(picked, lang))
+    bodies = {lang: (_cyr_if_needed(showcase_text(promo, picked, lang), lang),
+                     _cyr_keyboard(showcase_keyboard(picked, lang), lang))
               for lang in ("uz", "uz_cyr", "ru")}
 
     sent = failed = 0

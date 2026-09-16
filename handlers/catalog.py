@@ -114,6 +114,14 @@ async def _render_product_detail(callback: CallbackQuery, product_id: int,
                 date=discount_until.strftime("%d.%m.%Y %H:%M"),
             )
 
+    # 🥑 +N Keto this product brings back, at this buyer's own cashback rate.
+    import gamification
+    rate = await gamification.buyer_rate(callback.from_user.id)
+    if rate:
+        reward = gamification.product_reward_line(gamification.keto_for(final_price, rate), rate, lang)
+        if reward:
+            text += "\n" + reward
+
     out_of_stock = product["quantity"] <= 0
     if out_of_stock:
         text += "\n\n" + get_text("product_out_of_stock", lang)

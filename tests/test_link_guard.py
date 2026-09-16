@@ -103,5 +103,17 @@ class GuardFilterTest(unittest.TestCase):
         self.assertEqual(bot.get_chat_administrators.await_count, 1)
 
 
+class WarningTextTest(unittest.TestCase):
+    def test_kind_wording_in_the_senders_language(self):
+        uz = link_guard.warning_text(5, "Aziz", "uz")
+        self.assertIn('<a href="tg://user?id=5">Aziz</a>, iltimos, guruhda havola tarqatmang', uz)
+        self.assertIn("noqulay bo'lishi mumkin", uz)
+        self.assertIn("пожалуйста, не распространяйте ссылки", link_guard.warning_text(5, "Aziz", "ru"))
+        self.assertIn("илтимос, гуруҳда ҳавола тарқатманг", link_guard.warning_text(5, "Aziz", "uz_cyr"))
+
+    def test_without_a_name(self):
+        self.assertTrue(link_guard.warning_text(5, "", "uz").startswith("🙏 Iltimos, guruhda"))
+
+
 if __name__ == "__main__":
     unittest.main()

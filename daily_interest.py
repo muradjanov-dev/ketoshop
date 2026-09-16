@@ -159,6 +159,11 @@ async def send_batch(bot: Bot, only_user: int | None = None) -> tuple[int, int, 
         user_ids = [only_user]
     else:
         user_ids = await database.get_user_ids_with_views(RECENT_DAYS)
+        # A buyer who got a personal qayta-sotuv message today (retention.py,
+        # 09:30) has had their push for the day.
+        import retention
+        heard = await retention.recently_messaged_ids()
+        user_ids = [u for u in user_ids if u not in heard]
 
     # One query for the whole audience instead of a SELECT * per recipient.
     langs = await database.get_user_languages(user_ids)

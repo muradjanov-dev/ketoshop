@@ -1239,7 +1239,10 @@ async def api_keto_status(request: web.Request):
     if enabled:
         buyer = await get_user(user_id)
         balance = int(buyer["keto_balance"]) if buyer else 0
-    return _json({"enabled": enabled, "balance": balance})
+    # `rate` feeds the "+N Keto" badge on every product and cart line — this
+    # buyer's own cashback rate (Keto level), 0 when nothing should be shown.
+    rate = await gamification.buyer_rate(user_id) or 0
+    return _json({"enabled": enabled, "balance": balance, "rate": rate})
 
 
 async def api_set_lang(request: web.Request):

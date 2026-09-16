@@ -122,6 +122,46 @@ async def _should_guard(message: Message, bot: Bot) -> bool:
     return await is_privileged(bot, message) is False
 
 
+_WARNING = {
+    # Owner, 2026-09-17: say it kindly — "Iltimos, guruhda havola tarqatmang,
+    # bu boshqalarga noqulay bo'lishi mumkin".
+    "uz": ("🙏 {mention}, iltimos, guruhda havola tarqatmang — bu boshqa a'zolarga "
+           "noqulay bo'lishi mumkin. Shuning uchun xabaringizni olib tashladik. "
+           "Tushunganingiz uchun rahmat! 🤍"),
+    "ru": ("🙏 {mention}, пожалуйста, не распространяйте ссылки в группе — другим "
+           "участникам это может быть неудобно. Поэтому ваше сообщение удалено. "
+           "Спасибо за понимание! 🤍"),
+}
+
+
+def warning_text(user_id: int, name: str, lang: str) -> str:
+    """The kind note shown in place of a removed link, in the sender's own
+    language when the bot knows it (they've used the bot), else Uzbek."""
+    mention = f'<a href="tg://user?id={user_id}">{name}</a>' if name else ""
+    if lang == "ru":
+        text = _WARNING["ru"]
+    else:
+        text = _WARNING["uz"]
+        if lang == "uz_cyr":
+            from translit import lat_to_cyr
+            text = lat_to_cyr(text)
+    if not mention:
+        body = text.replace("🙏 {mention}, ", "")
+        return "🙏 " + body[:1].upper() + body[1:]
+    return text.replace("{mention}", mention)
+
+
+async def _warning_language(user) -> str:
+    try:
+        import database
+        row = await database.get_user(user.id)
+        if row and row.get("language"):
+            return row["language"]
+    except Exception:
+        pass
+    return "ru" if (user.language_code or "").startswith("ru") else "uz"
+
+
 async def _delete_later(bot: Bot, chat_id: int, message_id: int) -> None:
     await asyncio.sleep(WARN_LIFETIME)
     try:
@@ -149,12 +189,12 @@ async def _remove(message: Message, bot: Bot) -> None:
     if now - _last_warned.get(key, 0) < WARN_COOLDOWN:
         return
     _last_warned[key] = now
-    name = (user.first_name or "Foydalanuvchi").replace("<", "").replace("&", "")
+    name = (user.first_name or "").replace("<", "").replace("&", "")
+    lang = await _warning_language(user)
     try:
         warning = await bot.send_message(
             message.chat.id,
-            f'<a href="tg://user?id={user.id}">{name}</a>, guruhda havola '
-            f"tashlash mumkin emas — xabaringiz o'chirildi.",
+            warning_text(user.id, name, lang),
             parse_mode="HTML",
         )
     except Exception:

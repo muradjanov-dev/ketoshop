@@ -46,6 +46,9 @@ _FMT_TOKEN_RE = re.compile(r"\{[^{}]*\}")
 # (e.g. 100/kg, TCP/IP, 12/05). The earlier `(?:^|(?<=\s))` form missed the
 # common <b>/skip</b> case, so it rendered as /скип in Cyrillic.
 _BOT_COMMAND_RE = re.compile(r"(?<![A-Za-z0-9])/[a-zA-Z][a-zA-Z0-9_]*")
+# @usernames and links must stay exactly as typed — "@ketoshopbot" rendered
+# as "@кетошопбот" in a Cyrillic tip is a handle nobody can open (2026-09-17).
+_HANDLE_OR_LINK_RE = re.compile(r"@[A-Za-z0-9_]{3,}|(?:https?://|t\.me/|www\.)\S+")
 
 # Two-character sequences that map to a single Cyrillic letter. Apply BEFORE
 # single-character substitution so "yo" doesn't become "йо".
@@ -121,6 +124,7 @@ def lat_to_cyr(text: str) -> str:
     # commands → brands.
     text = _stash(text, _HTML_TAG_RE, store, counter)
     text = _stash(text, _FMT_TOKEN_RE, store, counter)
+    text = _stash(text, _HANDLE_OR_LINK_RE, store, counter)
     text = _stash(text, _BOT_COMMAND_RE, store, counter)
     for brand in _BRANDS:
         text = _stash(text, brand, store, counter)
@@ -140,8 +144,10 @@ def lat_to_cyr(text: str) -> str:
     # Then single-letter substitution
     text = "".join(_SINGLES.get(ch, ch) for ch in text)
 
-    # Restore stashed pieces
-    for token, original in store.items():
+    # Restore stashed pieces, newest first: a later stash (a link) can swallow
+    # an earlier placeholder (the </b> right after it), which must come back
+    # out after its container does.
+    for token, original in reversed(list(store.items())):
         text = text.replace(token, original)
     return text
 

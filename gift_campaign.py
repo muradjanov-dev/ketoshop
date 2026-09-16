@@ -152,17 +152,34 @@ async def gift_lines(user_id: int | None, items: list[dict]) -> list[dict]:
     Qualifies = campaign running, buyer not an admin/shop account, goods
     subtotal ≥ MIN_ORDER, gift product in the catalogue with at least one in
     stock. Out of stock means no line (a promised gift that can't be packed
-    is worse than none) — the scheduler tells the admins so they restock."""
-    if not is_eligible_user(user_id) or not await is_active():
+    is worse than none) — the scheduler tells the admins so they restock.
+
+    A personal gift offer (retention.py — 2nd order, win-back, new Keto level)
+    gives the same pack on an order of ANY size. It never adds a second gift:
+    when the order already qualifies for the campaign, the one line carries
+    the offer's tag and spends the offer."""
+    if not is_eligible_user(user_id):
         return []
     if any(it.get("is_gift") for it in items):
         return []                                   # never twice in one order
-    if paid_subtotal(items) < MIN_ORDER:
+    import retention
+    offer = await retention.active_offer(user_id)
+    campaign = await is_active() and paid_subtotal(items) >= MIN_ORDER
+    if not campaign and not offer:
         return []
     prod = await gift_product()
     if not prod or float(prod.get("quantity") or 0) < 1:
         return []
-    return [{
+    line = _gift_line(prod)
+    if offer:
+        line["retention_offer_id"] = int(offer["id"])
+        if not campaign:
+            line["promo_name"], line["promo_name_ru"] = "Shaxsiy sovg'a", "Личный подарок"
+    return [line]
+
+
+def _gift_line(prod: dict) -> dict:
+    return {
         "product_id": int(prod["id"]),
         "set_id": None,
         "is_set": False,
@@ -183,10 +200,14 @@ async def gift_lines(user_id: int | None, items: list[dict]) -> list[dict]:
         "promo_name": "Sovg'a",
         "promo_name_ru": "Подарок",
         "seller_id": None,
-    }]
+    }
 
 
 _HINT = {
+    "personal": {
+        "uz": "🎁 <b>Shaxsiy sovg'angiz:</b> bu buyurtmaga <b>{name}</b> bepul qo'shiladi — summadan qat'i nazar ({until} gacha).",
+        "ru": "🎁 <b>Ваш личный подарок:</b> к этому заказу бесплатно добавится <b>{name}</b> — на любую сумму (до {until}).",
+    },
     "added": {
         "uz": "🎁 <b>Sovg'a!</b> Bu buyurtmaga <b>{name}</b> bepul qo'shiladi.",
         "ru": "🎁 <b>Подарок!</b> К этому заказу бесплатно добавится <b>{name}</b>.",
@@ -209,13 +230,25 @@ def _loc(entry: dict, lang: str, **fmt) -> str:
 
 async def cart_hint(user_id: int | None, subtotal: float, lang: str) -> str:
     """One line for the cart / checkout / reminder: the gift is already earned,
-    or how much more to add to earn it. '' when the campaign doesn't apply."""
-    if not is_eligible_user(user_id) or not await is_active():
+    or how much more to add to earn it. '' when the campaign doesn't apply.
+
+    A buyer with a personal gift offer (retention.py) gets it whatever the
+    sum, so they're told that — never "add X more", which would contradict
+    the offer they were sent."""
+    if not is_eligible_user(user_id):
+        return ""
+    import retention
+    offer = await retention.active_offer(user_id)
+    if not offer and not await is_active():
         return ""
     prod = await gift_product()
     if not prod or float(prod.get("quantity") or 0) < 1:
         return ""
-    name = prod["name"]
+    from locales import localize_product_text
+    name = localize_product_text(prod["name"], prod.get("name_ru"), "uz" if lang == "uz_cyr" else lang)
+    if offer:
+        return _loc(_HINT["personal"], lang, name=name,
+                    until=retention.offer_until_text(offer, lang))
     if subtotal >= MIN_ORDER:
         return _loc(_HINT["added"], lang, name=name)
     return _loc(_HINT["missing"], lang, left=fmt_sum(MIN_ORDER - subtotal), name=name)

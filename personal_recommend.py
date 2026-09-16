@@ -477,6 +477,12 @@ async def send_personal_batch(bot: Bot, only_user: int | None = None) -> tuple[i
         user_ids = [only_user]
     else:
         user_ids = await database.get_user_ids_with_orders()
+        # Skip buyers who got a personal qayta-sotuv message this morning
+        # (retention.py, 09:30) — one push from us that day is enough; they
+        # get their recipe on the next round.
+        import retention
+        heard = await retention.recently_messaged_ids()
+        user_ids = [u for u in user_ids if u not in heard]
 
     # Never repeat: try successive rotation offsets until we find a message
     # this buyer hasn't received; if every variant was already sent, skip them

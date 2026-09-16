@@ -34,6 +34,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="referallar", description="📊 Referal statistikasi"),
     BotCommand(command="qayta_sotuv", description="🔁 Qayta sotuv statistikasi"),
     BotCommand(command="savat_eslatma", description="🛒 Tashlab ketilgan savat eslatmalari"),
+    BotCommand(command="qaytarish", description="🔁 Qayta sotuv xabarlari (tugash, sovg'a, sog'indik)"),
     BotCommand(command="sovga", description="🎁 Sovg'a kampaniyasi (Eritritol)"),
     BotCommand(command="ombor", description="📦 Tugagan va kam qolgan mahsulotlar"),
     BotCommand(command="xabarlar", description="💬 Botga yozilgan xabarlar"),
@@ -47,6 +48,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="ai_orgat", description="🧠 AI ga yangi narsa o'rgatish"),
     BotCommand(command="ai_bilim", description="🧠 AI bilimlari va javobsiz savollar"),
     BotCommand(command="tips_status", description="💡 Maslahatlar holati"),
+    BotCommand(command="keto_tushuntirish", description="🥑 Keto tushuntirish xabari (18.09 17:30)"),
     BotCommand(command="keto_status", description="🥑 Keto dasturi holati"),
     BotCommand(command="backup_now", description="💾 Bazadan nusxa olish"),
 ]

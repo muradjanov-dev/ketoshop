@@ -524,6 +524,10 @@ async def build_cart_view(user_id: int, lang: str):
     if not cart_items:
         return None, None
 
+    import gamification
+    from locales import localize_product_text
+    keto_rate = await gamification.buyer_rate(user_id)
+
     text = await promotions.banner(lang) + get_text("cart_title", lang)
     total = 0
     saved_total = 0
@@ -532,11 +536,12 @@ async def build_cart_view(user_id: int, lang: str):
         unit_price = effective_price(item["price"], discount, item.get("discount_until"))
         item_total = unit_price * item["cart_quantity"]
         total += item_total
+        name = localize_product_text(item["name"], item.get("name_ru"), lang)
         if discount > 0:
             saved_total += (item["price"] - unit_price) * item["cart_quantity"]
-            text += get_text("cart_item_discount", lang,
+            line = get_text("cart_item_discount", lang,
                 i=i,
-                name=item["name"],
+                name=name,
                 quantity=item["cart_quantity"],
                 unit=get_display_unit(item["unit"], lang),
                 old=f"{int(item['price']):,}".replace(",", " "),
@@ -545,14 +550,17 @@ async def build_cart_view(user_id: int, lang: str):
                 total=f"{int(item_total):,}".replace(",", " "),
             )
         else:
-            text += get_text("cart_item", lang,
+            line = get_text("cart_item", lang,
                 i=i,
-                name=item["name"],
+                name=name,
                 quantity=item["cart_quantity"],
                 unit=get_display_unit(item["unit"], lang),
                 price=f"{int(unit_price):,}".replace(",", " "),
                 total=f"{int(item_total):,}".replace(",", " "),
             )
+        # "🥑+250" — the Keto this line brings back, like a bonus tag.
+        badge = gamification.reward_badge(gamification.keto_for(item_total, keto_rate)) if keto_rate else ""
+        text += (line.rstrip("\n") + f"  {badge}\n") if badge else line
 
     # Free aksiya bonuses earned by what's in the cart right now. Recomputed
     # on every render (not stored on the cart row) so a stepper tap, a
@@ -571,6 +579,10 @@ async def build_cart_view(user_id: int, lang: str):
     text += get_text("cart_total", lang, total=f"{int(total):,}".replace(",", " "))
     if saved_total > 0:
         text += get_text("cart_saved", lang, amount=f"{int(saved_total):,}".replace(",", " "))
+    if keto_rate:
+        reward = gamification.order_reward_line(gamification.keto_for(total, keto_rate), lang)
+        if reward:
+            text += "\n" + reward
 
     # "Yana 1 ta qo'shsangiz — sovg'a sizniki": only for products already in
     # the cart, so it reads as a heads-up rather than an ad. Placed after the
@@ -1247,7 +1259,13 @@ async def build_my_orders_view(user_id: int, lang: str):
             status=get_order_status(order["status"], lang),
             total=f"{int(order['total']):,}".replace(",", " "),
         )
-    return text, back_to_menu_keyboard(lang)
+    # 🔁 one tap puts a past order back into the cart (retention.py).
+    import retention
+    rows = await retention.repeat_order_rows(user_id, lang)
+    if not rows:
+        return text, back_to_menu_keyboard(lang)
+    rows += back_to_menu_keyboard(lang).inline_keyboard
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 @router.message(Command("buyurtmalarim"))
@@ -1463,10 +1481,20 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
             total -= keto_redeem
 
     items_text = ""
+    import gamification
+    from locales import localize_product_text
+    keto_rate = await gamification.buyer_rate(user_id)
     for i, item in enumerate([it for it in items_data if not it.get("is_bonus")], 1):
         item_total = item["price"] * item["quantity"]
         badge = f" 🔥-{item['discount_percent']}%" if item.get("discount_percent") else ""
-        items_text += f"{i}. {item['name']} — {item['quantity']} {get_display_unit(item['unit'], lang)} × {int(item['price']):,}{badge} = {int(item_total):,}\n".replace(",", " ")
+        name = localize_product_text(item["name"], item.get("name_ru"), lang)
+        keto_tag = gamification.reward_badge(gamification.keto_for(item_total, keto_rate)) if keto_rate else ""
+        items_text += f"{i}. {name} — {item['quantity']} {get_display_unit(item['unit'], lang)} × {int(item['price']):,}{badge} = {int(item_total):,}".replace(",", " ")
+        items_text += (f"  {keto_tag}\n" if keto_tag else "\n")
+    if keto_rate:
+        reward = gamification.order_reward_line(gamification.keto_for(items_subtotal, keto_rate), lang)
+        if reward:
+            items_text += reward + "\n"
     items_text += promotions.bonus_lines_text(bonuses, lang)
     items_text += promotions.near_miss_text(
         promotions.compute_near_misses(await promotions.get_active(), items_data), lang

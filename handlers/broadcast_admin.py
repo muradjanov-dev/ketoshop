@@ -69,10 +69,17 @@ async def tips_test(message: Message):
         f"👁 <b>Keyingi eslatma (#{idx + 1}) — faqat sizga ko'rsatildi:</b>",
         parse_mode=ParseMode.HTML,
     )
-    await message.answer(
-        _format_tip(TIPS[idx]), parse_mode=ParseMode.HTML, disable_web_page_preview=True,
-        reply_markup=_SHOP_BUTTON,
-    )
+    # Every buyer gets it in their own language — show all three versions.
+    from broadcast import localized_tip, shop_button
+    for lang, label in (("uz", "O'zbekcha"), ("uz_cyr", "Кириллча"), ("ru", "Ruscha")):
+        body = await localized_tip(TIPS[idx], lang)
+        if body is None:
+            await message.answer(f"⚠️ {label}: tarjima hozir olinmadi — bu tilda yuborilmaydi.")
+            continue
+        await message.answer(
+            f"<i>{label}:</i>\n\n" + body, parse_mode=ParseMode.HTML, disable_web_page_preview=True,
+            reply_markup=shop_button(lang),
+        )
 
 
 @router.message(Command("tips_now"))

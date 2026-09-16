@@ -30,14 +30,26 @@ from config import ADMIN_IDS, WEBAPP_URL
 
 logger = logging.getLogger(__name__)
 
-# Tip content is Uzbek-only (see broadcast_tips.py), so the button label is
-# fixed rather than looked up per-recipient language.
-_SHOP_BUTTON = (
-    InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🌿 Do'konga o'tish", web_app=WebAppInfo(url=WEBAPP_URL))
+# Tip content is authored in Uzbek (see broadcast_tips.py). Every buyer still
+# reads it in their own language (owner, 2026-09-17: "har doim o'z tilida"):
+# Cyrillic Uzbek is transliterated, Russian is machine-translated once per tip
+# — see localized_tip.
+_SHOP_LABEL = {"uz": "🌿 Do'konga o'tish", "ru": "🌿 В магазин"}
+
+
+def shop_button(lang: str = "uz") -> InlineKeyboardMarkup | None:
+    if not WEBAPP_URL:
+        return None
+    label = _SHOP_LABEL["ru"] if lang == "ru" else _SHOP_LABEL["uz"]
+    if lang == "uz_cyr":
+        from translit import lat_to_cyr
+        label = lat_to_cyr(label)
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=label, web_app=WebAppInfo(url=WEBAPP_URL))
     ]])
-    if WEBAPP_URL else None
-)
+
+
+_SHOP_BUTTON = shop_button("uz")
 
 # Asia/Tashkent is a fixed UTC+5 offset (no DST) — avoid a tzdata dependency.
 TZ_OFFSET = timedelta(hours=5)
@@ -66,23 +78,87 @@ async def _notify_admins(bot: Bot, text: str):
             pass
 
 
-async def _broadcast_to_all(bot: Bot, text: str) -> tuple[int, int]:
-    """Send `text` to every eligible user. Returns (sent, failed)."""
+_AI_TRANSLATE_RULES = (
+    "Translate the Uzbek (Latin script) text into natural, simple Russian for a "
+    "shop's Telegram customers. Keep every emoji, line break and **bold** marker "
+    "exactly where they are. Keep @usernames, links and phone numbers unchanged. "
+    "Reply with the translation only."
+)
+
+
+async def _ai_translate_ru(raw: str) -> str | None:
+    """Fallback translator: the AI provider the sales bot already uses (only
+    when a key is configured). Usage is booked like every other AI call."""
+    try:
+        import ai_provider
+        provider = ai_provider.build()
+        if provider is None:
+            return None
+        turn = await provider.step({}, _AI_TRANSLATE_RULES, "", None, user=raw, max_tokens=2000)
+        usage = turn.usage
+        if usage and (usage.input or usage.output):
+            cost = ai_provider.estimate_cost(provider.model, usage.input, usage.cached, usage.output)
+            await database.record_ai_usage(provider.model, provider.name, usage.input,
+                                           usage.cached, usage.output, cost)
+        return (turn.text or "").strip() or None
+    except Exception:
+        logger.warning("AI translation of a tip failed", exc_info=True)
+        return None
+
+
+async def localized_tip(raw: str, lang: str) -> str | None:
+    """The tip as HTML in `lang`, or None when it can't be given in that
+    language (Russian translation unavailable) — then that buyer skips this
+    tip rather than getting it in a language they didn't choose."""
+    if lang == "uz_cyr":
+        from translit import lat_to_cyr
+        return lat_to_cyr(_format_tip(raw))
+    if lang != "ru":
+        return _format_tip(raw)
+    from translator import translate
+    ru = None
+    for attempt in range(3):              # the free endpoint throttles bursts
+        ru = await translate(raw, "uz", "ru")
+        if ru and ru.strip() != raw.strip():
+            break
+        ru = None
+        await asyncio.sleep(5 * (attempt + 1))
+    if not ru:
+        ru = await _ai_translate_ru(raw)  # the shop's own AI key, if configured
+    if not ru:
+        return None
+    # The translator sometimes pads the **bold** markers ("** Совет **") or
+    # loses one of a pair; tidy them, and drop them all if they don't pair up.
+    ru = re.sub(r"\*\*\s*(.+?)\s*\*\*", r"**\1**", ru, flags=re.S)
+    if ru.count("**") % 2:
+        ru = ru.replace("**", "")
+    return _format_tip(ru)
+
+
+async def _broadcast_to_all(bot: Bot, text: str | dict) -> tuple[int, int]:
+    """Send to every eligible user. `text` is one HTML string, or a
+    {lang: HTML | None} map — a None language is skipped. Returns (sent, failed)."""
     user_ids = await database.get_all_user_ids()
+    langs = await database.get_user_languages(user_ids) if isinstance(text, dict) else {}
     sent = failed = 0
     for uid in user_ids:
+        lang = langs.get(uid, "uz")
+        body = text.get(lang, text.get("uz")) if isinstance(text, dict) else text
+        if body is None:
+            continue
+        markup = shop_button(lang)
         try:
             await bot.send_message(
-                uid, text, parse_mode=ParseMode.HTML, disable_web_page_preview=True,
-                reply_markup=_SHOP_BUTTON,
+                uid, body, parse_mode=ParseMode.HTML, disable_web_page_preview=True,
+                reply_markup=markup,
             )
             sent += 1
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after + 1)
             try:
                 await bot.send_message(
-                    uid, text, parse_mode=ParseMode.HTML, disable_web_page_preview=True,
-                    reply_markup=_SHOP_BUTTON,
+                    uid, body, parse_mode=ParseMode.HTML, disable_web_page_preview=True,
+                    reply_markup=markup,
                 )
                 sent += 1
             except Exception:
@@ -105,8 +181,11 @@ async def send_next_tip(bot: Bot) -> tuple[int, int] | None:
     if idx >= len(TIPS):
         return None
 
-    text = _format_tip(TIPS[idx])
-    sent, failed = await _broadcast_to_all(bot, text)
+    raw = TIPS[idx]
+    texts = {lang: await localized_tip(raw, lang) for lang in ("uz", "uz_cyr", "ru")}
+    if texts["ru"] is None:
+        logger.warning("Tip #%d: Russian translation unavailable — Russian-language users skip it", idx + 1)
+    sent, failed = await _broadcast_to_all(bot, texts)
     await database.advance_broadcast(idx + 1)
 
     remaining = len(TIPS) - (idx + 1)
