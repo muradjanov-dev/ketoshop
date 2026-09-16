@@ -699,6 +699,18 @@ TEXTS = {
         "uz": "🚚 Yetkazib berish narxi: {fee} so'm\n",
         "ru": "🚚 Стоимость доставки: {fee} сум\n",
     },
+    "delivery_free_line": {
+        "uz": "🚚 Yetkazib berish: <b>BEPUL</b> ({amount} so'mdan yuqori buyurtma)\n",
+        "ru": "🚚 Доставка: <b>БЕСПЛАТНО</b> (заказ от {amount} сум)\n",
+    },
+    "free_delivery_hint": {
+        "uz": "🚚 Yana <b>{left} so'm</b>lik mahsulot qo'shsangiz — Toshkent bo'ylab yetkazib berish <b>bepul</b>!",
+        "ru": "🚚 Добавьте товаров ещё на <b>{left} сум</b> — и доставка по Ташкенту <b>бесплатно</b>!",
+    },
+    "free_delivery_reached": {
+        "uz": "🚚 Toshkent bo'ylab yetkazib berish <b>bepul</b> — buyurtmangiz {amount} so'mdan yuqori.",
+        "ru": "🚚 Доставка по Ташкенту <b>бесплатно</b> — ваш заказ от {amount} сум.",
+    },
     "keto_redeemed_line": {
         "uz": "🥑 Keto chegirmasi (-{amount} Keto): -{amount} so'm\n",
         "ru": "🥑 Скидка Keto (-{amount} Keto): -{amount} сум\n",
@@ -1438,6 +1450,7 @@ TEXTS = {
             "🛵 <b>Yetkazib berish usullari:</b>\n\n"
             "<b>Toshkent shahri:</b>\n"
             " • 🚚 Ketoshop kuryer — <b>25 000 so'm</b> (naqd yoki karta orqali), 1 kun ichida\n"
+            "   🎁 <b>800 000 so'mdan yuqori buyurtmaga — bepul</b>\n"
             " • 🚖 Yandex Taxi — zudlik bilan kerak bo'lganda;\n"
             "   yetkazish puli mijoz tomonidan to'lanadi\n\n"
             "<b>Viloyatlar (Toshkentdan tashqari):</b>\n"
@@ -1462,6 +1475,7 @@ TEXTS = {
             "🛵 <b>Способы доставки:</b>\n\n"
             "<b>Город Ташкент:</b>\n"
             " • 🚚 Курьер Ketoshop — <b>25 000 сум</b> (наличные или карта), в течение 1 дня\n"
+            "   🎁 При заказе <b>от 800 000 сум — бесплатно</b>\n"
             " • 🚖 Yandex Taxi — если нужно срочно;\n"
             "   стоимость доставки оплачивает покупатель\n\n"
             "<b>Регионы (вне Ташкента):</b>\n"

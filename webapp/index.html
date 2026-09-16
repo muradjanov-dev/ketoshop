@@ -2585,6 +2585,9 @@ const L = {
     total: 'Jami',
     subtotal: 'Mahsulotlar summasi',
     deliveryFeeLabel: 'Yetkazib berish narxi',
+    deliveryFreeLabel: 'Yetkazib berish',
+    deliveryFreeValue: 'BEPUL',
+    freeDeliveryHint: "Yana {left} so'mlik mahsulot qo'shsangiz — Toshkent bo'ylab yetkazib berish bepul!",
     ketoRedeemLabel: 'Ketochalarni ishlatish (balans: {balance})',
     ketoRedeemLine: '🥑 Keto chegirmasi',
     cartKetoLabel: '🥑 Ketolar bilan to\'lash (balans: {balance})',
@@ -2734,6 +2737,9 @@ const L = {
     total: 'Итого',
     subtotal: 'Сумма товаров',
     deliveryFeeLabel: 'Стоимость доставки',
+    deliveryFreeLabel: 'Доставка',
+    deliveryFreeValue: 'БЕСПЛАТНО',
+    freeDeliveryHint: 'Добавьте товаров ещё на {left} сум — и доставка по Ташкенту бесплатно!',
     ketoRedeemLabel: 'Использовать Ketочки (баланс: {balance})',
     ketoRedeemLine: '🥑 Скидка Keto',
     cartKetoLabel: '🥑 Оплатить Ketочками (баланс: {balance})',
@@ -4433,7 +4439,7 @@ async function initKetoRedeemUI() {
 
   function currentCap() {
     const method = document.querySelector('.del-opt.active')?.dataset.method;
-    const fee = method === 'self' ? SELF_DELIVERY_FEE : 0;
+    const fee = deliveryFee(method);
     return Math.min(keto.balance, Math.round(cartData.total + fee));
   }
 
@@ -5256,6 +5262,12 @@ function isInTashkent(lat, lng) {
 // Flat fee for Ketoshop's own courier ("self"), Tashkent only — must match
 // handlers/cart.py SELF_DELIVERY_FEE.
 const SELF_DELIVERY_FEE = 25000;
+// Free across Tashkent from this products total — handlers/cart.py FREE_DELIVERY_FROM.
+const FREE_DELIVERY_FROM = 800000;
+function deliveryFee(method) {
+  if (method !== 'self') return 0;
+  return cartData.total >= FREE_DELIVERY_FROM ? 0 : SELF_DELIVERY_FEE;
+}
 
 // Render delivery options for the checkout page based on whether the user is in Tashkent.
 // Tashkent: Ketoshop's own courier (cash/online, flat fee) or Yandex Taxi (online only).
@@ -5290,13 +5302,19 @@ function renderDeliveryOptions(inTashkent) {
 // the grand total was confusingly folding delivery in).
 function refreshCheckoutTotal() {
   const method = document.querySelector('.del-opt.active')?.dataset.method;
-  const fee = method === 'self' ? SELF_DELIVERY_FEE : 0;
+  const fee = deliveryFee(method);
   // Keto-as-discount (off unless the owner has enabled it) — a genuine
   // discount, unlike the delivery fee above, so it does reduce "Jami".
   const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(cartData.total)) : 0;
   let html = '<div class="ct-line"><span>' + t.subtotal + '</span><span>' + formatPrice(cartData.total) + ' UZS</span></div>';
   if (fee > 0) {
     html += '<div class="ct-line"><span>' + t.deliveryFeeLabel + '</span><span>' + formatPrice(fee) + ' UZS</span></div>';
+    const left = FREE_DELIVERY_FROM - cartData.total;
+    if (left <= 300000) {
+      html += '<div class="ct-line"><span>' + t.freeDeliveryHint.replace('{left}', formatPrice(left)) + '</span></div>';
+    }
+  } else if (method === 'self') {
+    html += '<div class="ct-line"><span>' + t.deliveryFreeLabel + '</span><span>' + t.deliveryFreeValue + '</span></div>';
   }
   if (redeem > 0) {
     html += '<div class="ct-line"><span>' + t.ketoRedeemLine + '</span><span>-' + formatPrice(redeem) + ' UZS</span></div>';

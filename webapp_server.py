@@ -635,7 +635,7 @@ async def api_checkout(request: web.Request):
     if not latitude or not longitude:
         return _json({"error": "invalid_location"}, status=400)
 
-    from handlers.cart import verify_uzbekistan, get_location_address_text, SELF_DELIVERY_FEE, _is_tashkent
+    from handlers.cart import verify_uzbekistan, get_location_address_text, delivery_fee_for, _is_tashkent
     if not await verify_uzbekistan(float(latitude), float(longitude)):
         return _json({"error": "outside_uzbekistan"}, status=400)
 
@@ -688,8 +688,8 @@ async def api_checkout(request: web.Request):
 
     total = sum(item["price"] * item["quantity"] for item in items_data)
     subtotal = total  # product-only, before delivery fee — what Keto earns off of
-    if delivery_method == "self":
-        total += SELF_DELIVERY_FEE
+    # Ketoshop courier: 25 000, free from FREE_DELIVERY_FROM of products.
+    total += delivery_fee_for(delivery_method, subtotal)
 
     # Preview of the Keto reward this order will earn once delivered (see
     # gamification.py) — shown on the order-success screen so the buyer

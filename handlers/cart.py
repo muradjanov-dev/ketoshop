@@ -66,6 +66,47 @@ TASHKENT_BOUNDS = {
 # Yandex Taxi and the out-of-city courier services (Yandex Market/BTS/EMU)
 # aren't charged here — their delivery cost is between the buyer and courier.
 SELF_DELIVERY_FEE = 25_000
+# Free Ketoshop-courier delivery across Tashkent from this goods subtotal
+# (owner, 2026-09-17: "800 000 so'mdan yuqori buyurtmalar uchun Toshkent
+# bo'ylab bepul yetkazib berish"). Measured on products after discounts,
+# before any Keto redemption and without the fee itself.
+FREE_DELIVERY_FROM = 800_000
+
+
+def goods_subtotal(items: list[dict]) -> float:
+    """Products total of an order/cart line list (gift lines are 0 so'm)."""
+    return sum(float(it.get("price") or 0) * float(it.get("quantity") or 0) for it in items)
+
+
+def delivery_fee_for(method: str | None, subtotal: float) -> int:
+    """What the buyer pays for delivery through the bot. Only Ketoshop's own
+    courier is charged by us; the other services are paid to the courier."""
+    if method != "self":
+        return 0
+    return 0 if subtotal >= FREE_DELIVERY_FROM else SELF_DELIVERY_FEE
+
+
+def delivery_fee_text(method: str | None, fee: int, lang: str) -> str:
+    """The fee line for summaries and order cards — or, for a Ketoshop
+    courier order that crossed the threshold, the "bepul" line."""
+    if fee:
+        return get_text("delivery_fee_line", lang, fee=f"{fee:,}".replace(",", " "))
+    if method == "self":
+        return get_text("delivery_free_line", lang,
+                        amount=f"{FREE_DELIVERY_FROM:,}".replace(",", " "))
+    return ""
+
+
+def free_delivery_hint(subtotal: float, lang: str) -> str:
+    """'Yana 120 000 so'm — Toshkent bo'ylab bepul yetkazib berish' when the
+    cart is within reach of the threshold; '' otherwise."""
+    left = FREE_DELIVERY_FROM - subtotal
+    if subtotal >= FREE_DELIVERY_FROM:
+        return get_text("free_delivery_reached", lang,
+                        amount=f"{FREE_DELIVERY_FROM:,}".replace(",", " "))
+    if left <= 300_000:
+        return get_text("free_delivery_hint", lang, left=f"{int(left):,}".replace(",", " "))
+    return ""
 
 # Uzbekistan bounding box (approximate — covers mainland UZ)
 UZBEKISTAN_BOUNDS = {
@@ -594,6 +635,10 @@ async def build_cart_view(user_id: int, lang: str):
         hint = await gift_campaign.cart_hint(user_id, total, lang)
         if hint:
             text += "\n" + hint + "\n"
+    # Free Tashkent delivery from 800 000 so'm — reached, or within reach.
+    delivery_hint = free_delivery_hint(total, lang)
+    if delivery_hint:
+        text += "\n" + delivery_hint + "\n"
     return text, cart_keyboard(lang, cart_items, quick_order=await _quick_order_ready(user_id))
 
 
@@ -1466,7 +1511,9 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     total = items_subtotal
 
     delivery_method = data.get("delivery_method")
-    delivery_fee = SELF_DELIVERY_FEE if delivery_method == "self" else 0
+    # Free across Tashkent from FREE_DELIVERY_FROM of products — measured on
+    # the goods before any Keto is applied below.
+    delivery_fee = delivery_fee_for(delivery_method, items_subtotal)
     total += delivery_fee
 
     # Keto-as-discount (opt-in, off by default — see gamification.is_redemption_enabled).
@@ -1509,7 +1556,7 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     payment_method = data["payment_method"]
     payment_label = get_text("btn_pay_cash", lang) if payment_method == "cash" else get_text("btn_pay_online", lang)
     delivery_label = get_delivery_method_name(delivery_method, lang)
-    delivery_fee_block = get_text("delivery_fee_line", lang, fee=f"{delivery_fee:,}".replace(",", " ")) if delivery_fee else ""
+    delivery_fee_block = delivery_fee_text(delivery_method, delivery_fee, lang)
     keto_block = get_text("keto_redeemed_line", lang, amount=f"{keto_redeem:,}".replace(",", " ")) if keto_redeem else ""
     address_note = data.get("address_note")
     note_block = f"\n📝 {_escape_html(address_note)}" if address_note else ""
@@ -2132,8 +2179,8 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
         note_block = f"\n📝 {_escape_html(note)}" if note else ""
         sec = data.get("secondary_phone")
         secondary_block = f"\n📞 {_escape_html(sec)}" if sec else ""
-        delivery_fee = SELF_DELIVERY_FEE if data.get("delivery_method") == "self" else 0
-        delivery_fee_block = get_text("delivery_fee_line", admin_lang, fee=f"{delivery_fee:,}".replace(",", " ")) if delivery_fee else ""
+        delivery_fee = delivery_fee_for(data.get("delivery_method"), goods_subtotal(items))
+        delivery_fee_block = delivery_fee_text(data.get("delivery_method"), delivery_fee, admin_lang)
         try:
             text = get_text("new_order_notification", admin_lang,
                 order_id=order_id,

@@ -1415,7 +1415,8 @@ async def view_seller_order(callback: CallbackQuery):
         saved_block = get_text("new_order_discount_total", lang,
                                amount=f"{int(saved_total):,}".replace(",", " "))
 
-    from handlers.cart import buyer_contact_link, payment_status_block, SELF_DELIVERY_FEE
+    from handlers.cart import (buyer_contact_link, payment_status_block, SELF_DELIVERY_FEE,
+                               goods_subtotal, delivery_fee_text, FREE_DELIVERY_FROM)
     buyer = await get_user(order["user_id"])
     contact = buyer_contact_link(
         order["user_id"],
@@ -1427,8 +1428,19 @@ async def view_seller_order(callback: CallbackQuery):
     note_block = f"\n📝 {note}" if note else ""
     sec = order.get("secondary_phone")
     secondary_block = f"\n📞 {sec}" if sec else ""
-    delivery_fee = SELF_DELIVERY_FEE if order.get("delivery_method") == "self" else 0
-    delivery_fee_block = get_text("delivery_fee_line", lang, fee=f"{delivery_fee:,}".replace(",", " ")) if delivery_fee else ""
+    # Read the fee back from what was actually charged (total = products +
+    # fee - Keto), so an order placed before free delivery existed still
+    # shows the 25 000 it paid.
+    delivery_fee = 0
+    delivery_fee_block = ""
+    if order.get("delivery_method") == "self":
+        subtotal = goods_subtotal(items)
+        charged = float(order.get("total") or 0) + float(order.get("keto_redeemed") or 0) - subtotal
+        delivery_fee = SELF_DELIVERY_FEE if charged >= SELF_DELIVERY_FEE - 1 else 0
+        # "BEPUL" only for an order that really crossed the threshold — an
+        # AI-created order carries no fee in its total either.
+        if delivery_fee or subtotal >= FREE_DELIVERY_FROM:
+            delivery_fee_block = delivery_fee_text("self", delivery_fee, lang)
     text = get_text("new_order_notification", lang,
         order_id=order["id"],
         name=order["customer_name"],
