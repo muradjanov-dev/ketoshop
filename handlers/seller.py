@@ -1441,9 +1441,11 @@ async def view_seller_order(callback: CallbackQuery):
         # AI-created order carries no fee in its total either.
         if delivery_fee or subtotal >= FREE_DELIVERY_FROM:
             delivery_fee_block = delivery_fee_text("self", delivery_fee, lang)
+    from handlers.cart import order_history_block
     text = get_text("new_order_notification", lang,
         order_id=order["id"],
         name=order["customer_name"],
+        history_block=await order_history_block(order.get("user_id"), order["id"], lang),
         phone=order["phone"],
         secondary_block=secondary_block,
         contact=contact,

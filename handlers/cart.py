@@ -73,6 +73,23 @@ SELF_DELIVERY_FEE = 25_000
 FREE_DELIVERY_FROM = 800_000
 
 
+async def order_history_block(user_id: int | None, order_id: int, lang: str) -> str:
+    """"🔁 3-buyurtmasi (oldingi 2 tasi yetkazilgan)" for the admins' order
+    card — '' if the history can't be read (the card must still go out)."""
+    if not user_id:
+        return ""
+    try:
+        from database import get_order_history_position
+        pos = await get_order_history_position(int(user_id), int(order_id))
+    except Exception:
+        return ""
+    cancelled = get_text("order_history_cancelled", lang, n=pos["cancelled"]) if pos["cancelled"] else ""
+    if pos["nth"] <= 1:
+        return get_text("order_history_first", lang, cancelled=cancelled)
+    return get_text("order_history_repeat", lang, nth=pos["nth"], delivered=pos["delivered"],
+                    cancelled=cancelled)
+
+
 def goods_subtotal(items: list[dict]) -> float:
     """Products total of an order/cart line list (gift lines are 0 so'm)."""
     return sum(float(it.get("price") or 0) * float(it.get("quantity") or 0) for it in items)
@@ -2185,6 +2202,7 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
             text = get_text("new_order_notification", admin_lang,
                 order_id=order_id,
                 name=_escape_html(data["customer_name"]),
+                history_block=await order_history_block(data.get("user_id"), order_id, admin_lang),
                 phone=_escape_html(data["phone"]),
                 secondary_block=secondary_block,
                 contact=contact,          # already-escaped markup — buyer_contact_link

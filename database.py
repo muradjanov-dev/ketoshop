@@ -1672,6 +1672,28 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
     return order_id, low_stock
 
 
+async def get_order_history_position(user_id: int, order_id: int) -> dict:
+    """Where this order sits in the buyer's own history, for the admins' new-
+    order card (owner request 2026-09-17: "nechanchi marotaba buyurtma
+    qilayotganini ko'rsat"). Counts only the buyer's own bot/Mini App orders —
+    manual/B2B rows carry the admin's user_id, not the buyer's.
+
+    nth       — this order's number among the buyer's non-cancelled orders
+    delivered — earlier orders that were delivered
+    cancelled — earlier orders that were cancelled"""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) FILTER (WHERE status <> 'cancelled' AND id <= $2) AS nth,
+                      COUNT(*) FILTER (WHERE status = 'delivered' AND id < $2)  AS delivered,
+                      COUNT(*) FILTER (WHERE status = 'cancelled' AND id < $2)  AS cancelled
+                 FROM orders
+                WHERE user_id = $1 AND COALESCE(source, 'bot') NOT IN ('manual', 'b2b')""",
+            user_id, order_id,
+        )
+    return {k: int(row[k] or 0) for k in ("nth", "delivered", "cancelled")} if row else \
+        {"nth": 1, "delivered": 0, "cancelled": 0}
+
+
 async def get_user_orders(user_id: int) -> list[dict]:
     """Buyer's own order history. Excludes manual entries — those are rows
     that the admin keyed in for offline orders, attached to the admin's

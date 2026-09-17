@@ -1704,9 +1704,22 @@ TEXTS = {
     },
 
     # ===== NEW ORDER NOTIFICATION (for seller) =====
+    "order_history_first": {
+        "uz": "🆕 <b>Yangi mijoz — 1-buyurtmasi</b>{cancelled}\n",
+        "ru": "🆕 <b>Новый клиент — 1-й заказ</b>{cancelled}\n",
+    },
+    "order_history_repeat": {
+        "uz": "🔁 <b>{nth}-buyurtmasi</b> (oldingi {delivered} tasi yetkazilgan){cancelled}\n",
+        "ru": "🔁 <b>{nth}-й заказ</b> (доставлено ранее: {delivered}){cancelled}\n",
+    },
+    "order_history_cancelled": {
+        "uz": " · ❌ {n} ta bekor qilingan",
+        "ru": " · ❌ отменено: {n}",
+    },
     "new_order_notification": {
         "uz": "🔔 <b>Yangi buyurtma #{order_id}</b>\n\n"
               "👤 {name}\n"
+              "{history_block}"
               "📱 {phone}{secondary_block}\n"
               "💬 {contact}\n"
               "📍 {address}{note_block}\n"
@@ -1718,6 +1731,7 @@ TEXTS = {
               "💰 <b>Jami: {total} so'm</b>{saved_block}",
         "ru": "🔔 <b>Новый заказ #{order_id}</b>\n\n"
               "👤 {name}\n"
+              "{history_block}"
               "📱 {phone}{secondary_block}\n"
               "💬 {contact}\n"
               "📍 {address}{note_block}\n"
