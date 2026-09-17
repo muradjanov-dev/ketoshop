@@ -221,8 +221,9 @@ class LoyaltyTierTest(unittest.TestCase):
 class OneGiftPerOrderTest(unittest.TestCase):
     GIFT = {"id": 99, "name": "Eritritol 100gr", "name_ru": "Эритрит 100г", "quantity": 10, "price": 12000}
 
-    def run_lines(self, subtotal, offer, campaign):
-        with patch.object(retention, "active_offer", AsyncMock(return_value=offer)), \
+    def run_lines(self, subtotal, offer, campaign, min_order=111_000):
+        with patch.object(gift_campaign, "MIN_ORDER", min_order), \
+             patch.object(retention, "active_offer", AsyncMock(return_value=offer)), \
              patch.object(gift_campaign, "is_active", AsyncMock(return_value=campaign)), \
              patch.object(gift_campaign, "gift_product", AsyncMock(return_value=self.GIFT)):
             return asyncio.run(gift_campaign.gift_lines(555, [{"price": subtotal, "quantity": 1}]))
@@ -236,6 +237,11 @@ class OneGiftPerOrderTest(unittest.TestCase):
         lines = self.run_lines(150_000, {"id": 7, "expires_at": NOW}, campaign=True)
         self.assertEqual(len(lines), 1)
         self.assertEqual((lines[0]["retention_offer_id"], lines[0]["promo_name"]), (7, "Sovg'a"))
+
+    def test_without_minimum_every_order_gets_the_campaign_gift(self):
+        lines = self.run_lines(25_000, None, campaign=True, min_order=0)
+        self.assertEqual((len(lines), lines[0]["promo_name"]), (1, "Sovg'a"))
+        self.assertEqual(self.run_lines(0, None, campaign=True, min_order=0), [])   # empty cart
 
     def test_no_offer_no_campaign_no_gift(self):
         self.assertEqual(self.run_lines(40_000, None, campaign=True), [])

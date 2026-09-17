@@ -261,3 +261,18 @@ async def cmd_cart_reminder_stats(message: Message):
 async def cmd_gift_stats(message: Message):
     await gift_campaign.book_delivered_gifts()
     await message.answer(await gift_campaign.stats_text(), parse_mode=ParseMode.HTML)
+
+
+@router.message(Command("sovga_elon"), F.from_user.id.in_(ADMIN_IDS))
+async def cmd_gift_upgrade_preview(message: Message):
+    """Preview of the "sovg'a endi har bir buyurtmaga" announcement in all
+    three languages, exactly as buyers get it (photo + caption)."""
+    from datetime import timedelta as _td
+    row = await gift_campaign._state(force=True)
+    until = (row["ends_at"] + gift_campaign.TZ_OFFSET) if row and row.get("ends_at") \
+        else gift_campaign._now_tk() + _td(days=gift_campaign.DURATION_DAYS)
+    photo = await gift_campaign._product_photo(await gift_campaign.gift_product(force=True))
+    for lang in ("uz", "uz_cyr", "ru"):
+        await gift_campaign._send_photo(message.bot, message.from_user.id, photo,
+                                        gift_campaign.upgrade_text(lang, until),
+                                        gift_campaign.announcement_keyboard(lang))

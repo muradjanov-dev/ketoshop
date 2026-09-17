@@ -3407,6 +3407,14 @@ async def add_admin_db(user_id: int, added_by: int) -> None:
         )
 
 
+async def remove_admin_db(user_id: int) -> bool:
+    """Revoke an admin added through the bot. False when there was no such
+    row — i.e. a permanent (hardcoded/env) admin, which the bot can't revoke."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("DELETE FROM admins WHERE user_id = $1 RETURNING user_id", user_id)
+        return row is not None
+
+
 async def get_admin_profiles(admin_ids: list[int]) -> list[dict]:
     """One row per id in the live ADMIN_IDS list, enriched for the roster
     screen. Driven from the passed-in list rather than from the `admins`

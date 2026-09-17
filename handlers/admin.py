@@ -22,7 +22,7 @@ from database import (
     effective_price, active_discount,
     get_all_active_products, set_cart_product_quantity,
     format_local_dt,
-    add_admin_db,
+    add_admin_db, remove_admin_db,
     get_gamification_state, get_keto_balances_list, set_redemption_enabled,
     LEADERBOARD_EXCLUDED_USER_IDS, add_b2b_eritritol_order,
     list_promotions, get_promotion, create_promotion, update_promotion,
@@ -565,7 +565,7 @@ async def admin_unban_user(callback: CallbackQuery):
 # Owner request 2026-09-02: the panel could hand out admin rights but never
 # show who already had them, so the only way to know was to read config.py.
 
-async def _render_admin_list() -> tuple[str, InlineKeyboardMarkup]:
+async def _render_admin_list(viewer_id: int | None = None) -> tuple[str, InlineKeyboardMarkup]:
     """Everyone in the live ADMIN_IDS list, split by how they got in.
 
     Deliberately more than a list of ids: an admin who has never opened the
@@ -619,8 +619,16 @@ async def _render_admin_list() -> tuple[str, InlineKeyboardMarkup]:
     rows = [
         [InlineKeyboardButton(text=get_text("btn_admin_add_admin", "uz"),
                               callback_data="admin:add_admin")],
-        [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_menu:users")],
     ]
+    # Only bot-granted admins can be revoked from here — the permanent ones
+    # live in config/env — and never yourself, so nobody locks themselves out.
+    for profile in granted:
+        if profile["user_id"] == viewer_id:
+            continue
+        label = profile.get("full_name") or profile.get("username") or str(profile["user_id"])
+        rows.append([InlineKeyboardButton(text=f"🗑 {label[:30]} — olib tashlash",
+                                          callback_data=f"admin:rm_admin:{profile['user_id']}")])
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_menu:users")])
     return "\n".join(lines).strip(), InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -630,9 +638,91 @@ async def show_admin_list(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     await state.clear()
-    text, keyboard = await _render_admin_list()
+    text, keyboard = await _render_admin_list(callback.from_user.id)
     await _support_show(callback, text, keyboard)
     await callback.answer()
+
+
+# ===== REMOVE ADMIN =====
+# Owner request 2026-09-17: admins could be added from the panel but only
+# removed by editing the database.
+
+@router.callback_query(F.data.startswith("admin:rm_admin:"))
+async def admin_remove_confirm(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    target = int(callback.data.rsplit(":", 1)[1])
+    if target == callback.from_user.id:
+        await callback.answer("O'zingizni olib tashlay olmaysiz.", show_alert=True)
+        return
+    name = await _admin_name(target)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Ha, olib tashlash", callback_data=f"admin:rm_admin_yes:{target}")],
+        [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin:admins")],
+    ])
+    await _support_show(
+        callback,
+        f"🗑 <b>{html.escape(name)}</b> (<code>{target}</code>) adminlikdan olib tashlansinmi?\n\n"
+        "U admin panelni, buyurtma va mijoz xabarlarini, hisobotlarni boshqa ko'rmaydi. "
+        "Keyin xohlasangiz, qaytadan qo'shish mumkin.",
+        keyboard,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:rm_admin_yes:"))
+async def admin_remove_do(callback: CallbackQuery, bot: Bot):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    target = int(callback.data.rsplit(":", 1)[1])
+    if target == callback.from_user.id:
+        await callback.answer("O'zingizni olib tashlay olmaysiz.", show_alert=True)
+        return
+    name = await _admin_name(target)
+    if not await remove_admin_db(target):
+        # Not in the admins table: a permanent admin from config/env.
+        await callback.answer("Bu doimiy admin (kod/server sozlamasida) — botdan olib tashlab bo'lmaydi.",
+                              show_alert=True)
+        return
+    # Same shared list every module reads — takes effect immediately.
+    while target in ADMIN_IDS:
+        ADMIN_IDS.remove(target)
+
+    # Their "/" menu loses the admin commands (bloggers keep theirs).
+    log = logging.getLogger(__name__)
+    try:
+        from aiogram.types import BotCommandScopeChat
+        from keyboards import BUYER_COMMANDS, BLOGGER_COMMAND
+        from database import get_blogger_user_ids
+        scope = BotCommandScopeChat(chat_id=target)
+        if target in await get_blogger_user_ids():
+            await bot.set_my_commands(BUYER_COMMANDS + [BLOGGER_COMMAND], scope=scope)
+        else:
+            await bot.delete_my_commands(scope=scope)
+    except Exception:
+        log.warning("Could not reset commands for removed admin %s", target, exc_info=True)
+
+    log.info("Admin %s removed by %s", target, callback.from_user.id)
+    await callback.answer(f"✅ {name} adminlikdan olib tashlandi")
+    text, keyboard = await _render_admin_list(callback.from_user.id)
+    await _support_show(callback, text, keyboard)
+
+    # Tell the other admins who did it — admin rights are sensitive.
+    by = await _admin_name(callback.from_user.id)
+    for admin_id in list(ADMIN_IDS):
+        if admin_id == callback.from_user.id:
+            continue
+        try:
+            await bot.send_message(
+                admin_id,
+                f"🗑 {html.escape(by)} <b>{html.escape(name)}</b> (<code>{target}</code>) "
+                "ni adminlikdan olib tashladi.",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
 
 
 # ===== MAQSADLAR / TARGETS =====

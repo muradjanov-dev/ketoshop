@@ -261,7 +261,13 @@ async def _drop_offer(offer_id: int) -> None:
 
 
 async def gift_available() -> dict | None:
+    """The gift pack to promise in a personal offer — or None. While the
+    Eritritol campaign gives the same pack on EVERY order (MIN_ORDER 0), a
+    personal "sovg'a" would promise nothing extra and only confuse, so no new
+    offers are opened then."""
     import gift_campaign
+    if gift_campaign.MIN_ORDER <= 0 and await gift_campaign.is_active():
+        return None
     prod = await gift_campaign.gift_product()
     if prod and float(prod.get("quantity") or 0) >= 1:
         return prod
