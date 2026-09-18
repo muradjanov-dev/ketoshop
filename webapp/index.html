@@ -2619,6 +2619,7 @@ const L = {
     ketoSwitchApplied: 'Buyurtmadan −{amount} UZS ayirildi',
     ketoSwitchEmpty: "Hozircha tangachangiz yo'q — har xariddan keyin yig'iladi",
     ketoRedeemLine: '🥑 Keto chegirmasi',
+    ketoBack: 'Pulingiz qaytadi: {n} Keto',
     cartKetoLabel: "🥑 Ketochalar bilan to'lash",
     clear: 'Tozalash',
     checkout: 'Buyurtma berish',
@@ -2774,6 +2775,7 @@ const L = {
     ketoSwitchApplied: 'Из заказа вычтено −{amount} UZS',
     ketoSwitchEmpty: 'Пока монеток нет — они копятся с каждой покупки',
     ketoRedeemLine: '🥑 Скидка Keto',
+    ketoBack: 'Вам вернётся: {n} Keto',
     cartKetoLabel: '🥑 Оплатить Keto-монетками',
     clear: 'Очистить',
     checkout: 'Оформить заказ',
@@ -3302,8 +3304,12 @@ function ketoAmount(amount) {
   return ketoRate > 0 ? Math.floor((amount || 0) * ketoRate) : 0;
 }
 function ketoBadgeHtml(amount) {
+  // "+525 Keto" said nothing to a buyer who had never spent one. The badge now
+  // states the point outright: this much money comes back (owner, 2026-09-19).
   const n = ketoAmount(amount);
-  return n > 0 ? '<div class="keto-badge">+' + formatPrice(n) + ' Keto</div>' : '';
+  if (n <= 0) return '';
+  const label = (t.ketoBack || 'Pulingiz qaytadi: {n} Keto').replace('{n}', formatPrice(n));
+  return '<div class="keto-badge">' + escapeHtml(label) + '</div>';
 }
 
 // ===== HOME PAGE =====

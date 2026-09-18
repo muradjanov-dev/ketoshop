@@ -223,6 +223,30 @@ _HINT = {
     },
 }
 
+# The standing promise, printed at the foot of every product card so a buyer
+# meets it while they are still choosing — not only once the cart is full.
+# It says "per order" because that is what gift_lines() actually adds: one
+# pack per order, however many products are in it.
+_CARD = {
+    "uz": "🎁 Botdan bergan <b>har bir buyurtmangizga</b> <b>{name}</b> sovg'a!",
+    "ru": "🎁 <b>К каждому заказу</b> в боте — <b>{name}</b> в подарок!",
+}
+
+
+async def card_line(lang: str) -> str:
+    """The gift line for a product card, or '' when there is nothing to
+    promise (campaign over, or the gift itself out of stock — a promise that
+    can't be packed is worse than none)."""
+    if not await is_active():
+        return ""
+    prod = await gift_product()
+    if not prod or float(prod.get("quantity") or 0) < 1:
+        return ""
+    from locales import localize_product_text
+    name = localize_product_text(prod["name"], prod.get("name_ru"),
+                                 "uz" if lang == "uz_cyr" else lang)
+    return _loc(_CARD, lang, name=name)
+
 
 def _loc(entry: dict, lang: str, **fmt) -> str:
     text = (entry.get("ru") if lang == "ru" else entry.get("uz")) or entry.get("uz", "")
@@ -598,6 +622,8 @@ async def stats_text() -> str:
            else "Shart: botdagi har qanday buyurtma (minimal summa yo'q)\n\n")
         + f"🛒 Sovg'ali buyurtmalar: <b>{stats['orders']}</b> "
         f"(yetkazilgan: {stats['delivered']})\n"
+        f"👥 Sovg'a olgan mijozlar: <b>{stats['buyers']}</b> ta "
+        f"(qo'lida: {stats['buyers_delivered']} ta)\n"
         f"💰 Ularning summasi: <b>{fmt_sum(stats['revenue'])} so'm</b>\n"
         f"🎁 Chiqimlarga yozildi: <b>{fmt_sum(stats['cost'])} so'm</b>\n"
         f"📦 Omborda: {fmt_sum(float(prod['quantity'])) + ' ta' if prod else 'mahsulot topilmadi'}"

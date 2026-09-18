@@ -27,20 +27,34 @@ logger = logging.getLogger(__name__)
 DESC_IN_CARD_MAX = 650
 
 
-async def build_caption(product: dict, lang: str, rate: float | None) -> str:
+async def build_caption(product: dict, lang: str, rate: float | None,
+                        extra: str | None = None) -> str:
     """The card's text. `rate` is the Keto cashback to advertise (None = don't
     show that line at all); callers pass gamification.buyer_rate(user) for a
-    buyer, or the base rate for an audience with no single reader."""
+    buyer, or the base rate for an audience with no single reader.
+
+    `extra` is appended at the end — the daily spotlight uses it for "what to
+    make with this today" (product_ideas). It is budgeted against the same
+    1024-character caption limit, so a long idea shortens the description
+    rather than pushing the price off the card.
+    """
     import gamification
+    import gift_campaign
     import promotions
+
+    # The standing Eritritol gift closes every card (owner, 2026-09-19), so
+    # like `extra` it is budgeted before the description is trimmed.
+    gift = await gift_campaign.card_line(lang)
 
     seller_name = product.get("seller_name") or product.get("seller_username") or "—"
     name = localize_product_text(product.get("name"), product.get("name_ru"), lang)
     desc = localize_product_text(product.get("description"), product.get("description_ru"), lang) or "—"
     # Trim here, not in tg_safety's net: that would save the message by
     # dropping the price lines below instead of the tail of the description.
-    if len(desc) > DESC_IN_CARD_MAX:
-        desc = desc[: DESC_IN_CARD_MAX - 1].rstrip() + "…"
+    desc_budget = DESC_IN_CARD_MAX - (len(extra) + 2 if extra else 0) \
+                                   - (len(gift) + 2 if gift else 0)
+    if len(desc) > desc_budget:
+        desc = desc[: max(40, desc_budget - 1)].rstrip() + "…"
 
     discount_until = product.get("discount_until")
     discount = active_discount(product.get("discount_percent"), discount_until)
@@ -86,6 +100,14 @@ async def build_caption(product: dict, lang: str, rate: float | None) -> str:
     avg_rating, review_count = await get_product_rating(product["id"])
     if review_count > 0:
         text += "\n" + get_text("product_rating_line", lang, rating=avg_rating, count=review_count)
+
+    if extra:
+        text += "\n\n" + extra
+
+    # The gift has the last word on every card (owner, 2026-09-19) — it is the
+    # reason to order now, so nothing follows it.
+    if gift:
+        text += "\n\n" + gift
 
     return text
 
@@ -151,14 +173,20 @@ class CaptionCache:
     a handful of combinations (3 languages x 4 Keto levels).
     """
 
-    def __init__(self, product: dict):
+    def __init__(self, product: dict, extra_for=None):
         self.product = product
+        # Called per language to produce the trailing block (the daily
+        # spotlight's "what to make with this today"). A callable rather than
+        # a string because the block is language-specific, and part of the
+        # cache key so the first recipient's text is not served to everyone.
+        self.extra_for = extra_for
         self._texts: dict[tuple[str, float | None], str] = {}
 
     async def get(self, lang: str, rate: float | None) -> str:
         key = (lang, rate)
         if key not in self._texts:
-            self._texts[key] = await build_caption(self.product, lang, rate)
+            extra = self.extra_for(lang) if self.extra_for else None
+            self._texts[key] = await build_caption(self.product, lang, rate, extra)
         return self._texts[key]
 
 

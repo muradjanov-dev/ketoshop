@@ -2992,10 +2992,16 @@ async def get_gift_campaign_stats(key: str) -> dict:
     async with pool.acquire() as conn:
         camp = await conn.fetchrow("SELECT started_at FROM gift_campaigns WHERE key = $1", key)
         if not camp:
-            return {"orders": 0, "delivered": 0, "cost": 0.0, "revenue": 0.0}
+            return {"orders": 0, "delivered": 0, "buyers": 0, "buyers_delivered": 0,
+                    "cost": 0.0, "revenue": 0.0}
+        # buyers != orders: the gift goes on every order, so one regular
+        # customer can have collected several packs by now.
         row = await conn.fetchrow(
             """SELECT COUNT(*) AS orders,
                       COUNT(*) FILTER (WHERE status = 'delivered') AS delivered,
+                      COUNT(DISTINCT user_id) AS buyers,
+                      COUNT(DISTINCT user_id) FILTER (WHERE status = 'delivered')
+                          AS buyers_delivered,
                       COALESCE(SUM(total) FILTER (WHERE status <> 'cancelled'), 0) AS revenue
                  FROM orders
                 WHERE created_at >= $1 AND items LIKE '%is_gift%'""",
@@ -3007,6 +3013,8 @@ async def get_gift_campaign_stats(key: str) -> dict:
             camp["started_at"],
         )
         return {"orders": int(row["orders"]), "delivered": int(row["delivered"]),
+                "buyers": int(row["buyers"]),
+                "buyers_delivered": int(row["buyers_delivered"]),
                 "revenue": float(row["revenue"]), "cost": float(cost or 0)}
 
 
