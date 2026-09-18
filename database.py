@@ -1067,6 +1067,35 @@ async def init_db():
             )
         """)
 
+        # "Kun mahsuloti" — one product a day to every buyer and to the
+        # channel. The single state row keeps the cadence across restarts;
+        # `cycle` counts full passes over the catalogue, so the log below can
+        # answer "has this product already had its turn this pass?".
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS product_of_day_state (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                cycle INTEGER NOT NULL DEFAULT 0,
+                last_sent_date DATE,
+                last_product_id INTEGER,
+                enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                CONSTRAINT product_of_day_state_single CHECK (id = 1)
+            )
+        """)
+        await conn.execute(
+            "INSERT INTO product_of_day_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING"
+        )
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS product_of_day_log (
+                product_id INTEGER NOT NULL,
+                cycle INTEGER NOT NULL,
+                sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                sent INTEGER DEFAULT 0,
+                failed INTEGER DEFAULT 0,
+                channel_ok BOOLEAN DEFAULT FALSE,
+                PRIMARY KEY (product_id, cycle)
+            )
+        """)
+
 
 
 async def close_db():
@@ -3844,6 +3873,80 @@ async def set_broadcast_index(index: int):
 async def set_broadcast_warn_date(d):
     async with pool.acquire() as conn:
         await conn.execute("UPDATE broadcast_state SET last_warn_date = $1 WHERE id = 1", d)
+
+
+# ===== PRODUCT OF THE DAY (kun mahsuloti) =====
+
+async def get_product_of_day_state() -> dict:
+    """The single spotlight-state row, creating it if missing."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM product_of_day_state WHERE id = 1")
+        if row is None:
+            await conn.execute(
+                "INSERT INTO product_of_day_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+            row = await conn.fetchrow("SELECT * FROM product_of_day_state WHERE id = 1")
+        return dict(row)
+
+
+async def set_product_of_day_enabled(enabled: bool):
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE product_of_day_state SET enabled = $1 WHERE id = 1", enabled)
+
+
+async def bump_product_of_day_cycle() -> int:
+    """Start a new pass over the catalogue once every product has had a turn."""
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            "UPDATE product_of_day_state SET cycle = cycle + 1 WHERE id = 1 RETURNING cycle")
+
+
+async def get_product_of_day_candidates(cycle: int) -> list[dict]:
+    """Products that may be today's spotlight: in stock, retail, and not yet
+    shown in this cycle. `views_30d` rides along so the picker can rank by
+    how much attention each one is actually getting."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT p.*, u.full_name AS seller_name, u.username AS seller_username,
+                   (SELECT COUNT(*) FROM product_views v
+                     WHERE v.product_id = p.id
+                       AND v.viewed_at > (now() AT TIME ZONE 'utc') - INTERVAL '30 days'
+                   ) AS views_30d
+              FROM products p
+              JOIN users u ON p.seller_id = u.user_id
+             WHERE p.is_active = 1
+               AND p.quantity > 0
+               AND COALESCE(p.b2b_only, FALSE) = FALSE
+               AND p.id NOT IN (SELECT product_id FROM product_of_day_log WHERE cycle = $1)
+        """, cycle)
+        return [dict(r) for r in rows]
+
+
+async def record_product_of_day(product_id: int, cycle: int, sent: int, failed: int,
+                                channel_ok: bool, day):
+    """Log the send and stamp the day, so a restart can't repeat it."""
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO product_of_day_log (product_id, cycle, sent, failed, channel_ok)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (product_id, cycle) DO UPDATE
+               SET sent = EXCLUDED.sent, failed = EXCLUDED.failed,
+                   channel_ok = EXCLUDED.channel_ok, sent_at = (now() AT TIME ZONE 'utc')
+        """, product_id, cycle, sent, failed, channel_ok)
+        await conn.execute(
+            "UPDATE product_of_day_state SET last_sent_date = $1, last_product_id = $2 WHERE id = 1",
+            day, product_id)
+
+
+async def get_product_of_day_history(limit: int = 7) -> list[dict]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT l.product_id, l.sent_at, l.sent, l.failed, l.channel_ok, p.name
+              FROM product_of_day_log l
+              LEFT JOIN products p ON p.id = l.product_id
+             ORDER BY l.sent_at DESC
+             LIMIT $1
+        """, limit)
+        return [dict(r) for r in rows]
 
 
 # ===== PERSONALIZED RECOMMENDATION STATE =====

@@ -14,11 +14,8 @@ from database import (
 )
 from locales import get_text, get_category_name, get_unit_name, get_display_unit, localize_product_text
 from keyboards import categories_keyboard, back_to_menu_keyboard, cart_shortcut_row
+from product_card import build_caption, detail_keyboard, DESC_IN_CARD_MAX
 from config import ITEMS_PER_PAGE
-
-# Longest description that still leaves room for the rest of the product card
-# inside Telegram's 1024-character photo caption.
-DESC_IN_CARD_MAX = 650
 
 router = Router()
 
@@ -89,64 +86,10 @@ async def _render_product_detail(callback: CallbackQuery, product_id: int,
         except Exception:
             pass
 
-    seller_name = product.get("seller_name") or product.get("seller_username") or "—"
-    prod_name = localize_product_text(product.get("name"), product.get("name_ru"), lang)
-    prod_desc = localize_product_text(product.get("description"), product.get("description_ru"), lang) or "—"
-    # The card goes out as a photo caption, which Telegram caps at 1024
-    # characters; the price/stock/discount/Keto lines below need roughly 350
-    # of those. Trimming the description here keeps the rest of the card —
-    # tg_safety's net would save the message but drop the price with it.
-    if len(prod_desc) > DESC_IN_CARD_MAX:
-        prod_desc = prod_desc[: DESC_IN_CARD_MAX - 1].rstrip() + "…"
-
-    discount_until = product.get("discount_until")
-    discount = active_discount(product.get("discount_percent"), discount_until)
-    final_price = effective_price(product["price"], discount, discount_until)
-
-    text = get_text("product_card", lang,
-        name=prod_name,
-        description=prod_desc,
-        price=f"{int(final_price):,}".replace(",", " "),
-        unit=get_display_unit(product["unit"], lang),
-        available=product["quantity"],
-        seller=seller_name,
-    )
-
-    if discount > 0:
-        text += "\n" + get_text("product_discount_line", lang,
-            percent=discount,
-            old=f"{int(product['price']):,}".replace(",", " "),
-            new=f"{int(final_price):,}".replace(",", " "),
-            saved=f"{int(product['price'] - final_price):,}".replace(",", " "),
-        )
-        if discount_until:
-            text += "\n" + get_text("product_discount_until", lang,
-                date=discount_until.strftime("%d.%m.%Y %H:%M"),
-            )
-
-    # 🥑 +N Keto this product brings back, at this buyer's own cashback rate.
     import gamification
     rate = await gamification.buyer_rate(callback.from_user.id)
-    if rate:
-        reward = gamification.product_reward_line(gamification.keto_for(final_price, rate), rate, lang)
-        if reward:
-            text += "\n" + reward
-
+    text = await build_caption(product, lang, rate)
     out_of_stock = product["quantity"] <= 0
-    if out_of_stock:
-        text += "\n\n" + get_text("product_out_of_stock", lang)
-
-    # Aksiya bonus this exact product triggers — right on the card, so the
-    # buyer sees the gift before deciding, not only once it lands in the cart.
-    import promotions
-    hint = promotions.bonus_hint(await promotions.get_active(), product["id"], lang)
-    if hint:
-        text += "\n\n" + hint
-
-    # Add rating
-    avg_rating, review_count = await get_product_rating(product["id"])
-    if review_count > 0:
-        text += "\n" + get_text("product_rating_line", lang, rating=avg_rating, count=review_count)
 
     keyboard = await _detail_keyboard(callback.from_user.id, product_id, back_category, back_page, lang, out_of_stock)
 
@@ -191,34 +134,10 @@ async def _render_product_detail(callback: CallbackQuery, product_id: int,
 
 async def _detail_keyboard(user_id: int, product_id: int, back_category: str,
                            back_page: int, lang: str, out_of_stock: bool) -> InlineKeyboardMarkup:
-    """Full keyboard for the product detail: primary row (add / stepper / soon),
-    reviews row, and back row. Shared by the first render and the +/- handlers
-    so a step click just swaps reply_markup — no need to re-send the photo."""
-    _cart_id, cart_qty = await get_cart_line_for_product(user_id, product_id)
-    ret = f":{back_category}:{back_page}"
-    if out_of_stock:
-        primary_row = [InlineKeyboardButton(text=get_text("btn_coming_soon", lang), callback_data="noop")]
-    elif cart_qty > 0:
-        qty_str = str(int(cart_qty)) if float(cart_qty).is_integer() else f"{cart_qty:.1f}"
-        primary_row = [
-            InlineKeyboardButton(text="➖", callback_data=f"detail_dec:{product_id}{ret}"),
-            InlineKeyboardButton(text=get_text("btn_in_cart_qty", lang, n=qty_str), callback_data="noop"),
-            InlineKeyboardButton(text="➕", callback_data=f"detail_inc:{product_id}{ret}"),
-        ]
-    else:
-        primary_row = [InlineKeyboardButton(text=get_text("btn_add_to_cart", lang), callback_data=f"detail_inc:{product_id}{ret}")]
-
-    # cart_qty > 0 already means this product is in the cart — reuse it to
-    # skip an extra query when this product alone justifies the shortcut.
-    cart_count, cart_total = await get_cart_badge(user_id)
-    cart_row = cart_shortcut_row(lang, cart_count, cart_total)
-
-    back_cb = f"cat:{back_category}:{back_page}" if back_category else "catalog"
-    rows = [primary_row, [InlineKeyboardButton(text=get_text("btn_reviews", lang), callback_data=f"reviews:{product_id}")]]
-    if cart_row:
-        rows.append(cart_row)
-    rows.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=back_cb)])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    """The detail keyboard. Lives in product_card.py now — the daily spotlight
+    and the channel deep link hand out the same buttons."""
+    return await detail_keyboard(user_id, product_id, back_category, back_page,
+                                 lang, out_of_stock)
 
 
 def _parse_detail_step(data: str) -> tuple[int, str, int]:

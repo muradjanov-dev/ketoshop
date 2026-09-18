@@ -70,7 +70,9 @@ TZ_OFFSET = timedelta(hours=5)   # Asia/Tashkent, fixed UTC+5, no DST
 # — a blogger code must never be able to shadow one. 'fb_'/'ig_'/'ad_' belong
 # to the Facebook ad links (ad_sources.py) for the same reason.
 _RESERVED_PREFIXES = ("ref",)
-_AD_PREFIXES = ("fb_", "ig_", "ad_")
+# Reserved /start prefixes that are never a blogger's name: the ad sources
+# (ad_sources.py) and the channel's daily product link (product_card.py).
+_AD_PREFIXES = ("fb_", "ig_", "ad_", "prod_")
 _CODE_RE = re.compile(r"^[a-z0-9_]{2,48}$")
 
 # Uzbek Latin niceties before the generic strip: o'/g' are letters, not

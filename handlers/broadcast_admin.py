@@ -332,3 +332,90 @@ async def interest_now(message: Message):
         f"✅ {sent} ta yetkazildi · ⚠️ {failed} ta yetmadi · ⏭ {skipped} ta o'tkazildi.",
         parse_mode=ParseMode.HTML,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Kun mahsuloti — one product a day to every buyer and to the channel
+#
+#   /kun_status   — holat: yoqilganmi, bugun ketdimi, oxirgi 7 kun
+#   /kun_on       — kunlik yuborishni yoqish
+#   /kun_off      — to'xtatish
+#   /kun_test     — bugungi mahsulot kartochkasini FAQAT o'zingizga yuboradi
+#   /kun_now      — hoziroq barchaga va kanalga yuboradi
+# ─────────────────────────────────────────────────────────────────────────────
+import product_of_day
+
+
+@router.message(Command("kun_status"))
+async def kun_status(message: Message):
+    state = await database.get_product_of_day_state()
+    holat = "🟢 yoqilgan" if state["enabled"] else "🔴 to'xtatilgan"
+    last = state["last_sent_date"]
+    last_str = last.strftime("%d.%m.%Y") if last else "— (hali yo'q)"
+    product, cycle = await product_of_day.pick_product()
+    keyingi = f"{product.get('name')} (#{product['id']})" if product else "— (zaxirada mahsulot yo'q)"
+
+    history = await database.get_product_of_day_history(7)
+    tarix = "\n".join(
+        f"• {h['sent_at'].strftime('%d.%m')} — {h['name'] or '#' + str(h['product_id'])}"
+        f" · ✅{h['sent']} ⚠️{h['failed']}{' · 📣' if h['channel_ok'] else ''}"
+        for h in history
+    ) or "—"
+
+    await message.answer(
+        f"📦 <b>Kun mahsuloti</b>\n\n"
+        f"Holat: {holat}\n"
+        f"Vaqt: har kuni <b>{product_of_day.SEND_HOUR:02d}:00</b> (Toshkent)\n"
+        f"Oxirgi yuborilgan kun: {last_str}\n"
+        f"Navbatdagi mahsulot: <b>{keyingi}</b>\n"
+        f"Aylanma: {cycle + 1}-doira\n\n"
+        f"<b>Oxirgi kunlar:</b>\n{tarix}",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(Command("kun_on"))
+async def kun_on(message: Message):
+    await database.set_product_of_day_enabled(True)
+    await message.answer(
+        f"🟢 Kun mahsuloti yoqildi — har kuni soat "
+        f"{product_of_day.SEND_HOUR:02d}:00 da barchaga va kanalga ketadi."
+    )
+
+
+@router.message(Command("kun_off"))
+async def kun_off(message: Message):
+    await database.set_product_of_day_enabled(False)
+    await message.answer("🔴 Kun mahsuloti to'xtatildi.")
+
+
+@router.message(Command("kun_test"))
+async def kun_test(message: Message):
+    """Preview: the exact card, sent only to the admin who asked."""
+    product, _cycle = await product_of_day.pick_product()
+    if product is None:
+        await message.answer("Zaxirada bor mahsulot topilmadi.")
+        return
+    lang = await database.get_user_language(message.from_user.id)
+    await message.answer(
+        f"👀 Navbatdagi kun mahsuloti: <b>{product.get('name')}</b>\n"
+        f"Quyida — mijoz ko'radigan kartochka:",
+        parse_mode=ParseMode.HTML,
+    )
+    import product_card
+    await product_card.send_card(message.bot, message.from_user.id, product, lang)
+
+
+@router.message(Command("kun_now"))
+async def kun_now(message: Message):
+    await message.answer("📤 Kun mahsuloti barchaga va kanalga yuborilmoqda…")
+    result = await product_of_day.send_today(message.bot)
+    if result is None:
+        await message.answer("Zaxirada bor mahsulot topilmadi — hech narsa yuborilmadi.")
+        return
+    await message.answer(
+        f"✅ <b>{result['product'].get('name')}</b> yuborildi.\n"
+        f"Mijozlar: ✅ {result['sent']} · ⚠️ {result['failed']}\n"
+        f"Kanal: {'📣 yuborildi' if result['channel_ok'] else '⚠️ yuborilmadi'}",
+        parse_mode=ParseMode.HTML,
+    )

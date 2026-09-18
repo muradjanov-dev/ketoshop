@@ -319,6 +319,10 @@ async def main():
     stock_alerts_task = asyncio.create_task(stock_alerts_loop(bot))
 
     # "Nima yangi" — this release's notes to every admin, once, in daytime.
+    # Daily "Kun mahsuloti": one product to every buyer and to the channel.
+    from product_of_day import scheduler_loop as product_of_day_loop
+    product_of_day_task = asyncio.create_task(product_of_day_loop(bot))
+
     from release_notes import scheduler_loop as release_notes_loop
     release_notes_task = asyncio.create_task(release_notes_loop(bot))
 
@@ -340,6 +344,7 @@ async def main():
         retention_task.cancel()
         keto_explainer_task.cancel()
         stock_alerts_task.cancel()
+        product_of_day_task.cancel()
         release_notes_task.cancel()
         meta_leads_task.cancel()
         meta_ads_task.cancel()

@@ -119,19 +119,23 @@ async def cmd_help(message: Message, state: FSMContext):
 
 @router.message(CommandStart(deep_link=True))
 async def cmd_start_deep_link(message: Message, command: CommandObject):
-    """A /start carrying a payload — a Facebook/Instagram ad link
+    """A /start carrying a payload — the channel's daily product link
+    (?start=prod_<id>, see product_card.py), a Facebook/Instagram ad link
     (?start=fb_<reklama>, see ad_sources.py), a blogger's personal link
     (?start=<bloger nomi>, see bloggers.py) or the older Keto musobaqasi
-    share link (?start=ref<user_id>). The three shapes can't collide: the ad
-    prefixes are reserved, and bloggers.parse_payload refuses both those and
-    anything that looks like 'ref<digits>'."""
+    share link (?start=ref<user_id>). The shapes can't collide: the ad and
+    product prefixes are reserved, and bloggers.parse_payload refuses both
+    those and anything that looks like 'ref<digits>'."""
     import referral_contest
     import bloggers
     import ad_sources
+    import product_card
     referrer_id = referral_contest.parse_ref_payload(command.args)
     blogger_code = bloggers.parse_payload(command.args)
     ad_source = ad_sources.parse_payload(command.args)
-    await _handle_start(message, referrer_id, blogger_code, ad_source)
+    product_id = product_card.parse_product_payload(command.args)
+    await _handle_start(message, referrer_id, blogger_code, ad_source,
+                        product_id=product_id)
 
 
 @router.message(CommandStart())
@@ -142,7 +146,8 @@ async def cmd_start(message: Message):
 
 async def _handle_start(message: Message, referrer_id: int | None,
                         blogger_code: str | None = None,
-                        ad_source: str | None = None):
+                        ad_source: str | None = None,
+                        product_id: int | None = None):
     # Check if user is banned
     if await is_user_banned(message.from_user.id):
         lang = await get_user_language(message.from_user.id)
@@ -159,6 +164,18 @@ async def _handle_start(message: Message, referrer_id: int | None,
     if not is_new:
         lang = await get_user_language(message.from_user.id)
         await ensure_menu_keyboard(message.bot, message.from_user.id, lang)
+
+    # Came in from the channel's «Kun mahsuloti» post: open that product's
+    # card straight away. A returning buyer gets it and nothing else — they
+    # came to look at a product, not to pick a language again.
+    if product_id is not None:
+        import product_card
+        lang = await get_user_language(message.from_user.id)
+        opened = await product_card.open_from_link(message.bot, message.from_user.id,
+                                                   product_id, lang)
+        if opened and not is_new:
+            return
+
     await message.answer(
         get_text("choose_language", "uz"),
         reply_markup=language_keyboard()
