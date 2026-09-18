@@ -21,7 +21,7 @@ Bugun kamida bitta ichimlikni eritritol bilan ichib ko'ring.
 • Eritritol
 • Alluloza + Steviya
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ❤️ Sog'liq — eng yaxshi sovg'a. Ushbu maslahatni yaqin insonlaringiz bilan baham ko'ring.
 @@@
@@ -40,7 +40,7 @@ Aralashtirib, qizigan tovada ikki tomonini 2 daqiqadan pishiring.
 🛒 Mahsulotlar:
 • Kokos uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 📤 Ushbu retseptni sog'lom ovqatlanishni istaydigan yaqinlaringizga ham yuboring.
 @@@
@@ -55,7 +55,7 @@ Chia urug'i yogurt, kefir yoki sut bilan juda yaxshi uyg'unlashadi. Uni nonushta
 • Chia urug'i
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 💚 Foydali maslahatlar ulashilganda yanada qadrli bo'ladi. Ushbu postni yaqinlaringiz bilan bo'lishing.
 @@@
@@ -71,7 +71,7 @@ Suvga ozgina olma sirkasi qo'shib ichib ko'ring.
 🛒 Mahsulotlar:
 • Olma sirkasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🤝 Birga sog'lom yashash osonroq. Ushbu postni do'stlaringizga ham yuboring.
 @@@
@@ -88,7 +88,7 @@ Quymoq yoki keks tayyorlashni sinab ko'ring.
 • Bodom uni
 • Kokos uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌿 Balki aynan shu maslahat kimningdir sog'lom hayotini boshlashiga turtki bo'lar. Ulashishni unutmang.
 @@@
@@ -107,7 +107,7 @@ Chia urug'ini pasta ustiga sepib iste'mol qiling.
 • Yeryong'oq pastasi
 • Chia urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🥗 Sog'lom ovqatlanish yolg'iz boshlanmaydi. Ushbu retseptni yaqinlaringiz bilan ulashing.
 @@@
@@ -121,7 +121,7 @@ Ertangi nonushtada tuxumni GHEE yog'ida pishirib ko'ring.
 🛒 Mahsulotlar:
 • Tabiiy GHEE
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ✨ Foydali ma'lumotni o'zingizda saqlab qolmang. Uni boshqalar bilan ham bo'lishing.
 @@@
@@ -138,7 +138,7 @@ Sabzavot bilan basmati guruch tayyorlang.
 • Basmati guruch
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🍳 Ushbu tavsiyani saqlab qo'ying va yaqinlaringizga ham yuboring.
 @@@
@@ -155,7 +155,7 @@ Keks yoki pechenyega eritritol qo'shib tayyorlang.
 • Eritritol
 • Kokos uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌱 Kichik maslahat ham katta o'zgarishlarga sabab bo'lishi mumkin. Ushbu postni ulashing.
 @@@
@@ -174,7 +174,7 @@ Masalliqlarni aralashtirib, shar shakliga keltiring va 20 daqiqa muzlatkichda qo
 • Yeryong'oq pastasi
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 💛 Yaxshi odatlar yaqinlaringiz bilan birga boshlanganida yanada oson davom etadi. Ushbu postni ulashing.
 @@@
@@ -190,7 +190,7 @@ Ertaga oddiy un o'rniga kokos unidan quymoq tayyorlab ko'ring.
 🛒 Mahsulot:
 • Kokos uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta kamida bitta retseptda kokos unidan foydalaning.
 
@@ -208,7 +208,7 @@ Suvga 1 choy qoshiq olma sirkasi qo'shib ichib ko'ring.
 🛒 Mahsulot:
 • Olma sirkasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun o'zingiz bilan suv olib yuring.
 
@@ -229,7 +229,7 @@ Aralashtiring va darhol iste'mol qiling.
 • Yeryong'oq pastasi
 • Kokos qirindisi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun shirin pechenye o'rniga shu gazakni tanlang.
 
@@ -248,7 +248,7 @@ Kechqurun chia puding tayyorlab qo'ying.
 • Chia urug'i
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Ertangi nonushtani bugunoq rejalashtiring.
 
@@ -266,7 +266,7 @@ Bodom unidan quymoq tayyorlab ko'ring.
 🛒 Mahsulot:
 • Bodom uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta bitta retseptda bodom unidan foydalaning.
 
@@ -288,7 +288,7 @@ Tuxumni GHEE yog'ida pishirib, ustidan ozgina tuz seping.
 • Tabiiy GHEE
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Ertangi tuxumni GHEE yog'ida pishirib ko'ring.
 
@@ -306,7 +306,7 @@ Yashil grechkadan garnir tayyorlang.
 🛒 Mahsulot:
 • Yashil grechka doni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta yangi mahsulot tatib ko'ring.
 
@@ -324,7 +324,7 @@ Uni yogurt, salat yoki bo'tqalarga ham qo'shish mumkin.
 🛒 Mahsulot:
 • Zig'ir urug'lari
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun zig'ir urug'ini biror taomga qo'shib ko'ring.
 
@@ -342,7 +342,7 @@ Bugun bitta ichimlikni eritritol bilan iching.
 🛒 Mahsulot:
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun oq shakar ishlatmaslikka harakat qiling.
 
@@ -364,7 +364,7 @@ Guruchni alohida pishiring, tovuqni qovurib, birga torting.
 • Basmati guruch
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta oddiy guruch o'rniga basmati guruchini sinab ko'ring.
 
@@ -383,7 +383,7 @@ Sabzavot yoki tuxumni kokos yog'ida pishirib ko'ring.
 • Organic kokos yog'i
 • Extra Virgin kokos yog'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun bitta taomni kokos yog'ida tayyorlang.
 
@@ -402,7 +402,7 @@ Yogurtga 1 osh qoshiq chia urug'i qo'shib iste'mol qiling.
 • Chia urug'i
 • Zig'ir urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun bitta taomga urug' qo'shing.
 
@@ -421,7 +421,7 @@ Bodom uni oq un o'rniga yaxshi muqobil bo'lib, retseptni oqsil va foydali yog'la
 🛒 Mahsulot:
 • Bodom uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta bitta retseptni bodom uni bilan tayyorlang.
 
@@ -439,7 +439,7 @@ Suvga bir necha tomchi limon yoki ozgina olma sirkasi qo'shib iching.
 🛒 Mahsulot:
 • Olma sirkasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun birorta ham gazli ichimlik ichmang.
 
@@ -458,7 +458,7 @@ Keto non tayyorlaganda psillium qo'shib ko'ring.
 • Psillium sheluxa
 • Psillium uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Psillium bilan birinchi retseptingizni tayyorlang.
 
@@ -478,7 +478,7 @@ Oq shakar ishlatilmaydi va tayyorlanishi juda oson.
 • Kokos qirindisi
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun pechenyeni shakarsiz tayyorlang.
 
@@ -496,7 +496,7 @@ Bugungi salatingizga Himalay tuzi qo'shib ko'ring.
 🛒 Mahsulot:
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugungi ovqatni Himalay tuzi bilan tayyorlang.
 
@@ -515,7 +515,7 @@ Yeryong'oq pastasi ustiga chia urug'i seping.
 • Yeryong'oq pastasi
 • Chia urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun foydali gazak tayyorlang.
 
@@ -535,7 +535,7 @@ Yogurt + chia + kokos qirindisi + eritritol.
 • Kokos qirindisi
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Ertaga yangi nonushta tayyorlang.
 
@@ -555,7 +555,7 @@ Shirin ta'mdan voz kechmasdan, oq shakarni kamaytirishga yordam beradigan ichiml
 • Eritritol
 • Kakao nibs
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun kakaoingizni oq shakarsiz tayyorlang.
 
@@ -573,7 +573,7 @@ Salatingiz ustiga 1 choy qoshiq qora sedana seping.
 🛒 Mahsulot:
 • Qora sedana
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun bitta taomga qora sedana qo'shib ko'ring.
 
@@ -592,7 +592,7 @@ Tuxumni GHEE yog'ida pishirib, sabzavot bilan iste'mol qiling.
 • Tabiiy GHEE
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun bitta ovqatingizga qo'shimcha sabzavot qo'shing.
 
@@ -614,7 +614,7 @@ Tolaga boy nonushta bo'lib, uzoqroq vaqt to'qlik hissini saqlashga yordam beradi
 • Kokos qirindisi
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Ertangi nonushtani bugunoq tayyorlab qo'ying.
 
@@ -632,7 +632,7 @@ Har luqmani yaxshilab chaynashga harakat qiling.
 🛒 Tavsiya etiladigan mahsulot:
 • Olma sirkasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugungi tushlikni telefonsiz iste'mol qiling.
 
@@ -650,7 +650,7 @@ Sabzavotli salat ustiga bir hovuch qovoq urug'i seping.
 🛒 Mahsulot:
 • Qovoq urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun chips o'rniga urug'larni tanlang.
 
@@ -670,7 +670,7 @@ Ratsioningizni xilma-xil qilishning oddiy usullaridan biri.
 • Yashil grechka
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta yangi don mahsulotini sinab ko'ring.
 
@@ -688,7 +688,7 @@ Shirinlik qo'shmoqchi bo'lsangiz, miqdorini nazorat qiling.
 🛒 Mahsulot:
 • Zomin tog' asali
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun shirinlik porsiyasini kamaytirishga harakat qiling.
 
@@ -706,7 +706,7 @@ Uy noniga javdar unidan ozroq qo'shib ko'ring.
 🛒 Mahsulot:
 • Javdar uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta yangi un turini sinab ko'ring.
 
@@ -725,7 +725,7 @@ Yeryong'oq pastasi va chia urug'idan kichik gazak tayyorlang.
 • Yeryong'oq pastasi
 • Chia urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Ertangi gazagingizni bugunoq tayyorlang.
 
@@ -745,7 +745,7 @@ Oddiy, mazali va tez tayyor bo'ladigan garnir.
 • Tabiiy GHEE
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun bitta ovqatni GHEE yog'ida tayyorlang.
 
@@ -767,7 +767,7 @@ Masalliqlar:
 • Basmati guruch
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ❤️ Ushbu maslahatni yaqinlaringiz bilan baham ko'ring.
 @@@
@@ -784,7 +784,7 @@ Keyingi non retseptingizga 1-2 osh qoshiq psillium qo'shib ko'ring.
 • Psillium sheluxa
 • Psillium uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 📤 Ushbu postni yaqinlaringizga ham yuboring.
 @@@
@@ -803,7 +803,7 @@ Masalliqlar:
 • Kokos uni
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌿 Ushbu retseptni saqlab qo'ying.
 @@@
@@ -819,7 +819,7 @@ Suv + olma sirkasi + limon.
 🛒 Mahsulot:
 • Olma sirkasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🤝 Ushbu maslahatni do'stlaringiz bilan ulashing.
 @@@
@@ -836,7 +836,7 @@ Bodom uni oddiy undan boshqacha ishlaydi. Tuxum bilan aralashtirilganda yumshoq 
 🛒 Mahsulot:
 • Bodom uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ❤️ Sog'liq — eng yaxshi sovg'a.
 @@@
@@ -850,7 +850,7 @@ Shirinlik o'rniga bir osh qoshiq yeryong'oq pastasi ustiga chia urug'i sepib ist
 • Yeryong'oq pastasi
 • Chia urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌱 Ushbu maslahatni yaqinlaringiz bilan ulashing.
 @@@
@@ -869,7 +869,7 @@ Masalliqlar:
 • Kokos uni
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 📤 Retseptni saqlab qo'ying.
 @@@
@@ -885,7 +885,7 @@ Pomidor va bodring salatiga zaytun yog'i qo'shib ko'ring.
 🛒 Mahsulot:
 • Extra Virgin zaytun yog'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 💚 Foydali maslahatlarni ulashishni unutmang.
 @@@
@@ -901,7 +901,7 @@ Yashil grechkadan garnir tayyorlang.
 🛒 Mahsulot:
 • Yashil grechka doni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🤝 Ushbu postni yaqinlaringiz bilan baham ko'ring.
 @@@
@@ -937,7 +937,7 @@ Yozda organizm ko'proq suyuqlik yo'qotadi. Suvni faqat chanqaganda emas, kun dav
 🛒 Mahsulot:
 • Olma sirkasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun 2 litr suv ichishga harakat qiling.
 
@@ -961,7 +961,7 @@ Shar shakliga keltirib, idishga solib bering.
 • Kokos qirindisi
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Ertangi tamaddini bugunoq tayyorlang.
 
@@ -980,7 +980,7 @@ Mashqdan 30–60 daqiqa oldin yengil gazak tanlash mashq paytida o'zingizni qula
 • Yeryong'oq pastasi
 • Pista mag'zi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Keyingi mashqdan oldin ushbu gazakni sinab ko'ring.
 
@@ -1002,7 +1002,7 @@ Masalliqlar:
 • Eritritol
 • Yeryong'oq pastasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Dam olish kunida shu desertni tayyorlab ko'ring.
 
@@ -1021,7 +1021,7 @@ Suv ichib, keyin yengil taomdan boshlang.
 • Himalay tuzi
 • Olma sirkasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Keyingi iftorda ovqatni sekin iste'mol qiling.
 
@@ -1044,7 +1044,7 @@ Aralashtirib, 1 soat muzlatkichga qo'ying.
 • Eritritol
 • Kokos qirindisi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bu hafta bitta shakarsiz desert tayyorlang.
 
@@ -1065,7 +1065,7 @@ Masalliqlar:
 • Bodom uni
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Yakshanba kuni bir haftalik gazak tayyorlang.
 
@@ -1084,7 +1084,7 @@ Tuxum + GHEE + sabzavot.
 • Tabiiy GHEE
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Keyingi mashqdan keyin fastfud o'rniga uy ovqatini tanlang.
 
@@ -1105,7 +1105,7 @@ Masalliqlar:
 • Eritritol
 • Kakao nibs
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bu hafta mehmonlarga yangi retsept tayyorlang.
 
@@ -1124,7 +1124,7 @@ Bugun oq shakar o'rniga eritritoldan foydalanib ko'ring.
 • Eritritol
 • Alluloza + Steviya
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta bitta yangi sog'lom odatni boshlang.
 
@@ -1149,7 +1149,7 @@ Aralashtirib, shar shakliga keltiring va 20 daqiqa muzlatkichga qo'ying.
 • Kokos qirindisi
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Ertangi tamaddini bugunoq tayyorlang.
 
@@ -1169,7 +1169,7 @@ Mashqdan oldin juda og'ir ovqat yeyish noqulaylik tug'dirishi mumkin. Yengil gaz
 • Yeryong'oq pastasi
 • Pista mag'zi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Keyingi mashqdan oldin ushbu gazakni sinab ko'ring.
 
@@ -1194,7 +1194,7 @@ Aralashtirib, kichik sharlar yasang va muzlatkichga qo'ying.
 • Eritritol
 • Yeryong'oq pastasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Dam olish kuni ushbu desertni tayyorlang.
 
@@ -1215,7 +1215,7 @@ Iftorni birdaniga ko'p ovqat bilan emas, suv va yengil taom bilan boshlash qulay
 • Olma sirkasi
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Keyingi iftorda shoshilmay ovqatlaning.
 
@@ -1235,7 +1235,7 @@ Keto non tayyorlab ko'ring.
 • Kokos uni
 • Psillium
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta bir marta keto non tayyorlang.
 
@@ -1256,7 +1256,7 @@ Chia urug'i va kokos qirindisi qo'shsangiz, oddiy yogurt ham mazali gazakka ayla
 • Chia urug'i
 • Kokos qirindisi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun yogurtni yangicha usulda tayyorlang.
 
@@ -1277,7 +1277,7 @@ Uyda tayyorlangan sovuq ichimlik ham mazali, ham tetiklantiruvchi bo'lishi mumki
 🛒 Mahsulot:
 • Olma sirkasi (ixtiyoriy)
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun gazli ichimlik o'rniga suv iching.
 
@@ -1301,7 +1301,7 @@ Aralashtirib, 180°C da 20 daqiqa pishiring.
 • Bodom uni
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta shakarsiz keks tayyorlang.
 
@@ -1321,7 +1321,7 @@ Haftalik ovqat rejangizni yozib chiqing va shunga qarab xarid qiling.
 • Bodom uni
 • Chia urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Keyingi xaridga ro'yxat bilan boring.
 
@@ -1342,7 +1342,7 @@ Bugun bitta foydali mahsulotni sinab ko'ring.
 • GHEE
 • Bodom uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugundan bitta yangi sog'lom odatni boshlang.
 
@@ -1361,7 +1361,7 @@ Ko'p hollarda ratsionda tolaga boy mahsulotlar kam bo'ladi. Psillium tolaga boy 
 • Psillium sheluxa
 • Psillium uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun tolaga boy mahsulotni ratsioningizga qo'shing.
 
@@ -1380,7 +1380,7 @@ Tushlikning yarmini sabzavotlar bilan to'ldiring.
 • Zaytun yog'i
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugungi tushlikka albatta sabzavot qo'shing.
 
@@ -1406,7 +1406,7 @@ Xamirni tindirib, pechda pishiring.
 • Javdar uni
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu oy zakvaskali non tayyorlab ko'ring.
 
@@ -1424,7 +1424,7 @@ Quymoqqa polba uni qo'shib ko'ring.
 🛒 Mahsulot:
 • Polba uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta yangi un turini sinab ko'ring.
 
@@ -1448,7 +1448,7 @@ Aralashtirib, iliq holda torting.
 • Kakao nibs
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta yangi ichimlik tayyorlang.
 
@@ -1466,7 +1466,7 @@ Mashqqa suv idishi bilan boring.
 🛒 Mahsulot:
 • Himalay tuzi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Keyingi mashqda kamida 1 litr suv iching.
 
@@ -1485,7 +1485,7 @@ Yeryong'oq pastasi ustiga kokos qirindisi seping.
 • Yeryong'oq pastasi
 • Kokos qirindisi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun pechenye o'rniga shu gazakni tanlang.
 
@@ -1503,7 +1503,7 @@ Sabzavotli salatingiz ustiga bir hovuch qovoq urug'i seping.
 🛒 Mahsulot:
 • Qovoq urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun salatingizni yangicha usulda tayyorlang.
 
@@ -1528,7 +1528,7 @@ Bulgurni pishirib, sabzavotlar bilan aralashtiring.
 • Bulgur
 • Zaytun yog'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta bulgurdan retsept tayyorlang.
 
@@ -1549,7 +1549,7 @@ Shu hafta yangi mahsulotdan kamida bitta retsept tayyorlang.
 • Bodom uni
 • Kokos uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugundan bitta yangi sog'lom odatni boshlang.
 
@@ -1568,7 +1568,7 @@ Choy yoki qahvangizga bugun oq shakar o'rniga eritritol qo'shib ko'ring.
 • Eritritol
 • Alluloza + Steviya
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun oq shakar ishlatmang.
 
@@ -1587,7 +1587,7 @@ Yeryong'oq pastasi oqsil va foydali yog'larni o'z ichiga oladi. Uni me'yorida is
 • Yeryong'oq pastasi
 • Chia urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun pechenye o'rniga foydali gazak tanlang.
 
@@ -1611,7 +1611,7 @@ Aralashtirib, past olovda pishiring.
 • Kokos uni
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta yangi quymoq retseptini sinab ko'ring.
 
@@ -1630,7 +1630,7 @@ Sabzavotli salat ustiga qovoq urug'i va zaytun yog'i qo'shing.
 • Qovoq urug'i
 • Zaytun yog'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugungi tushlikka albatta salat qo'shing.
 
@@ -1655,7 +1655,7 @@ Aralashtirib, qolipga soling va 1 soat muzlatkichda qoldiring.
 • Yeryong'oq pastasi
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Dam olish kuni ushbu desertni tayyorlang.
 
@@ -1674,7 +1674,7 @@ Tuxum + chia puding + ko'katlar.
 • Chia urug'i
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Keyingi saharlik menyusini bugunoq yozib qo'ying.
 
@@ -1694,7 +1694,7 @@ Oshxonangizdagi foydali mahsulot bilan bitta yangi retsept tayyorlang.
 • Kokos uni
 • Chia urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun bitta yangi retsept tayyorlang.
 
@@ -1712,7 +1712,7 @@ Non retseptingizga javdar unidan ozgina qo'shib ko'ring.
 🛒 Mahsulot:
 • Javdar uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta yangi un turini sinab ko'ring.
 
@@ -1736,7 +1736,7 @@ Aralashtirib, 15–20 daqiqa kuting.
 • Chia urug'i
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Ertaga shu nonushtani tayyorlang.
 
@@ -1754,7 +1754,7 @@ Bugungi pishiriqqa 2-3 osh qoshiq zig'ir uni qo'shing.
 🛒 Mahsulotlar:
 • Zig'ir uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌿 Balki aynan shu maslahat kimningdir sog'lom hayotini boshlashiga turtki bo'lar. Ulashishni unutmang.
 @@@
@@ -1773,7 +1773,7 @@ Barcha masalliqlarni aralashtirib, issiq tovada ikki tomonini qovuring.
 • Zig'ir uni
 • Himalay tuz
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🥗 Sog'lom ovqatlanish yolg'iz boshlanmaydi. Ushbu retseptni yaqinlaringiz bilan ulashing.
 @@@
@@ -1787,7 +1787,7 @@ Kuki tayyorlaganda oddiy un o'rniga fistashka unidan foydalaning.
 🛒 Mahsulot:
 • Fistashka uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ✨ Foydali ma'lumotni o'zingizda saqlab qolmang. Uni boshqalar bilan ham bo'lishing.
 @@@
@@ -1803,7 +1803,7 @@ Kechki ovqatga qizil guruch (Devzira) bilan sabzavotli salat tayyorlang.
 🛒 Mahsulotlar:
 • Qizil guruch (Devzira)
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun kechki ovqatni odatdagidan yengilroq tuting.
 
@@ -1821,7 +1821,7 @@ Ertalabki kefirga 1 choy qoshiq rastaropsha uni qo'shib ko'ring.
 🛒 Mahsulotlar:
 • Rastaropsha uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ❤️ Sog'liq — eng yaxshi sovg'a. Ushbu maslahatni yaqin insonlaringiz bilan baham ko'ring.
 @@@
@@ -1840,7 +1840,7 @@ Ovsyanka unini sut bilan aralashtirib, 5 daqiqa qaynating, ustiga meva qo'shing.
 • Ovsyanka uni
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 💛 Yaxshi odatlar yaqinlaringiz bilan birga boshlanganida yanada oson davom etadi. Ushbu postni ulashing.
 @@@
@@ -1854,7 +1854,7 @@ Kotletga bog'lovchi sifatida no'xat unidan foydalaning.
 🛒 Mahsulot:
 • No'xat uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 📤 Ushbu maslahatni sog'lom ovqatlanishni istaydigan yaqinlaringizga ham yuboring.
 @@@
@@ -1870,7 +1870,7 @@ Bugun sotib olayotgan mahsulotning tarkibiga bir bor qarab chiqing.
 🛒 Mahsulotlar:
 • Yashil grechka uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta har xaridda tarkibni tekshirishni odat qiling.
 @@@
@@ -1886,7 +1886,7 @@ Bugungi nonushtaga javdar unidan lepyoshka tayyorlang.
 🛒 Mahsulotlar:
 • Javdar uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌿 Balki aynan shu maslahat kimningdir sog'lom hayotini boshlashiga turtki bo'lar. Ulashishni unutmang.
 @@@
@@ -1905,7 +1905,7 @@ Barcha masalliqlarni xamir holiga aralashtirib, 40 daqiqa dam berib, so'ng pishi
 • Kepakli bug'doy uni
 • Himalay tuz
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🥗 Sog'lom ovqatlanish yolg'iz boshlanmaydi. Ushbu retseptni yaqinlaringiz bilan ulashing.
 @@@
@@ -1919,7 +1919,7 @@ Keto nonga 1-2 osh qoshiq psillium qo'shib ko'ring — xamir yanada bog'lanadi.
 🛒 Mahsulot:
 • Psillium sheluxa
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ✨ Foydali ma'lumotni o'zingizda saqlab qolmang. Uni boshqalar bilan ham bo'lishing.
 @@@
@@ -1935,7 +1935,7 @@ Bugungi sousga bir chimdim ksantan kamedi qo'shing.
 🛒 Mahsulotlar:
 • Ksantan kamedi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun bitta taomda ksantan kamedini sinab ko'ring.
 @@@
@@ -1951,7 +1951,7 @@ Ertalabki choyingizga bir necha tomchi toza steviya qo'shing.
 🛒 Mahsulotlar:
 • Toza Steviya
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ❤️ Sog'liq — eng yaxshi sovg'a. Ushbu maslahatni yaqin insonlaringiz bilan baham ko'ring.
 @@@
@@ -1969,7 +1969,7 @@ Limon sharbatini suvga siqing, steviya qo'shing va sovutib xizmat qiling.
 🛒 Mahsulotlar:
 • Toza Steviya
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🤝 Birga sog'lom yashash osonroq. Ushbu retseptni do'stlaringizga ham yuboring.
 @@@
@@ -1983,7 +1983,7 @@ Salatingiz ustiga bir osh qoshiq qora kunjut sepib ko'ring.
 🛒 Mahsulot:
 • Qora kunjut
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 📤 Ushbu maslahatni sog'lom ovqatlanishni istaydigan yaqinlaringizga ham yuboring.
 @@@
@@ -1999,7 +1999,7 @@ Ertalabki nonushtaga oq kunjut qo'shing.
 🛒 Mahsulotlar:
 • Oq kunjut
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta har kuni nonushtaga bir turdagi urug' qo'shib ko'ring.
 @@@
@@ -2015,7 +2015,7 @@ Bugungi gazakka bir hovuch qovoq urug'i tayyorlang.
 🛒 Mahsulotlar:
 • Qovoq urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌿 Balki aynan shu maslahat kimningdir sog'lom hayotini boshlashiga turtki bo'lar. Ulashishni unutmang.
 @@@
@@ -2034,7 +2034,7 @@ Barchasini aralashtirib, kichik idishda saqlang — kun davomida gazak sifatida 
 • Zig'ir urug'i
 • Chia urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🥗 Sog'lom ovqatlanish yolg'iz boshlanmaydi. Ushbu retseptni yaqinlaringiz bilan ulashing.
 @@@
@@ -2048,7 +2048,7 @@ Ertalabki choyga 1 choy qoshiq tog' asali qo'shib ko'ring.
 🛒 Mahsulot:
 • Zomin tog' asali
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ✨ Foydali ma'lumotni o'zingizda saqlab qolmang. Uni boshqalar bilan ham bo'lishing.
 @@@
@@ -2062,7 +2062,7 @@ Bugun asalni bir choy qoshiqdan oshirmang.
 🛒 Mahsulotlar:
 • Zomin tog' asali
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shirinliklarni o'lchab iste'mol qilishni shu haftadan boshlang.
 @@@
@@ -2078,7 +2078,7 @@ Tushlikka losos tushonkasidan salat tayyorlang.
 🛒 Mahsulotlar:
 • Losos baliq tushonkasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ❤️ Sog'liq — eng yaxshi sovg'a. Ushbu maslahatni yaqin insonlaringiz bilan baham ko'ring.
 @@@
@@ -2097,7 +2097,7 @@ Sabzavotlarni maydalab, losos bilan aralashtiring, zaytun yog'i va tuz bilan tat
 • Zaytun yog'i
 • Himalay tuz
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🤝 Birga sog'lom yashash osonroq. Ushbu retseptni do'stlaringizga ham yuboring.
 @@@
@@ -2111,7 +2111,7 @@ Tostga xandonpista pastasi surtib nonushta qiling.
 🛒 Mahsulot:
 • Xandonpista pastasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 📤 Ushbu maslahatni sog'lom ovqatlanishni istaydigan yaqinlaringizga ham yuboring.
 @@@
@@ -2128,7 +2128,7 @@ Bugun uy sharoitida foydali desert tayyorlab ko'ring.
 • Xandonpista pastasi
 • Kakao nibs
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Do'kondan desert sotib olish o'rniga uyda tayyorlang.
 @@@
@@ -2144,7 +2144,7 @@ Ertalabki qahvangizga kokos shakaridan solib ko'ring.
 🛒 Mahsulotlar:
 • Kokos shakari
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌿 Balki aynan shu maslahat kimningdir sog'lom hayotini boshlashiga turtki bo'lar. Ulashishni unutmang.
 @@@
@@ -2161,7 +2161,7 @@ Barcha masalliqlarni aralashtirib, iliq holda iching.
 🛒 Mahsulotlar:
 • Kokos shakari
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 💛 Yaxshi odatlar yaqinlaringiz bilan birga boshlanganida yanada oson davom etadi. Ushbu postni ulashing.
 @@@
@@ -2175,7 +2175,7 @@ Uyda non pishirishni tabiiy hamirturush bilan sinab ko'ring.
 🛒 Mahsulot:
 • Tabiiy hamirturush
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ✨ Foydali ma'lumotni o'zingizda saqlab qolmang. Uni boshqalar bilan ham bo'lishing.
 @@@
@@ -2192,7 +2192,7 @@ Shu hafta bir marta uyda non pishiring.
 • Tabiiy hamirturush
 • Kepakli bug'doy uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Haftalik non pishirish odatini boshlang.
 @@@
@@ -2208,7 +2208,7 @@ Ertalabki kashaga bir osh qoshiq kakao nibs qo'shing.
 🛒 Mahsulotlar:
 • Kakao nibs
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ❤️ Sog'liq — eng yaxshi sovg'a. Ushbu maslahatni yaqin insonlaringiz bilan baham ko'ring.
 @@@
@@ -2227,7 +2227,7 @@ Masalliqlarni aralashtirib, sharcha shakliga keltiring va sovutgichda ushlab tur
 • Kakao nibs
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🥗 Sog'lom ovqatlanish yolg'iz boshlanmaydi. Ushbu retseptni yaqinlaringiz bilan ulashing.
 @@@
@@ -2241,7 +2241,7 @@ Salatingizni issiq zaytun yog'i o'rniga sovuq siqim zaytun yog'i bilan tatiting.
 🛒 Mahsulot:
 • Zaytun yog'i (Extra Vergin)
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 📤 Ushbu maslahatni sog'lom ovqatlanishni istaydigan yaqinlaringizga ham yuboring.
 @@@
@@ -2258,7 +2258,7 @@ Oshxonangizda ikkala yog' turini alohida ajratib qo'ying.
 • Zaytun yog'i (qovurish uchun)
 • Zaytun yog'i (Extra Vergin)
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugundan boshlab yog' turini vazifasiga qarab tanlang.
 @@@
@@ -2274,7 +2274,7 @@ Ertalabki tuxumni saryog'da qovuring.
 🛒 Mahsulotlar:
 • Uy kuvi saryog'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌿 Balki aynan shu maslahat kimningdir sog'lom hayotini boshlashiga turtki bo'lar. Ulashishni unutmang.
 @@@
@@ -2292,7 +2292,7 @@ Saryog'ni tovada eritib, tuxumni solib, tuz bilan tatiting.
 • Uy kuvi saryog'i
 • Himalay tuz
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🤝 Birga sog'lom yashash osonroq. Ushbu retseptni do'stlaringizga ham yuboring.
 @@@
@@ -2306,7 +2306,7 @@ Bugungi palovda oddiy guruch o'rniga qizil guruchni sinab ko'ring.
 🛒 Mahsulot:
 • Qizil guruch (Devzira)
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ✨ Foydali ma'lumotni o'zingizda saqlab qolmang. Uni boshqalar bilan ham bo'lishing.
 @@@
@@ -2322,7 +2322,7 @@ Bugun odatiy guruch o'rniga qora guruchdan foydalaning.
 🛒 Mahsulotlar:
 • Qora guruch
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta uchta har xil guruch turini sinab ko'ring.
 @@@
@@ -2338,7 +2338,7 @@ Tushlikka qora guruch va sabzavotdan taom tayyorlang.
 🛒 Mahsulotlar:
 • Qora guruch
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ❤️ Sog'liq — eng yaxshi sovg'a. Ushbu maslahatni yaqin insonlaringiz bilan baham ko'ring.
 @@@
@@ -2357,7 +2357,7 @@ Bulgurni qaynatib soving, sabzavotlar bilan aralashtirib, yog' va tuz bilan tati
 • Zaytun yog'i
 • Himalay tuz
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🥗 Sog'lom ovqatlanish yolg'iz boshlanmaydi. Ushbu retseptni yaqinlaringiz bilan ulashing.
 @@@
@@ -2371,7 +2371,7 @@ Palov o'rniga bulgur guruchidan pilaf tayyorlab ko'ring.
 🛒 Mahsulot:
 • Bulgur guruchi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 📤 Ushbu maslahatni sog'lom ovqatlanishni istaydigan yaqinlaringizga ham yuboring.
 @@@
@@ -2387,7 +2387,7 @@ Kechki ovqatdan keyin fenxel choyi iching.
 🛒 Mahsulotlar:
 • Arpabodiyon (fenxel)
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta ovqatdan keyin fenxel choyini odat qiling.
 @@@
@@ -2403,7 +2403,7 @@ Bugungi sho'rvaga bir chimdim fenxel urug'i qo'shing.
 🛒 Mahsulotlar:
 • Arpabodiyon (fenxel)
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌿 Balki aynan shu maslahat kimningdir sog'lom hayotini boshlashiga turtki bo'lar. Ulashishni unutmang.
 @@@
@@ -2419,7 +2419,7 @@ Urug'ni qaynoq suvga solib, 5-7 daqiqa damlab iching.
 🛒 Mahsulotlar:
 • Arpabodiyon (fenxel)
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 💛 Yaxshi odatlar yaqinlaringiz bilan birga boshlanganida yanada oson davom etadi. Ushbu postni ulashing.
 @@@
@@ -2433,7 +2433,7 @@ Non yoki lepyoshka ustiga qora sedana sepib pishiring.
 🛒 Mahsulot:
 • Qora sedana
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ✨ Foydali ma'lumotni o'zingizda saqlab qolmang. Uni boshqalar bilan ham bo'lishing.
 @@@
@@ -2449,7 +2449,7 @@ Bugun choyingizga qora sedana qo'shing.
 🛒 Mahsulotlar:
 • Qora sedana
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta har kuni bitta yangi ziravor sinab ko'ring.
 @@@
@@ -2465,7 +2465,7 @@ Bugungi lepyoshkani polba unidan tayyorlang.
 🛒 Mahsulotlar:
 • Polba uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ❤️ Sog'liq — eng yaxshi sovg'a. Ushbu maslahatni yaqin insonlaringiz bilan baham ko'ring.
 @@@
@@ -2484,7 +2484,7 @@ Xamir qorib, 10 daqiqa dam bering, so'ng yupqa yoyib issiq tovada pishiring.
 • Zaytun yog'i
 • Himalay tuz
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🤝 Birga sog'lom yashash osonroq. Ushbu retseptni do'stlaringizga ham yuboring.
 @@@
@@ -2498,7 +2498,7 @@ Bugungi quymoqqa makkajo'xori unidan qo'shib ko'ring.
 🛒 Mahsulot:
 • Makkajo'xori uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 📤 Ushbu maslahatni sog'lom ovqatlanishni istaydigan yaqinlaringizga ham yuboring.
 @@@
@@ -2515,7 +2515,7 @@ Bugun guruch unidan bir taom tayyorlang.
 • Guruch uni
 • Makkajo'xori uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Glyutensiz un turlarini shu hafta sinab ko'ring.
 @@@
@@ -2531,7 +2531,7 @@ Bugungi sho'rvaga bir osh qoshiq arpa uni qo'shing.
 🛒 Mahsulotlar:
 • Arpa uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌿 Balki aynan shu maslahat kimningdir sog'lom hayotini boshlashiga turtki bo'lar. Ulashishni unutmang.
 @@@
@@ -2548,7 +2548,7 @@ Masalliqlarni aralashtirib, issiq tovada ikki tomonini qovuring.
 🛒 Mahsulotlar:
 • Kepak (o'rtacha kattalikda)
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🥗 Sog'lom ovqatlanish yolg'iz boshlanmaydi. Ushbu retseptni yaqinlaringiz bilan ulashing.
 @@@
@@ -2562,7 +2562,7 @@ Odatiy grechka o'rniga yashil grechka donidan bo'tqa tayyorlang.
 🛒 Mahsulot:
 • Yashil grechka doni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ✨ Foydali ma'lumotni o'zingizda saqlab qolmang. Uni boshqalar bilan ham bo'lishing.
 @@@
@@ -2578,7 +2578,7 @@ Kechki ovqatga yashil grechka donidan bo'tqa tayyorlang.
 🛒 Mahsulotlar:
 • Yashil grechka doni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta yangi bir donli taom tayyorlab ko'ring.
 @@@
@@ -2594,7 +2594,7 @@ Ertalabki tostga yeryong'oq pastasi surting.
 🛒 Mahsulotlar:
 • Yeryong'oq pastasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ❤️ Sog'liq — eng yaxshi sovg'a. Ushbu maslahatni yaqin insonlaringiz bilan baham ko'ring.
 @@@
@@ -2613,7 +2613,7 @@ Barchasini aralashtirib, sharcha shakliga keltiring va sovutgichda ushlab turing
 • Alluloza
 • Yeryong'oq pastasi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🤝 Birga sog'lom yashash osonroq. Ushbu retseptni do'stlaringizga ham yuboring.
 @@@
@@ -2627,7 +2627,7 @@ Choy yoki desertlarda oddiy shakar o'rniga allulozadan foydalaning.
 🛒 Mahsulot:
 • Alluloza
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 📤 Ushbu maslahatni sog'lom ovqatlanishni istaydigan yaqinlaringizga ham yuboring.
 @@@
@@ -2643,7 +2643,7 @@ Bugungi desertga alluloza+steviya qo'shing.
 🛒 Mahsulotlar:
 • Alluloza + Steviya
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta ikki xil shirinlashtiruvchini sinab ko'ring.
 @@@
@@ -2659,7 +2659,7 @@ Bugungi qovurmaga kokos yog'idan foydalaning.
 🛒 Mahsulotlar:
 • Kokos yog'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌿 Balki aynan shu maslahat kimningdir sog'lom hayotini boshlashiga turtki bo'lar. Ulashishni unutmang.
 @@@
@@ -2677,7 +2677,7 @@ Kokos yog'ini tovada eritib, sabzavotlarni qovuring, tuz bilan tatiting.
 • Kokos yog'i
 • Himalay tuz
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🥗 Sog'lom ovqatlanish yolg'iz boshlanmaydi. Ushbu retseptni yaqinlaringiz bilan ulashing.
 @@@
@@ -2691,7 +2691,7 @@ Non pishirishda oliy nav o'rniga 2-nav undan foydalanib ko'ring.
 🛒 Mahsulot:
 • 2-nav un
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ✨ Foydali ma'lumotni o'zingizda saqlab qolmang. Uni boshqalar bilan ham bo'lishing.
 @@@
@@ -2707,7 +2707,7 @@ Bugungi gazakni pista mag'ziga almashtiring.
 🛒 Mahsulotlar:
 • Pista mag'zi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta gazaklaringizni yong'oq va urug'larga almashtiring.
 @@@
@@ -2723,7 +2723,7 @@ Ish stoli yoniga bir hovuch pista mag'zi qo'yib qo'ying.
 🛒 Mahsulotlar:
 • Pista mag'zi
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ❤️ Sog'liq — eng yaxshi sovg'a. Ushbu maslahatni yaqin insonlaringiz bilan baham ko'ring.
 @@@
@@ -2743,7 +2743,7 @@ Barchasini aralashtirib, kechasi sovutgichda qoldiring — ertalab tayyor puddin
 • Zig'ir urug'i
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🤝 Birga sog'lom yashash osonroq. Ushbu retseptni do'stlaringizga ham yuboring.
 @@@
@@ -2757,7 +2757,7 @@ Zig'ir urug'ini maydalab, kefir yoki yogurtga qo'shib ko'ring.
 🛒 Mahsulot:
 • Zig'ir urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 📤 Ushbu maslahatni sog'lom ovqatlanishni istaydigan yaqinlaringizga ham yuboring.
 @@@
@@ -2773,7 +2773,7 @@ Bugun rastaropsha urug'ini maydalab, kefirga qo'shing.
 🛒 Mahsulotlar:
 • Rastaropsha urug'i
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Shu hafta yangi bir urug' turini ratsioningizga qo'shing.
 @@@
@@ -2789,7 +2789,7 @@ Bugungi ichimlikka 1 choy qoshiq psillium uni qo'shing.
 🛒 Mahsulotlar:
 • Psillium uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🌿 Balki aynan shu maslahat kimningdir sog'lom hayotini boshlashiga turtki bo'lar. Ulashishni unutmang.
 @@@
@@ -2807,7 +2807,7 @@ Masalliqlarni aralashtirib, issiq tovada ikki tomonini pishiring.
 • Bodom uni
 • Psillium uni
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🥗 Sog'lom ovqatlanish yolg'iz boshlanmaydi. Ushbu retseptni yaqinlaringiz bilan ulashing.
 @@@
@@ -2821,7 +2821,7 @@ Har qanday pishiriqda shakarni to'g'ridan-to'g'ri eritritol bilan almashtirib ko
 🛒 Mahsulot:
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ✨ Foydali ma'lumotni o'zingizda saqlab qolmang. Uni boshqalar bilan ham bo'lishing.
 @@@
@@ -2837,7 +2837,7 @@ Kuningizni shakarsiz ichimlik bilan boshlang.
 🛒 Mahsulotlar:
 • Eritritol
 
-👉 Buyurtma: @ketoshopbot · 📞 +998 993641343
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 🎯 Challenge: Bugun bir kunlik "shakarsiz kun" tanlang.
 @@@
