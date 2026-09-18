@@ -120,16 +120,19 @@ class SubscriptionGateMiddleware(BaseMiddleware):
                 # this middleware blocked outright (handlers/start.py never
                 # ran, so they have no users row yet and any referral
                 # payload was never processed) — see _pending_start_payload.
+                product_id = None
                 try:
                     import referral_contest
                     import bloggers
                     import ad_sources
+                    import product_card
                     from handlers.start import ensure_registered
 
                     payload = _pending_start_payload.pop(user.id, None)
                     referrer_id = referral_contest.parse_ref_payload(payload)
                     blogger_code = bloggers.parse_payload(payload)
                     ad_source = ad_sources.parse_payload(payload)
+                    product_id = product_card.parse_product_payload(payload)
                     await ensure_registered(bot, user, referrer_id, blogger_code, ad_source)
                 except Exception:
                     logger.warning("Deferred registration failed for user %s", user.id, exc_info=True)
@@ -138,6 +141,18 @@ class SubscriptionGateMiddleware(BaseMiddleware):
                 except Exception:
                     pass
                 await event.answer()
+                # They came from the channel's «Kun mahsuloti» post and were
+                # stopped here to subscribe first — now show them the product
+                # they actually tapped, not an empty menu.
+                if product_id is not None:
+                    try:
+                        import database
+                        import product_card
+                        await product_card.open_from_link(
+                            bot, user.id, product_id,
+                            await database.get_user_language(user.id))
+                    except Exception:
+                        logger.warning("Deferred product link failed for user %s", user.id, exc_info=True)
             else:
                 await event.answer(_not_yet_text(lang), show_alert=True)
             return

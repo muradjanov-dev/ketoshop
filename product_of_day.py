@@ -108,14 +108,18 @@ async def pick_product() -> tuple[dict | None, int]:
 
 # ──────────────────────────────── sending ───────────────────────────────────
 
-async def _send_to_user(bot: Bot, user_id: int, product: dict, lang: str) -> bool:
+async def _send_to_user(bot: Bot, user_id: int, product: dict, lang: str,
+                        captions: product_card.CaptionCache) -> bool:
+    import gamification
+    rate = await gamification.buyer_rate(user_id)
+    caption = await captions.get(lang, rate)
     try:
-        await product_card.send_card(bot, user_id, product, lang)
+        await product_card.send_card(bot, user_id, product, lang, rate=rate, caption=caption)
         return True
     except TelegramRetryAfter as e:
         await asyncio.sleep(e.retry_after + 1)
         try:
-            await product_card.send_card(bot, user_id, product, lang)
+            await product_card.send_card(bot, user_id, product, lang, rate=rate, caption=caption)
             return True
         except Exception:
             return False
@@ -131,9 +135,10 @@ async def broadcast(bot: Bot, product: dict) -> tuple[int, int]:
     """Send the card to every eligible buyer, each in their own language."""
     user_ids = await database.get_all_user_ids()
     langs = await database.get_user_languages(user_ids)
+    captions = product_card.CaptionCache(product)
     sent = failed = 0
     for uid in user_ids:
-        ok = await _send_to_user(bot, uid, product, langs.get(uid, "uz"))
+        ok = await _send_to_user(bot, uid, product, langs.get(uid, "uz"), captions)
         sent += ok
         failed += not ok
         await asyncio.sleep(SEND_DELAY)

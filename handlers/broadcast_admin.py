@@ -341,6 +341,7 @@ async def interest_now(message: Message):
 #   /kun_on       — kunlik yuborishni yoqish
 #   /kun_off      — to'xtatish
 #   /kun_test     — bugungi mahsulot kartochkasini FAQAT o'zingizga yuboradi
+#   /kun_kanal    — FAQAT kanalga sinov posti (mijozlarga yuborilmaydi)
 #   /kun_now      — hoziroq barchaga va kanalga yuboradi
 # ─────────────────────────────────────────────────────────────────────────────
 import product_of_day
@@ -404,6 +405,29 @@ async def kun_test(message: Message):
     )
     import product_card
     await product_card.send_card(message.bot, message.from_user.id, product, lang)
+
+
+@router.message(Command("kun_kanal"))
+async def kun_kanal(message: Message):
+    """Channel-only dry run: post the card to the channel and tell the admin
+    how it went. No customer ever sees this one — it exists so the channel
+    layout can be checked before a day's real send goes out."""
+    product, _cycle = await product_of_day.pick_product()
+    if product is None:
+        await message.answer("Zaxirada bor mahsulot topilmadi.")
+        return
+    ok = await product_of_day.post_to_channel(message.bot, product)
+    if ok:
+        await message.answer(
+            f"📣 Kanalga sinov posti ketdi: <b>{product.get('name')}</b>\n"
+            f"Mijozlarga yuborilmadi. Yoqmasa — kanaldan o'chirib tashlang.",
+            parse_mode=ParseMode.HTML,
+        )
+    else:
+        await message.answer(
+            "⚠️ Kanalga yuborib bo'lmadi. Bot kanalda admin ekanini va "
+            "post qo'yish huquqi borligini tekshiring."
+        )
 
 
 @router.message(Command("kun_now"))

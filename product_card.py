@@ -124,13 +124,15 @@ async def detail_keyboard(user_id: int, product_id: int, back_category: str,
 
 async def send_card(bot: Bot, chat_id: int, product: dict, lang: str,
                     rate: float | None = None, back_category: str = "",
-                    back_page: int = 0):
+                    back_page: int = 0, caption: str | None = None):
     """Send the full card into a private chat: photo + caption + live keyboard.
-    Used by the daily spotlight and by the channel's «Botda sotib olish» link."""
+    Used by the daily spotlight and by the channel's «Botda sotib olish» link.
+    `caption` lets a broadcast hand in a pre-built text — see CaptionCache."""
     import gamification
     if rate is None:
         rate = await gamification.buyer_rate(chat_id)
-    caption = await build_caption(product, lang, rate)
+    if caption is None:
+        caption = await build_caption(product, lang, rate)
     keyboard = await detail_keyboard(chat_id, product["id"], back_category, back_page,
                                      lang, product["quantity"] <= 0)
     if product.get("photo_id"):
@@ -138,6 +140,26 @@ async def send_card(bot: Bot, chat_id: int, product: dict, lang: str,
                                     reply_markup=keyboard, parse_mode="HTML")
     return await bot.send_message(chat_id, caption, reply_markup=keyboard,
                                   parse_mode="HTML", disable_web_page_preview=True)
+
+
+class CaptionCache:
+    """One product's caption, per (language, cashback rate).
+
+    A broadcast of the same product to thousands of buyers would otherwise
+    re-read the active aksiya and the product's rating once per recipient for
+    a text that only ever differs by those two things — and there are at most
+    a handful of combinations (3 languages x 4 Keto levels).
+    """
+
+    def __init__(self, product: dict):
+        self.product = product
+        self._texts: dict[tuple[str, float | None], str] = {}
+
+    async def get(self, lang: str, rate: float | None) -> str:
+        key = (lang, rate)
+        if key not in self._texts:
+            self._texts[key] = await build_caption(self.product, lang, rate)
+        return self._texts[key]
 
 
 # ─────────────────────── the channel post's deep link ───────────────────────
