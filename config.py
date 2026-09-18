@@ -55,7 +55,7 @@ PAYMENT_RECIPIENT_NAME = os.getenv("PAYMENT_RECIPIENT_NAME", "Jamshid Raupov")
 # Mijozga beriladigan aloqa raqamlari. Vergul bilan bir nechtasini yozsa ham
 # bo'ladi — AI sotuvchi (ai_sales.py) noqulay vaziyatda shularni yuboradi va
 # suhbatni tirik odamga topshiradi.
-SUPPORT_PHONES = os.getenv("SUPPORT_PHONES", "+998 94 618 05 07")
+SUPPORT_PHONES = os.getenv("SUPPORT_PHONES", "+998 99 364 13 43")
 
 # Push admin alerts when a product's stock drops to or below this number
 # after an order. Fires only on the *crossing* — not on every subsequent order.

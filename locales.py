@@ -23,7 +23,7 @@ TEXTS = {
               "🎯 Maqsad - sog'lom turmushni oson qilish.\n"
               "👇 Menyuni tanlang va xaridni boshlang.\n\n"
               "🚚 Yetkazib berish butun O'zbekiston bo'ylab\n"
-              "📞 +998 946180507",
+              "📞 +998 993641343",
         "ru": "🌿 <b>KETO shop - выбор здоровой жизни!</b>\n\n"
               "🥗 <b>ВЫ находитесь в универсальном месте, где собран большой "
               "ассортимент натуральных, кето и диетических продуктов "
@@ -33,7 +33,7 @@ TEXTS = {
               "🎯 Цель — сделать здоровую жизнь проще.\n"
               "👇 Выберите меню и начните покупки.\n\n"
               "🚚 Доставка по всему Узбекистану\n"
-              "📞 +998 946180507",
+              "📞 +998 993641343",
     },
     "main_menu": {
         "uz": "📋 Asosiy menyu:",
@@ -1261,7 +1261,7 @@ TEXTS = {
               "<i>Yetkazib berish shartlari</i> tugmasida narx va muddatlar.\n\n"
               "🌐 <b>Til</b> — Tugma orqali UZ/RU ga almashtiring.\n\n"
               "Savollar yoki muammolar bo'lsa: @{support_username}\n"
-              "📞 +998 946180507",
+              "📞 +998 993641343",
         "ru": "📖 <b>Руководство по использованию бота</b>\n\n"
               "🛒 <b>1. Выбор товара</b>\n"
               "Через Каталог или <i>Поиск товара</i> найдите нужный товар, нажмите "
@@ -1290,7 +1290,7 @@ TEXTS = {
               "В разделе <i>Условия доставки</i> — цены и сроки.\n\n"
               "🌐 <b>Язык</b> — Кнопка переключает между UZ/RU.\n\n"
               "Вопросы или проблемы: @{support_username}\n"
-              "📞 +998 946180507",
+              "📞 +998 993641343",
     },
 
     # ===== PAYMENT =====
