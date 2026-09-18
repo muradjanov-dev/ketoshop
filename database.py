@@ -4,7 +4,7 @@ Database layer using asyncpg (PostgreSQL)
 import asyncpg
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import DATABASE_URL, ADMIN_IDS
 
 pool: asyncpg.Pool | None = None
@@ -3223,15 +3223,58 @@ async def get_abc_analysis(period: str | dict = "all") -> list[dict]:
     return sorted_items
 
 
-async def get_top_ordered_products(limit: int = 3) -> list[dict]:
-    """Most-ordered ACTIVE products for the storefront podium.
+def rotate_daily_window(candidates: list[dict], limit: int,
+                        day: int | None = None) -> list[dict]:
+    """A `limit`-sized slice of `candidates` that advances once per day.
 
-    Ranks by total quantity across all non-cancelled orders, then returns the
-    current product rows (active only) in popularity order. Returns full rows
-    so the webapp can serialize them like any other product card.
+    `candidates` comes in popularity order. The window wraps, so over
+    ceil(len/limit) days every product in the pool gets shown, and the slice
+    is re-sorted by rank before returning — the podium's medals then rank
+    what they actually show rather than pretending to rank the whole shop.
+
+    The day counter is Tashkent-local (UTC+5), so the storefront changes at
+    local midnight and not at 7pm during the evening rush.
+    """
+    if len(candidates) <= limit:
+        return candidates
+    if day is None:
+        day = (datetime.utcnow() + timedelta(hours=5)).toordinal()
+    start = (day * limit) % len(candidates)
+    window = [candidates[(start + i) % len(candidates)] for i in range(limit)]
+    rank = {id(p): i for i, p in enumerate(candidates)}
+    window.sort(key=lambda p: rank[id(p)])
+    return window
+
+
+async def get_top_ordered_products(limit: int = 3, days: int = 30,
+                                   pool_size: int = 12) -> list[dict]:
+    """Products for the storefront podium — a rotating slice of the recent
+    bestsellers, not a frozen all-time top three.
+
+    Two problems with ranking over all orders forever: the same three
+    products win every day, so a returning buyer never sees anything new and
+    the rest of the catalogue gets no exposure; and the query had to read
+    every order row ever placed on each home-page load.
+
+    So: rank the last `days` of sales, take the top `pool_size`, and hand
+    back a `limit`-sized window that advances once a day. Every product shown
+    is genuinely among the recent bestsellers, and over a few days the whole
+    pool gets its turn. Products are returned in popularity order within the
+    window, so the podium's medals still rank what they show.
+
+    Falls back to all-time when the recent window is empty (a quiet period,
+    or a shop that has just started), because an empty podium is worse than
+    an old one.
     """
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT items FROM orders WHERE status <> 'cancelled'")
+        rows = await conn.fetch(
+            """SELECT items FROM orders
+                WHERE status <> 'cancelled'
+                  AND created_at >= CURRENT_TIMESTAMP - ($1 || ' days')::interval""",
+            str(int(days)),
+        )
+        if not rows:
+            rows = await conn.fetch("SELECT items FROM orders WHERE status <> 'cancelled'")
 
         qty_by_id: dict[int, float] = {}
         for r in rows:
@@ -3258,13 +3301,9 @@ async def get_top_ordered_products(limit: int = 3) -> list[dict]:
         )
         by_id = {p["id"]: dict(p) for p in fetched}
 
-        result: list[dict] = []
-        for pid in ranked_ids:
-            if pid in by_id:
-                result.append(by_id[pid])
-                if len(result) >= limit:
-                    break
-        return result
+        # Still-active products, best first — this is the pool to rotate over.
+        candidates = [by_id[pid] for pid in ranked_ids if pid in by_id][:max(pool_size, limit)]
+        return rotate_daily_window(candidates, limit)
 
 
 # Internal/shop-owned Telegram accounts that place orders for testing or

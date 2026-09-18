@@ -393,10 +393,24 @@ async def api_review_delete(request: web.Request):
     return _json({"ok": True})
 
 
+# The podium's window only advances once a day (see
+# database.get_top_ordered_products), so recomputing it on every home-page
+# load meant re-reading a month of orders for an answer that cannot change
+# until midnight. Cached under the local date; the dict never holds more
+# than the current day's entry.
+_TOP_CACHE: dict[str, list] = {}
+
+
 async def api_top(request: web.Request):
-    """Top-3 most-ordered active products for the home podium."""
+    """Storefront podium — a daily-rotating slice of the recent bestsellers."""
     lang = request.get("user_lang", "uz")
-    products = await get_top_ordered_products(limit=3)
+    from datetime import datetime, timedelta
+    day = (datetime.utcnow() + timedelta(hours=5)).strftime("%Y-%m-%d")
+    products = _TOP_CACHE.get(day)
+    if products is None:
+        products = await get_top_ordered_products(limit=3)
+        _TOP_CACHE.clear()
+        _TOP_CACHE[day] = products
     return _json(_serialize_products(products, lang))
 
 
