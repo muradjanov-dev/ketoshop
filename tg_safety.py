@@ -38,6 +38,14 @@ logger = logging.getLogger(__name__)
 # The fields that carry parse_mode-formatted bodies across the Bot API.
 _TEXT_FIELDS = ("text", "caption")
 
+# Telegram's hard limits per field. A body over them is rejected outright —
+# the same silent-failure shape as the parse error above, and one a long
+# product description walks straight into: the description column allows
+# 2000 characters while a photo caption is capped at 1024, so one verbose
+# product makes its whole card un-openable.
+_MAX_LEN = {"text": 4096, "caption": 1024}
+_ELLIPSIS = "…"
+
 # A real tag, not merely a pair of angle brackets: the "<" has to be followed
 # by an optional "/" and then a letter. Without that letter requirement,
 # "narx < 50000 va a > b" reads as one big tag and the whole middle of the
@@ -55,15 +63,31 @@ def strip_markup(value: str) -> str:
     return html.unescape(_TAG.sub("", value or ""))
 
 
+def truncate(value: str, limit: int) -> str:
+    """Cut a body to `limit` characters, markup stripped first.
+
+    Stripping before cutting is what makes this safe: slicing HTML at an
+    arbitrary offset can leave a half-written tag, which Telegram rejects in
+    turn, and a retry that fails the same way is no retry at all.
+    """
+    plain = strip_markup(value or "")
+    if len(plain) <= limit:
+        return plain
+    return plain[: max(0, limit - len(_ELLIPSIS))].rstrip() + _ELLIPSIS
+
+
 class HtmlFallbackMiddleware(BaseRequestMiddleware):
-    """Retry a parse-rejected message once, as plain text."""
+    """Retry a rejected message once: as plain text, or trimmed to fit."""
 
     async def __call__(self, make_request, bot: Bot, method):
         try:
             return await make_request(bot, method)
         except TelegramBadRequest as exc:
             message = str(exc).lower()
-            if "can't parse entities" not in message and "unsupported start tag" not in message:
+            too_long = "too long" in message
+            unparseable = ("can't parse entities" in message
+                           or "unsupported start tag" in message)
+            if not (too_long or unparseable):
                 raise
 
             field = next(
@@ -73,10 +97,16 @@ class HtmlFallbackMiddleware(BaseRequestMiddleware):
                 raise
 
             original = getattr(method, field)
-            retry = method.model_copy(update={field: strip_markup(original), "parse_mode": None})
+            if too_long:
+                fixed = truncate(original, _MAX_LEN.get(field, 4096))
+                why = f"over the {field} length limit"
+            else:
+                fixed = strip_markup(original)
+                why = "rejected as HTML"
+            retry = method.model_copy(update={field: fixed, "parse_mode": None})
             logger.warning(
-                "%s rejected as HTML (%s); resent as plain text. Offending body starts: %.120r",
-                type(method).__name__, exc.message, original,
+                "%s %s (%s); resent as plain text. Offending body starts: %.120r",
+                type(method).__name__, why, exc.message, original,
             )
             return await make_request(bot, retry)
 

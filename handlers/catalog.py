@@ -16,6 +16,10 @@ from locales import get_text, get_category_name, get_unit_name, get_display_unit
 from keyboards import categories_keyboard, back_to_menu_keyboard, cart_shortcut_row
 from config import ITEMS_PER_PAGE
 
+# Longest description that still leaves room for the rest of the product card
+# inside Telegram's 1024-character photo caption.
+DESC_IN_CARD_MAX = 650
+
 router = Router()
 
 PRODUCTS_PER_PAGE = 10
@@ -88,6 +92,12 @@ async def _render_product_detail(callback: CallbackQuery, product_id: int,
     seller_name = product.get("seller_name") or product.get("seller_username") or "—"
     prod_name = localize_product_text(product.get("name"), product.get("name_ru"), lang)
     prod_desc = localize_product_text(product.get("description"), product.get("description_ru"), lang) or "—"
+    # The card goes out as a photo caption, which Telegram caps at 1024
+    # characters; the price/stock/discount/Keto lines below need roughly 350
+    # of those. Trimming the description here keeps the rest of the card —
+    # tg_safety's net would save the message but drop the price with it.
+    if len(prod_desc) > DESC_IN_CARD_MAX:
+        prod_desc = prod_desc[: DESC_IN_CARD_MAX - 1].rstrip() + "…"
 
     discount_until = product.get("discount_until")
     discount = active_discount(product.get("discount_percent"), discount_until)

@@ -16,6 +16,8 @@ Routes (all mounted by setup_admin_routes):
   GET  /admin/api/session         — {categories: [{key, name_uz, name_ru}, ...]}
   POST /admin/api/categories      — {name_uz, name_ru?} -> create a new product category
   GET  /admin/api/products        — all products (incl. archived)
+  GET  /admin/api/products/descriptions        — download every product's text as JSON
+  POST /admin/api/products/descriptions        — upload that JSON back with translations filled in
   POST /admin/api/products        — create
   POST /admin/api/products/{id}   — update (partial)
   POST /admin/api/products/{id}/delete   — archive (is_active = 0)
@@ -231,6 +233,98 @@ async def api_products_list(request: web.Request):
         if p.get("discount_until"):
             p["discount_until"] = p["discount_until"].isoformat()
     return _json({"products": products})
+
+
+# ─────────────────── product descriptions (bulk translate) ──────────────────
+# Nobody has shell access to the server, so the only way in and out of the
+# products table for bulk text work is this pair: download a JSON of every
+# product's text, fill the translations in, upload it back. Deliberately
+# narrow — the upload writes description/description_ru and nothing else, so
+# a stale or hand-edited file can't touch prices, stock or categories.
+
+# Telegram caps a photo caption at 1024 characters and the product card needs
+# roughly 350 of them for price/stock/discount, so anything past this is
+# trimmed with an ellipsis when the card renders (handlers/catalog.py).
+DESCRIPTION_SOFT_MAX = 650
+
+
+@require_auth
+async def api_descriptions_export(request: web.Request):
+    """Every product's text, as a download."""
+    products = await database.admin_list_products(include_inactive=True)
+    rows = [{
+        "id": p["id"],
+        "name": p.get("name") or "",
+        "name_ru": p.get("name_ru") or "",
+        "category": p.get("category") or "",
+        "unit": p.get("unit") or "",
+        "is_active": bool(p.get("is_active")),
+        "description": p.get("description") or "",
+        "description_ru": p.get("description_ru") or "",
+    } for p in products]
+
+    payload = _safe_dumps({"count": len(rows), "products": rows}, ensure_ascii=False, indent=2)
+    return web.Response(
+        body=payload.encode("utf-8"),
+        content_type="application/json",
+        charset="utf-8",
+        headers={"Content-Disposition": 'attachment; filename="ketoshop-tavsiflar.json"'},
+    )
+
+
+@require_auth
+async def api_descriptions_import(request: web.Request):
+    """Write back description / description_ru, by product id.
+
+    Skips a product whose text is unchanged, reports every id it could not
+    find, and never creates or deletes anything.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return _json({"error": "JSON o'qib bo'lmadi"}, status=400)
+
+    rows = body.get("products") if isinstance(body, dict) else body
+    if not isinstance(rows, list):
+        return _json({"error": "JSON ichida 'products' ro'yxati bo'lishi kerak"}, status=400)
+
+    existing = {p["id"]: p for p in await database.admin_list_products(include_inactive=True)}
+    updated, skipped, long_ones = 0, 0, []
+    missing = []
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            pid = int(row.get("id"))
+        except (TypeError, ValueError):
+            continue
+        current = existing.get(pid)
+        if current is None:
+            missing.append(pid)
+            continue
+
+        fields = {}
+        for key in ("description", "description_ru"):
+            if key not in row:
+                continue
+            value = _clean_str(row.get(key), 2000) or ""
+            if value != (current.get(key) or ""):
+                fields[key] = value
+            if len(value) > DESCRIPTION_SOFT_MAX:
+                long_ones.append(pid)
+        if not fields:
+            skipped += 1
+            continue
+        await database.update_product(pid, **fields)
+        updated += 1
+
+    return _json({
+        "ok": True, "updated": updated, "skipped": skipped,
+        "missing": missing[:50], "missing_count": len(missing),
+        "too_long": sorted(set(long_ones))[:50],
+        "soft_max": DESCRIPTION_SOFT_MAX,
+    })
 
 
 def _clean_str(v, max_len=500) -> str | None:
@@ -1435,6 +1529,8 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/session", api_session)
     app.router.add_post("/admin/api/categories", api_categories_create)
     app.router.add_get("/admin/api/products", api_products_list)
+    app.router.add_get("/admin/api/products/descriptions", api_descriptions_export)
+    app.router.add_post("/admin/api/products/descriptions", api_descriptions_import)
     app.router.add_post("/admin/api/products", api_products_create)
     app.router.add_post("/admin/api/products/{id:\\d+}", api_products_update)
     app.router.add_post("/admin/api/products/{id:\\d+}/delete", api_products_delete)

@@ -538,6 +538,11 @@
       <input type="search" id="prodSearch" placeholder="🔍 Mahsulot qidirish…">
       <span class="count-pill" id="prodCount"></span>
       <div class="spacer" style="margin-left:auto"></div>
+      <button class="btn btn-o" id="descExportBtn" type="button"
+              title="Barcha mahsulot tavsiflarini JSON qilib yuklab olish">📥 Tavsiflar (JSON)</button>
+      <button class="btn btn-o" id="descImportBtn" type="button"
+              title="To'ldirilgan JSON faylni qaytarib yuklash">📤 Tavsiflarni yuklash</button>
+      <input type="file" id="descFile" accept="application/json,.json" style="display:none">
       <button class="btn btn-p" id="newProdBtn">＋ Yangi mahsulot</button>
     </div>
     <div class="tbl-wrap">
@@ -1382,6 +1387,42 @@ window.openProdModal=function(id){
   $('#prodModal').classList.add('open');
 };
 $('#newProdBtn').addEventListener('click',()=>openProdModal(null));
+
+/* ===== tavsiflarni ommaviy tarjima qilish =====
+   Nobody has shell access to the server, so bulk description work goes
+   through this pair: download every product's text, fill the Russian in,
+   upload the same file back. The upload writes description/description_ru
+   and nothing else — see admin_web.api_descriptions_import. */
+$('#descExportBtn').addEventListener('click',()=>{
+  // A plain navigation, not fetch: the session cookie rides along and the
+  // browser handles the Content-Disposition download itself.
+  window.location.href='/admin/api/products/descriptions';
+});
+$('#descImportBtn').addEventListener('click',()=>$('#descFile').click());
+$('#descFile').addEventListener('change',async e=>{
+  const file=e.target.files&&e.target.files[0];
+  e.target.value='';                       // so the same file can be re-picked
+  if(!file)return;
+  const btn=$('#descImportBtn');
+  btn.disabled=true;btn.textContent='⏳ Yuklanmoqda…';
+  try{
+    const body=await file.text();
+    JSON.parse(body);                      // fail here, before the round trip
+    const r=await api('/admin/api/products/descriptions',{method:'POST',body});
+    // One toast: a second call overwrites the first before it can be read.
+    let msg=`✅ ${r.updated} ta tavsif yangilandi`;
+    if(r.skipped)msg+=` · ${r.skipped} ta o'zgarmagan`;
+    if(r.missing_count)msg+=` · ⚠️ ${r.missing_count} ta topilmadi`;
+    if(r.too_long&&r.too_long.length)
+      msg+=` · ⚠️ ${r.too_long.length} tasi ${r.soft_max} belgidan uzun`;
+    toast(msg);
+    await loadProducts();
+  }catch(err){
+    toast('⚠️ '+(err instanceof SyntaxError?"Fayl JSON emas":err.message));
+  }finally{
+    btn.disabled=false;btn.textContent='📤 Tavsiflarni yuklash';
+  }
+});
 
 $('#prodForm').addEventListener('submit',async e=>{
   e.preventDefault();const f=e.target,btn=$('#prodSaveBtn');btn.disabled=true;
