@@ -4018,8 +4018,11 @@ async def get_product_of_day_candidates(cycle: int) -> list[dict]:
 
 
 async def record_product_of_day(product_id: int, cycle: int, sent: int, failed: int,
-                                channel_ok: bool, day):
-    """Log the send and stamp the day, so a restart can't repeat it."""
+                                channel_ok: bool, day=None):
+    """Log that this product has had its turn in this cycle, so it can never
+    come up twice. `day` also closes the calendar day (a restart mid-send
+    can't start it over); leave it out for a channel test or a manual skip,
+    which retire the product without using up the day's real send."""
     async with pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO product_of_day_log (product_id, cycle, sent, failed, channel_ok)
@@ -4028,9 +4031,14 @@ async def record_product_of_day(product_id: int, cycle: int, sent: int, failed: 
                SET sent = EXCLUDED.sent, failed = EXCLUDED.failed,
                    channel_ok = EXCLUDED.channel_ok, sent_at = (now() AT TIME ZONE 'utc')
         """, product_id, cycle, sent, failed, channel_ok)
-        await conn.execute(
-            "UPDATE product_of_day_state SET last_sent_date = $1, last_product_id = $2 WHERE id = 1",
-            day, product_id)
+        if day is not None:
+            await conn.execute(
+                "UPDATE product_of_day_state SET last_sent_date = $1, last_product_id = $2 WHERE id = 1",
+                day, product_id)
+        else:
+            await conn.execute(
+                "UPDATE product_of_day_state SET last_product_id = $1 WHERE id = 1",
+                product_id)
 
 
 async def get_product_of_day_history(limit: int = 7) -> list[dict]:

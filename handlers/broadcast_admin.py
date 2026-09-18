@@ -342,6 +342,7 @@ async def interest_now(message: Message):
 #   /kun_off      — to'xtatish
 #   /kun_test     — bugungi mahsulot kartochkasini FAQAT o'zingizga yuboradi
 #   /kun_kanal    — FAQAT kanalga sinov posti (mijozlarga yuborilmaydi)
+#   /kun_otkaz    — navbatdagi mahsulotni o'tkazib yuborish (hech kimga ketmaydi)
 #   /kun_now      — hoziroq barchaga va kanalga yuboradi
 # ─────────────────────────────────────────────────────────────────────────────
 import product_of_day
@@ -418,9 +419,16 @@ async def kun_kanal(message: Message):
         return
     ok = await product_of_day.post_to_channel(message.bot, product)
     if ok:
+        # The channel has now seen it, so the product is spent for this cycle:
+        # without this, the next real send would post the very same card again.
+        # The day itself stays open — today's 13:00 send takes the next one.
+        await database.record_product_of_day(product["id"], _cycle, 0, 0, True)
+        nxt, _c = await product_of_day.pick_product()
         await message.answer(
             f"📣 Kanalga sinov posti ketdi: <b>{product.get('name')}</b>\n"
-            f"Mijozlarga yuborilmadi. Yoqmasa — kanaldan o'chirib tashlang.",
+            f"Mijozlarga yuborilmadi. Yoqmasa — kanaldan o'chirib tashlang.\n\n"
+            f"Bu mahsulot shu aylanishda qayta chiqmaydi.\n"
+            f"Navbatdagi: <b>{nxt.get('name') if nxt else '—'}</b>",
             parse_mode=ParseMode.HTML,
         )
     else:
@@ -428,6 +436,23 @@ async def kun_kanal(message: Message):
             "⚠️ Kanalga yuborib bo'lmadi. Bot kanalda admin ekanini va "
             "post qo'yish huquqi borligini tekshiring."
         )
+
+
+@router.message(Command("kun_otkaz"))
+async def kun_otkaz(message: Message):
+    """Retire the queued product without sending it anywhere — for a card that
+    was already posted by hand, or one that simply shouldn't go out now."""
+    product, cycle = await product_of_day.pick_product()
+    if product is None:
+        await message.answer("Navbatda mahsulot yo'q.")
+        return
+    await database.record_product_of_day(product["id"], cycle, 0, 0, False)
+    nxt, _c = await product_of_day.pick_product()
+    await message.answer(
+        f"⏭ <b>{product.get('name')}</b> o'tkazib yuborildi — shu aylanishda qayta chiqmaydi.\n"
+        f"Navbatdagi: <b>{nxt.get('name') if nxt else '—'}</b>",
+        parse_mode=ParseMode.HTML,
+    )
 
 
 @router.message(Command("kun_now"))
