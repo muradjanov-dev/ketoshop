@@ -80,10 +80,15 @@ _SINGLES = {
     "X": "Х", "Y": "Й", "Z": "З",
 }
 
-# Word-initial e/E. The lookbehind covers letters and every apostrophe form we
-# accept, so mid-word "e" (keksa, energiya) is untouched; a stash placeholder
-# is a private-use char, not a letter, so "<b>Eng" still counts as word-initial.
-_WORD_INITIAL_E_RE = re.compile(r"(?<![A-Za-z'ʻ’])[eE]")
+# Word-initial e/E. The lookbehind has to reject ANY letter, not just a Latin
+# one: this runs after the digraph pass, so by now "ch" is already "ч" and a
+# Latin-only test read the "e" of "pechene" as word-initial and gave "печэне".
+# The same went for every e after sh/o'/g'/yo/yu/ya — "chek" came out "чэк".
+# `[^\W\d_]` is "any letter" in Unicode, which covers both alphabets; a stash
+# placeholder is a private-use char, not a letter, so "<b>Eng" still counts as
+# word-initial. Apostrophes get their own lookbehind because a character class
+# cannot nest inside another one.
+_WORD_INITIAL_E_RE = re.compile(r"(?<![^\W\d_])(?<!['ʻ’])[eE]")
 
 
 # Private-use range — guaranteed not to appear in real text.

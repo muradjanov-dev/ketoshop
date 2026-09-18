@@ -18,6 +18,7 @@ Routes (all mounted by setup_admin_routes):
   GET  /admin/api/products        — all products (incl. archived)
   GET  /admin/api/products/descriptions        — download every product's text as JSON
   POST /admin/api/products/descriptions        — upload that JSON back with translations filled in
+  POST /admin/api/products/descriptions/autofill — write uz+ru text from the family library
   POST /admin/api/products        — create
   POST /admin/api/products/{id}   — update (partial)
   POST /admin/api/products/{id}/delete   — archive (is_active = 0)
@@ -270,6 +271,59 @@ async def api_descriptions_export(request: web.Request):
         charset="utf-8",
         headers={"Content-Disposition": 'attachment; filename="ketoshop-tavsiflar.json"'},
     )
+
+
+@require_auth
+async def api_descriptions_autofill(request: web.Request):
+    """Fill uz + ru descriptions from the family library (product_descriptions).
+
+    Body: {"overwrite": false} — by default only products with an empty
+    description are touched, so text somebody wrote by hand is never
+    clobbered by a generic one. Cyrillic isn't stored: the bot renders it
+    from the Latin source at display time, like everywhere else.
+    """
+    import product_descriptions
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    overwrite = bool(body.get("overwrite"))
+    only_ids = body.get("ids")
+    wanted = {int(i) for i in only_ids} if isinstance(only_ids, list) else None
+
+    products = await database.admin_list_products(include_inactive=True)
+    filled, kept, unmatched = 0, 0, []
+
+    for p in products:
+        if wanted is not None and p["id"] not in wanted:
+            continue
+        has_uz = bool((p.get("description") or "").strip())
+        has_ru = bool((p.get("description_ru") or "").strip())
+        if has_uz and has_ru and not overwrite:
+            kept += 1
+            continue
+
+        uz, ru, key = product_descriptions.describe(p.get("name") or "")
+        if key is None:
+            # Nothing recognised the name — record it so somebody can either
+            # rename the product or teach the library a new family, rather
+            # than leaving a vague description sitting there unnoticed.
+            unmatched.append({"id": p["id"], "name": p.get("name") or ""})
+
+        fields = {}
+        if overwrite or not has_uz:
+            fields["description"] = uz
+        if overwrite or not has_ru:
+            fields["description_ru"] = ru
+        if not fields:
+            kept += 1
+            continue
+        await database.update_product(p["id"], **fields)
+        filled += 1
+
+    return _json({"ok": True, "filled": filled, "kept": kept,
+                  "unmatched": unmatched[:50], "unmatched_count": len(unmatched)})
 
 
 @require_auth
@@ -1531,6 +1585,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/products", api_products_list)
     app.router.add_get("/admin/api/products/descriptions", api_descriptions_export)
     app.router.add_post("/admin/api/products/descriptions", api_descriptions_import)
+    app.router.add_post("/admin/api/products/descriptions/autofill", api_descriptions_autofill)
     app.router.add_post("/admin/api/products", api_products_create)
     app.router.add_post("/admin/api/products/{id:\\d+}", api_products_update)
     app.router.add_post("/admin/api/products/{id:\\d+}/delete", api_products_delete)
