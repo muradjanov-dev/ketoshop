@@ -137,13 +137,35 @@ def build_message(lang: str, balance: int) -> tuple[str, InlineKeyboardMarkup]:
     return text, keyboard
 
 
+async def _ensure_log() -> None:
+    """Who has already received it. A redeploy restarts the bot, which kills
+    a fan-out in progress (that is exactly what happened at 18:34 on
+    2026-09-18) — without this, a resumed run would message everyone twice."""
+    async with database.pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS keto_explainer_sent (
+                user_id BIGINT PRIMARY KEY,
+                sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+
+async def _mark_sent(user_id: int) -> None:
+    async with database.pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO keto_explainer_sent (user_id) VALUES ($1) ON CONFLICT DO NOTHING", user_id)
+
+
 async def _audience() -> list[dict]:
+    await _ensure_log()
     async with database.pool.acquire() as conn:
         rows = await conn.fetch(
             """SELECT user_id, COALESCE(language, 'uz') AS language, COALESCE(keto_balance, 0) AS balance
                  FROM users
                 WHERE user_id NOT IN (SELECT user_id FROM banned_users)
-                  AND user_id <> ALL($1::bigint[])""",
+                  AND user_id NOT IN (SELECT user_id FROM keto_explainer_sent)
+                  AND user_id <> ALL($1::bigint[])
+                ORDER BY user_id""",
             list(database.LEADERBOARD_EXCLUDED_USER_IDS),
         )
         return [dict(r) for r in rows]
@@ -189,8 +211,12 @@ async def run(bot: Bot) -> tuple[int, int]:
         text, markup = build_message(row["language"], int(row["balance"]))
         if await _send_one(bot, row["user_id"], text, markup):
             sent += 1
+            # Recorded one by one, not at the end: a restart mid-fan-out must
+            # not cost the record of who already has it.
+            await _mark_sent(row["user_id"])
         else:
             failed += 1
+            await _mark_sent(row["user_id"])       # blocked the bot — don't retry forever
         await asyncio.sleep(SEND_DELAY)
     return sent, failed
 
@@ -244,6 +270,10 @@ async def cmd_send_now(message: Message, command: CommandObject):
     claimed run never actually reached anyone."""
     force = (command.args or "").strip().lower().startswith("majburiy")
     claimed = await database.claim_release_notes(KEY)
+    if force:
+        # Resumes: everyone already recorded is skipped, so a run cut short by
+        # a redeploy carries on from where it stopped instead of repeating.
+        await _ensure_log()
     if not claimed and not force:
         await message.answer(
             "ℹ️ Bu xabar allaqachon yuborilgan deb belgilangan — ikkinchi marta ketmaydi.\n"
