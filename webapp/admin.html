@@ -183,6 +183,12 @@
   .dash-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:16px}
   .dash-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px}
   .dash-card h3{font-size:14px;margin-bottom:16px}
+  /* B2B sales table. The money here is already inside "Jami Tushum" above, so
+     the header says so — two figures side by side invite adding them up. */
+  .b2b-sum{font-size:12px;font-weight:500;color:var(--ink-3);margin-left:8px}
+  .b2b-items{color:var(--ink-2);font-size:12.5px;line-height:1.55}
+  .b2b-warn{color:var(--amber);cursor:help}
+  .b2b-note{margin-top:12px;font-size:12.5px;color:var(--ink-3)}
   @media (max-width:900px){.dash-grid{grid-template-columns:1fr}}
 
   .trend-wrap{display:flex;align-items:flex-end;gap:10px;height:140px;padding:0 2px}
@@ -489,6 +495,11 @@
         <h3>🥑 Keto dasturi</h3>
         <div class="kpi-grid" id="ketoStatsGrid" style="margin-bottom:0"></div>
       </div>
+    </div>
+
+    <div class="dash-card" style="margin-top:16px">
+      <h3>🏢 B2B savdolar <span id="b2bSummary" class="b2b-sum"></span></h3>
+      <div id="b2bSales" style="overflow-x:auto"></div>
     </div>
   </section>
 
@@ -1165,6 +1176,49 @@ async function loadDashboard(){
   renderTopProducts(d.top_products);
   renderAbcAnalysis(d.abc_analysis);
   renderKetoStats(d.keto);
+  renderB2bSales(d.b2b_sales);
+}
+
+/* B2B savdolar — kim, qachon, nima olgani.
+   The B2B figures are a slice of the ordinary revenue, not a second pile of
+   money: get_admin_stats sums every delivered order and only breaks b2b out
+   with a FILTER. The summary line says so, because "Jami Tushum" and "B2B
+   Tushum" sitting next to each other in the KPI row invite adding them up. */
+function renderB2bSales(list){
+  const box=$('#b2bSales'), sum=$('#b2bSummary');
+  if(!list||!list.length){
+    sum.textContent='';
+    box.innerHTML='<div class="empty" style="padding:24px">Bu davrda B2B savdo yo\'q</div>';
+    return;
+  }
+  const revenue=list.reduce((a,o)=>a+o.total,0);
+  const profit=list.reduce((a,o)=>a+o.profit,0);
+  const unpriced=list.filter(o=>!o.cost_known).length;
+  sum.textContent=`${list.length} ta savdo · ${fmt(revenue)} · foyda ${fmt(profit)} — umumiy tushum ichida`;
+
+  const qty=n=>Number.isInteger(n)?n:parseFloat(n.toFixed(3));
+  const rows=list.map(o=>{
+    const items=o.items.map(it=>`${esc(it.name)} — ${qty(it.quantity)} ${esc(it.unit)}`).join('<br>');
+    const warn=o.cost_known?'':' <span class="b2b-warn" title="Tannarxi kiritilmagan — foyda haqiqiydan yuqori">⚠️</span>';
+    return `<tr>
+      <td class="tnum">#${o.id}</td>
+      <td style="white-space:nowrap">${esc(o.when)}</td>
+      <td><b>${esc(o.customer_name||'—')}</b>${o.phone?`<br><span class="b2b-items">${esc(o.phone)}</span>`:''}</td>
+      <td class="b2b-items">${items||'—'}</td>
+      <td class="tnum" style="text-align:right;white-space:nowrap">${fmt(o.total)}</td>
+      <td class="tnum" style="text-align:right;white-space:nowrap">${fmt(o.profit)}${warn}</td>
+    </tr>`;
+  }).join('');
+
+  box.innerHTML=`<table class="data-table" style="font-size:13.5px">
+    <thead><tr>
+      <th>#</th><th>Sana</th><th>Mijoz</th><th>Mahsulotlar</th>
+      <th style="text-align:right">Summa</th><th style="text-align:right">Foyda</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>` + (unpriced
+    ? `<div class="b2b-note">⚠️ — tannarxi kiritilmagan (${unpriced} ta): foyda haqiqiydan yuqori ko'rsatilgan.</div>`
+    : '');
 }
 
 function renderDashKpiCard(lab,val,sub){

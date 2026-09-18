@@ -6,7 +6,9 @@ from datetime import datetime
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test/test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
+os.environ.setdefault("ADMIN_WEB_PASSWORD", "test")
 
+import admin_web
 import handlers.admin as admin
 
 
@@ -89,6 +91,38 @@ class B2BSalesScreenTest(unittest.TestCase):
                          items=items) for i in range(12)]
         text, _ = render(orders)
         self.assertLess(len(text), 4000)
+
+
+class DashboardPayloadTest(unittest.TestCase):
+    """What /admin/api/dashboard hands the browser for each wholesale sale."""
+
+    def test_timestamp_is_formatted_server_side(self):
+        # Orders carry naive UTC. Shipping one raw would have the browser read
+        # it as local time and shift every B2B sale by five hours.
+        row = admin_web._b2b_sale_json(_order(dt=datetime(2026, 9, 18, 9, 0)))
+        self.assertEqual(row["when"], "18.09.2026 14:00")
+
+    def test_missing_timestamp_does_not_explode(self):
+        self.assertEqual(admin_web._b2b_sale_json(_order(dt=None))["when"], "")
+
+    def test_wholesale_line_keeps_its_weight_unit(self):
+        row = admin_web._b2b_sale_json(_order(
+            items=[{"name": "Eritritol (B2B)", "quantity": 0.5, "unit": "kg", "bulk": True}]))
+        self.assertEqual(row["items"][0]["unit"], "kg")
+        self.assertEqual(row["items"][0]["quantity"], 0.5)
+
+    def test_retail_line_is_shown_as_pieces(self):
+        row = admin_web._b2b_sale_json(_order(
+            items=[{"name": "Bodom uni 1000gr", "quantity": 20, "unit": "kg"}]))
+        self.assertEqual(row["items"][0]["unit"], "dona")
+
+    def test_carries_the_costing_verdict_through(self):
+        self.assertFalse(admin_web._b2b_sale_json(_order(cost_known=False))["cost_known"])
+        self.assertTrue(admin_web._b2b_sale_json(_order())["cost_known"])
+
+    def test_payload_is_json_serialisable(self):
+        import json
+        json.dumps(admin_web._b2b_sale_json(_order()))
 
 
 if __name__ == "__main__":

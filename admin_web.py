@@ -40,7 +40,8 @@ Routes (all mounted by setup_admin_routes):
   GET  /admin/api/bloggers/{id}/detail — referred buyers + every order + payout
   GET  /admin/api/keto/status     — redemption on/off + every user's Keto balance
   POST /admin/api/keto/redemption — {enabled} -> toggle Keto-as-discount at checkout
-  GET  /admin/api/dashboard       — {period} -> KPI/trend/best-sellers/Keto snapshot for the Dashboard tab
+  GET  /admin/api/dashboard       — {period} -> KPI/trend/best-sellers/Keto snapshot for the Dashboard tab,
+                                    plus b2b_sales: the wholesale orders behind the B2B KPI tile
   GET  /admin/api/ads             — {period} -> Meta Ads KPIs + per-ad/per-campaign rows + lead counters
   GET  /admin/api/ads/status      — ad-account health (account_status, balance) + per-ad issues_info
   GET  /admin/api/ads/leads       — {limit} -> stored Meta lead-form submissions, newest first
@@ -70,7 +71,7 @@ from aiohttp import web
 import courier_board
 import database
 from config import ADMIN_WEB_PASSWORD, BOT_TOKEN, ADMIN_IDS, BOT_USERNAME
-from locales import CATEGORIES
+from locales import CATEGORIES, get_item_unit
 # Same tolerant JSON encoder the Mini App uses: aiohttp's default dumps cannot
 # serialize the date / datetime / Decimal values asyncpg hands back, and every
 # endpoint here that forgot to convert one 500s at render time with nothing to
@@ -708,6 +709,32 @@ async def api_expenses_add(request: web.Request):
 
 # ───────────────────────────── dashboard ─────────────────────────────────────
 
+def _b2b_sale_json(o: dict) -> dict:
+    """One wholesale sale, ready for the browser.
+
+    The date is formatted here, not in JS: orders carry naive UTC timestamps,
+    and handing one to the browser unmarked would have it read as local time
+    and shift every B2B sale by five hours. Units come from get_item_unit for
+    the same reason the bot screen uses it — a wholesale line's quantity is a
+    weight, so 0.5 kg must not render as "0.5 dona".
+    """
+    return {
+        "id": o["id"],
+        "when": database.format_local_dt(o["dt"], "%d.%m.%Y %H:%M") if o["dt"] else "",
+        "customer_name": o["customer_name"],
+        "phone": o["phone"],
+        "total": o["total"],
+        "cost": o["cost"],
+        "profit": o["profit"],
+        "cost_known": o["cost_known"],
+        "items": [{
+            "name": it.get("name") or "",
+            "quantity": float(it.get("quantity") or 0),
+            "unit": get_item_unit(it, "uz"),
+        } for it in o["items"]],
+    }
+
+
 @require_auth
 async def api_dashboard(request: web.Request):
     """Aggregated snapshot for the visual dashboard tab (2026-08-12): KPIs for
@@ -723,12 +750,13 @@ async def api_dashboard(request: web.Request):
             period = "30d"
         period_arg = period
         
-    stats, monthly, top_products, keto, abc_analysis = await asyncio.gather(
+    stats, monthly, top_products, keto, abc_analysis, b2b = await asyncio.gather(
         database.get_admin_stats(period_arg),
         database.get_monthly_breakdown(5),
         database.get_top_products(period_arg, limit=5),
         database.get_keto_program_stats(),
         database.get_abc_analysis(period_arg),
+        database.get_b2b_orders(period_arg),
     )
     return _json({
         "stats": stats,
@@ -736,6 +764,7 @@ async def api_dashboard(request: web.Request):
         "top_products": top_products,
         "keto": keto,
         "abc_analysis": abc_analysis,
+        "b2b_sales": [_b2b_sale_json(o) for o in b2b],
     })
 
 
