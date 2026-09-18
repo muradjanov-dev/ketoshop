@@ -112,21 +112,30 @@ async def fix_eritritol(conn, apply: bool, cost_per_kg: float) -> None:
             have = float(it.get("cost_price") or 0)
             print(f"  #{r['id']:<5} {str(r['dt'])[:10]}  {qty:g} kg  "
                   f"jami={fmt(r['total']):>11}  tannarx={fmt(have) if have else '—'}")
+            if not it.get("bulk"):
+                # Miqdor bu yerda og'irlik (0.5 = yarim kilo). `bulk` belgisi
+                # bo'lmasa locales.get_item_unit kg ni "dona" ga aylantiradi
+                # va ro'yxatda "0.5 dona" deb chiqadi.
+                it["bulk"] = True
+                needs = True
             if have > 0:
                 continue
-            needs = True
             if cost_per_kg > 0:
                 it.pop("id", None)          # o'lik -1
                 it["cost_price"] = cost_per_kg
-        if needs and cost_per_kg > 0:
+                needs = True
+        if needs:
             touched.append((r["id"], json.dumps(items, ensure_ascii=False)))
 
     if cost_per_kg <= 0:
-        print("\n  ⚠️  --eritritol-cost berilmadi, shuning uchun bu qatorlar "
-              "tegilmadi.\n     1 kg optom tannarxini bilsangiz, masalan:"
+        print("\n  ⚠️  --eritritol-cost berilmadi, shuning uchun tannarx yozilmaydi."
+              "\n     1 kg optom tannarxini bilsangiz, masalan:"
               "\n     --apply --eritritol-cost 30000")
+    if not touched:
+        print("\n  O'zgartiradigan narsa yo'q.")
         return
-    print(f"\n  {len(touched)} ta buyurtmaga {fmt(cost_per_kg)} so'm/kg yoziladi.")
+    print(f"\n  {len(touched)} ta buyurtma yangilanadi"
+          + (f" ({fmt(cost_per_kg)} so'm/kg)." if cost_per_kg > 0 else "."))
     if not apply:
         return
     for oid, payload in touched:

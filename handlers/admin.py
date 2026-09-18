@@ -30,7 +30,7 @@ from database import (
     search_products, save_web_image,
     get_support_threads, get_support_thread, count_open_support,
     get_admin_profiles, get_targets_state, set_targets,
-    get_b2b_products, set_b2b_price,
+    get_b2b_products, set_b2b_price, get_b2b_orders,
 )
 from locales import (
     get_text, get_order_status, get_unit_name, get_display_unit, get_item_unit,
@@ -2154,6 +2154,7 @@ async def b2b_submenu(callback: CallbackQuery):
         [InlineKeyboardButton(text="🛒 Optom Eritritol", callback_data="admin:b2b_eritritol")],
         [InlineKeyboardButton(text="📦 Boshqa Maxsulotlar (B2B)", callback_data="admin:b2b_order")],
         [InlineKeyboardButton(text="💰 Optom narxlar", callback_data="admin:b2b_prices")],
+        [InlineKeyboardButton(text="📋 B2B savdolar", callback_data="admin:b2b_sales")],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")]
     ])
     await callback.message.edit_text("B2B Savdo turini tanlang:", reply_markup=kb)
@@ -2274,6 +2275,88 @@ async def b2b_price_save(message: Message, state: FSMContext):
     text, keyboard = await _render_b2b_prices()
     await message.answer(note, parse_mode="HTML")
     await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+# ===== B2B SAVDOLAR (who bought what, when) =====
+# B2B revenue sits inside the ordinary revenue figure — get_admin_stats sums
+# every delivered order and only breaks b2b out with a FILTER — so the panel
+# could say "12 mln so'm, 5 ta savdo" while nothing anywhere named those five.
+# Until now the detail existed only in the Excel export.
+
+_B2B_SALES_PAGE = 5
+_B2B_SALES_ITEMS = 4            # lines per sale before "va yana N ta"
+
+
+async def _render_b2b_sales(page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
+    orders = await get_b2b_orders()
+    if not orders:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin:b2b_menu")]])
+        return "🏢 <b>B2B savdolar</b>\n\nHali B2B savdo kiritilmagan.", kb
+
+    revenue = sum(o["total"] for o in orders)
+    profit = sum(o["profit"] for o in orders)
+    unpriced = sum(1 for o in orders if not o["cost_known"])
+
+    pages = max(1, (len(orders) + _B2B_SALES_PAGE - 1) // _B2B_SALES_PAGE)
+    page = max(0, min(page, pages - 1))
+    chunk = orders[page * _B2B_SALES_PAGE:(page + 1) * _B2B_SALES_PAGE]
+
+    lines = ["🏢 <b>B2B savdolar</b>", "",
+             f"💰 Jami: <b>{_fmt_price(revenue)} so'm</b> · "
+             f"foyda {_fmt_price(profit)} so'm · {len(orders)} ta savdo",
+             "<i>Bu summa umumiy tushum ichida — ustiga qo'shilmaydi.</i>", ""]
+
+    for o in chunk:
+        when = format_local_dt(o["dt"], "%d.%m.%Y %H:%M") if o["dt"] else "—"
+        lines.append(f"<b>#{o['id']}</b> · {when}")
+        head = f"🏢 {html.escape(o['customer_name'] or '—')}"
+        if o["phone"]:
+            head += f" · {html.escape(o['phone'])}"
+        lines.append(head)
+        for it in o["items"][:_B2B_SALES_ITEMS]:
+            qty = float(it.get("quantity") or 0)
+            unit = get_item_unit(it, "uz")
+            name = html.escape(it.get("name") or "—")
+            lines.append(f"   • {name} — {qty:g} {unit}".rstrip())
+        extra = len(o["items"]) - _B2B_SALES_ITEMS
+        if extra > 0:
+            lines.append(f"   <i>va yana {extra} ta</i>")
+        money = f"💵 {_fmt_price(o['total'])} so'm · foyda {_fmt_price(o['profit'])} so'm"
+        if not o["cost_known"]:
+            money += " ⚠️"
+        lines.append(money)
+        lines.append("")
+
+    lines.append(f"📄 {page + 1} / {pages}")
+    if unpriced:
+        lines += ["", f"⚠️ — tannarxi kiritilmagan ({unpriced} ta): "
+                      "foyda haqiqiydan yuqori ko'rsatilgan."]
+
+    rows = []
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"admin:b2b_sales:{page - 1}"))
+    if page < pages - 1:
+        nav.append(InlineKeyboardButton(text="➡️", callback_data=f"admin:b2b_sales:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin:b2b_menu")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == "admin:b2b_sales")
+@router.callback_query(F.data.startswith("admin:b2b_sales:"))
+async def show_b2b_sales(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    await state.clear()
+    parts = callback.data.split(":")
+    page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+    text, keyboard = await _render_b2b_sales(page)
+    await _support_show(callback, text, keyboard)
+    await callback.answer()
+
 
 @router.callback_query(F.data == "admin:b2b_order")
 async def b2b_order_start(callback: CallbackQuery, state: FSMContext):

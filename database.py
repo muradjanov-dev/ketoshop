@@ -1799,7 +1799,11 @@ async def add_b2b_eritritol_order(admin_user_id: int, address: str, phone: str,
             "quantity": quantity,
             "price": round(total / quantity, 2) if quantity else 0,
             "cost_price": float(cost_per_kg or 0),
-            "unit": "kg"
+            "unit": "kg",
+            # Quantity here IS a weight (0.5 means half a kilo), so the line
+            # must keep its real unit — without this locales.get_item_unit
+            # rewrites kg to "dona" and 0.5 kg reads as "0.5 dona".
+            "bulk": True,
         }]
         
         order_id = await conn.fetchval(
@@ -1812,6 +1816,77 @@ async def add_b2b_eritritol_order(admin_user_id: int, address: str, phone: str,
             json.dumps(items_data, ensure_ascii=False), total,
         )
         return order_id
+
+
+async def get_b2b_orders(period: str | dict = "all", limit: int = 200) -> list[dict]:
+    """Every wholesale sale in the window, newest first, already costed.
+
+    B2B revenue is inside the ordinary revenue figure (get_admin_stats sums
+    every delivered order and only breaks b2b out with a FILTER), so the
+    dashboards say "12 mln, 5 ta savdo" and nothing anywhere said WHICH five.
+    Until now the only place the detail existed was the Excel export.
+
+    Windowed on COALESCE(delivered_at, created_at) — the same money basis
+    get_admin_stats uses — so a period picked on the dashboard lists exactly
+    the sales behind the b2b_revenue tile next to it.
+
+    `cost` / `profit` follow the one shared rule (line_cost), and
+    `cost_known` is False when some line still has no tannarx behind it — the
+    same condition the Maqsadlar warning reports, so a sale whose profit is
+    guesswork can be labelled as such instead of being quietly trusted.
+    """
+    start_time, end_time = _period_range(period)
+    conds, args = ["source = 'b2b'"], []
+    if start_time:
+        args.append(start_time)
+        conds.append(f"COALESCE(delivered_at, created_at) >= ${len(args)}")
+    if end_time:
+        args.append(end_time)
+        conds.append(f"COALESCE(delivered_at, created_at) <= ${len(args)}")
+    args.append(limit)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT id, customer_name, phone, address, items, total, status,
+                       COALESCE(delivered_at, created_at) AS dt
+                  FROM orders
+                 WHERE {' AND '.join(conds)}
+                 ORDER BY COALESCE(delivered_at, created_at) DESC, id DESC
+                 LIMIT ${len(args)}""",
+            *args,
+        )
+        cost_map = {
+            r["id"]: r["cost_price"] or 0
+            for r in await conn.fetch("SELECT id, cost_price FROM products")
+        }
+    set_costs = await get_set_costs()
+
+    out = []
+    for r in rows:
+        try:
+            items = json.loads(r["items"] or "[]")
+        except Exception:
+            items = []
+        cost, known = 0.0, True
+        for it in items:
+            c, k = line_cost(it, cost_map, set_costs)
+            cost += c
+            known = known and k
+        total = float(r["total"] or 0)
+        out.append({
+            "id": int(r["id"]),
+            "customer_name": r["customer_name"] or "",
+            "phone": r["phone"] or "",
+            "address": r["address"] or "",
+            "dt": r["dt"],
+            "status": r["status"],
+            "items": items,
+            "total": total,
+            "cost": cost,
+            "profit": total - cost,
+            "cost_known": known and bool(items),
+        })
+    return out
 
 
 async def get_seller_orders(seller_id: int, all_orders: bool = False) -> list[dict]:
