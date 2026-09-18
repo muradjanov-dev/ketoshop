@@ -183,6 +183,12 @@ TEXTS = {
     "btn_keto_toggle_off": {"uz": "⏹ O'chirish", "ru": "⏹ Выключить"},
     "btn_admin_manual_order": {"uz": "📝 Qo'lda buyurtma kiritish", "ru": "📝 Добавить заказ вручную"},
     "btn_admin_website": {"uz": "🌐 Admin sayti (Dashboard)", "ru": "🌐 Сайт администратора (Dashboard)"},
+    # Same site, but opened from the products menu — the label says what you
+    # go there to do, because bulk text/photo work only exists on the site.
+    "btn_admin_website_products": {
+        "uz": "🌐 Saytda boshqarish (tavsif, rasm)",
+        "ru": "🌐 Управлять на сайте (описания, фото)",
+    },
     "btn_admin_b2b_order": {"uz": "🏢 B2B savdo kiritish", "ru": "🏢 Добавить B2B продажу"},
     "btn_admin_list_quote": {"uz": "🧾 Ro'yxatdan hisob", "ru": "🧾 Расчёт по списку"},
     "list_quote_prompt": {

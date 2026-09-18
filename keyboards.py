@@ -632,7 +632,7 @@ def admin_stats_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     ])
 
 def admin_products_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    rows = [
         [
             InlineKeyboardButton(text=get_text("btn_admin_orders", lang), callback_data="admin:orders"),
             InlineKeyboardButton(text=get_text("btn_admin_manual_order", lang), callback_data="admin:manual_order")
@@ -647,8 +647,16 @@ def admin_products_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text=get_text("btn_my_products", lang), callback_data="seller:my_products"),
         ],
-        [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")],
-    ])
+    ]
+    # Descriptions, photos and bulk edits live on the site, not in the bot,
+    # so the way there belongs in the menu people open to work on products.
+    # Skipped without WEBAPP_URL: Telegram rejects a url button with an empty
+    # URL and the whole keyboard would fail to render.
+    if WEBAPP_URL:
+        rows.append([InlineKeyboardButton(text=get_text("btn_admin_website_products", lang),
+                                          url=f"{WEBAPP_URL}/admin")])
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def admin_users_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
