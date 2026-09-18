@@ -24,57 +24,73 @@ from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
-RELEASE_KEY = "2026-09-17-qayta-sotuv-keto-yetkazish"
+RELEASE_KEY = "2026-09-19-kuryer-tavsif-viloyat"
 TZ_OFFSET = timedelta(hours=5)
 SEND_WINDOW = (8, 22)          # never wake admins at night
-# This release was deployed at night, so it waits for 08:00 — set True only
-# when the owner asks for notes to go out right away.
-SEND_NOW = False
+# The owner asked for this release's notes to go out immediately (2026-09-19),
+# so the daytime window is bypassed. Back to False for the next release.
+SEND_NOW = True
 CHECK_EVERY = 300
 
 NOTES = (
-    "🆕 <b>Oxirgi yangiliklardan keyin qo'shilganlar</b>\n\n"
+    "🆕 <b>Bir kunda qo'shilganlar</b>\n\n"
 
-    "🚚 <b>Bepul yetkazib berish</b>\n"
-    "Toshkent bo'ylab Ketoshop kuryeri <b>800 000 so'm va undan yuqori</b> "
-    "buyurtmaga bepul (botda ham, Mini App'da ham). Savatda «yana X so'm — bepul» "
-    "eslatmasi chiqadi.\n\n"
+    "🚚 <b>Kuryer paneli</b> — saytda yangi «Kuryer» bo'limi\n"
+    "• Barcha buyurtma bir ekranda, ustunlar bo'ylab: Yangi → Qabul qilindi → "
+    "Tayyor+Yo'lda → Yetkazildi → Bekor qilindi\n"
+    "• Kartochkani ushlab surib yoki ◀ ▶ tugmalari bilan keyingi bosqichga o'tkaziladi\n"
+    "• Kartochkada faqat keraklisi: kim, qayerga, qancha pul olish kerak, qancha kutmoqda. "
+    "<b>Naqd</b> summa sariq fonda, oldindan to'langani xira — bir qarashda ko'rinadi\n"
+    "• Mijoz lokatsiya yuborgan bo'lsa: xaritada ochish yoki pinni Telegramga yuborish "
+    "(navigatorda ochiladi)\n"
+    "• Har qadamda mijozga o'z tilida xabar ketadi; kartochkani orqaga surish jim\n"
+    "• Ikki admin bir buyurtmani bir vaqtda surса, ikkinchisi ogohlantiriladi\n\n"
 
-    "🔁 <b>Qayta sotuv xabarlari</b> — har kuni 09:30\n"
-    "• «Kokos unini 26 kun oldin olgan edingiz — tugab qolmadimi?» + bir tugmada qayta buyurtma\n"
-    "• 2-buyurtmaga sovg'a: 1-buyurtmadan 3 kun keyin, 14 kun amal qiladi\n"
-    "• 30 / 60 / 90 kun kelmagan mijozga «sog'indik» (60 va 90 da sovg'a bilan)\n"
-    "• Mijozga 7 kunda ko'pi bilan 1 ta; o'sha kuni boshqa tavsiya xabari bormaydi\n"
-    "• Natija: /qaytarish · ko'rish: /qaytarish_test\n\n"
+    "💸 <b>Kuryer haqi endi avtomatik chiqimga yoziladi</b>\n"
+    "Toshkent ichida 25 000, viloyatga pochta orqali (BTS, EMU) 5 000 so'm — buyurtma "
+    "yetkazilgan zahoti «Chiqimlar»ga tushadi. Bepul yetkazib berishda ham yoziladi: "
+    "kuryerga baribir to'lanadi. Faqat bugundan keyingi buyurtmalardan.\n\n"
 
-    "🎁 <b>Shaxsiy sovg'a</b> — Eritritol 100 gr, summa shart emas. "
-    "Bitta buyurtmaga faqat bitta sovg'a (aksiya sovg'asi bilan qo'shilmaydi).\n\n"
+    "📝 <b>Barcha mahsulotga tavsif — uchala tilda</b>\n"
+    "133 ta mahsulotning hammasiga o'zbekcha va ruscha tavsif yozildi, kirillcha "
+    "avtomatik o'giriladi. Ruscha tanlagan mijozga endi ruscha chiqadi.\n"
+    "Saytda: Mahsulotlar → «✍️ Tavsiflarni to'ldirish». Qo'lda tuzatish uchun JSON "
+    "yuklab olish/yuklash ham bor, tahrirlash oynasida kirillchasi jonli ko'rinadi.\n\n"
 
-    "🥑 <b>Keto tangachalar</b>\n"
-    "• Keshbek darajaga qarab: Bronza 0.5% · Kumush 1% · Oltin 2% · Olmos 3%\n"
-    "• Yangi darajaga chiqqanga 30 kunlik sovg'a\n"
-    "• Mahsulot, savat va Mini App'da «🥑 +N Keto» belgisi\n"
-    "• <b>18.09 soat 17:30</b> da hammaga sodda tushuntirish ketadi va "
-    "tangachalarni sarflash yoqiladi (1 Keto = 1 so'm). Ko'rish: /keto_tushuntirish\n"
-    "• Tuzatildi: yetkazilgan buyurtmadan keyin Keto tabrik xabari kelmay qolardi\n\n"
+    "🗺 <b>Dashboardda viloyatlar kesimi</b>\n"
+    "Qaysi viloyat qancha buyurtma qilyapti, qancha pul olib kelyapti, nechta xaridori "
+    "bor va o'rtacha cheki qancha. Qatorni ochsangiz — o'sha viloyat aynan nima "
+    "olayotgani. Ombor rejasi uchun.\n\n"
 
-    "🧺 <b>«Siz olgan X bilan boshqalar Y ham olishyapti»</b> tavsiyasi — "
-    "tugmalar bilan, yetkazilgan buyurtma xabarida. Buyurtmalarim'da «🔁 takrorlash» tugmasi.\n\n"
+    "🏆 <b>Do'kon bosh sahifasi endi yangilanib turadi</b>\n"
+    "«Eng ko'p sotilganlar» butun tarix bo'yicha qotib qolgan edi — uchta mahsulot "
+    "abadiy o'sha yerda turardi. Endi oxirgi 30 kunlik sotuvdan eng yaxshi 12 tasi "
+    "olinadi va har kuni uchtasi ko'rsatiladi: to'rt kunda hammasi navbat bilan chiqadi.\n\n"
 
-    "🌐 <b>Til</b>\n"
-    "Keto maslahatlari endi kirillchilarga kirillda, ruslarga ruscha boradi; "
-    "Keto va aksiya xabarlari ham har kimning o'z tilida.\n\n"
+    "🌟 <b>Kun mahsuloti</b> — har kuni soat 13:00 da bitta mahsulot xaridorlarga va "
+    "kanalga e'lon qilinadi. Navbat aylanma: hamma mahsulot o'z kunini oladi.\n"
+    "Boshqarish: /kun_status · /kun_test · /kun_kanal · /kun_now · /kun_off\n\n"
 
-    "🛡 <b>Guruh</b>: havola o'chirilganda «Iltimos, guruhda havola tarqatmang…» "
-    "deb muloyim yoziladi.\n\n"
+    "🏢 <b>B2B savdolar ro'yxati</b>\n"
+    "Optom tushum umumiy raqam ichida yashirin edi. Endi kim, qachon, nima olgani va "
+    "foydasi ko'rinadi — botda «B2B Savdo → B2B savdolar», saytda esa Dashboardda.\n\n"
 
-    "📊 <b>Foyda va maqsadlar tuzatildi</b>\n"
-    "• Dollar kursi har kuni Markaziy bankdan olinadi (bugun 11 797 so'm; oldin 12 800 turgan edi)\n"
-    "• To'plam (set) mahsulotlar tannarxi 0 hisoblanib, foyda oshib ko'rinardi — tuzatildi "
-    "(sayt Dashboard, Maqsadlar, Excel hisobot)\n"
-    "• Tushum va foyda endi buyurtma <b>yetkazilgan kuni</b> bo'yicha — «bugungi foyda» "
-    "endi to'g'ri chiqadi\n"
-    "• Tannarxi kiritilmagan mahsulot sotilsa, maqsad xabarida ogohlantirish chiqadi\n\n"
+    "📈 <b>Foyda hisobidagi xato tuzatildi</b>\n"
+    "Optom Eritritol sotuvi tannarxsiz («0 so'm») hisoblanardi — oylik foyda butun "
+    "partiya miqdoricha oshib ko'rinardi. Endi to'g'ri hisoblanadi.\n\n"
+
+    "📦 <b>Yetkazish</b>: Yandex Market tanlovdan olib tashlandi. Viloyatlarga "
+    "faqat BTS va EMU qoldi.\n\n"
+
+    "📞 <b>Aloqa raqami</b> yangilandi: +998993641343 — salom xabari, yordam matnlari, "
+    "AI sotuvchi va keto maslahatlari, hammasida.\n\n"
+
+    "🔤 <b>Kirillcha yozuvdagi xato tuzatildi</b>\n"
+    "«чэк», «Чэхия», «печэне» kabi so'zlar noto'g'ri chiqardi — butun botning "
+    "kirillcha matniga tegishli edi.\n\n"
+
+    "🌐 Botdagi «Boshqaruv paneli» va «Mahsulot va Buyurtma» menyularidan endi "
+    "to'g'ridan-to'g'ri saytga o'tish tugmasi bor.\n\n"
 
     "Hammasi serverga yuklandi va ishlayapti ✅"
 )
