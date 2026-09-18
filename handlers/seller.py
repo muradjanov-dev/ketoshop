@@ -65,12 +65,19 @@ def _build_buyer_status_block(order: dict, new_status: str, lang: str) -> tuple[
     from datetime import datetime
     from locales import get_text as _get_text  # local alias to avoid shadowing
 
+    # The pipeline in order, each with its stamp column and timeline key.
+    # preparing/ready joined it with the courier board (2026-09-18).
+    stages = (
+        ("confirmed", "confirmed_at", "buyer_timeline_confirmed"),
+        ("preparing", "preparing_at", "buyer_timeline_preparing"),
+        ("ready",     "ready_at",     "buyer_timeline_ready"),
+        ("shipped",   "shipped_at",   "buyer_timeline_shipped"),
+        ("delivered", "delivered_at", "buyer_timeline_delivered"),
+    )
+    rank = {name: i for i, (name, _, _) in enumerate(stages)}
+
     # Pick the source timestamp for the current event
-    stamp_field = {
-        "confirmed": "confirmed_at",
-        "shipped":   "shipped_at",
-        "delivered": "delivered_at",
-    }.get(new_status)
+    stamp_field = next((col for name, col, _ in stages if name == new_status), None)
     if stamp_field and order.get(stamp_field):
         when_dt = order[stamp_field]
     else:
@@ -84,15 +91,11 @@ def _build_buyer_status_block(order: dict, new_status: str, lang: str) -> tuple[
     if order.get("created_at"):
         lines.append(_get_text("buyer_timeline_created", lang,
                                date=_format_status_dt(order["created_at"])))
-    if order.get("confirmed_at") and new_status in ("confirmed", "shipped", "delivered"):
-        lines.append(_get_text("buyer_timeline_confirmed", lang,
-                               date=_format_status_dt(order["confirmed_at"])))
-    if order.get("shipped_at") and new_status in ("shipped", "delivered"):
-        lines.append(_get_text("buyer_timeline_shipped", lang,
-                               date=_format_status_dt(order["shipped_at"])))
-    if order.get("delivered_at") and new_status == "delivered":
-        lines.append(_get_text("buyer_timeline_delivered", lang,
-                               date=_format_status_dt(order["delivered_at"])))
+    current = rank.get(new_status)
+    if current is not None:
+        for name, col, key in stages:
+            if rank[name] <= current and order.get(col):
+                lines.append(_get_text(key, lang, date=_format_status_dt(order[col])))
     return when, "\n".join(lines)
 
 
@@ -1541,7 +1544,14 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
     else:
         # Guard against two admins racing on the same order — only one of the
         # conditional UPDATEs lands; the loser short-circuits with a toast.
-        expected_from = {"confirmed": "pending", "shipped": "confirmed", "delivered": "shipped"}.get(new_status)
+        # The courier board inserted preparing/ready between confirmed and
+        # shipped, so an order the kitchen already moved forward must still
+        # accept the panel's "Yo'lda"/"Yetkazildi" buttons.
+        expected_from = {
+            "confirmed": ["pending"],
+            "shipped":   ["confirmed", "preparing", "ready"],
+            "delivered": ["shipped", "ready"],
+        }.get(new_status)
         won = await transition_order_status(order_id, expected_from, new_status)
         if not won:
             if list_ctx is not None and is_admin:

@@ -45,6 +45,10 @@ Routes (all mounted by setup_admin_routes):
   GET  /admin/api/ads/status      — ad-account health (account_status, balance) + per-ad issues_info
   GET  /admin/api/ads/leads       — {limit} -> stored Meta lead-form submissions, newest first
   POST /admin/api/ads/leads/{lead_id}/handled — claim a lead ("Bog'landim"), same as the Telegram button
+  GET  /admin/api/courier/board   — Kanban snapshot: 5 columns of live orders + today's delivered
+  POST /admin/api/courier/orders/{id}/move   — {status, from?, notify?} -> guarded status move
+  POST /admin/api/courier/orders/{id}/courier — {courier_id|null} -> claim/release a card
+  GET  /admin/api/courier/couriers — registered couriers for the card picker
 
 Images are stored in Postgres (web_images) because Railway's filesystem is
 ephemeral — see database.py.
@@ -61,6 +65,7 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 
+import courier_board
 import database
 from config import ADMIN_WEB_PASSWORD, BOT_TOKEN, ADMIN_IDS, BOT_USERNAME
 from locales import CATEGORIES
@@ -1311,6 +1316,74 @@ async def api_retention_customer(request: web.Request):
 
 # ─────────────────────────────── wiring ─────────────────────────────────────
 
+# ───────────────────────────── courier board ─────────────────────────────────
+
+@require_auth
+async def api_courier_board(request: web.Request):
+    """Whole Kanban board in one payload — see courier_board.board_snapshot.
+    The tab polls this every few seconds so two admins watching the same board
+    see each other's moves without a websocket."""
+    try:
+        hours = int(request.query.get("hours", courier_board.DELIVERED_WINDOW_HOURS))
+    except ValueError:
+        hours = courier_board.DELIVERED_WINDOW_HOURS
+    hours = max(1, min(hours, 24 * 14))
+    snapshot = await courier_board.board_snapshot(hours)
+    return _json(snapshot)
+
+
+@require_auth
+async def api_courier_move(request: web.Request):
+    """Move a card. Body: {status, from?, notify?}.
+
+    `from` is the status the board was showing — when it no longer matches,
+    the move is rejected as stale instead of silently overwriting whatever a
+    second admin just did.
+    """
+    order_id = int(request.match_info["id"])
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    target = str(body.get("status") or "").strip()
+    expected = body.get("from") or None
+    notify = body.get("notify", True) is not False
+
+    result = await courier_board.move_order(
+        order_id, target,
+        expected_from=str(expected) if expected else None,
+        notify=notify, bot=request.app.get("bot"),
+    )
+    if not result.get("ok"):
+        return _json(result, status=409 if result.get("stale") else 400)
+    return _json(result)
+
+
+@require_auth
+async def api_courier_assign(request: web.Request):
+    """Claim or release a card for a courier. Body: {courier_id} (null clears)."""
+    order_id = int(request.match_info["id"])
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    raw = body.get("courier_id")
+    courier_id = None
+    if raw not in (None, "", "null"):
+        try:
+            courier_id = int(raw)
+        except (TypeError, ValueError):
+            return _json({"error": "noto'g'ri kuryer"}, status=400)
+    await courier_board.assign_courier(order_id, courier_id)
+    order = await database.get_order(order_id)
+    return _json({"ok": True, "order": courier_board._card(order) if order else None})
+
+
+@require_auth
+async def api_courier_couriers(request: web.Request):
+    return _json({"couriers": await courier_board.courier_options()})
+
+
 def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin", admin_page)
     app.router.add_post("/admin/api/login", api_login)
@@ -1353,4 +1426,8 @@ def setup_admin_routes(app: web.Application):
     app.router.add_post("/admin/api/bloggers/{id:[0-9]+}", api_bloggers_update)
     app.router.add_post("/admin/api/bloggers/{id:[0-9]+}/delete", api_bloggers_delete)
     app.router.add_get("/admin/api/bloggers/{id:[0-9]+}/detail", api_bloggers_detail)
+    app.router.add_get("/admin/api/courier/board", api_courier_board)
+    app.router.add_get("/admin/api/courier/couriers", api_courier_couriers)
+    app.router.add_post("/admin/api/courier/orders/{id:\\d+}/move", api_courier_move)
+    app.router.add_post("/admin/api/courier/orders/{id:\\d+}/courier", api_courier_assign)
     app.router.add_get("/img/{id:\\d+}", serve_image)

@@ -85,6 +85,7 @@ class AdminStates(StatesGroup):
     b2b_eritritol_quantity = State()
     b2b_price_value = State()   # setting one product's wholesale price per kg
     b2b_eritritol_total = State()
+    b2b_eritritol_cost = State()    # tannarx per kg — nothing else knows it
     b2b_eritritol_confirm = State()
 
 
@@ -979,6 +980,10 @@ async def render_orders_list(callback: CallbackQuery, status_filter: str, page: 
         lifecycle = f"📅 {format_local_dt(o['created_at'])}"
         if o.get("confirmed_at"):
             lifecycle += f" → ✅ {format_local_dt(o['confirmed_at'])}"
+        if o.get("preparing_at"):
+            lifecycle += f" → 👨‍🍳 {format_local_dt(o['preparing_at'])}"
+        if o.get("ready_at"):
+            lifecycle += f" → ✨ {format_local_dt(o['ready_at'])}"
         if o.get("shipped_at"):
             lifecycle += f" → 🚚 {format_local_dt(o['shipped_at'])}"
         if o.get("delivered_at"):
@@ -995,7 +1000,8 @@ async def render_orders_list(callback: CallbackQuery, status_filter: str, page: 
     # quick-action button matching the *next* lifecycle step. Tapping the
     # action triggers the existing order_act:* handler, which updates the
     # status, stamps the timestamp, and pushes a notification to the buyer.
-    # pending → confirmed → shipped → delivered.
+    # pending → confirmed → (preparing → ready) → shipped → delivered; the
+    # middle two are set from the courier board and share the "Yo'lda" action.
     buttons = []
     for o in orders:
         status_text = get_order_status(o["status"], lang)
@@ -1013,7 +1019,7 @@ async def render_orders_list(callback: CallbackQuery, status_filter: str, page: 
                 text=get_text("btn_accept_order", lang),
                 callback_data=f"order_act:confirm:{o['id']}{ret}",
             )
-        elif o["status"] == "confirmed":
+        elif o["status"] in ("confirmed", "preparing", "ready"):
             action_btn = InlineKeyboardButton(
                 text=get_text("btn_mark_shipped", lang),
                 callback_data=f"order_act:ship:{o['id']}{ret}",
@@ -2339,14 +2345,47 @@ async def b2b_eritritol_total(message: Message, state: FSMContext):
     except ValueError:
         return
     await state.update_data(total=total)
-    await state.set_state(AdminStates.b2b_eritritol_confirm)
-    
+    await state.set_state(AdminStates.b2b_eritritol_cost)
+    await message.answer(get_text("b2b_eritritol_cost", lang),
+                         parse_mode="HTML", reply_markup=admin_cancel_keyboard(lang))
+
+
+@router.message(AdminStates.b2b_eritritol_cost, F.text)
+async def b2b_eritritol_cost(message: Message, state: FSMContext):
+    """Tannarx per kilogram. Nothing in the catalog knows it — wholesale is
+    weighed out of a sack, the shop sells 100gr/500gr packs — so if this is
+    skipped the sale really is uncosted and Maqsadlar goes on saying so."""
+    if not is_admin(message.from_user.id): return
     data = await state.get_data()
+    lang = data.get("lang", "uz")
+    raw = (message.text or "").strip()
+    if raw in ("-", "0"):
+        cost = 0.0
+    else:
+        try:
+            cost = float(raw.replace(' ', '').replace(',', '.'))
+        except ValueError:
+            await message.answer(get_text("b2b_eritritol_cost", lang),
+                                 parse_mode="HTML", reply_markup=admin_cancel_keyboard(lang))
+            return
+        if cost < 0:
+            await message.answer(get_text("b2b_eritritol_cost", lang),
+                                 parse_mode="HTML", reply_markup=admin_cancel_keyboard(lang))
+            return
+    await state.update_data(cost_per_kg=cost)
+    await state.set_state(AdminStates.b2b_eritritol_confirm)
+
+    data = await state.get_data()
+    total = float(data["total"])
+    qty = float(data["quantity"])
+    profit = total - cost * qty
     text = get_text("b2b_eritritol_confirm", lang,
         address=html.escape(data["address"]),
         phone=html.escape(data["phone"]),
-        quantity=data["quantity"],
+        quantity=f"{qty:g}",
         total=_fmt_num(total),
+        cost=(_fmt_num(cost) if cost > 0 else "—"),
+        profit=(_fmt_num(profit) if cost > 0 else "—"),
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -2373,7 +2412,8 @@ async def b2b_eritritol_confirm(callback: CallbackQuery, state: FSMContext):
         address=data["address"],
         phone=data["phone"],
         quantity=data["quantity"],
-        total=data["total"]
+        total=data["total"],
+        cost_per_kg=data.get("cost_per_kg") or 0,
     )
     await state.clear()
     await callback.message.edit_text(get_text("b2b_saved", lang, order_id=order_id), reply_markup=admin_panel_keyboard(lang))

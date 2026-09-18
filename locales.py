@@ -446,13 +446,22 @@ TEXTS = {
         "uz": "Nech pulga berilganini kiriting (jami so'm):",
         "ru": "За какую общую сумму отдали (в сумах):",
     },
+    "b2b_eritritol_cost": {
+        "uz": ("1 kg tannarxini kiriting (so'm) — foyda shundan hisoblanadi.\n\n"
+               "Bilmasangiz <b>0</b> yozing, lekin u holda bu savdo foydani "
+               "oshirib ko'rsatadi."),
+        "ru": ("Введите себестоимость 1 кг (сум) — из неё считается прибыль.\n\n"
+               "Если не знаете, напишите <b>0</b>, но тогда эта продажа завысит прибыль."),
+    },
     "b2b_eritritol_confirm": {
         "uz": (
             "📋 <b>B2B Eritritol tafsilotlari</b>\n\n"
             "📍 Manzil: {address}\n"
             "📞 Raqam: {phone}\n"
             "📦 Miqdor: {quantity} kg\n"
-            "💰 Jami: {total} so'm\n\n"
+            "💰 Jami: {total} so'm\n"
+            "💼 Tannarx: {cost} so'm/kg\n"
+            "📈 Foyda: {profit} so'm\n\n"
             "Saqlaysizmi?"
         ),
         "ru": (
@@ -460,7 +469,9 @@ TEXTS = {
             "📍 Адрес: {address}\n"
             "📞 Номер: {phone}\n"
             "📦 Кол-во: {quantity} кг\n"
-            "💰 Итого: {total} сум\n\n"
+            "💰 Итого: {total} сум\n"
+            "💼 Себестоимость: {cost} сум/кг\n"
+            "📈 Прибыль: {profit} сум\n\n"
             "Сохранить?"
         ),
     },
@@ -881,6 +892,8 @@ TEXTS = {
     },
     "order_status_pending": {"uz": "⏳ Kutilmoqda", "ru": "⏳ Ожидает"},
     "order_status_confirmed": {"uz": "✅ Tasdiqlangan", "ru": "✅ Подтверждён"},
+    "order_status_preparing": {"uz": "👨‍🍳 Tayyorlanmoqda", "ru": "👨‍🍳 Готовится"},
+    "order_status_ready": {"uz": "📦 Tayyor", "ru": "📦 Готов"},
     "order_status_shipped": {"uz": "🚚 Yo'lda", "ru": "🚚 В пути"},
     "order_status_delivering": {"uz": "🚚 Yetkazilmoqda", "ru": "🚚 Доставляется"},
     "order_status_delivered": {"uz": "📦 Yetkazildi", "ru": "📦 Доставлен"},
@@ -1791,6 +1804,34 @@ TEXTS = {
               "Скоро свяжемся с вами и подготовим заказ к доставке.\n"
               "Спасибо, что выбрали нас! 🙏",
     },
+    "buyer_order_preparing": {
+        "uz": "👨‍🍳 <b>Buyurtmangiz tayyorlanmoqda!</b>\n\n"
+              "🛍 Buyurtma №<b>{order_id}</b>\n"
+              "📅 Boshlangan vaqt: <b>{when}</b>\n\n"
+              "{timeline}\n\n"
+              "Mahsulotlaringizni ehtiyotkorlik bilan yig'ib, qadoqlayapmiz.\n"
+              "Tayyor bo'lishi bilan sizga darhol xabar beramiz 💚",
+        "ru": "👨‍🍳 <b>Ваш заказ готовится!</b>\n\n"
+              "🛍 Заказ №<b>{order_id}</b>\n"
+              "📅 Время начала: <b>{when}</b>\n\n"
+              "{timeline}\n\n"
+              "Бережно собираем и упаковываем ваши товары.\n"
+              "Как только всё будет готово — сразу сообщим 💚",
+    },
+    "buyer_order_ready": {
+        "uz": "📦 <b>Buyurtmangiz tayyor!</b>\n\n"
+              "🛍 Buyurtma №<b>{order_id}</b>\n"
+              "📅 Tayyor bo'lgan vaqt: <b>{when}</b>\n\n"
+              "{timeline}\n\n"
+              "Buyurtmangiz qadoqlandi va kuryerga topshirilmoqda.\n"
+              "Tez orada yo'lga chiqadi 🚚",
+        "ru": "📦 <b>Ваш заказ готов!</b>\n\n"
+              "🛍 Заказ №<b>{order_id}</b>\n"
+              "📅 Время готовности: <b>{when}</b>\n\n"
+              "{timeline}\n\n"
+              "Заказ упакован и передаётся курьеру.\n"
+              "Совсем скоро он будет в пути 🚚",
+    },
     "buyer_order_shipped": {
         "uz": "🚚 <b>Buyurtmangiz yo'lda!</b>\n\n"
               "🛍 Buyurtma №<b>{order_id}</b>\n"
@@ -1842,6 +1883,8 @@ TEXTS = {
     # Compact lifecycle block included with each status notification
     "buyer_timeline_created":   {"uz": "📅 Buyurtma berildi: {date}", "ru": "📅 Заказ оформлен: {date}"},
     "buyer_timeline_confirmed": {"uz": "✅ Tasdiqlandi: {date}",      "ru": "✅ Подтверждён: {date}"},
+    "buyer_timeline_preparing": {"uz": "👨‍🍳 Tayyorlanmoqda: {date}",  "ru": "👨‍🍳 Готовится: {date}"},
+    "buyer_timeline_ready":     {"uz": "✨ Tayyor bo'ldi: {date}",    "ru": "✨ Готов: {date}"},
     "buyer_timeline_shipped":   {"uz": "🚚 Yo'lda: {date}",           "ru": "🚚 В пути: {date}"},
     "buyer_timeline_delivered": {"uz": "📦 Yetkazildi: {date}",       "ru": "📦 Доставлен: {date}"},
 }

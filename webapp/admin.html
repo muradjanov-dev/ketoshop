@@ -195,6 +195,193 @@
 
   .chart-tip{position:fixed;pointer-events:none;background:#1F1B14;color:#fff;font-size:12px;font-weight:600;border-radius:8px;padding:6px 10px;z-index:300;opacity:0;transition:opacity .1s;white-space:nowrap}
   .chart-tip.show{opacity:1}
+
+  /* ══════════════════════════════════════════════════════════════════════
+     KURYER — Kanban board (2026-09-18)
+     Five columns of live orders. Cards are dragged with Pointer Events (one
+     code path for mouse, pen and touch) or moved with the ◀ ▶ buttons.
+     ══════════════════════════════════════════════════════════════════════ */
+  :root{
+    --kb-amber:#E0AA55; --kb-amber-wash:#3A2E12;
+    --kb-blue:#6FA8D6;  --kb-blue-wash:#1B2A38;
+    --kb-violet:#A98BD6;--kb-violet-wash:#2A2138;
+    --kb-accent:#E48A3D;--kb-accent-wash:#3A2A16;
+    --kb-green:#8BAE5B; --kb-green-wash:#26301A;
+    --kb-glass:rgba(255,255,255,.04);
+    --kb-col-bg:#1B1811; --kb-card-bg:#272117; --kb-card-line:#3B3524;
+  }
+  [data-theme="light"]{
+    --kb-amber:#C9932E; --kb-amber-wash:#FBF1DE;
+    --kb-blue:#3C73A8;  --kb-blue-wash:#E8F1F9;
+    --kb-violet:#7B5CB8;--kb-violet-wash:#F0EBFA;
+    --kb-accent:#C05A24;--kb-accent-wash:#FBEDE2;
+    --kb-green:#5F7E33; --kb-green-wash:#EDF2DE;
+    --kb-glass:rgba(46,38,23,.05);
+    --kb-col-bg:#EFEBE0; --kb-card-bg:#FFFFFF; --kb-card-line:#E5DFD2;
+  }
+  /* the board needs more room than the 1200px the rest of the panel uses */
+  .shell.wide{max-width:1660px}
+
+  /* ── top strip ── */
+  .kb-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+  .kb-stat{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);
+           border-radius:14px;padding:9px 15px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .kb-stat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent);opacity:.85}
+  .kb-stat.green::before{background:var(--kb-green)}
+  .kb-stat .ic{font-size:17px;line-height:1}
+  .kb-stat .lab{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:800}
+  .kb-stat .val{font-size:16px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums}
+  .kb-stat .sub{font-size:11.5px;color:var(--ink-2);font-weight:700}
+  .kb-search{max-width:240px}
+  .kb-live{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--ink-2);
+           background:var(--chip-bg);border-radius:20px;padding:6px 13px;border:1px solid transparent;transition:.18s}
+  .kb-live:hover{border-color:var(--line)}
+  .kb-live .dot{width:7px;height:7px;border-radius:50%;background:var(--ink-3);transition:.2s}
+  .kb-live.on .dot{background:var(--kb-green);animation:kbPulse 2.4s ease-out infinite}
+  @keyframes kbPulse{0%{box-shadow:0 0 0 0 rgba(139,174,91,.55)}70%{box-shadow:0 0 0 7px rgba(139,174,91,0)}100%{box-shadow:0 0 0 0 rgba(139,174,91,0)}}
+
+  /* ── the board ── */
+  .kanban{display:grid;grid-template-columns:repeat(5,minmax(248px,1fr));gap:14px;align-items:stretch}
+  .kb-col{background:var(--kb-col-bg);border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column;
+          height:clamp(400px,calc(100vh - 320px),780px);position:relative;overflow:hidden;transition:box-shadow .22s,border-color .22s,background .22s}
+  .kb-col::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;
+                  background:linear-gradient(90deg,var(--tone),transparent 85%);opacity:.9}
+  .kb-col[data-tone=amber]{--tone:var(--kb-amber);--tone-wash:var(--kb-amber-wash)}
+  .kb-col[data-tone=blue]{--tone:var(--kb-blue);--tone-wash:var(--kb-blue-wash)}
+  .kb-col[data-tone=violet]{--tone:var(--kb-violet);--tone-wash:var(--kb-violet-wash)}
+  .kb-col[data-tone=accent]{--tone:var(--kb-accent);--tone-wash:var(--kb-accent-wash)}
+  .kb-col[data-tone=green]{--tone:var(--kb-green);--tone-wash:var(--kb-green-wash)}
+
+  .kb-head{display:flex;align-items:center;gap:9px;padding:14px 14px 12px;position:sticky;top:0;z-index:2;
+           background:linear-gradient(180deg,var(--tone-wash) 0%,var(--kb-col-bg) 86%,transparent 100%)}
+  .kb-head .ic{width:30px;height:30px;flex:0 0 auto;border-radius:10px;background:var(--tone-wash);
+               display:grid;place-items:center;font-size:15px;transition:transform .22s}
+  .kb-head .tx{min-width:0;flex:1}
+  .kb-head h3{font-size:13.5px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .kb-head .sum{font-size:11px;font-weight:700;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .kb-count{flex:0 0 auto;min-width:25px;text-align:center;font-size:12px;font-weight:800;color:var(--tone);
+            background:var(--tone-wash);border-radius:20px;padding:3px 9px;font-variant-numeric:tabular-nums}
+  .kb-count.bump{animation:kbBump .42s cubic-bezier(.34,1.56,.64,1)}
+  @keyframes kbBump{0%{transform:scale(1)}38%{transform:scale(1.32)}100%{transform:scale(1)}}
+
+  .kb-body{padding:0 10px 12px;display:flex;flex-direction:column;gap:9px;flex:1 1 auto;
+           overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+  .kb-body::-webkit-scrollbar{width:7px}
+  .kb-body::-webkit-scrollbar-thumb{background:var(--line);border-radius:10px}
+
+  /* drop feedback */
+  .kb-col.over{border-color:var(--tone);background:var(--surface-2);
+               box-shadow:0 0 0 2px var(--tone-wash),0 18px 40px -18px rgba(0,0,0,.45)}
+  .kb-col.over .kb-head .ic{transform:scale(1.08)}
+  .kb-col.deny{border-color:var(--red);box-shadow:0 0 0 2px var(--red-wash)}
+  .kb-slot{height:0;border-radius:12px;border:2px dashed var(--tone);background:var(--tone-wash);opacity:0;
+           transition:height .18s cubic-bezier(.4,0,.2,1),opacity .18s;flex:0 0 auto}
+  .kb-col.over .kb-slot{height:52px;opacity:.6}
+
+  .kb-empty{margin:auto;padding:26px 10px;text-align:center;color:var(--ink-3);font-size:12.5px;font-weight:600;line-height:1.7}
+  .kb-empty .big{font-size:22px;display:block;margin-bottom:4px;opacity:.5}
+
+  /* ── card ── */
+  .kb-card{background:var(--kb-card-bg);border:1px solid var(--kb-card-line);border-radius:13px;padding:11px 12px 10px;
+           box-shadow:0 1px 2px rgba(0,0,0,.16),0 6px 16px -12px rgba(0,0,0,.5);position:relative;cursor:grab;touch-action:pan-y;
+           transition:transform .18s cubic-bezier(.4,0,.2,1),box-shadow .18s,border-color .18s,opacity .18s;
+           animation:kbIn .32s cubic-bezier(.22,1,.36,1) backwards;animation-delay:calc(var(--i,0)*28ms)}
+  @keyframes kbIn{from{opacity:0;transform:translateY(9px) scale(.985)}to{opacity:1;transform:none}}
+  .kb-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px -12px rgba(0,0,0,.45);border-color:var(--tone)}
+  .kb-card:active{cursor:grabbing}
+  .kb-card::before{content:"";position:absolute;left:0;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;
+                   background:var(--tone);opacity:.75}
+  .kb-card.dragging{opacity:.3;transform:scale(.97);border-style:dashed;box-shadow:none}
+  .kb-card.landed{animation:kbLand .75s ease-out}
+  @keyframes kbLand{0%{box-shadow:0 0 0 0 var(--tone)}100%{box-shadow:0 0 0 13px rgba(0,0,0,0)}}
+  .kb-card.leaving{animation:kbOut .22s ease-in forwards}
+  @keyframes kbOut{to{opacity:0;transform:scale(.94);margin-top:-8px}}
+  .kb-card.busy{pointer-events:none;opacity:.55}
+
+  .kb-card .r1{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+  .kb-id{font-size:13px;font-weight:800;letter-spacing:-.02em}
+  .kb-chip{font-size:10px;font-weight:800;border-radius:20px;padding:2px 7px;letter-spacing:.02em;white-space:nowrap}
+  .kb-chip.tone{background:var(--tone-wash);color:var(--tone)}
+  .kb-chip.soft{background:var(--chip-bg);color:var(--ink-3)}
+  .kb-chip.hot{background:var(--red-wash);color:var(--red)}
+  .kb-chip.warm{background:var(--amber-wash);color:var(--amber)}
+  .kb-age{margin-left:auto;font-size:10.5px;font-weight:700;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .kb-age.warn{color:var(--amber)}
+  .kb-age.late{color:var(--red)}
+  .kb-who{font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kb-meta{font-size:11.5px;color:var(--ink-2);line-height:1.45;margin-top:3px;
+           display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .kb-items{font-size:11.5px;color:var(--ink-3);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kb-foot{display:flex;align-items:center;gap:6px;margin-top:9px;padding-top:8px;border-top:1px solid var(--line)}
+  .kb-total{font-size:13.5px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums}
+  .kb-acts{margin-left:auto;display:flex;gap:4px}
+  .kb-mini{border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);border-radius:8px;
+           min-width:26px;height:26px;display:grid;place-items:center;font-size:12px;font-weight:800;
+           transition:.15s;flex:0 0 auto;line-height:1;padding:0}
+  .kb-mini:hover:not(:disabled){background:var(--tone-wash);border-color:var(--tone);color:var(--tone);transform:translateY(-1px)}
+  .kb-mini:disabled{opacity:.3;cursor:not-allowed}
+  .kb-mini.wide{padding:0 9px;font-size:11px;letter-spacing:.01em}
+  .kb-mini.go{background:var(--kb-accent-wash);border-color:transparent;color:var(--kb-accent)}
+
+  /* the clone that follows the pointer */
+  .kb-ghost{position:fixed;z-index:400;pointer-events:none;border-radius:13px;
+            box-shadow:0 28px 60px -18px rgba(0,0,0,.6),0 0 0 1px var(--line);
+            transform:rotate(-1.6deg) scale(1.035);opacity:.97;
+            animation:kbGrab .16s cubic-bezier(.34,1.56,.64,1)}
+  @keyframes kbGrab{from{transform:rotate(0) scale(1)}to{transform:rotate(-1.6deg) scale(1.035)}}
+  body.kb-dragging{cursor:grabbing;user-select:none;-webkit-user-select:none}
+
+  /* skeleton while the first snapshot loads */
+  .kb-skel{height:76px;border-radius:13px;background:var(--chip-bg);position:relative;overflow:hidden}
+  .kb-skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);
+                  background:linear-gradient(90deg,transparent,var(--kb-glass),transparent);animation:kbShim 1.3s infinite}
+  @keyframes kbShim{100%{transform:translateX(100%)}}
+
+  /* ── card detail modal ── */
+  .kb-detail{display:flex;flex-direction:column;gap:13px}
+  .kb-detail .sec{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .kb-detail .sec h4{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
+  .kb-kv{display:flex;gap:10px;font-size:13px;padding:3px 0}
+  .kb-kv .k{color:var(--ink-2);min-width:96px;flex:0 0 auto;font-weight:600}
+  .kb-kv .v{font-weight:600;word-break:break-word}
+  .kb-kv a{color:var(--accent);text-decoration:none;font-weight:700}
+  .kb-kv a:hover{text-decoration:underline}
+  .kb-line{display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:4px 0;border-bottom:1px dashed var(--line)}
+  .kb-line:last-child{border-bottom:none}
+  .kb-step{display:flex;gap:11px;align-items:flex-start;padding:5px 0;position:relative}
+  .kb-step .bullet{width:9px;height:9px;border-radius:50%;background:var(--line);margin-top:5px;flex:0 0 auto;
+                   position:relative;transition:.2s}
+  .kb-step.done .bullet{background:var(--green);box-shadow:0 0 0 3px var(--green-wash)}
+  .kb-step:not(:last-child) .bullet::after{content:"";position:absolute;left:50%;top:11px;width:2px;height:20px;
+                                           transform:translateX(-50%);background:var(--line)}
+  .kb-step.done:not(:last-child) .bullet::after{background:var(--green)}
+  .kb-step .lb{font-size:12.5px;font-weight:700;color:var(--ink-2)}
+  .kb-step.done .lb{color:var(--ink)}
+  .kb-step .dt{margin-left:auto;font-size:11.5px;color:var(--ink-3);font-weight:700;font-variant-numeric:tabular-nums}
+  .kb-move{display:flex;gap:7px;flex-wrap:wrap}
+  .kb-move button{flex:1 1 130px}
+
+  /* switch */
+  .kb-switch{display:inline-flex;align-items:center;gap:9px;font-size:12.5px;font-weight:700;color:var(--ink-2);cursor:pointer;user-select:none}
+  .kb-switch input{display:none}
+  .kb-switch .track{width:38px;height:21px;border-radius:20px;background:var(--chip-bg);border:1px solid var(--line);
+                    position:relative;transition:.22s;flex:0 0 auto}
+  .kb-switch .track::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;
+                           background:var(--ink-3);transition:.22s cubic-bezier(.34,1.56,.64,1)}
+  .kb-switch input:checked + .track{background:var(--green-wash);border-color:var(--green)}
+  .kb-switch input:checked + .track::after{transform:translateX(17px);background:var(--green)}
+
+  @media (max-width:1280px){
+    .kanban{grid-template-columns:repeat(5,minmax(224px,1fr));gap:11px}
+  }
+  @media (max-width:1080px){
+    .kanban{display:flex;overflow-x:auto;padding-bottom:10px;scroll-snap-type:x proximity;gap:12px}
+    .kb-col{flex:0 0 272px;scroll-snap-align:start;height:min(66vh,560px)}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .kb-card,.kb-count,.kb-ghost,.kb-skel::after,.kb-live.on .dot{animation:none!important}
+    .kb-card,.kb-col,.kb-mini{transition:none!important}
+  }
 </style>
 </head>
 <body>
@@ -226,6 +413,7 @@
 
   <div class="tabs">
     <button class="tab active" data-view="dashboard">📊 Dashboard</button>
+    <button class="tab" data-view="courier">🚚 Kuryer</button>
     <button class="tab" data-view="products">📦 Mahsulotlar</button>
     <button class="tab" data-view="sets">🎁 To'plamlar (Set)</button>
     <button class="tab" data-view="promos">🎁 Aksiya / Bonus</button>
@@ -285,6 +473,31 @@
   </section>
 
   <!-- ===== PRODUCTS VIEW ===== -->
+  <!-- ===== KURYER (Kanban) VIEW ===== -->
+  <section class="view" id="view-courier">
+    <div class="kb-bar">
+      <div class="kb-stat">
+        <span class="ic">🛎️</span>
+        <div><div class="lab">Faol buyurtmalar</div><div class="val" id="kbLive">—</div></div>
+        <div class="sub" id="kbLiveSum"></div>
+      </div>
+      <div class="kb-stat green">
+        <span class="ic">📦</span>
+        <div><div class="lab">Bugun yetkazildi</div><div class="val" id="kbDone">—</div></div>
+        <div class="sub" id="kbDoneSum"></div>
+      </div>
+      <div class="spacer" style="margin-left:auto"></div>
+      <input type="search" class="kb-search" id="kbSearch" placeholder="Qidirish: #raqam, ism, telefon…">
+      <label class="kb-switch" title="Status o'zgarganda mijozga Telegram'dan xabar yuborilsin">
+        <input type="checkbox" id="kbNotify" checked><span class="track"></span>
+        <span>Mijozga xabar</span>
+      </label>
+      <button class="kb-live on" id="kbAutoBtn" type="button"><span class="dot"></span><span id="kbAutoLab">Jonli</span></button>
+      <button class="btn btn-o btn-sm" id="kbRefreshBtn" type="button">↻ Yangilash</button>
+    </div>
+    <div class="kanban" id="kanban"></div>
+  </section>
+
   <section class="view" id="view-products">
     <div class="toolbar">
       <input type="search" id="prodSearch" placeholder="🔍 Mahsulot qidirish…">
@@ -795,6 +1008,19 @@
   </form>
 </div>
 
+<!-- ===== KURYER: BUYURTMA KARTOCHKASI ===== -->
+<div class="modal-bg" id="kbModal">
+  <div class="modal" style="max-width:600px">
+    <h2 id="kbModalTitle">Buyurtma</h2>
+    <div class="hint" id="kbModalSub"></div>
+    <div class="kb-detail" id="kbModalBody" style="margin-top:14px"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-danger" id="kbCancelBtn">Bekor qilish</button>
+      <button type="button" class="btn btn-o" data-close>Yopish</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 <div class="chart-tip" id="chartTip"></div>
 
@@ -1013,12 +1239,15 @@ $('#dashCustomDateBtn').addEventListener('click', () => {
 });
 
 /* ===== tabs ===== */
-const VIEWS=['dashboard','products','sets','promos','keto','bloggers','reklama','retention','expenses'];
+const VIEWS=['dashboard','courier','products','sets','promos','keto','bloggers','reklama','retention','expenses'];
 function switchView(v){
   if(!VIEWS.includes(v))v='dashboard';
   localStorage.setItem('ketoshop_admin_view',v);
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
   document.querySelectorAll('.view').forEach(s=>s.classList.toggle('active',s.id==='view-'+v));
+  // the Kanban needs the full width; every other tab keeps the 1200px column
+  $('#shell').classList.toggle('wide',v==='courier');
+  if(v==='courier'){loadCourier();kbPollOn();}else{kbPollOff();}
   if(v==='dashboard')loadDashboard();
   if(v==='products')loadProducts();
   if(v==='sets')loadSets();
@@ -1917,6 +2146,439 @@ function closeModals(){$$('.modal-bg').forEach(m=>m.classList.remove('open'));}
 $$('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)closeModals();}));
 $$('[data-close]').forEach(b=>b.addEventListener('click',closeModals));
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModals();});
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   KURYER — Kanban board (2026-09-18)
+
+   One snapshot (/admin/api/courier/board) renders all five columns. A move is
+   optimistic: the card jumps to its new column straight away, then the POST
+   confirms it. The request carries the status the board *was* showing, so if
+   a second admin moved the same order first the server rejects the move as
+   stale and we reload rather than overwrite them.
+
+   Dragging is Pointer Events only — one code path for mouse, pen and touch.
+   Every drag is also available as a button (◀ ▶ on the card, full list in the
+   detail modal) so the board works on a phone and with a keyboard.
+   ══════════════════════════════════════════════════════════════════════════ */
+const KB_LABEL={pending:'Yangi',confirmed:'Qabul qilindi',preparing:'Tayyorlanmoqda',
+                ready:'Tayyor',shipped:"Yo'lda",delivered:'Yetkazildi',cancelled:'Bekor qilindi'};
+const KB_FLOW=['pending','confirmed','preparing','ready','shipped','delivered'];
+/* mirrors courier_board.ALLOWED_FROM — only used to grey out an impossible
+   drop before the request; the server stays the authority. */
+const KB_ALLOWED_FROM={
+  pending:['confirmed','preparing','ready','shipped'],
+  confirmed:['pending','preparing','ready','shipped'],
+  preparing:['pending','confirmed','ready','shipped'],
+  ready:['pending','confirmed','preparing','shipped'],
+  shipped:['confirmed','preparing','ready','delivered'],
+  delivered:['ready','shipped'],
+  cancelled:['pending','confirmed','preparing','ready','shipped'],
+};
+/* minutes in one stage before the age badge turns amber / red, per column */
+const KB_SLA={new:[10,25],accepted:[20,45],preparing:[30,60],delivery:[60,120],done:[0,0]};
+const KB_DELIVERY={courier:'🚚 Kuryer',self:'🏃 Olib ketish',yandex_taxi:'🚕 Yandex Taxi',
+                   yandex_market:'📦 Yandex Market',bts:'🚛 BTS',emu:'✈️ EMU'};
+const KB_PAYMENT={cash:'💵 Naqd',card:'💳 Karta',click:'💳 Click',payme:'💳 Payme',online:'💳 Onlayn'};
+const KB_POLL_MS=12000;
+
+let KB_BOARD=null, KB_COURIERS=[], KB_TIMER=null, KB_AUTO=true;
+let KB_DRAG=null, KB_BUSY=new Set(), KB_DETAIL_ID=null, KB_LOADED=false;
+let KB_COUNTS={};
+
+/* ── formatting ── */
+function kbTime(iso){
+  // DB stamps are naive UTC; the shop reads time in Asia/Tashkent (UTC+5).
+  if(!iso)return null;
+  const d=new Date(/[Zz+]|\d{2}:\d{2}$/.test(iso.slice(10))?iso:iso+'Z');
+  if(isNaN(d))return null;
+  const t=new Date(d.getTime()+5*3600*1000), p=n=>String(n).padStart(2,'0');
+  return p(t.getUTCDate())+'.'+p(t.getUTCMonth()+1)+' '+p(t.getUTCHours())+':'+p(t.getUTCMinutes());
+}
+function kbAgo(min){
+  if(min==null)return '';
+  if(min<1)return 'hozir';
+  if(min<60)return min+' daq';
+  const h=Math.floor(min/60);
+  if(h<24)return h+' soat'+(min%60?' '+(min%60)+' daq':'');
+  return Math.floor(h/24)+' kun';
+}
+function kbSom(n){return Math.round(+n||0).toLocaleString('ru-RU').replace(/,/g,' ');}
+function kbNext(status){const i=KB_FLOW.indexOf(status);return i>=0&&i<KB_FLOW.length-1?KB_FLOW[i+1]:null;}
+function kbPrev(status){const i=KB_FLOW.indexOf(status);return i>0?KB_FLOW[i-1]:null;}
+function kbCan(from,to){return !!to&&from!==to&&(KB_ALLOWED_FROM[to]||[]).includes(from);}
+function kbCard(id){
+  if(!KB_BOARD)return null;
+  for(const c of KB_BOARD.columns){const f=c.cards.find(x=>x.id===id);if(f)return f;}
+  return null;
+}
+
+/* ── load ── */
+function kbSkeleton(){
+  $('#kanban').innerHTML=[0,1,2,3,4].map(()=>
+    `<div class="kb-col" data-tone="blue"><div class="kb-head"><div class="ic"></div>
+      <div class="tx"><h3>&nbsp;</h3></div></div>
+      <div class="kb-body">${'<div class="kb-skel"></div>'.repeat(3)}</div></div>`).join('');
+}
+async function loadCourier(opts){
+  const silent=opts&&opts.silent;
+  if(!KB_LOADED&&!silent)kbSkeleton();
+  try{
+    const d=await api('/admin/api/courier/board');
+    KB_BOARD=d;KB_LOADED=true;renderKanban();
+    if(KB_DETAIL_ID&&$('#kbModal').classList.contains('open'))kbRenderDetail(KB_DETAIL_ID);
+  }catch(err){
+    if(!silent)toast('⚠️ '+err.message);
+  }
+  if(!KB_COURIERS.length){
+    try{KB_COURIERS=(await api('/admin/api/courier/couriers')).couriers||[];}catch(e){}
+  }
+}
+
+/* ── render ── */
+function renderKanban(){
+  if(!KB_BOARD)return;
+  const q=($('#kbSearch').value||'').trim().toLowerCase().replace(/^#/,'');
+  const match=c=>!q||String(c.id).includes(q)
+    ||(c.customer_name||'').toLowerCase().includes(q)
+    ||(c.phone||'').replace(/\s/g,'').includes(q.replace(/\s/g,''))
+    ||(c.address||'').toLowerCase().includes(q)
+    ||(c.username||'').toLowerCase().includes(q);
+
+  const t=KB_BOARD.totals||{};
+  $('#kbLive').textContent=t.live??0;
+  $('#kbLiveSum').textContent=t.live_sum?kbSom(t.live_sum)+" so'm":'';
+  $('#kbDone').textContent=t.done_today??0;
+  $('#kbDoneSum').textContent=t.done_sum?kbSom(t.done_sum)+" so'm":'';
+
+  $('#kanban').innerHTML=KB_BOARD.columns.map(col=>{
+    const cards=col.cards.filter(match);
+    const body=cards.length
+      ? cards.map((c,i)=>kbCardHtml(c,col,i)).join('')
+      : `<div class="kb-empty"><span class="big">${q?'🔍':col.icon}</span>${q?'Mos buyurtma yo’q':'Hozircha bo’sh'}</div>`;
+    return `<div class="kb-col" data-tone="${col.tone}" data-col="${col.key}" data-target="${col.target}">
+      <div class="kb-head">
+        <div class="ic">${col.icon}</div>
+        <div class="tx"><h3>${esc(col.title)}</h3>
+          <div class="sum">${col.sum?kbSom(col.sum)+" so'm":'—'}</div></div>
+        <div class="kb-count" data-col-count="${col.key}">${cards.length}</div>
+      </div>
+      <div class="kb-body" data-body="${col.key}"><div class="kb-slot"></div>${body}</div>
+    </div>`;
+  }).join('');
+
+  // bump the counter only when it actually changed, so a poll that finds
+  // nothing new doesn't make the whole header twitch every 12 seconds
+  KB_BOARD.columns.forEach(col=>{
+    const n=col.cards.filter(match).length, el=$(`[data-col-count="${col.key}"]`);
+    if(el&&KB_COUNTS[col.key]!==undefined&&KB_COUNTS[col.key]!==n){
+      el.classList.remove('bump');void el.offsetWidth;el.classList.add('bump');
+    }
+    KB_COUNTS[col.key]=n;
+  });
+}
+
+function kbCardHtml(c,col,i){
+  const [warn,late]=KB_SLA[col.key]||[0,0];
+  const m=c.stage_minutes;
+  const ageCls=late&&m>=late?'late':(warn&&m>=warn?'warn':'');
+  const chips=[];
+  if(col.key==='delivery')
+    chips.push(`<span class="kb-chip ${c.status==='shipped'?'tone':'soft'}">${c.status==='shipped'?"🚚 Yo'lda":'📦 Tayyor'}</span>`);
+  if(c.payment_method&&c.payment_method!=='cash')chips.push('<span class="kb-chip soft">💳 Karta</span>');
+  if(c.source==='manual')chips.push('<span class="kb-chip soft">✍️ Operator</span>');
+  if(c.keto_redeemed>0)chips.push(`<span class="kb-chip warm">🥑 ${kbSom(c.keto_redeemed)}</span>`);
+  if(c.courier_name)chips.push(`<span class="kb-chip tone">🧍 ${esc(c.courier_name)}</span>`);
+
+  const items=c.items.slice(0,3).map(it=>`${esc(it.name)}×${it.quantity}`).join(', ')
+    +(c.items.length>3?` +${c.items.length-3}`:'');
+  const nx=kbNext(c.status), pv=kbPrev(c.status);
+  const goShipped=col.key==='delivery'&&c.status==='ready';
+
+  return `<article class="kb-card" data-id="${c.id}" data-status="${c.status}" style="--i:${i}">
+    <div class="r1">
+      <span class="kb-id">#${c.id}</span>
+      ${chips.join('')}
+      <span class="kb-age ${ageCls}" title="Shu bosqichda">${kbAgo(m)}</span>
+    </div>
+    <div class="kb-who">${esc(c.customer_name)}</div>
+    <div class="kb-meta">${esc(c.address||'Manzil ko’rsatilmagan')}</div>
+    ${items?`<div class="kb-items">🧺 ${esc(items)}</div>`:''}
+    <div class="kb-foot">
+      <span class="kb-total">${kbSom(c.total)}</span>
+      <div class="kb-acts">
+        <button class="kb-mini" data-act="prev" title="Orqaga: ${pv?esc(KB_LABEL[pv]):''}" ${kbCan(c.status,pv)?'':'disabled'}>◀</button>
+        ${goShipped
+          ? `<button class="kb-mini wide go" data-act="ship" title="Kuryer yo’lga chiqdi">🚚 Yo’lda</button>`
+          : `<button class="kb-mini" data-act="next" title="Oldinga: ${nx?esc(KB_LABEL[nx]):''}" ${kbCan(c.status,nx)?'':'disabled'}>▶</button>`}
+        <button class="kb-mini" data-act="open" title="Batafsil">⋯</button>
+      </div>
+    </div>
+  </article>`;
+}
+
+/* ── moving ── */
+async function kbMove(id,target,opts){
+  const card=kbCard(id);
+  if(!card||KB_BUSY.has(id))return;
+  const from=card.status;
+  if(target!=='cancelled'&&!kbCan(from,target)){
+    toast(`⚠️ «${KB_LABEL[from]}» dan «${KB_LABEL[target]}» ga o’tkazib bo’lmaydi`);
+    return;
+  }
+  KB_BUSY.add(id);
+  const el=document.querySelector(`.kb-card[data-id="${id}"]`);
+  if(el)el.classList.add('busy');
+
+  try{
+    const res=await api(`/admin/api/courier/orders/${id}/move`,{
+      method:'POST',
+      body:JSON.stringify({status:target,from:from,notify:$('#kbNotify').checked}),
+    });
+    // Swap the card in place rather than refetching — the board repaints
+    // instantly and the next poll reconciles anything else that moved.
+    KB_BOARD.columns.forEach(col=>{col.cards=col.cards.filter(x=>x.id!==id);});
+    const fresh=res.order;
+    const col=KB_BOARD.columns.find(c=>c.key===fresh.column);
+    if(col){col.key==='done'?col.cards.unshift(fresh):col.cards.push(fresh);}
+    kbRecount();renderKanban();
+    const moved=document.querySelector(`.kb-card[data-id="${id}"]`);
+    if(moved){moved.classList.add('landed');moved.scrollIntoView({block:'nearest',behavior:'smooth'});}
+    if(!(opts&&opts.quiet)){
+      toast(`✅ #${id} → ${KB_LABEL[target]}${res.notified?' · mijozga xabar ketdi':''}`);
+    }
+    if(KB_DETAIL_ID===id&&$('#kbModal').classList.contains('open'))kbRenderDetail(id);
+  }catch(err){
+    toast('⚠️ '+err.message);
+    await loadCourier({silent:true});   // whatever went wrong, show the truth
+  }finally{
+    KB_BUSY.delete(id);
+    const again=document.querySelector(`.kb-card[data-id="${id}"]`);
+    if(again)again.classList.remove('busy');
+  }
+}
+
+function kbRecount(){
+  if(!KB_BOARD)return;
+  let live=0,liveSum=0;
+  KB_BOARD.columns.forEach(col=>{
+    col.count=col.cards.length;
+    col.sum=col.cards.reduce((a,c)=>a+(+c.total||0),0);
+    if(col.key!=='done'){live+=col.count;liveSum+=col.sum;}
+  });
+  const done=KB_BOARD.columns.find(c=>c.key==='done');
+  KB_BOARD.totals={live,live_sum:liveSum,
+                   done_today:done?done.count:0,done_sum:done?done.sum:0};
+}
+
+/* ── drag & drop (Pointer Events) ── */
+function kbDragStart(e,cardEl){
+  const r=cardEl.getBoundingClientRect();
+  const ghost=cardEl.cloneNode(true);
+  ghost.className='kb-card kb-ghost';
+  ghost.style.width=r.width+'px';
+  // the clone leaves the column, so carry the column's accent with it
+  ghost.style.setProperty('--tone',getComputedStyle(cardEl).getPropertyValue('--tone'));
+  ghost.style.setProperty('--tone-wash',getComputedStyle(cardEl).getPropertyValue('--tone-wash'));
+  ghost.style.setProperty('--i','0');
+  ghost.style.animationName='kbGrab';
+  document.body.appendChild(ghost);
+  document.body.classList.add('kb-dragging');
+  cardEl.classList.add('dragging');
+  KB_DRAG={id:+cardEl.dataset.id,status:cardEl.dataset.status,el:cardEl,ghost,
+           dx:e.clientX-r.left,dy:e.clientY-r.top,col:null};
+  kbDragMove(e);
+}
+function kbDragMove(e){
+  const d=KB_DRAG;if(!d)return;
+  d.ghost.style.left=(e.clientX-d.dx)+'px';
+  d.ghost.style.top=(e.clientY-d.dy)+'px';
+  const under=document.elementFromPoint(e.clientX,e.clientY);
+  const col=under&&under.closest('.kb-col');
+  if(col!==d.col){
+    if(d.col)d.col.classList.remove('over','deny');
+    d.col=col;
+    if(col){
+      const target=col.dataset.target;
+      const ok=col.querySelector(`.kb-card[data-id="${d.id}"]`)?false:kbCan(d.status,target);
+      col.classList.add(ok?'over':'deny');
+      d.ok=ok;d.target=target;
+    }
+  }
+  // auto-scroll the column list when dragging near the viewport edge
+  const edge=70;
+  if(e.clientX<edge)window.scrollBy({left:-18,behavior:'instant'});
+  else if(e.clientX>window.innerWidth-edge)window.scrollBy({left:18,behavior:'instant'});
+}
+function kbDragEnd(e){
+  const d=KB_DRAG;if(!d)return;
+  KB_DRAG=null;
+  document.body.classList.remove('kb-dragging');
+  d.ghost.remove();
+  d.el.classList.remove('dragging');
+  if(d.col){
+    const ok=d.ok,target=d.target;
+    d.col.classList.remove('over','deny');
+    if(ok&&target)kbMove(d.id,target);
+    else if(target&&target!==d.status&&!d.col.querySelector(`.kb-card[data-id="${d.id}"]`))
+      toast(`⚠️ «${KB_LABEL[d.status]}» dan «${KB_LABEL[target]}» ga o’tkazib bo’lmaydi`);
+  }
+}
+
+$('#kanban').addEventListener('pointerdown',e=>{
+  if(e.button!==0&&e.pointerType==='mouse')return;
+  const cardEl=e.target.closest('.kb-card');
+  if(!cardEl||e.target.closest('button'))return;
+  if(KB_BUSY.has(+cardEl.dataset.id))return;
+  const sx=e.clientX,sy=e.clientY;let armed=false;
+  const move=ev=>{
+    if(!armed){
+      // a small threshold so a tap/click still reads as a click, and a
+      // vertical flick still scrolls the column on a phone
+      if(Math.abs(ev.clientX-sx)<6&&Math.abs(ev.clientY-sy)<6)return;
+      if(ev.pointerType!=='mouse'&&Math.abs(ev.clientY-sy)>Math.abs(ev.clientX-sx)*1.4){cleanup();return;}
+      armed=true;kbDragStart(ev,cardEl);
+    }
+    ev.preventDefault();kbDragMove(ev);
+  };
+  const up=ev=>{cleanup();if(armed)kbDragEnd(ev);};
+  const cleanup=()=>{
+    window.removeEventListener('pointermove',move);
+    window.removeEventListener('pointerup',up);
+    window.removeEventListener('pointercancel',up);
+  };
+  window.addEventListener('pointermove',move,{passive:false});
+  window.addEventListener('pointerup',up);
+  window.addEventListener('pointercancel',up);
+});
+
+/* ── card buttons ── */
+$('#kanban').addEventListener('click',e=>{
+  const btn=e.target.closest('[data-act]');if(!btn)return;
+  const id=+btn.closest('.kb-card').dataset.id, card=kbCard(id);
+  if(!card)return;
+  if(btn.dataset.act==='next')kbMove(id,kbNext(card.status));
+  else if(btn.dataset.act==='prev')kbMove(id,kbPrev(card.status));
+  else if(btn.dataset.act==='ship')kbMove(id,'shipped');
+  else if(btn.dataset.act==='open')kbOpenDetail(id);
+});
+
+/* ── detail modal ── */
+function kbOpenDetail(id){KB_DETAIL_ID=id;kbRenderDetail(id);$('#kbModal').classList.add('open');}
+function kbRenderDetail(id){
+  const c=kbCard(id);
+  if(!c){closeModals();return;}
+  $('#kbModalTitle').textContent='Buyurtma #'+c.id;
+  $('#kbModalSub').textContent=`${KB_LABEL[c.status]||c.status} · ${kbTime(c.created_at)||''} · ${kbAgo(c.age_minutes)} oldin`;
+
+  const tel=c.phone?`<a href="tel:${esc((c.phone||'').replace(/[^\d+]/g,''))}">${esc(c.phone)}</a>`:'—';
+  const tel2=c.secondary_phone?`<div class="kb-kv"><span class="k">Qo’shimcha</span><span class="v"><a href="tel:${esc(c.secondary_phone.replace(/[^\d+]/g,''))}">${esc(c.secondary_phone)}</a></span></div>`:'';
+  const tg=c.username?`<a href="https://t.me/${esc(c.username.replace(/^@/,''))}" target="_blank" rel="noopener">@${esc(c.username.replace(/^@/,''))}</a>`:'—';
+  const mapQ=encodeURIComponent(c.address||'');
+  const addr=c.address
+    ? `${esc(c.address)} <a href="https://yandex.uz/maps/?text=${mapQ}" target="_blank" rel="noopener">🗺</a>`
+    : '—';
+
+  const steps=[['created_at','🛒 Buyurtma berildi'],['confirmed_at','✅ Qabul qilindi'],
+               ['preparing_at','👨‍🍳 Tayyorlanmoqda'],['ready_at','📦 Tayyor'],
+               ['shipped_at',"🚚 Yo’lda"],['delivered_at','🏁 Yetkazildi']]
+    .map(([k,lab])=>`<div class="kb-step ${c[k]?'done':''}"><span class="bullet"></span>
+        <span class="lb">${lab}</span><span class="dt">${kbTime(c[k])||'—'}</span></div>`).join('');
+
+  const lines=c.items.map(it=>`<div class="kb-line"><span>${esc(it.name)}${it.is_gift?' 🎁':''}
+      <span style="color:var(--ink-3)"> × ${it.quantity} ${esc(it.unit||'')}</span></span>
+      <span class="tnum">${kbSom(it.price*it.quantity)}</span></div>`).join('')
+    ||'<div class="kb-line"><span style="color:var(--ink-3)">Mahsulotlar ro’yxati yo’q</span></div>';
+
+  const moves=KB_FLOW.filter(s=>kbCan(c.status,s)).map(s=>
+    `<button class="btn btn-o btn-sm" data-move="${s}">${esc(KB_LABEL[s])}</button>`).join('');
+
+  const courierOpts=['<option value="">— kuryer tanlanmagan —</option>']
+    .concat(KB_COURIERS.map(k=>`<option value="${k.user_id}" ${String(k.user_id)===String(c.courier_id)?'selected':''}>${esc(k.name)}</option>`))
+    .join('');
+
+  $('#kbModalBody').innerHTML=`
+    <div class="sec">
+      <h4>Mijoz</h4>
+      <div class="kb-kv"><span class="k">Ism</span><span class="v">${esc(c.customer_name)}</span></div>
+      <div class="kb-kv"><span class="k">Telefon</span><span class="v">${tel}</span></div>
+      ${tel2}
+      <div class="kb-kv"><span class="k">Telegram</span><span class="v">${tg}</span></div>
+      <div class="kb-kv"><span class="k">Manzil</span><span class="v">${addr}</span></div>
+      ${c.address_note?`<div class="kb-kv"><span class="k">Izoh</span><span class="v">${esc(c.address_note)}</span></div>`:''}
+    </div>
+    <div class="sec">
+      <h4>Buyurtma</h4>
+      ${lines}
+      <div class="kb-line" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px">
+        <span style="font-weight:800">Jami</span><span class="tnum" style="font-weight:800">${kbSom(c.total)} so'm</span></div>
+      ${c.keto_redeemed>0?`<div class="kb-line"><span>🥑 Keto bilan chegirma</span><span class="tnum">−${kbSom(c.keto_redeemed)}</span></div>`:''}
+      <div class="kb-kv" style="margin-top:6px"><span class="k">To’lov</span><span class="v">${KB_PAYMENT[c.payment_method]||esc(c.payment_method||'—')}</span></div>
+      <div class="kb-kv"><span class="k">Yetkazish</span><span class="v">${KB_DELIVERY[c.delivery_method]||esc(c.delivery_method||'—')}</span></div>
+    </div>
+    <div class="sec">
+      <h4>Bosqichlar</h4>
+      ${steps}
+    </div>
+    <div class="sec">
+      <h4>Kuryer</h4>
+      <select id="kbCourierSel">${courierOpts}</select>
+      <div class="hint" style="margin-top:6px">Kuryer tayinlash mijozga xabar yubormaydi.</div>
+    </div>
+    <div class="sec">
+      <h4>Holatni o'zgartirish</h4>
+      <div class="kb-move">${moves||'<span style="color:var(--ink-3);font-size:13px">Bu buyurtma yakunlangan.</span>'}</div>
+    </div>`;
+
+  $('#kbModalBody').querySelectorAll('[data-move]').forEach(b=>
+    b.addEventListener('click',()=>{kbMove(id,b.dataset.move);}));
+  const sel=$('#kbCourierSel');
+  if(sel)sel.addEventListener('change',async()=>{
+    try{
+      await api(`/admin/api/courier/orders/${id}/courier`,
+                {method:'POST',body:JSON.stringify({courier_id:sel.value||null})});
+      toast('✅ Kuryer yangilandi');
+      await loadCourier({silent:true});
+    }catch(err){toast('⚠️ '+err.message);}
+  });
+}
+$('#kbCancelBtn').addEventListener('click',async()=>{
+  if(!KB_DETAIL_ID)return;
+  if(!confirm(`Buyurtma #${KB_DETAIL_ID} bekor qilinsinmi? Mahsulotlar omborga qaytariladi.`))return;
+  const id=KB_DETAIL_ID;
+  closeModals();
+  await kbMove(id,'cancelled');
+  await loadCourier({silent:true});
+});
+
+/* ── polling ── */
+function kbPollOn(){
+  kbPollOff();
+  if(!KB_AUTO)return;
+  KB_TIMER=setInterval(()=>{
+    if(document.hidden||KB_DRAG||KB_BUSY.size)return;
+    if(!$('#view-courier').classList.contains('active'))return;
+    if($('#kbModal').classList.contains('open'))return;   // don't repaint under the admin's hands
+    loadCourier({silent:true});
+  },KB_POLL_MS);
+}
+function kbPollOff(){if(KB_TIMER){clearInterval(KB_TIMER);KB_TIMER=null;}}
+
+$('#kbAutoBtn').addEventListener('click',()=>{
+  KB_AUTO=!KB_AUTO;
+  $('#kbAutoBtn').classList.toggle('on',KB_AUTO);
+  $('#kbAutoLab').textContent=KB_AUTO?'Jonli':'To’xtatilgan';
+  try{localStorage.setItem('ketoshop_kb_auto',KB_AUTO?'1':'0');}catch(e){}
+  kbPollOn();
+  if(KB_AUTO)loadCourier({silent:true});
+});
+$('#kbRefreshBtn').addEventListener('click',()=>loadCourier());
+$('#kbSearch').addEventListener('input',()=>renderKanban());
+try{
+  if(localStorage.getItem('ketoshop_kb_auto')==='0'){
+    KB_AUTO=false;$('#kbAutoBtn').classList.remove('on');$('#kbAutoLab').textContent='To’xtatilgan';
+  }
+}catch(e){}
 
 /* ===== start ===== */
 (async()=>{try{await boot();}catch(e){showLogin();}})();

@@ -406,8 +406,12 @@ async def init_db():
         except Exception:
             pass
 
-        # Lifecycle timestamps — set the first time the order enters each state
-        for col in ("confirmed_at", "shipped_at", "delivered_at"):
+        # Lifecycle timestamps — set the first time the order enters each state.
+        # preparing_at/ready_at came with the courier Kanban board (2026-09-18),
+        # which split the old confirmed → shipped jump into
+        # confirmed → preparing → ready → shipped.
+        for col in ("confirmed_at", "shipped_at", "delivered_at",
+                    "preparing_at", "ready_at"):
             try:
                 await conn.execute(f"ALTER TABLE orders ADD COLUMN {col} TIMESTAMP")
             except Exception:
@@ -1830,60 +1834,57 @@ async def get_order(order_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+# Which lifecycle column each status stamps the first time it is reached.
+# A status missing from the map (e.g. 'pending') just flips `status`.
+_STATUS_STAMP = {
+    "confirmed": "confirmed_at",
+    "preparing": "preparing_at",
+    "ready":     "ready_at",
+    "shipped":   "shipped_at",
+    "delivered": "delivered_at",
+}
+
+
 async def update_order_status(order_id: int, status: str):
     """Update order status and stamp the matching lifecycle timestamp the first
     time the order reaches that state (idempotent — won't overwrite an existing
     stamp, so e.g. confirmed → cancelled → confirmed keeps the original time)."""
+    col = _STATUS_STAMP.get(status)
     async with pool.acquire() as conn:
-        if status == "confirmed":
+        if col:
             await conn.execute(
-                "UPDATE orders SET status = $1, confirmed_at = COALESCE(confirmed_at, CURRENT_TIMESTAMP) WHERE id = $2",
-                status, order_id,
-            )
-        elif status == "shipped":
-            await conn.execute(
-                "UPDATE orders SET status = $1, shipped_at = COALESCE(shipped_at, CURRENT_TIMESTAMP) WHERE id = $2",
-                status, order_id,
-            )
-        elif status == "delivered":
-            await conn.execute(
-                "UPDATE orders SET status = $1, delivered_at = COALESCE(delivered_at, CURRENT_TIMESTAMP) WHERE id = $2",
+                f"UPDATE orders SET status = $1, {col} = COALESCE({col}, CURRENT_TIMESTAMP) WHERE id = $2",
                 status, order_id,
             )
         else:
             await conn.execute("UPDATE orders SET status = $1 WHERE id = $2", status, order_id)
 
 
-async def transition_order_status(order_id: int, expected_from: str, new_status: str) -> bool:
+async def transition_order_status(order_id: int, expected_from, new_status: str) -> bool:
     """Atomic state transition guarded by the current status. Returns True if
     the row was at `expected_from` and got updated, False otherwise. Used to
     stop two admins from each running the full confirm/ship/deliver flow when
     they tap at the same time — only one transition wins; the loser sees a
-    'already done' toast."""
+    'already done' toast.
+
+    `expected_from` is a status string, or a list of acceptable ones — the
+    courier board (2026-09-18) inserted preparing/ready between confirmed and
+    shipped, so the bot's "Yo'lda" button has to accept an order coming from
+    any of those three without breaking older flows.
+    """
+    if isinstance(expected_from, str):
+        expected = [expected_from]
+    else:
+        expected = list(expected_from or [])
+    if not expected:
+        return False
+    col = _STATUS_STAMP.get(new_status)
+    set_clause = f"status=$1, {col}=COALESCE({col}, CURRENT_TIMESTAMP)" if col else "status=$1"
     async with pool.acquire() as conn:
-        if new_status == "confirmed":
-            row = await conn.fetchrow(
-                "UPDATE orders SET status=$1, confirmed_at=COALESCE(confirmed_at, CURRENT_TIMESTAMP) "
-                "WHERE id=$2 AND status=$3 RETURNING id",
-                new_status, order_id, expected_from,
-            )
-        elif new_status == "shipped":
-            row = await conn.fetchrow(
-                "UPDATE orders SET status=$1, shipped_at=COALESCE(shipped_at, CURRENT_TIMESTAMP) "
-                "WHERE id=$2 AND status=$3 RETURNING id",
-                new_status, order_id, expected_from,
-            )
-        elif new_status == "delivered":
-            row = await conn.fetchrow(
-                "UPDATE orders SET status=$1, delivered_at=COALESCE(delivered_at, CURRENT_TIMESTAMP) "
-                "WHERE id=$2 AND status=$3 RETURNING id",
-                new_status, order_id, expected_from,
-            )
-        else:
-            row = await conn.fetchrow(
-                "UPDATE orders SET status=$1 WHERE id=$2 AND status=$3 RETURNING id",
-                new_status, order_id, expected_from,
-            )
+        row = await conn.fetchrow(
+            f"UPDATE orders SET {set_clause} WHERE id=$2 AND status = ANY($3::text[]) RETURNING id",
+            new_status, order_id, expected,
+        )
         return row is not None
 
 
@@ -2216,6 +2217,41 @@ async def get_all_orders(page: int = 0, per_page: int = 20, status: str = None) 
                 per_page, page * per_page
             )
         return [dict(r) for r in rows], total
+
+
+# Statuses the courier Kanban board (2026-09-18) shows as live work, in
+# pipeline order. 'delivered' is on the board too but time-boxed — see
+# get_courier_board_orders.
+COURIER_BOARD_STATUSES = ("pending", "confirmed", "preparing", "ready", "shipped")
+
+
+async def get_courier_board_orders(delivered_hours: int = 24) -> list[dict]:
+    """Every order the courier board needs in one query: all live orders plus
+    the ones delivered in the last `delivered_hours` so the "Yetkazildi"
+    column shows today's finished work instead of the whole archive.
+
+    Joins the buyer for the username/full_name a contact link needs, and the
+    courier for the name shown on a claimed card.
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT o.*,
+                      u.username     AS buyer_username,
+                      u.full_name    AS buyer_full_name,
+                      u.language     AS buyer_language,
+                      c.full_name    AS courier_name,
+                      c.username     AS courier_username
+               FROM orders o
+               LEFT JOIN users u ON u.user_id = o.user_id
+               LEFT JOIN users c ON c.user_id = o.courier_id
+               WHERE o.status = ANY($1::text[])
+                  OR (o.status = 'delivered'
+                      AND COALESCE(o.delivered_at, o.created_at)
+                          >= CURRENT_TIMESTAMP - ($2 || ' hours')::interval)
+               ORDER BY o.created_at ASC""",
+            list(COURIER_BOARD_STATUSES), str(int(delivered_hours)),
+        )
+        return [dict(r) for r in rows]
 
 
 async def get_all_products(page: int = 0, per_page: int = 20) -> tuple[list[dict], int]:

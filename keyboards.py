@@ -452,7 +452,9 @@ def seller_order_keyboard(lang: str, order_id: int, status: str,
             InlineKeyboardButton(text=get_text("btn_accept_order", lang), callback_data=f"order_act:confirm:{order_id}"),
             InlineKeyboardButton(text=get_text("btn_reject_order", lang), callback_data=f"order_act:cancel:{order_id}"),
         ])
-    elif status == "confirmed":
+    elif status in ("confirmed", "preparing", "ready"):
+        # preparing/ready are set from the courier board; from the bot they all
+        # take the same next step, so the card keeps its "Yo'lda" button.
         buttons.append([
             InlineKeyboardButton(text=get_text("btn_mark_shipped", lang), callback_data=f"order_act:ship:{order_id}"),
         ])
@@ -688,6 +690,12 @@ def admin_order_filter_keyboard(lang: str, counts: dict | None = None) -> Inline
         [
             InlineKeyboardButton(text=_label("pending", get_text("order_status_pending", lang)), callback_data="admin:orders:pending"),
             InlineKeyboardButton(text=_label("confirmed", get_text("order_status_confirmed", lang)), callback_data="admin:orders:confirmed"),
+        ],
+        [
+            # preparing/ready arrived with the courier Kanban board (2026-09-18);
+            # without their own filters those orders were only reachable via "Hammasi"
+            InlineKeyboardButton(text=_label("preparing", get_text("order_status_preparing", lang)), callback_data="admin:orders:preparing"),
+            InlineKeyboardButton(text=_label("ready", get_text("order_status_ready", lang)), callback_data="admin:orders:ready"),
         ],
         [
             InlineKeyboardButton(text=_label("shipped", get_text("order_status_shipped", lang)), callback_data="admin:orders:shipped"),
