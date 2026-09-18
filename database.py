@@ -1419,9 +1419,18 @@ def line_cost(item: dict, cost_map: dict, set_costs: dict) -> tuple[float, bool]
     its components (get_set_costs); before 2026-09-17 the dashboards costed
     sets at 0 and overstated profit on every set sold. `known` is False when
     a paid line's product has no cost_price filled in, so the reports can say
-    how much of the profit is guesswork."""
+    how much of the profit is guesswork.
+
+    A line carrying its own `cost_price` is costed by that and nothing else.
+    Wholesale Eritritol (add_b2b_eritritol_order) is weighed by the kilogram
+    out of a sack while the catalog only sells it in 100gr/500gr packs, so no
+    product row's per-package cost describes that line — and a cost fixed at
+    sale time also survives later edits to the product."""
     if item.get("is_gift"):
         return 0.0, True
+    own_cost = float(item.get("cost_price") or 0)
+    if own_cost > 0:
+        return own_cost * item_cost_qty(item), True
     if item.get("is_set"):
         set_id = item.get("set_id") or item.get("product_id") or item.get("id")
         cost = float(set_costs.get(int(set_id), 0.0)) if set_id else 0.0
@@ -1765,15 +1774,27 @@ async def add_b2b_order(admin_user_id: int, company_name: str,
         )
         return order_id
 
-async def add_b2b_eritritol_order(admin_user_id: int, address: str, phone: str, 
-                                 quantity: float, total: float) -> int:
-    """Insert an admin-entered B2B Eritritol wholesale sale."""
+async def add_b2b_eritritol_order(admin_user_id: int, address: str, phone: str,
+                                 quantity: float, total: float,
+                                 cost_per_kg: float = 0) -> int:
+    """Insert an admin-entered B2B Eritritol wholesale sale.
+
+    The line carries its own cost_price (per kg) rather than pointing at a
+    catalog product. Until 2026-09-18 it was written with a dummy "id": -1
+    that matched no product at all, so line_cost costed every wholesale
+    Eritritol sale at 0: the Maqsadlar report overstated monthly profit by
+    the entire batch and listed "Eritritol (B2B)" as tannarxi kiritilmagan
+    forever — no admin-panel field can fill in a product that doesn't exist.
+    """
     async with pool.acquire() as conn:
         items_data = [{
-            "id": -1, # Using a dummy ID or Eritritol product ID if possible, but let's just save the name
+            # No product id on purpose: a kilogram off the wholesale sack is
+            # not any of the 100gr/500gr catalog rows, and borrowing one of
+            # their ids would cost this line by a pack price (see line_cost).
             "name": "Eritritol (B2B)",
             "quantity": quantity,
             "price": round(total / quantity, 2) if quantity else 0,
+            "cost_price": float(cost_per_kg or 0),
             "unit": "kg"
         }]
         

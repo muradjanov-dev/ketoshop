@@ -225,20 +225,13 @@ async def order_profit(order: dict) -> float:
 
     profit = 0.0
     for item in items:
-        qty = float(item.get("quantity") or 0)
-        revenue = float(item.get("price") or 0) * qty
-        if item.get("is_set"):
-            set_id = item.get("set_id") or item.get("product_id") or item.get("id")
-            unit_cost = float(set_costs.get(int(set_id), 0.0)) if set_id else 0.0
-        else:
-            pid = item.get("product_id") or item.get("id")
-            # Shared costing rule (database.item_cost_qty): bonus lines by
-            # stock_quantity, and the 100 000 so'm gift not at all — it's booked
-            # in Chiqimlar as Ketoshop's own expense, so it must not shrink the
-            # blogger's cut.
-            qty = database.item_cost_qty(item)
-            unit_cost = float(cost_map.get(int(pid), 0.0)) if pid else 0.0
-        profit += revenue - unit_cost * qty
+        revenue = float(item.get("price") or 0) * float(item.get("quantity") or 0)
+        # One shared costing rule (database.line_cost): sets from the products
+        # they bundle, bonus lines by stock_quantity, a line's own cost_price
+        # when it carries one, and the 100 000 so'm gift not at all — it's
+        # booked in Chiqimlar as Ketoshop's own expense, so it must not shrink
+        # the blogger's cut.
+        profit += revenue - database.line_cost(item, cost_map, set_costs)[0]
     return profit
 
 

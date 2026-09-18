@@ -33,6 +33,22 @@ class LineCostTest(unittest.TestCase):
         self.assertAlmostEqual(cost, 4_000)
         self.assertTrue(known)
 
+    def test_line_carrying_its_own_cost_price_is_costed_by_it(self):
+        # B2B Eritritol: sold by the kilo out of a wholesale sack, and the
+        # catalog only has 100gr/500gr packs, so the line keeps its own cost.
+        line = {"name": "Eritritol (B2B)", "quantity": 12, "cost_price": 30_000, "unit": "kg"}
+        self.assertEqual(database.line_cost(line, COSTS, SET_COSTS), (360_000, True))
+
+    def test_line_cost_price_wins_over_the_catalog(self):
+        # A cost fixed at sale time must survive later edits to the product.
+        line = {"product_id": 10, "quantity": 2, "cost_price": 50_000}
+        self.assertEqual(database.line_cost(line, COSTS, SET_COSTS), (100_000, True))
+
+    def test_b2b_eritritol_without_a_cost_is_still_flagged(self):
+        # The old "id": -1 rows, until the backfill runs.
+        line = {"id": -1, "name": "Eritritol (B2B)", "quantity": 12, "unit": "kg"}
+        self.assertEqual(database.line_cost(line, COSTS, SET_COSTS), (0, False))
+
     def test_missing_cost_price_is_flagged(self):
         self.assertEqual(database.line_cost({"product_id": 20, "quantity": 1}, COSTS, SET_COSTS), (0, False))
         self.assertEqual(database.line_cost({"is_set": True, "set_id": 99, "quantity": 1}, COSTS, SET_COSTS),
