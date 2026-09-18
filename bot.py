@@ -294,6 +294,11 @@ async def main():
     from gift_campaign import scheduler_loop as gift_scheduler_loop
     gift_task = asyncio.create_task(gift_scheduler_loop(bot))
 
+    # Kuryer xarajati — 25 000 (Toshkent) / 5 000 (viloyat pochtasi) booked
+    # into Chiqimlar for every delivered order, see delivery_costs.py.
+    from delivery_costs import scheduler_loop as delivery_cost_loop
+    delivery_cost_task = asyncio.create_task(delivery_cost_loop(bot))
+
     # Tashlab ketilgan savat — 3 h and 24 h reminders with one-tap checkout.
     from abandoned_cart import scheduler_loop as cart_reminder_loop
     cart_reminder_task = asyncio.create_task(cart_reminder_loop(bot))
@@ -330,6 +335,7 @@ async def main():
         interest_task.cancel()
         targets_task.cancel()
         gift_task.cancel()
+        delivery_cost_task.cancel()
         cart_reminder_task.cancel()
         retention_task.cancel()
         keto_explainer_task.cancel()

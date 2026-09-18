@@ -666,6 +666,18 @@ async def init_db():
             "ON expenses(gift_order_id) WHERE gift_order_id IS NOT NULL"
         )
 
+        # The courier fee Ketoshop itself pays on a delivered order — 25 000
+        # inside Tashkent, 5 000 to hand a regional parcel to the post office
+        # (delivery_costs.py). Booked the same idempotent way as the gift: one
+        # row per order, the unique index is what makes the sweep safe to
+        # repeat. Separate column from gift_order_id so an order that carries
+        # a gift *and* a courier fee gets both rows.
+        await conn.execute("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS delivery_order_id INTEGER")
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_delivery_order "
+            "ON expenses(delivery_order_id) WHERE delivery_order_id IS NOT NULL"
+        )
+
         # ===== Sovg'a kampaniyasi (2026-09-17) =====
         # One row per campaign key. started_at is stamped the first time the
         # bot boots with the campaign in the code, so a restart or redeploy
@@ -2796,6 +2808,57 @@ async def book_gift_expense(order_id: int, name: str, amount: float) -> bool:
             name, amount, order_id,
         )
         return row is not None
+
+
+async def get_unbooked_delivery_orders(methods: list[str], since, limit: int = 200) -> list[dict]:
+    """Delivered orders on one of `methods`, delivered at or after `since`,
+    with no courier-fee row yet.
+
+    `since` is what keeps the feature from retroactively re-costing the whole
+    archive: an expenses row is stamped with the time it is written, not the
+    time of the order, so booking years of past deliveries would dump all of
+    it onto today and make one day's profit look catastrophic. Owner's call
+    (2026-09-18): only orders delivered from the moment this went live.
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT o.id, o.delivery_method, o.delivered_at
+                 FROM orders o
+                WHERE o.status = 'delivered'
+                  AND o.delivery_method = ANY($1::text[])
+                  AND COALESCE(o.delivered_at, o.created_at) >= $2
+                  AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.delivery_order_id = o.id)
+                ORDER BY o.id
+                LIMIT $3""",
+            methods, since, limit,
+        )
+        return [dict(r) for r in rows]
+
+
+async def book_delivery_expense(order_id: int, name: str, amount: float) -> bool:
+    """Book one courier fee into Chiqimlar. False if already booked."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO expenses (name, amount, delivery_order_id) VALUES ($1, $2, $3)
+               ON CONFLICT (delivery_order_id) WHERE delivery_order_id IS NOT NULL DO NOTHING
+               RETURNING id""",
+            name, amount, order_id,
+        )
+        return row is not None
+
+
+async def get_delivery_expense_stats(since=None) -> dict:
+    """How many courier fees were booked and what they came to."""
+    async with pool.acquire() as conn:
+        if since is not None:
+            row = await conn.fetchrow(
+                "SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total FROM expenses "
+                "WHERE delivery_order_id IS NOT NULL AND created_at >= $1", since)
+        else:
+            row = await conn.fetchrow(
+                "SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total FROM expenses "
+                "WHERE delivery_order_id IS NOT NULL")
+        return {"count": int(row["n"]), "total": float(row["total"])}
 
 
 async def get_gift_campaign_stats(key: str) -> dict:

@@ -37,7 +37,7 @@ jobs:
           import importlib
           mods = [
               "config", "database", "locales", "keyboards", "bot",
-              "webapp_server", "admin_web", "courier_board",
+              "webapp_server", "admin_web", "courier_board", "delivery_costs",
               "broadcast", "broadcast_tips",
               "personal_recommend", "gamification", "referral_contest", "promotions",
               "meta_ads", "meta_leads", "db_backup", "reports", "activity",
