@@ -5303,11 +5303,12 @@ function deliveryFee(method) {
 
 // Render delivery options for the checkout page based on whether the user is in Tashkent.
 // Tashkent: Ketoshop's own courier (cash/online, flat fee) or Yandex Taxi (online only).
-// Outside: courier services (Yandex Market, BTS, EMU).
+// Outside: courier services (BTS, EMU). Yandex Market was dropped on
+// 2026-09-18; its label stays in the dictionary so past orders still render.
 function renderDeliveryOptions(inTashkent) {
   const opts = inTashkent
     ? [['self', 'delSelf'], ['yandex_taxi', 'delYandexTaxi']]
-    : [['yandex_market', 'delYandexMarket'], ['bts', 'delBts'], ['emu', 'delEmu']];
+    : [['bts', 'delBts'], ['emu', 'delEmu']];
   const container = document.getElementById('delivery-options');
   container.innerHTML = opts.map(([code, key], i) =>
     '<button type="button" class="del-opt' + (i === 0 ? ' active' : '') +

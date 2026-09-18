@@ -2888,7 +2888,7 @@ async def manual_payment(callback: CallbackQuery, state: FSMContext):
     options = [
         ("self", "btn_delivery_self"),
         ("yandex_taxi", "btn_delivery_yandex_taxi"),
-        ("yandex_market", "btn_delivery_yandex_market"),
+        # Yandex Market retired 2026-09-18 — see keyboards.delivery_method_keyboard
         ("bts", "btn_delivery_bts"),
         ("emu", "btn_delivery_emu"),
     ]

@@ -330,12 +330,15 @@ def payment_method_keyboard(lang: str, online_only: bool = False) -> InlineKeybo
 
 def delivery_method_keyboard(lang: str, in_tashkent: bool) -> InlineKeyboardMarkup:
     """In Tashkent: Ketoshop's own courier (cash/online, flat fee) or Yandex Taxi
-    (online only). Outside: courier services (Yandex Market, BTS, EMU)."""
+    (online only). Outside: courier services (BTS, EMU).
+
+    Yandex Market was dropped from the offer on 2026-09-18. Its label stays in
+    locales so the orders already placed with it still read correctly in the
+    panel and in the buyer's history — only the choice is gone."""
     if in_tashkent:
         options = [("self", "btn_delivery_self"), ("yandex_taxi", "btn_delivery_yandex_taxi")]
     else:
         options = [
-            ("yandex_market", "btn_delivery_yandex_market"),
             ("bts", "btn_delivery_bts"),
             ("emu", "btn_delivery_emu"),
         ]
