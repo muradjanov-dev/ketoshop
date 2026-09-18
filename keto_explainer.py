@@ -41,7 +41,10 @@ logger = logging.getLogger(__name__)
 router = Router(name="keto_explainer")
 
 KEY = "keto-explainer-2026-09-18"
-SEND_AT = datetime(2026, 9, 18, 17, 30)   # Tashkent
+# Owner, 2026-09-18 13:30: "yubor" — send as soon as this is deployed instead
+# of waiting for the evening slot. In the past, so the next tick fires it;
+# the claimed key still guarantees exactly one send.
+SEND_AT = datetime(2026, 9, 18, 13, 0)    # Tashkent
 SEND_UNTIL_HOUR = 21
 TZ_OFFSET = timedelta(hours=5)
 CHECK_EVERY = 120
@@ -225,6 +228,20 @@ async def scheduler_loop(bot: Bot) -> None:
         except Exception:
             logger.exception("Keto explainer tick failed")
         await asyncio.sleep(CHECK_EVERY)
+
+
+@router.message(Command("keto_tushuntirish_yubor"), F.from_user.id.in_(ADMIN_IDS))
+async def cmd_send_now(message: Message):
+    """Send it right now, by hand. Claims the same key, so it can never go
+    out twice — however many times this is pressed."""
+    if not await database.claim_release_notes(KEY):
+        await message.answer("ℹ️ Bu xabar allaqachon yuborilgan — ikkinchi marta ketmaydi.")
+        return
+    await message.answer("📤 Yuborilyapti… tugagach xabar beraman.")
+    sent, failed = await run(message.bot)
+    await message.answer(
+        f"✅ Yuborildi: {sent} ta · ⚠️ {failed} ta yetmadi.\n"
+        "Keto tangachalarni sarflash yoqildi (1 Keto = 1 so'm).")
 
 
 @router.message(Command("keto_tushuntirish"), F.from_user.id.in_(ADMIN_IDS))
