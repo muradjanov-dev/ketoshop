@@ -232,13 +232,19 @@
     --kb-glass:rgba(46,38,23,.05);
     --kb-col-bg:#EFEBE0; --kb-card-bg:#FFFFFF; --kb-card-line:#E5DFD2;
   }
-  /* the board needs more room than the 1200px the rest of the panel uses */
-  .shell.wide{max-width:1660px}
+  /* the board needs more room than the 1200px the rest of the panel uses,
+     and the header above it is trimmed so the columns get the height */
+  .shell.wide{max-width:1660px;padding-bottom:18px}
+  .shell.wide header.top{padding:10px 0;gap:11px}
+  .shell.wide .top .logo{width:34px;height:34px;font-size:17px;border-radius:11px}
+  .shell.wide .top h1{font-size:17px}
+  .shell.wide .top .sub{display:none}
+  .shell.wide .tabs{margin-bottom:12px}
 
   /* ── top strip ── */
-  .kb-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px}
-  .kb-stat{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);
-           border-radius:14px;padding:9px 15px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .kb-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .kb-stat{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line);
+           border-radius:12px;padding:7px 13px;box-shadow:var(--shadow);position:relative;overflow:hidden}
   .kb-stat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent);opacity:.85}
   .kb-stat.green::before{background:var(--kb-green)}
   .kb-stat .ic{font-size:17px;line-height:1}
@@ -260,7 +266,7 @@
   /* ── the board ── */
   .kanban{display:grid;grid-template-columns:repeat(var(--kb-cols,5),minmax(228px,1fr));gap:14px;align-items:stretch}
   .kb-col{background:var(--kb-col-bg);border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column;
-          height:clamp(400px,calc(100vh - 320px),780px);position:relative;overflow:hidden;transition:box-shadow .22s,border-color .22s,background .22s}
+          height:clamp(420px,calc(100vh - 232px),1000px);position:relative;overflow:hidden;transition:box-shadow .22s,border-color .22s,background .22s}
   .kb-col::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;
                   background:linear-gradient(90deg,var(--tone),transparent 85%);opacity:.9}
   .kb-col[data-tone=amber]{--tone:var(--kb-amber);--tone-wash:var(--kb-amber-wash)}
@@ -340,7 +346,13 @@
            display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .kb-items{font-size:11.5px;color:var(--ink-3);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .kb-foot{display:flex;align-items:center;gap:6px;margin-top:9px;padding-top:8px;border-top:1px solid var(--line)}
-  .kb-total{font-size:13.5px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums}
+  .kb-total{font-size:13.5px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums;
+            display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+  /* Cash is an action — money to collect — so it gets the weight of one.
+     Prepaid needs no action, so it recedes instead of competing for attention. */
+  .kb-total.cash{color:var(--amber);background:var(--amber-wash);padding:3px 9px;
+                 border-radius:9px;margin-left:-3px}
+  .kb-total.paid{color:var(--ink-3);font-weight:700}
   .kb-acts{margin-left:auto;display:flex;gap:4px}
   .kb-mini{border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);border-radius:8px;
            min-width:26px;height:26px;display:grid;place-items:center;font-size:12px;font-weight:800;
@@ -414,7 +426,7 @@
   }
   @media (max-width:1080px){
     .kanban{display:flex;overflow-x:auto;padding-bottom:10px;scroll-snap-type:x proximity;gap:12px}
-    .kb-col{flex:0 0 272px;scroll-snap-align:start;height:min(66vh,560px)}
+    .kb-col{flex:0 0 272px;scroll-snap-align:start;height:clamp(400px,calc(100vh - 300px),620px)}
   }
   @media (prefers-reduced-motion:reduce){
     .kb-card,.kb-count,.kb-ghost,.kb-skel::after,.kb-live.on .dot{animation:none!important}
@@ -2380,6 +2392,9 @@ function kbCan(from,to){return !!to&&from!==to&&(KB_ALLOWED_FROM[to]||[]).includ
    checkout writes into `address` when they send a Telegram pin. Mirrors
    courier_board.order_pin. */
 const KB_COORD_RE=/^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*$/;
+/* Same pair, but as a prefix: "41.29, 69.28 — Taras Shevchenko 29". The
+   digits belong to the map link, not to a courier reading the card. */
+const KB_COORD_PREFIX_RE=/^\s*-?\d{1,2}\.\d+\s*,\s*-?\d{1,3}\.\d+\s*(?:[—–‒-]\s*)?/;
 function kbPin(c){
   if(c.latitude&&c.longitude)return [c.latitude,c.longitude];
   const m=KB_COORD_RE.exec(String(c.address||''));
@@ -2468,25 +2483,35 @@ function renderKanban(){
   });
 }
 
+/* A courier card answers four questions and nothing else: who, where, how
+   much to collect, and how long it has been waiting. Everything that used to
+   crowd it — the item list, the Keto badge, the "Operator" source, the pin
+   chip — is a shop-side detail, still one tap away in the card's own view.
+   The one thing pulled UP is cash: whether money has to be collected is the
+   most consequential fact on a courier's screen, so it is stated outright
+   instead of being implied by the absence of a "Karta" chip. */
 function kbCardHtml(c,col,i){
   const [warn,late]=KB_SLA[col.key]||[0,0];
   const m=c.stage_minutes;
   const ageCls=late&&m>=late?'late':(warn&&m>=warn?'warn':'');
+
+  // Only the status that isn't already implied by the column the card is in.
   const chips=[];
   if(col.key==='delivery')
     chips.push(`<span class="kb-chip ${c.status==='shipped'?'tone':'soft'}">${c.status==='shipped'?"🚚 Yo'lda":'📦 Tayyor'}</span>`);
-  if(c.payment_method&&c.payment_method!=='cash')chips.push('<span class="kb-chip soft">💳 Karta</span>');
-  if(c.source==='manual')chips.push('<span class="kb-chip soft">✍️ Operator</span>');
-  if(c.keto_redeemed>0)chips.push(`<span class="kb-chip warm">🥑 ${kbSom(c.keto_redeemed)}</span>`);
   if(c.courier_name)chips.push(`<span class="kb-chip tone">🧍 ${esc(c.courier_name)}</span>`);
-  if(kbPin(c))chips.push('<span class="kb-chip soft">📍 Lokatsiya</span>');
-  if(c.status==='preparing')chips.push('<span class="kb-chip soft">👨‍🍳 Tayyorlanmoqda</span>');
 
-  const items=c.items.slice(0,3).map(it=>`${esc(it.name)}×${it.quantity}`).join(', ')
-    +(c.items.length>3?` +${c.items.length-3}`:'');
+  const cash=!c.payment_method||c.payment_method==='cash';
+  const pin=kbPin(c);
+  // A pinned address is stored as "41.29, 69.28 — Taras Shevchenko 29": the
+  // coordinates are for the map link, not for reading, so the card shows the
+  // street and a 📍 marker instead of a screenful of digits.
+  let where=(c.address||'').replace(KB_COORD_PREFIX_RE,'').trim();
+  if(!where)where=pin?'Xaritadagi nuqta':'Manzil ko’rsatilmagan';
+
   const nx=kbNext(c.status), pv=kbPrev(c.status);
   const goShipped=col.key==='delivery'&&c.status==='ready';
-  if(c.status==='cancelled')chips.push('<span class="kb-chip hot">❌ Bekor</span>');
+  const done=c.status==='delivered'||c.status==='cancelled';
 
   return `<article class="kb-card" data-id="${c.id}" data-status="${c.status}" style="--i:${i}">
     <div class="r1">
@@ -2495,15 +2520,17 @@ function kbCardHtml(c,col,i){
       <span class="kb-age ${ageCls}" title="Shu bosqichda">${kbAgo(m)}</span>
     </div>
     <div class="kb-who">${esc(c.customer_name)}</div>
-    <div class="kb-meta">${esc(c.address||'Manzil ko’rsatilmagan')}</div>
-    ${items?`<div class="kb-items">🧺 ${esc(items)}</div>`:''}
+    <div class="kb-meta">${pin?'📍 ':''}${esc(where)}</div>
     <div class="kb-foot">
-      <span class="kb-total">${kbSom(c.total)}</span>
+      <span class="kb-total ${cash?'cash':'paid'}"
+            title="${cash?'Naqd — kuryer pul oladi':'Oldindan to’langan'}">
+        ${cash?'💵 ':'✅ '}${kbSom(c.total)}</span>
       <div class="kb-acts">
-        <button class="kb-mini" data-act="prev" title="Orqaga: ${pv?esc(KB_LABEL[pv]):''}" ${kbCan(c.status,pv)?'':'disabled'}>◀</button>
+        ${done&&c.status==='cancelled'?'':
+          `<button class="kb-mini" data-act="prev" title="Orqaga: ${pv?esc(KB_LABEL[pv]):''}" ${kbCan(c.status,pv)?'':'disabled'}>◀</button>`}
         ${goShipped
           ? `<button class="kb-mini wide go" data-act="ship" title="Kuryer yo’lga chiqdi">🚚 Yo’lda</button>`
-          : `<button class="kb-mini" data-act="next" title="Oldinga: ${nx?esc(KB_LABEL[nx]):''}" ${kbCan(c.status,nx)?'':'disabled'}>▶</button>`}
+          : (done?'':`<button class="kb-mini" data-act="next" title="Oldinga: ${nx?esc(KB_LABEL[nx]):''}" ${kbCan(c.status,nx)?'':'disabled'}>▶</button>`)}
         <button class="kb-mini" data-act="open" title="Batafsil">⋯</button>
       </div>
     </div>
