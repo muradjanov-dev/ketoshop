@@ -19,6 +19,7 @@ Routes (all mounted by setup_admin_routes):
   GET  /admin/api/products/descriptions        — download every product's text as JSON
   POST /admin/api/products/descriptions        — upload that JSON back with translations filled in
   POST /admin/api/products/descriptions/autofill — write uz+ru text from the family library
+  POST /admin/api/translit        — {text} -> {cyr}: the Cyrillic the bot will render
   POST /admin/api/products        — create
   POST /admin/api/products/{id}   — update (partial)
   POST /admin/api/products/{id}/delete   — archive (is_active = 0)
@@ -247,6 +248,28 @@ async def api_products_list(request: web.Request):
 # roughly 350 of them for price/stock/discount, so anything past this is
 # trimmed with an ellipsis when the card renders (handlers/catalog.py).
 DESCRIPTION_SOFT_MAX = 650
+
+
+@require_auth
+async def api_translit(request: web.Request):
+    """Latin Uzbek -> Cyrillic, so the panel can SHOW what a buyer reading in
+    Cyrillic will actually get.
+
+    Cyrillic isn't stored anywhere: the bot transliterates at render time, for
+    product text and its own copy alike. Doing it here through the same
+    translit module keeps one source of truth — a JavaScript reimplementation
+    would drift from the bot the first time a rule changed.
+    """
+    from translit import lat_to_cyr
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    text = body.get("text")
+    if not isinstance(text, str):
+        return _json({"error": "matn yo'q"}, status=400)
+    return _json({"cyr": lat_to_cyr(text[:4000])})
 
 
 @require_auth
@@ -1583,6 +1606,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/session", api_session)
     app.router.add_post("/admin/api/categories", api_categories_create)
     app.router.add_get("/admin/api/products", api_products_list)
+    app.router.add_post("/admin/api/translit", api_translit)
     app.router.add_get("/admin/api/products/descriptions", api_descriptions_export)
     app.router.add_post("/admin/api/products/descriptions", api_descriptions_import)
     app.router.add_post("/admin/api/products/descriptions/autofill", api_descriptions_autofill)

@@ -946,6 +946,11 @@
       <div><label>Chegirma (%)</label><input name="discount_percent" type="number" min="0" max="100" step="1" value="0"></div>
       <div class="full"><label>Tavsif (UZ)</label><textarea name="description" rows="2" maxlength="2000"></textarea></div>
       <div class="full"><label>Tavsif (RU)</label><textarea name="description_ru" rows="2" maxlength="2000" placeholder="Bo'sh qoldirsangiz avtomatik tarjima ishlatiladi"></textarea></div>
+      <div class="full"><label>Tavsif (Kirill) — avtomatik</label>
+        <textarea id="prodDescCyr" rows="2" readonly tabindex="-1"
+                  style="background:var(--surface-2);color:var(--ink-2);cursor:default"></textarea>
+        <div class="hint" style="margin-top:4px">Kirilcha alohida saqlanmaydi — bot lotin matndan o'zi o'giradi.
+          O'zgartirish uchun yuqoridagi «Tavsif (UZ)» ni tahrirlang.</div></div>
       <div class="full"><label>Rasm</label>
         <div class="img-drop" id="prodImgDrop">
           <div class="prev" id="prodImgPrev">📷</div>
@@ -1410,7 +1415,29 @@ window.openProdModal=function(id){
   }
   lastCatValue=f.category.value;
   $('#prodModal').classList.add('open');
+  refreshCyrPreview();          // show the Cyrillic of whatever just loaded
 };
+/* Cyrillic preview. Server-side on purpose: re-implementing translit.py in
+   JavaScript would drift from the bot the first time a rule changed, and the
+   whole point of the box is to show exactly what a buyer will see. */
+let cyrTimer=null;
+async function refreshCyrPreview(){
+  const src=$('#prodForm')?$('#prodForm').description.value:'';
+  const box=$('#prodDescCyr');
+  if(!box)return;
+  if(!src.trim()){box.value='';return;}
+  try{
+    const r=await api('/admin/api/translit',{method:'POST',body:JSON.stringify({text:src})});
+    box.value=r.cyr||'';
+  }catch(e){ box.value='(o’girib bo’lmadi)'; }
+}
+document.addEventListener('input',e=>{
+  if(e.target&&e.target.name==='description'&&e.target.closest('#prodForm')){
+    clearTimeout(cyrTimer);
+    cyrTimer=setTimeout(refreshCyrPreview,400);
+  }
+});
+
 $('#newProdBtn').addEventListener('click',()=>openProdModal(null));
 
 /* ===== tavsiflarni ommaviy tarjima qilish =====

@@ -32,8 +32,31 @@ Sog'liq haqidagi gaplar ataylab ehtiyotkor: "manba", "yordam beradi" —
 "davolaydi" emas. Bu ovqat mahsuloti, dori emas.
 """
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+
+# Form beats ingredient. The family matcher is built for the recommendation
+# broadcast, where "Bodom yog'i" landing on the almond family is fine — the
+# message talks about almonds either way. A description is not fine: the
+# almond entry describes FLOUR, so an oil would have been sold with "mix a
+# quarter of your wheat flour with it". These rules run first and route by
+# what the product IS, not what it is made from.
+#
+# The apostrophe is followed by "i", whitespace or end-of-name on purpose:
+# "yog'lanmagan" (unoiled, as in the Devzira rice) must NOT read as an oil.
+_FORM_RULES = (
+    ("oils", re.compile(r"yog['ʻ‘’](?:i\b|\s|$)|\bmoy\b|\bmaslo\b|масл|\boil\b", re.I)),
+    ("pastes", re.compile(r"\bpasta|паста|urbech|урбеч", re.I)),
+)
+
+
+def _form_key(name: str) -> str | None:
+    """The family a product's FORM puts it in, ignoring its ingredient."""
+    for key, rx in _FORM_RULES:
+        if rx.search(name or ""):
+            return key
+    return None
 
 # Bo'lim sarlavhalari — barcha matnlar uchun bitta joyda.
 _H = {
@@ -569,6 +592,9 @@ def family_key(product_name: str) -> str | None:
     whole reco content library, which the admin panel has no reason to load
     until someone actually asks for descriptions.
     """
+    form = _form_key(product_name)
+    if form:
+        return form
     try:
         from personal_recommend import name_profile
     except Exception:

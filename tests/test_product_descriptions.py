@@ -30,6 +30,33 @@ class FamilyMatchTest(unittest.TestCase):
         for name, want in cases.items():
             self.assertEqual(pd.family_key(name), want, name)
 
+    def test_form_beats_ingredient(self):
+        """"Bodom yog'i" is an OIL, not almond flour.
+
+        The family matcher was written for the recommendation broadcast,
+        where either answer works. A description has to be right: the almond
+        entry talks about replacing wheat flour, which is nonsense on a
+        bottle of oil.
+        """
+        for name in ("Bodom yog'i", "Kokos yog'i 400 gr", "Zig'ir yog'i 250ml",
+                     "Kunjut yog'i", "Qovoq urug'i yog'i", "Uy kuvi saryog'i",
+                     "Zaytun yog‘i Ispaniya", "MCT yog'", "Avokado moyi"):
+            self.assertEqual(pd.family_key(name), "oils", name)
+
+        for name in ("Bodom pastasi 300gr", "Kunjut pastasi (tahini)",
+                     "Kokos pastasi", "Yeryong'oq pasta 200gr"):
+            self.assertEqual(pd.family_key(name), "pastes", name)
+
+    def test_unoiled_is_not_an_oil(self):
+        # "yog'lanmagan" (unoiled) contains "yog'" but describes rice.
+        self.assertEqual(
+            pd.family_key("Qizil guruch (Devzira) (bo'yalmagan, yog'lanmagan) 1000gr"),
+            "diet_rice")
+
+    def test_flour_keeps_its_ingredient_family(self):
+        self.assertEqual(pd.family_key("Bodom uni 500gr"), "almond_flour")
+        self.assertEqual(pd.family_key("Zig'ir uni 300gr"), "flax")
+
     def test_cyrillic_name_still_matches(self):
         # Some products are keyed into the shop in Cyrillic; the matcher
         # transliterates before comparing.
