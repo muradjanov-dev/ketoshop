@@ -2441,6 +2441,102 @@ def _period_range(period: str | dict):
             pass
     return _period_start(period), None
 
+async def get_orders_by_region(period: str | dict = "all", top_products: int = 3) -> list[dict]:
+    """Orders broken down by Uzbek region, busiest first.
+
+    The region isn't a column — buyers either type an address or drop a
+    Telegram pin — so it is derived per order (regions.region_of) and the
+    grouping happens in Python. That is affordable because the work is a
+    single pass over one window of orders, and it means no migration and no
+    backfill: every order the shop has ever taken is classified the same way,
+    old ones included.
+
+    Each row also carries that region's own bestsellers, which is the part
+    that actually changes what the shop does — Andijon ordering flour while
+    Toshkent orders sweetener is a stocking decision, not a trivia fact.
+
+    Cancelled orders are excluded: they are not demand, and counting them
+    would flatter a region that mostly changes its mind.
+    """
+    import regions as _regions
+
+    start_time, end_time = _period_range(period)
+    conds = ["status <> 'cancelled'"]
+    args = []
+    if start_time:
+        conds.append(f"created_at >= ${len(args) + 1}")
+        args.append(start_time)
+    if end_time:
+        conds.append(f"created_at <= ${len(args) + 1}")
+        args.append(end_time)
+    where = " WHERE " + " AND ".join(conds)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT id, user_id, address, latitude, longitude, items, total,
+                       status, delivery_method, created_at
+                  FROM orders{where}""",
+            *args,
+        )
+
+    buckets: dict[str, dict] = {}
+    for r in rows:
+        order = dict(r)
+        key = _regions.region_of(order)
+        b = buckets.setdefault(key, {
+            "key": key,
+            "name_uz": _regions.region_name(key, "uz"),
+            "name_ru": _regions.region_name(key, "ru"),
+            "orders": 0, "revenue": 0.0, "delivered": 0,
+            "buyers": set(), "_qty": {}, "_rev": {},
+        })
+        b["orders"] += 1
+        b["revenue"] += float(order.get("total") or 0)
+        if order.get("status") == "delivered":
+            b["delivered"] += 1
+        if order.get("user_id"):
+            b["buyers"].add(order["user_id"])
+
+        raw = order.get("items")
+        try:
+            items = json.loads(raw) if isinstance(raw, str) else (raw or [])
+        except (ValueError, TypeError):
+            continue
+        for it in items:
+            if not isinstance(it, dict) or it.get("is_gift"):
+                continue
+            name = (it.get("name") or "").strip()
+            if not name:
+                continue
+            try:
+                qty = float(it.get("quantity") or 0)
+                line = float(it.get("price") or 0) * qty
+            except (TypeError, ValueError):
+                continue
+            b["_qty"][name] = b["_qty"].get(name, 0.0) + qty
+            b["_rev"][name] = b["_rev"].get(name, 0.0) + line
+
+    result = []
+    for b in buckets.values():
+        top = sorted(b["_qty"].items(), key=lambda kv: kv[1], reverse=True)[:top_products]
+        result.append({
+            "key": b["key"], "name_uz": b["name_uz"], "name_ru": b["name_ru"],
+            "orders": b["orders"],
+            "delivered": b["delivered"],
+            "revenue": round(b["revenue"]),
+            "buyers": len(b["buyers"]),
+            "avg_check": round(b["revenue"] / b["orders"]) if b["orders"] else 0,
+            "top_products": [
+                {"name": n, "quantity": round(q, 2), "revenue": round(b["_rev"].get(n, 0))}
+                for n, q in top
+            ],
+        })
+    # Busiest first; "Aniqlanmagan" last regardless of size, because it is a
+    # data-quality bucket rather than a place anyone can act on.
+    result.sort(key=lambda r: (r["key"] == _regions.UNKNOWN_KEY, -r["orders"]))
+    return result
+
+
 async def get_admin_stats(period: str | dict = "all") -> dict:
     """KPI snapshot for one time window.
 

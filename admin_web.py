@@ -44,7 +44,7 @@ Routes (all mounted by setup_admin_routes):
   GET  /admin/api/bloggers/{id}/detail — referred buyers + every order + payout
   GET  /admin/api/keto/status     — redemption on/off + every user's Keto balance
   POST /admin/api/keto/redemption — {enabled} -> toggle Keto-as-discount at checkout
-  GET  /admin/api/dashboard       — {period} -> KPI/trend/best-sellers/Keto snapshot for the Dashboard tab,
+  GET  /admin/api/dashboard       — {period} -> KPI/trend/best-sellers/Keto/regions snapshot for the Dashboard tab,
                                     plus b2b_sales: the wholesale orders behind the B2B KPI tile
   GET  /admin/api/ads             — {period} -> Meta Ads KPIs + per-ad/per-campaign rows + lead counters
   GET  /admin/api/ads/status      — ad-account health (account_status, balance) + per-ad issues_info
@@ -921,18 +921,22 @@ async def api_dashboard(request: web.Request):
             period = "30d"
         period_arg = period
         
-    stats, monthly, top_products, keto, abc_analysis, b2b = await asyncio.gather(
+    stats, monthly, top_products, keto, abc_analysis, b2b, regions_rows = await asyncio.gather(
         database.get_admin_stats(period_arg),
         database.get_monthly_breakdown(5),
         database.get_top_products(period_arg, limit=5),
         database.get_keto_program_stats(),
         database.get_abc_analysis(period_arg),
         database.get_b2b_orders(period_arg),
+        database.get_orders_by_region(period_arg),
     )
     return _json({
         "stats": stats,
         "monthly": monthly,
         "top_products": top_products,
+        # Where the orders come from, and what each place actually buys —
+        # see database.get_orders_by_region.
+        "regions": regions_rows,
         "keto": keto,
         "abc_analysis": abc_analysis,
         "b2b_sales": [_b2b_sale_json(o) for o in b2b],
