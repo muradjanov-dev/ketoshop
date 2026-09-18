@@ -31,7 +31,7 @@ from datetime import datetime, timedelta
 from aiogram import Bot, F, Router
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import database
@@ -202,7 +202,13 @@ async def _tick(bot: Bot) -> None:
         return
     if not await database.claim_release_notes(KEY):
         return
-    sent, failed = await run(bot)
+    try:
+        sent, failed = await run(bot)
+    except Exception:
+        # Hand the claim back, or a run that died halfway would leave the
+        # message marked as sent and nobody would ever get it.
+        await database.release_release_notes(KEY)
+        raise
     logger.info("Keto explainer: %d sent, %d failed", sent, failed)
     for admin_id in ADMIN_IDS:
         try:
@@ -218,6 +224,7 @@ async def _tick(bot: Bot) -> None:
 
 async def scheduler_loop(bot: Bot) -> None:
     if await _already_sent():
+        logger.info("Keto explainer already sent — scheduler not needed")
         return
     logger.info("Keto explainer scheduled for %s Tashkent", SEND_AT)
     while True:
@@ -231,14 +238,27 @@ async def scheduler_loop(bot: Bot) -> None:
 
 
 @router.message(Command("keto_tushuntirish_yubor"), F.from_user.id.in_(ADMIN_IDS))
-async def cmd_send_now(message: Message):
-    """Send it right now, by hand. Claims the same key, so it can never go
-    out twice — however many times this is pressed."""
-    if not await database.claim_release_notes(KEY):
-        await message.answer("ℹ️ Bu xabar allaqachon yuborilgan — ikkinchi marta ketmaydi.")
+async def cmd_send_now(message: Message, command: CommandObject):
+    """Send it right now, by hand. The key is claimed first, so it can't go
+    out twice — "/keto_tushuntirish_yubor majburiy" sends anyway, for when a
+    claimed run never actually reached anyone."""
+    force = (command.args or "").strip().lower().startswith("majburiy")
+    claimed = await database.claim_release_notes(KEY)
+    if not claimed and not force:
+        await message.answer(
+            "ℹ️ Bu xabar allaqachon yuborilgan deb belgilangan — ikkinchi marta ketmaydi.\n"
+            "Agar mijozlarga aslida bormagan bo'lsa:\n"
+            "<code>/keto_tushuntirish_yubor majburiy</code>", parse_mode=ParseMode.HTML)
         return
     await message.answer("📤 Yuborilyapti… tugagach xabar beraman.")
-    sent, failed = await run(message.bot)
+    try:
+        sent, failed = await run(message.bot)
+    except Exception as exc:
+        if claimed:
+            await database.release_release_notes(KEY)   # let it be retried
+        logger.exception("Keto explainer manual send failed")
+        await message.answer(f"❌ Yuborilmadi: {exc}\nQayta urinib ko'ring.")
+        return
     await message.answer(
         f"✅ Yuborildi: {sent} ta · ⚠️ {failed} ta yetmadi.\n"
         "Keto tangachalarni sarflash yoqildi (1 Keto = 1 so'm).")

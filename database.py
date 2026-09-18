@@ -2536,6 +2536,13 @@ async def claim_release_notes(key: str) -> bool:
         return row is not None
 
 
+async def release_release_notes(key: str) -> None:
+    """Give a claimed one-off send back, so a run that failed halfway can be
+    retried instead of being silently marked as done."""
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM release_notes_sent WHERE key = $1", key)
+
+
 async def get_stock_snapshot() -> list[dict]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
