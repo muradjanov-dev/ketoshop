@@ -58,46 +58,54 @@ def _fmt(n: int) -> str:
 
 _TEXT = {
     "uz": (
-        "🥑 <b>Keto tangachalar — oddiy qilib tushuntiramiz</b>\n\n"
-        "Assalomu alaykum! Bugun Sizga bitta yaxshi yangilik bor 🤗\n\n"
-        "🛒 <b>1. Siz Ketoshopdan narsa olasiz.</b>\n\n"
-        "🥑 <b>2. Biz Sizga tangacha beramiz.</b>\n"
-        "100 000 so'mlik narsa olsangiz — 500 ta tangacha.\n"
-        "Tangachalar buyurtmangiz qo'lingizga yetib kelgan kuni tushadi.\n\n"
-        "🫙 <b>3. Tangachalar yig'ilib boradi.</b>\n"
-        "Xuddi pul yig'adigan idishga tanga tashlab borgandek.\n\n"
-        "💰 <b>4. Tangacha — bu pul.</b>\n"
-        "1 ta tangacha = 1 so'm.\n\n"
-        "🎉 <b>5. Bugundan boshlab ularni ishlatsa bo'ladi!</b>\n"
-        "Buyurtma berayotganda «🥑 Ketochalarni ishlatish» tugmasini bosing. "
-        "Tangachalar pul o'rniga ketadi — Siz kamroq to'laysiz.\n\n"
-        "⭐ Ko'p xarid qilsangiz, darajangiz ko'tariladi va har safar ko'proq tangacha tushadi.\n\n"
-        "{balance_line}"
+        "🥑 <b>Keto tangachalar — Sizga kichik minnatdorchiligimiz</b>\n\n"
+        "Assalomu alaykum! 🤍\n"
+        "Ketoshopni tanlaganingiz uchun chin dildan rahmat. Bugun Sizga bitta "
+        "yoqimli yangilikni aytmoqchi edik.\n\n"
+        "Har bir xaridingiz uchun Sizga <b>Keto tangachalar</b> qaytadi. "
+        "Bu — bizning Sizga bo'lgan rahmatimiz.\n\n"
+        "🛒 Siz buyurtma berasiz.\n"
+        "📦 Buyurtma qo'lingizga yetib borgan kuni tangachalar hisobingizga tushadi.\n"
+        "🥑 Har 100 000 so'mlik xaridga — <b>500 ta tangacha</b>.\n\n"
+        "Tangachalar yo'qolmaydi — xuddi pul yig'adigan idishga ozroqdan solib "
+        "borgandek, ular yig'ilib boraveradi.\n\n"
+        "💰 <b>Eng muhimi:</b> bugundan boshlab tangachalaringizni ishlatsangiz bo'ladi.\n"
+        "1 ta tangacha = 1 so'm. Buyurtma berayotganda «🥑 Ketochalarni ishlatish» "
+        "tugmasini tanlasangiz, tangachalar pul o'rniga o'tadi va Siz kamroq to'laysiz.\n\n"
+        "⭐ Qanchalik ko'p xarid qilsangiz, darajangiz shunchalik ko'tariladi va "
+        "har safar ko'proq tangacha qaytadi.\n\n"
+        "{balance_line}\n\n"
+        "Sizga sog'liq va farovonlik tilaymiz!\n"
+        "<i>Hurmat bilan, Ketoshop jamoasi</i>"
     ),
     "ru": (
-        "🥑 <b>Keto-монетки — объясняем очень просто</b>\n\n"
-        "Здравствуйте! У нас для вас хорошая новость 🤗\n\n"
-        "🛒 <b>1. Вы покупаете в Ketoshop.</b>\n\n"
-        "🥑 <b>2. Мы дарим вам монетки.</b>\n"
-        "Купили на 100 000 сум — получили 500 монеток.\n"
-        "Монетки приходят в тот день, когда заказ уже у вас в руках.\n\n"
-        "🫙 <b>3. Монетки копятся.</b>\n"
-        "Как монеты, которые вы складываете в баночку для денег.\n\n"
-        "💰 <b>4. Монетка — это деньги.</b>\n"
-        "1 монетка = 1 сум.\n\n"
-        "🎉 <b>5. С сегодняшнего дня их можно тратить!</b>\n"
-        "Когда оформляете заказ, нажмите «🥑 Использовать Ketочки». "
-        "Монетки пойдут вместо денег — вы заплатите меньше.\n\n"
-        "⭐ Чем больше покупаете, тем выше ваш уровень и тем больше монеток приходит каждый раз.\n\n"
-        "{balance_line}"
+        "🥑 <b>Keto-монетки — наша небольшая благодарность вам</b>\n\n"
+        "Здравствуйте! 🤍\n"
+        "Искренне благодарим вас за то, что выбираете Ketoshop. Сегодня хотим "
+        "поделиться приятной новостью.\n\n"
+        "За каждую покупку вам возвращаются <b>Keto-монетки</b>. "
+        "Это наше спасибо вам.\n\n"
+        "🛒 Вы оформляете заказ.\n"
+        "📦 В день, когда заказ у вас в руках, монетки поступают на ваш счёт.\n"
+        "🥑 За каждые 100 000 сум покупки — <b>500 монеток</b>.\n\n"
+        "Монетки не сгорают — они копятся, как деньги, которые вы понемногу "
+        "откладываете в баночку.\n\n"
+        "💰 <b>Самое главное:</b> с сегодняшнего дня монетки можно тратить.\n"
+        "1 монетка = 1 сум. При оформлении заказа выберите «🥑 Использовать Ketочки» — "
+        "монетки пойдут вместо денег, и вы заплатите меньше.\n\n"
+        "⭐ Чем больше вы покупаете, тем выше ваш уровень и тем больше монеток "
+        "возвращается каждый раз.\n\n"
+        "{balance_line}\n\n"
+        "Желаем вам здоровья и благополучия!\n"
+        "<i>С уважением, команда Ketoshop</i>"
     ),
 }
 
 _BALANCE = {
-    "have": {"uz": "👛 <b>Sizda hozir {n} ta tangacha bor.</b>",
-             "ru": "👛 <b>У вас сейчас {n} монеток.</b>"},
-    "none": {"uz": "👛 Hozircha tangachangiz yo'q — birinchi xariddan keyin paydo bo'ladi.",
-             "ru": "👛 Пока монеток нет — они появятся после первой покупки."},
+    "have": {"uz": "👛 Hozirda Sizda <b>{n} ta tangacha</b> to'plangan.",
+             "ru": "👛 Сейчас у вас накоплено <b>{n} монеток</b>."},
+    "none": {"uz": "👛 Birinchi tangachalaringiz birinchi xaridingizdan so'ng hisobingizga tushadi.",
+             "ru": "👛 Первые монетки появятся у вас после первой покупки."},
 }
 
 _BUTTONS = {
