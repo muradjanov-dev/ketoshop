@@ -939,11 +939,37 @@
     color: var(--text);
   }
   .keto-redeem-toggle-row input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
+    width: 46px;
+    height: 26px;
     flex: 0 0 auto;
-    accent-color: var(--btn);
+    margin-left: auto;
+    appearance: none;
+    -webkit-appearance: none;
+    border-radius: 999px;
+    background: var(--secondary-bg);
+    border: 1.5px solid var(--secondary-bg);
+    position: relative;
+    transition: background .2s, border-color .2s;
+    cursor: pointer;
   }
+  .keto-redeem-toggle-row input[type="checkbox"]::after {
+    content: "";
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.35);
+    transition: transform .2s;
+  }
+  .keto-redeem-toggle-row input[type="checkbox"]:checked {
+    background: var(--btn);
+    border-color: var(--btn);
+  }
+  .keto-redeem-toggle-row input[type="checkbox"]:checked::after { transform: translateX(20px); }
+  .keto-redeem-toggle-row .keto-switch-text { display: flex; flex-direction: column; gap: 2px; }
+  .keto-redeem-toggle-row .keto-switch-sub { font-size: 12px; font-weight: 500; opacity: .75; }
+  .keto-redeem-toggle-row input[type="checkbox"]:disabled { opacity: .4; cursor: default; }
   #keto-redeem-amount {
     width: 100%;
     padding: 12px;
@@ -2170,8 +2196,8 @@
   <div class="cart-footer" id="cart-footer" style="display:none">
     <div class="cart-saved-banner" id="cart-saved-banner" style="display:none"></div>
     <label class="keto-redeem-toggle-row" id="cart-keto-group" style="display:none;margin-bottom:10px">
-      <input type="checkbox" id="cart-keto-toggle">
       <span id="cart-keto-toggle-text"></span>
+      <input type="checkbox" id="cart-keto-toggle">
     </label>
     <div class="cart-discount-line" id="cart-discount-line" style="display:none"></div>
     <div class="cart-total-row">
@@ -2227,8 +2253,8 @@
       </div>
       <div class="form-group" id="keto-redeem-group" style="display:none">
         <label class="keto-redeem-toggle-row">
-          <input type="checkbox" id="keto-redeem-toggle">
           <span id="keto-redeem-toggle-text"></span>
+          <input type="checkbox" id="keto-redeem-toggle">
         </label>
         <input type="number" id="keto-redeem-amount" min="0" step="1" style="display:none;margin-top:8px">
       </div>
@@ -2588,9 +2614,12 @@ const L = {
     deliveryFreeLabel: 'Yetkazib berish',
     deliveryFreeValue: 'BEPUL',
     freeDeliveryHint: "Yana {left} so'mlik mahsulot qo'shsangiz — Toshkent bo'ylab yetkazib berish bepul!",
-    ketoRedeemLabel: 'Ketochalarni ishlatish (balans: {balance})',
+    ketoRedeemLabel: 'Ketochalarni ishlatish',
+    ketoSwitchHint: "Balansingiz: {balance} ta tangacha (1 tangacha = 1 so'm)",
+    ketoSwitchApplied: 'Buyurtmadan −{amount} UZS ayirildi',
+    ketoSwitchEmpty: "Hozircha tangachangiz yo'q — har xariddan keyin yig'iladi",
     ketoRedeemLine: '🥑 Keto chegirmasi',
-    cartKetoLabel: '🥑 Ketolar bilan to\'lash (balans: {balance})',
+    cartKetoLabel: "🥑 Ketochalar bilan to'lash",
     clear: 'Tozalash',
     checkout: 'Buyurtma berish',
     currency: "so'm",
@@ -2740,9 +2769,12 @@ const L = {
     deliveryFreeLabel: 'Доставка',
     deliveryFreeValue: 'БЕСПЛАТНО',
     freeDeliveryHint: 'Добавьте товаров ещё на {left} сум — и доставка по Ташкенту бесплатно!',
-    ketoRedeemLabel: 'Использовать Ketочки (баланс: {balance})',
+    ketoRedeemLabel: 'Использовать Ketочки',
+    ketoSwitchHint: 'Ваш баланс: {balance} монеток (1 монетка = 1 сум)',
+    ketoSwitchApplied: 'Из заказа вычтено −{amount} UZS',
+    ketoSwitchEmpty: 'Пока монеток нет — они копятся с каждой покупки',
     ketoRedeemLine: '🥑 Скидка Keto',
-    cartKetoLabel: '🥑 Оплатить Ketочками (баланс: {balance})',
+    cartKetoLabel: '🥑 Оплатить Keto-монетками',
     clear: 'Очистить',
     checkout: 'Оформить заказ',
     currency: 'сум',
@@ -3251,6 +3283,15 @@ function closePromoSheet() {
 }
 
 /** 🎁 pill for a product card — p.bonus is the server-rendered rule line. */
+// Label for the Keto switch: the title, plus what it takes off right now.
+function ketoSwitchHtml(label, applied) {
+  const sub = applied > 0
+    ? t.ketoSwitchApplied.replace('{amount}', formatPrice(applied))
+    : t.ketoSwitchHint.replace('{balance}', formatPrice(keto.balance));
+  return '<span class="keto-switch-text"><span>' + label + '</span>' +
+         '<span class="keto-switch-sub">' + sub + '</span></span>';
+}
+
 function bonusBadgeHtml(p) {
   return p && p.bonus ? '<div class="bonus-badge">' + escapeHtml(p.bonus) + '</div>' : '';
 }
@@ -4318,11 +4359,12 @@ async function initCartKetoUI() {
   }
 
   group.style.display = '';
-  toggleText.textContent = t.cartKetoLabel.replace('{balance}', formatPrice(keto.balance));
   toggle.checked = (keto.redeem || 0) > 0;
+  toggleText.innerHTML = ketoSwitchHtml(t.cartKetoLabel, keto.redeem || 0);
 
   toggle.onchange = () => {
     keto.redeem = toggle.checked ? Math.min(keto.balance, Math.round(cartData.total)) : 0;
+    toggleText.innerHTML = ketoSwitchHtml(t.cartKetoLabel, keto.redeem);
     renderCartTotal();
   };
 }
@@ -4425,7 +4467,7 @@ async function initKetoRedeemUI() {
     keto.balance = 0;
   }
 
-  if (!keto.enabled || keto.balance <= 0) {
+  if (!keto.enabled) {
     keto.redeem = 0;
     group.style.display = 'none';
     toggle.checked = false;
@@ -4434,8 +4476,21 @@ async function initKetoRedeemUI() {
     return;
   }
 
+  amountInput.style.display = 'none';
   group.style.display = '';
-  toggleText.textContent = t.ketoRedeemLabel.replace('{balance}', formatPrice(keto.balance));
+
+  if (keto.balance <= 0) {
+    // Nothing to spend yet — say so instead of hiding the row, so the buyer
+    // knows the coins exist and where they will appear.
+    keto.redeem = 0;
+    toggle.checked = false;
+    toggle.disabled = true;
+    toggleText.innerHTML = '<span class="keto-switch-text"><span>' + t.ketoRedeemLabel +
+      '</span><span class="keto-switch-sub">' + t.ketoSwitchEmpty + '</span></span>';
+    refreshCheckoutTotal();
+    return;
+  }
+  toggle.disabled = false;
 
   function currentCap() {
     const method = document.querySelector('.del-opt.active')?.dataset.method;
@@ -4443,41 +4498,18 @@ async function initKetoRedeemUI() {
     return Math.min(keto.balance, Math.round(cartData.total + fee));
   }
 
-  if (carriedRedeem > 0) {
-    const cap = currentCap();
-    keto.redeem = Math.min(carriedRedeem, cap);
-    toggle.checked = true;
-    amountInput.max = cap;
-    amountInput.value = keto.redeem;
-    amountInput.style.display = 'block';
-  } else {
-    keto.redeem = 0;
-    toggle.checked = false;
-    amountInput.style.display = 'none';
-    amountInput.value = '';
-  }
+  // One switch, no typing (owner, 2026-09-18): flipping it on spends as much
+  // of the balance as this order can take and the total is recomputed at once.
+  amountInput.style.display = 'none';
+  keto.redeem = carriedRedeem > 0 ? Math.min(carriedRedeem, currentCap()) : 0;
+  toggle.checked = keto.redeem > 0;
   refreshCheckoutTotal();
 
+  const paint = () => { toggleText.innerHTML = ketoSwitchHtml(t.ketoRedeemLabel, keto.redeem || 0); };
+  paint();
   toggle.onchange = () => {
-    if (toggle.checked) {
-      const cap = currentCap();
-      amountInput.max = cap;
-      amountInput.value = cap;
-      keto.redeem = cap;
-      amountInput.style.display = 'block';
-    } else {
-      keto.redeem = 0;
-      amountInput.style.display = 'none';
-    }
-    refreshCheckoutTotal();
-  };
-  amountInput.oninput = () => {
-    const cap = currentCap();
-    let v = parseInt(amountInput.value, 10);
-    if (isNaN(v) || v < 0) v = 0;
-    if (v > cap) v = cap;
-    amountInput.value = v;
-    keto.redeem = v;
+    keto.redeem = toggle.checked ? currentCap() : 0;
+    paint();
     refreshCheckoutTotal();
   };
 }
@@ -5321,6 +5353,13 @@ function refreshCheckoutTotal() {
   }
   html += '<div class="ct-grand"><span>' + t.total + '</span><span>' + formatPrice(cartData.total - redeem) + ' UZS</span></div>';
   document.getElementById('checkout-total-row').innerHTML = html;
+
+  // Keep the switch's own line honest when the total or the delivery method
+  // changes under it.
+  const switchText = document.getElementById('keto-redeem-toggle-text');
+  if (switchText && keto.enabled && keto.balance > 0) {
+    switchText.innerHTML = ketoSwitchHtml(t.ketoRedeemLabel, redeem);
+  }
 }
 
 // Ketoshop's own courier ("self") takes cash or online. Every other delivery

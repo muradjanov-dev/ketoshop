@@ -716,10 +716,21 @@ TEXTS = {
         "ru": "🥑 Скидка Keto (-{amount} Keto): -{amount} сум\n",
     },
     "btn_keto_redeem_start": {
-        "uz": "🥑 Ketochalarni ishlatish (balans: {balance})",
-        "ru": "🥑 Использовать Ketочки (баланс: {balance})",
+        "uz": "🔘 Ketochalarni ishlatish ({balance} ta)",
+        "ru": "🔘 Использовать Ketочки ({balance})",
     },
-    "btn_keto_redeem_clear": {"uz": "❌ Keto chegirmasini bekor qilish", "ru": "❌ Отменить скидку Keto"},
+    "btn_keto_redeem_clear": {
+        "uz": "🟢 Keto ishlatilmoqda: −{amount} so'm · o'chirish",
+        "ru": "🟢 Keto применены: −{amount} сум · выключить",
+    },
+    "keto_redeem_applied": {
+        "uz": "🥑 {amount} ta tangacha ishlatildi — summa qayta hisoblandi",
+        "ru": "🥑 Применено монеток: {amount} — сумма пересчитана",
+    },
+    "keto_redeem_none": {
+        "uz": "Bu buyurtmaga tangacha ishlatib bo'lmadi.",
+        "ru": "К этому заказу монетки применить не удалось.",
+    },
     "keto_redeem_prompt": {
         "uz": "🥑 Nechta Ketocha ishlatmoqchisiz?\n\nBalansingiz: {balance} Keto\nUshbu buyurtma uchun maksimum: {max} Keto\n\n0 dan {max} gacha son kiriting (1 Keto = 1 so'm chegirma).",
         "ru": "🥑 Сколько Ketочек хотите использовать?\n\nВаш баланс: {balance} Keto\nМаксимум для этого заказа: {max} Keto\n\nВведите число от 0 до {max} (1 Keto = 1 сум скидки).",

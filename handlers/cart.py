@@ -1616,7 +1616,9 @@ async def _render_confirmation(user_id: int, state: FSMContext, lang: str):
         buyer = await get_user(user_id)
         keto_balance = int(buyer["keto_balance"]) if buyer else 0
         if keto_redeem > 0:
-            rows.insert(0, [InlineKeyboardButton(text=get_text("btn_keto_redeem_clear", lang), callback_data="keto_redeem:clear")])
+            rows.insert(0, [InlineKeyboardButton(
+                text=get_text("btn_keto_redeem_clear", lang, amount=f"{keto_redeem:,}".replace(",", " ")),
+                callback_data="keto_redeem:clear")])
         elif keto_balance > 0:
             rows.insert(0, [InlineKeyboardButton(
                 text=get_text("btn_keto_redeem_start", lang, balance=f"{keto_balance:,}".replace(",", " ")),
@@ -1647,14 +1649,15 @@ async def _show_order_confirmation(callback: CallbackQuery, state: FSMContext, l
 
 @router.callback_query(F.data == "keto_redeem:start", CheckoutStates.confirming)
 async def keto_redeem_start(callback: CallbackQuery, state: FSMContext):
-    """Buyer tapped "use my Keto" on the confirm screen — ask how much."""
+    """One tap = use the Keto (owner, 2026-09-18: "bitta switch tugmasi
+    bo'lsin va avtomatik o'zi narxni qayta hisoblasin"). As much of the
+    balance as the order can take is applied and the total is redrawn; the
+    same button then turns it back off."""
     import gamification
 
     lang = await get_user_language(callback.from_user.id)
     if not await gamification.is_redemption_enabled(callback.from_user.id):
-        # Toggled off by the admin between rendering the button and this tap
-        # — extremely unlikely, but don't leave the buyer stuck typing into
-        # a feature that just got disabled.
+        # Switched off by the admin between rendering the button and this tap.
         await callback.answer()
         await _show_order_confirmation(callback, state, lang)
         return
@@ -1663,37 +1666,24 @@ async def keto_redeem_start(callback: CallbackQuery, state: FSMContext):
     balance = int(buyer["keto_balance"]) if buyer else 0
     data = await state.get_data()
     _, total, _, _ = await _build_order_summary(callback.from_user.id, {**data, "keto_redeem": 0}, lang)
-    cap = min(balance, int(total))
+    applied = max(0, min(balance, int(total)))
+    if applied <= 0:
+        await callback.answer(get_text("keto_redeem_none", lang), show_alert=True)
+        return
 
-    await state.set_state(CheckoutStates.waiting_keto_amount)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=get_text("btn_cancel", lang), callback_data="keto_redeem:cancel_input"),
-    ]])
-    await callback.message.edit_text(
-        get_text("keto_redeem_prompt", lang,
-                  balance=f"{balance:,}".replace(",", " "), max=f"{cap:,}".replace(",", " ")),
-        reply_markup=keyboard,
-        parse_mode="HTML",
-    )
+    await state.update_data(keto_redeem=applied)
+    await _show_order_confirmation(callback, state, lang)
+    await callback.answer(get_text("keto_redeem_applied", lang,
+                                   amount=f"{applied:,}".replace(",", " ")))
     await callback.answer()
 
 
 @router.message(CheckoutStates.waiting_keto_amount, F.text)
 async def keto_redeem_amount_entered(message: Message, state: FSMContext):
+    """Left over from the old "type how many Keto" step (replaced by the
+    one-tap switch, 2026-09-18): put anyone still in that state back on the
+    confirm screen instead of leaving them typing into nothing."""
     lang = await get_user_language(message.from_user.id)
-    raw = (message.text or "").strip().replace(" ", "")
-
-    data = await state.get_data()
-    buyer = await get_user(message.from_user.id)
-    balance = int(buyer["keto_balance"]) if buyer else 0
-    _, total, _, _ = await _build_order_summary(message.from_user.id, {**data, "keto_redeem": 0}, lang)
-    cap = min(balance, int(total))
-
-    if not raw.isdigit() or not (0 <= int(raw) <= cap):
-        await message.answer(get_text("keto_redeem_invalid", lang, max=f"{cap:,}".replace(",", " ")))
-        return
-
-    await state.update_data(keto_redeem=int(raw))
     await state.set_state(CheckoutStates.confirming)
     text, keyboard = await _render_confirmation(message.from_user.id, state, lang)
     if text is None:
