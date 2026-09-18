@@ -5,9 +5,15 @@ admin move a card forward (or back) by dragging it or tapping a button:
 
     🆕 Yangi        pending
     ✅ Qabul qilindi confirmed
-    👨‍🍳 Tayyorlanmoqda preparing      ← new (2026-09-18)
     🚚 Tayyor + Yo'lda ready, shipped  ← 'ready' is new (2026-09-18)
-    📦 Yetkazildi    delivered (only the last 24h, so the board stays today's work)
+    📦 Yetkazildi    delivered (24h in the "Faol" scope, recent history in "Hammasi")
+    ❌ Bekor qilindi cancelled (only in the "Hammasi" scope)
+
+There was a 'Tayyorlanmoqda' (preparing) column between Qabul qilindi and
+Tayyor; the shop doesn't work in that step, so it was dropped on 2026-09-18.
+The status itself is kept — orders stamped with it before the column went
+away still land in the Tayyor + Yo'lda column, and the bot's own buttons
+still accept it — so nothing in flight was stranded.
 
 `preparing` and `ready` are new statuses that split the old confirmed →
 shipped jump. Everything that used to read the pipeline still works: the bot's
@@ -25,6 +31,7 @@ consistent timeline no matter which surface moved the order.
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 
 import database
@@ -46,17 +53,24 @@ COLUMNS = [
      "title": "Yangi buyurtmalar", "icon": "🆕", "tone": "amber"},
     {"key": "accepted",  "target": "confirmed", "statuses": ["confirmed"],
      "title": "Qabul qilindi",     "icon": "✅", "tone": "blue"},
-    {"key": "preparing", "target": "preparing", "statuses": ["preparing"],
-     "title": "Tayyorlanmoqda",    "icon": "👨‍🍳", "tone": "violet"},
-    {"key": "delivery",  "target": "ready",     "statuses": ["ready", "shipped"],
+    {"key": "delivery",  "target": "ready",     "statuses": ["ready", "preparing", "shipped"],
      "title": "Tayyor + Yo'lda",   "icon": "🚚", "tone": "accent"},
     {"key": "done",      "target": "delivered", "statuses": ["delivered"],
      "title": "Yetkazildi",        "icon": "📦", "tone": "green"},
+    # Only rendered in the "Hammasi" scope — a cancelled order is not work
+    # anybody is doing, so it would just be noise on the working board.
+    {"key": "cancelled", "target": "cancelled", "statuses": ["cancelled"],
+     "title": "Bekor qilindi",     "icon": "❌", "tone": "red", "scope": "all"},
 ]
 
 _COLUMN_OF_STATUS = {s: c["key"] for c in COLUMNS for s in c["statuses"]}
+# A card the board cancels lands in a column that only the "Hammasi" scope
+# renders; on the working board it simply drops off, which is what we want.
+
 
 # Pipeline order, used to tell a forward move from a rollback.
+# 'preparing' keeps its slot so an order still carrying that status sorts and
+# steps forward correctly, even though no column targets it any more.
 PIPELINE = ["pending", "confirmed", "preparing", "ready", "shipped", "delivered"]
 _RANK = {s: i for i, s in enumerate(PIPELINE)}
 
@@ -137,6 +151,33 @@ def _parse_items(raw) -> list[dict]:
     return out
 
 
+def _coord(value):
+    """A latitude/longitude as a float, or None. Orders placed before the
+    columns existed (and the odd hand-typed one) have them empty."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f if f else None
+
+
+# "41.407165, 69.199902" — what the checkout writes into `address` when the
+# buyer sends a Telegram pin instead of typing a street. Older orders have
+# only that string, so the board digs the pin back out of it.
+_COORD_RE = re.compile(r"^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*$")
+
+
+def order_pin(order: dict) -> tuple[float, float] | None:
+    """The buyer's map pin for this order, from the columns or the address."""
+    lat, lng = _coord(order.get("latitude")), _coord(order.get("longitude"))
+    if lat is not None and lng is not None:
+        return lat, lng
+    m = _COORD_RE.match(str(order.get("address") or ""))
+    if m:
+        return float(m.group(1)), float(m.group(2))
+    return None
+
+
 def _stage_stamp(order: dict) -> datetime | None:
     """When the order entered the status it is in now — that's what the card's
     "shu bosqichda N daqiqa" counter measures, not the order's total age."""
@@ -164,6 +205,8 @@ def _card(order: dict) -> dict:
         "secondary_phone": order.get("secondary_phone"),
         "address": order.get("address"),
         "address_note": order.get("address_note"),
+        "latitude": _coord(order.get("latitude")),
+        "longitude": _coord(order.get("longitude")),
         "delivery_method": order.get("delivery_method"),
         "payment_method": order.get("payment_method"),
         "source": order.get("source") or "bot",
@@ -184,23 +227,31 @@ def _card(order: dict) -> dict:
     }
 
 
-async def board_snapshot(delivered_hours: int = DELIVERED_WINDOW_HOURS) -> dict:
+async def board_snapshot(delivered_hours: int = DELIVERED_WINDOW_HOURS,
+                         scope: str = "active") -> dict:
     """The whole board in one payload: every column with its cards, counts and
     summed value. One call so the tab renders without a request waterfall and
-    so polling costs exactly one query."""
-    orders = await database.get_courier_board_orders(delivered_hours)
-    buckets: dict[str, list[dict]] = {c["key"]: [] for c in COLUMNS}
+    so polling costs exactly one query.
+
+    `scope` is "active" (live work plus today's deliveries) or "all" (the same
+    live work plus recent delivered *and* cancelled orders, and the extra
+    Bekor qilindi column to put them in).
+    """
+    orders = await database.get_courier_board_orders(delivered_hours, scope)
+    shown = [c for c in COLUMNS if c.get("scope") in (None, scope)]
+    buckets: dict[str, list[dict]] = {c["key"]: [] for c in shown}
     for order in orders:
         key = _COLUMN_OF_STATUS.get(order.get("status"))
         if key:
             buckets[key].append(_card(order))
 
     columns = []
-    for c in COLUMNS:
+    for c in shown:
         cards = buckets[c["key"]]
-        # Oldest first everywhere except the finished column, where the most
+        # Oldest first everywhere except the finished columns, where the most
         # recently closed order is the interesting one.
-        cards.sort(key=lambda x: x["created_at"] or "", reverse=(c["key"] == "done"))
+        cards.sort(key=lambda x: x["created_at"] or "",
+                   reverse=(c["key"] in ("done", "cancelled")))
         columns.append({
             "key": c["key"], "title": c["title"], "icon": c["icon"],
             "tone": c["tone"], "target": c["target"],
@@ -210,15 +261,19 @@ async def board_snapshot(delivered_hours: int = DELIVERED_WINDOW_HOURS) -> dict:
             "cards": cards,
         })
 
-    live = [x for c in columns if c["key"] != "done" for x in c["cards"]]
+    live = [x for c in columns if c["key"] not in ("done", "cancelled")
+            for x in c["cards"]]
+    done = buckets.get("done", [])
     return {
         "columns": columns,
+        "scope": scope,
         "server_time": datetime.utcnow().isoformat(),
         "totals": {
             "live": len(live),
             "live_sum": sum(x["total"] for x in live),
-            "done_today": len(buckets["done"]),
-            "done_sum": sum(x["total"] for x in buckets["done"]),
+            "done_today": len(done),
+            "done_sum": sum(x["total"] for x in done),
+            "cancelled": len(buckets.get("cancelled", [])),
         },
     }
 
@@ -341,6 +396,41 @@ async def move_order(order_id: int, target: str, *, expected_from: str | None = 
 
     return {"ok": True, "order": _card(fresh),
             "notified": bool(notify and bot is not None and forward and BUYER_MESSAGE.get(target))}
+
+
+async def send_pin_to_telegram(order_id: int, bot) -> dict:
+    """Push the buyer's map pin to the admins' Telegram as a real location
+    message.
+
+    A browser can only offer a maps link; Telegram can open the pin straight
+    into the courier's navigation app, which is what someone actually driving
+    needs. Sent to every ADMIN_IDS chat because the web panel authenticates by
+    a shared password and so has no idea which admin pressed the button.
+    """
+    from config import ADMIN_IDS
+
+    order = await database.get_order(order_id)
+    if not order:
+        return {"ok": False, "error": "buyurtma topilmadi"}
+    pin = order_pin(order)
+    if not pin:
+        return {"ok": False, "error": "bu buyurtmada lokatsiya yo'q"}
+
+    lat, lng = pin
+    caption = (f"📍 <b>Buyurtma #{order_id}</b> — mijoz lokatsiyasi\n"
+               f"👤 {order.get('customer_name') or '—'}\n"
+               f"📱 {order.get('phone') or '—'}")
+    sent = 0
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, caption, parse_mode="HTML")
+            await bot.send_location(admin_id, latitude=lat, longitude=lng)
+            sent += 1
+        except Exception:
+            logger.exception("courier board: pin to admin %s failed", admin_id)
+    if not sent:
+        return {"ok": False, "error": "hech kimga yuborib bo'lmadi"}
+    return {"ok": True, "sent": sent, "latitude": lat, "longitude": lng}
 
 
 async def assign_courier(order_id: int, courier_id: int | None) -> bool:

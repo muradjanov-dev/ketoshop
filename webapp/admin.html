@@ -65,8 +65,13 @@
   .top h1{font-size:19px}
   .top .sub{font-size:12.5px;color:var(--ink-2)}
   .top .spacer{margin-left:auto}
-  .tabs{display:flex;gap:6px;background:var(--chip-bg);padding:5px;border-radius:13px;margin-bottom:22px;width:max-content}
-  .tab{border:none;background:transparent;font-weight:700;font-size:14px;color:var(--ink-2);padding:9px 20px;border-radius:9px;transition:.15s}
+  /* max-width + scroll: with the Kuryer tab added the row no longer fits a
+     1280px laptop, and a max-content row that wide pushed the whole page
+     sideways instead of scrolling itself. */
+  .tabs{display:flex;gap:6px;background:var(--chip-bg);padding:5px;border-radius:13px;margin-bottom:22px;
+        width:max-content;max-width:100%;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{flex:0 0 auto;border:none;background:transparent;font-weight:700;font-size:14px;color:var(--ink-2);padding:9px 20px;border-radius:9px;transition:.15s}
   .tab.active{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
   .view{display:none}.view.active{display:block}
 
@@ -207,6 +212,7 @@
     --kb-violet:#A98BD6;--kb-violet-wash:#2A2138;
     --kb-accent:#E48A3D;--kb-accent-wash:#3A2A16;
     --kb-green:#8BAE5B; --kb-green-wash:#26301A;
+    --kb-red:#E8746B;   --kb-red-wash:#3A1E1B;
     --kb-glass:rgba(255,255,255,.04);
     --kb-col-bg:#1B1811; --kb-card-bg:#272117; --kb-card-line:#3B3524;
   }
@@ -216,6 +222,7 @@
     --kb-violet:#7B5CB8;--kb-violet-wash:#F0EBFA;
     --kb-accent:#C05A24;--kb-accent-wash:#FBEDE2;
     --kb-green:#5F7E33; --kb-green-wash:#EDF2DE;
+    --kb-red:#B3261E;   --kb-red-wash:#FBEAE8;
     --kb-glass:rgba(46,38,23,.05);
     --kb-col-bg:#EFEBE0; --kb-card-bg:#FFFFFF; --kb-card-line:#E5DFD2;
   }
@@ -233,6 +240,10 @@
   .kb-stat .val{font-size:16px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums}
   .kb-stat .sub{font-size:11.5px;color:var(--ink-2);font-weight:700}
   .kb-search{max-width:240px}
+  .kb-scope{display:inline-flex;gap:3px;background:var(--chip-bg);padding:3px;border-radius:11px}
+  .kb-scope button{border:none;background:transparent;color:var(--ink-2);font-weight:700;font-size:12.5px;
+                   padding:6px 13px;border-radius:9px;transition:.16s;white-space:nowrap}
+  .kb-scope button.active{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
   .kb-live{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--ink-2);
            background:var(--chip-bg);border-radius:20px;padding:6px 13px;border:1px solid transparent;transition:.18s}
   .kb-live:hover{border-color:var(--line)}
@@ -241,7 +252,7 @@
   @keyframes kbPulse{0%{box-shadow:0 0 0 0 rgba(139,174,91,.55)}70%{box-shadow:0 0 0 7px rgba(139,174,91,0)}100%{box-shadow:0 0 0 0 rgba(139,174,91,0)}}
 
   /* ── the board ── */
-  .kanban{display:grid;grid-template-columns:repeat(5,minmax(248px,1fr));gap:14px;align-items:stretch}
+  .kanban{display:grid;grid-template-columns:repeat(var(--kb-cols,5),minmax(228px,1fr));gap:14px;align-items:stretch}
   .kb-col{background:var(--kb-col-bg);border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column;
           height:clamp(400px,calc(100vh - 320px),780px);position:relative;overflow:hidden;transition:box-shadow .22s,border-color .22s,background .22s}
   .kb-col::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;
@@ -251,6 +262,14 @@
   .kb-col[data-tone=violet]{--tone:var(--kb-violet);--tone-wash:var(--kb-violet-wash)}
   .kb-col[data-tone=accent]{--tone:var(--kb-accent);--tone-wash:var(--kb-accent-wash)}
   .kb-col[data-tone=green]{--tone:var(--kb-green);--tone-wash:var(--kb-green-wash)}
+  .kb-col[data-tone=red]{--tone:var(--kb-red);--tone-wash:var(--kb-red-wash)}
+  /* The board is read for minutes at a time, so its text is toned down from
+     the panel's near-white: matte, not glaring, while staying well above the
+     contrast floor. Scoped to the column so the rest of /admin is untouched. */
+  :root:not([data-theme="light"]) .kb-col{--ink:#D8D2C3;--ink-2:#ACA491;--ink-3:#827B68}
+  /* `color` is inherited from body as an already-computed value, so
+     redefining --ink alone changes nothing — the column has to re-read it. */
+  .kb-col{color:var(--ink)}
 
   .kb-head{display:flex;align-items:center;gap:9px;padding:14px 14px 12px;position:sticky;top:0;z-index:2;
            background:linear-gradient(180deg,var(--tone-wash) 0%,var(--kb-col-bg) 86%,transparent 100%)}
@@ -298,7 +317,9 @@
   @keyframes kbOut{to{opacity:0;transform:scale(.94);margin-top:-8px}}
   .kb-card.busy{pointer-events:none;opacity:.55}
 
-  .kb-card .r1{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+  /* wrap rather than squeeze: a card can carry several chips (pin, courier,
+     payment, legacy stage) and the age badge must stay readable */
+  .kb-card .r1{display:flex;align-items:center;gap:7px;row-gap:4px;flex-wrap:wrap;margin-bottom:5px}
   .kb-id{font-size:13px;font-weight:800;letter-spacing:-.02em}
   .kb-chip{font-size:10px;font-weight:800;border-radius:20px;padding:2px 7px;letter-spacing:.02em;white-space:nowrap}
   .kb-chip.tone{background:var(--tone-wash);color:var(--tone)}
@@ -372,7 +393,7 @@
   .kb-switch input:checked + .track::after{transform:translateX(17px);background:var(--green)}
 
   @media (max-width:1280px){
-    .kanban{grid-template-columns:repeat(5,minmax(224px,1fr));gap:11px}
+    .kanban{grid-template-columns:repeat(var(--kb-cols,5),minmax(206px,1fr));gap:11px}
   }
   @media (max-width:1080px){
     .kanban{display:flex;overflow-x:auto;padding-bottom:10px;scroll-snap-type:x proximity;gap:12px}
@@ -464,7 +485,6 @@
           <tbody id="abcTbody"></tbody>
         </table>
       </div>
-    </div>
       <div class="dash-card">
         <h3>🥑 Keto dasturi</h3>
         <div class="kpi-grid" id="ketoStatsGrid" style="margin-bottom:0"></div>
@@ -483,8 +503,12 @@
       </div>
       <div class="kb-stat green">
         <span class="ic">📦</span>
-        <div><div class="lab">Bugun yetkazildi</div><div class="val" id="kbDone">—</div></div>
+        <div><div class="lab" id="kbDoneLab">Yetkazildi</div><div class="val" id="kbDone">—</div></div>
         <div class="sub" id="kbDoneSum"></div>
+      </div>
+      <div class="kb-scope" id="kbScope">
+        <button data-scope="all" class="active">Hammasi</button>
+        <button data-scope="active">Faol</button>
       </div>
       <div class="spacer" style="margin-left:auto"></div>
       <input type="search" class="kb-search" id="kbSearch" placeholder="Qidirish: #raqam, ism, telefon…">
@@ -2161,9 +2185,15 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModals();});
    Every drag is also available as a button (◀ ▶ on the card, full list in the
    detail modal) so the board works on a phone and with a keyboard.
    ══════════════════════════════════════════════════════════════════════════ */
+const KB_SCOPE_KEY='ketoshop_kb_scope';
 const KB_LABEL={pending:'Yangi',confirmed:'Qabul qilindi',preparing:'Tayyorlanmoqda',
                 ready:'Tayyor',shipped:"Yo'lda",delivered:'Yetkazildi',cancelled:'Bekor qilindi'};
+/* KB_FLOW ranks every status that can exist; KB_STEPS are the ones a column
+   targets. 'preparing' is in the first but not the second — its column was
+   removed, yet orders stamped with it before that still need to step forward,
+   so the arrows skip over it rather than stranding the card. */
 const KB_FLOW=['pending','confirmed','preparing','ready','shipped','delivered'];
+const KB_STEPS=['pending','confirmed','ready','shipped','delivered'];
 /* mirrors courier_board.ALLOWED_FROM — only used to grey out an impossible
    drop before the request; the server stays the authority. */
 const KB_ALLOWED_FROM={
@@ -2176,13 +2206,13 @@ const KB_ALLOWED_FROM={
   cancelled:['pending','confirmed','preparing','ready','shipped'],
 };
 /* minutes in one stage before the age badge turns amber / red, per column */
-const KB_SLA={new:[10,25],accepted:[20,45],preparing:[30,60],delivery:[60,120],done:[0,0]};
+const KB_SLA={new:[10,25],accepted:[20,45],delivery:[45,100],done:[0,0],cancelled:[0,0]};
 const KB_DELIVERY={courier:'🚚 Kuryer',self:'🏃 Olib ketish',yandex_taxi:'🚕 Yandex Taxi',
                    yandex_market:'📦 Yandex Market',bts:'🚛 BTS',emu:'✈️ EMU'};
 const KB_PAYMENT={cash:'💵 Naqd',card:'💳 Karta',click:'💳 Click',payme:'💳 Payme',online:'💳 Onlayn'};
 const KB_POLL_MS=12000;
 
-let KB_BOARD=null, KB_COURIERS=[], KB_TIMER=null, KB_AUTO=true;
+let KB_BOARD=null, KB_COURIERS=[], KB_TIMER=null, KB_AUTO=true, KB_SCOPE='all';
 let KB_DRAG=null, KB_BUSY=new Set(), KB_DETAIL_ID=null, KB_LOADED=false;
 let KB_COUNTS={};
 
@@ -2204,9 +2234,26 @@ function kbAgo(min){
   return Math.floor(h/24)+' kun';
 }
 function kbSom(n){return Math.round(+n||0).toLocaleString('ru-RU').replace(/,/g,' ');}
-function kbNext(status){const i=KB_FLOW.indexOf(status);return i>=0&&i<KB_FLOW.length-1?KB_FLOW[i+1]:null;}
-function kbPrev(status){const i=KB_FLOW.indexOf(status);return i>0?KB_FLOW[i-1]:null;}
+function kbNext(status){
+  const i=KB_FLOW.indexOf(status);
+  return i<0?null:(KB_STEPS.find(x=>KB_FLOW.indexOf(x)>i)||null);
+}
+function kbPrev(status){
+  const i=KB_FLOW.indexOf(status);
+  if(i<0)return null;
+  const before=KB_STEPS.filter(x=>KB_FLOW.indexOf(x)<i);
+  return before.length?before[before.length-1]:null;
+}
 function kbCan(from,to){return !!to&&from!==to&&(KB_ALLOWED_FROM[to]||[]).includes(from);}
+/* The buyer's map pin: the lat/lng columns, or the "41.40, 69.19" string the
+   checkout writes into `address` when they send a Telegram pin. Mirrors
+   courier_board.order_pin. */
+const KB_COORD_RE=/^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*$/;
+function kbPin(c){
+  if(c.latitude&&c.longitude)return [c.latitude,c.longitude];
+  const m=KB_COORD_RE.exec(String(c.address||''));
+  return m?[parseFloat(m[1]),parseFloat(m[2])]:null;
+}
 function kbCard(id){
   if(!KB_BOARD)return null;
   for(const c of KB_BOARD.columns){const f=c.cards.find(x=>x.id===id);if(f)return f;}
@@ -2215,7 +2262,9 @@ function kbCard(id){
 
 /* ── load ── */
 function kbSkeleton(){
-  $('#kanban').innerHTML=[0,1,2,3,4].map(()=>
+  const n=KB_SCOPE==='all'?5:4;
+  $('#kanban').style.setProperty('--kb-cols',n);
+  $('#kanban').innerHTML=Array.from({length:n},()=>
     `<div class="kb-col" data-tone="blue"><div class="kb-head"><div class="ic"></div>
       <div class="tx"><h3>&nbsp;</h3></div></div>
       <div class="kb-body">${'<div class="kb-skel"></div>'.repeat(3)}</div></div>`).join('');
@@ -2224,7 +2273,7 @@ async function loadCourier(opts){
   const silent=opts&&opts.silent;
   if(!KB_LOADED&&!silent)kbSkeleton();
   try{
-    const d=await api('/admin/api/courier/board');
+    const d=await api('/admin/api/courier/board?scope='+KB_SCOPE);
     KB_BOARD=d;KB_LOADED=true;renderKanban();
     if(KB_DETAIL_ID&&$('#kbModal').classList.contains('open'))kbRenderDetail(KB_DETAIL_ID);
   }catch(err){
@@ -2250,7 +2299,9 @@ function renderKanban(){
   $('#kbLiveSum').textContent=t.live_sum?kbSom(t.live_sum)+" so'm":'';
   $('#kbDone').textContent=t.done_today??0;
   $('#kbDoneSum').textContent=t.done_sum?kbSom(t.done_sum)+" so'm":'';
+  $('#kbDoneLab').textContent=KB_SCOPE==='all'?'Yetkazildi':'Bugun yetkazildi';
 
+  $('#kanban').style.setProperty('--kb-cols',KB_BOARD.columns.length);
   $('#kanban').innerHTML=KB_BOARD.columns.map(col=>{
     const cards=col.cards.filter(match);
     const body=cards.length
@@ -2289,11 +2340,14 @@ function kbCardHtml(c,col,i){
   if(c.source==='manual')chips.push('<span class="kb-chip soft">✍️ Operator</span>');
   if(c.keto_redeemed>0)chips.push(`<span class="kb-chip warm">🥑 ${kbSom(c.keto_redeemed)}</span>`);
   if(c.courier_name)chips.push(`<span class="kb-chip tone">🧍 ${esc(c.courier_name)}</span>`);
+  if(kbPin(c))chips.push('<span class="kb-chip soft">📍 Lokatsiya</span>');
+  if(c.status==='preparing')chips.push('<span class="kb-chip soft">👨‍🍳 Tayyorlanmoqda</span>');
 
   const items=c.items.slice(0,3).map(it=>`${esc(it.name)}×${it.quantity}`).join(', ')
     +(c.items.length>3?` +${c.items.length-3}`:'');
   const nx=kbNext(c.status), pv=kbPrev(c.status);
   const goShipped=col.key==='delivery'&&c.status==='ready';
+  if(c.status==='cancelled')chips.push('<span class="kb-chip hot">❌ Bekor</span>');
 
   return `<article class="kb-card" data-id="${c.id}" data-status="${c.status}" style="--i:${i}">
     <div class="r1">
@@ -2474,9 +2528,17 @@ function kbRenderDetail(id){
   const tel=c.phone?`<a href="tel:${esc((c.phone||'').replace(/[^\d+]/g,''))}">${esc(c.phone)}</a>`:'—';
   const tel2=c.secondary_phone?`<div class="kb-kv"><span class="k">Qo’shimcha</span><span class="v"><a href="tel:${esc(c.secondary_phone.replace(/[^\d+]/g,''))}">${esc(c.secondary_phone)}</a></span></div>`:'';
   const tg=c.username?`<a href="https://t.me/${esc(c.username.replace(/^@/,''))}" target="_blank" rel="noopener">@${esc(c.username.replace(/^@/,''))}</a>`:'—';
-  const mapQ=encodeURIComponent(c.address||'');
-  const addr=c.address
-    ? `${esc(c.address)} <a href="https://yandex.uz/maps/?text=${mapQ}" target="_blank" rel="noopener">🗺</a>`
+  // A pin order's `address` is just "41.40, 69.19" — useless to read, so show
+  // the coordinates as a map link and let the Telegram button do the rest.
+  const pin=kbPin(c);
+  const mapHref=pin
+    ? `https://yandex.uz/maps/?pt=${pin[1]},${pin[0]}&z=17&l=map`
+    : `https://yandex.uz/maps/?text=${encodeURIComponent(c.address||'')}`;
+  const addrText=pin&&KB_COORD_RE.test(String(c.address||''))
+    ? `📍 ${pin[0].toFixed(5)}, ${pin[1].toFixed(5)}`
+    : esc(c.address||'');
+  const addr=(c.address||pin)
+    ? `${addrText} <a href="${mapHref}" target="_blank" rel="noopener">🗺</a>`
     : '—';
 
   const steps=[['created_at','🛒 Buyurtma berildi'],['confirmed_at','✅ Qabul qilindi'],
@@ -2490,7 +2552,7 @@ function kbRenderDetail(id){
       <span class="tnum">${kbSom(it.price*it.quantity)}</span></div>`).join('')
     ||'<div class="kb-line"><span style="color:var(--ink-3)">Mahsulotlar ro’yxati yo’q</span></div>';
 
-  const moves=KB_FLOW.filter(s=>kbCan(c.status,s)).map(s=>
+  const moves=KB_STEPS.filter(s=>kbCan(c.status,s)).map(s=>
     `<button class="btn btn-o btn-sm" data-move="${s}">${esc(KB_LABEL[s])}</button>`).join('');
 
   const courierOpts=['<option value="">— kuryer tanlanmagan —</option>']
@@ -2520,6 +2582,14 @@ function kbRenderDetail(id){
       <h4>Bosqichlar</h4>
       ${steps}
     </div>
+    ${pin?`<div class="sec">
+      <h4>Lokatsiya</h4>
+      <div class="kb-move">
+        <a class="btn btn-o btn-sm" href="${mapHref}" target="_blank" rel="noopener">🗺 Xaritada ochish</a>
+        <button type="button" class="btn btn-o btn-sm" id="kbPinBtn">📲 Telegramga yuborish</button>
+      </div>
+      <div class="hint" style="margin-top:6px">Telegramga yuborilganda pin navigatorda ochiladi — barcha adminlarga boradi.</div>
+    </div>`:''}
     <div class="sec">
       <h4>Kuryer</h4>
       <select id="kbCourierSel">${courierOpts}</select>
@@ -2532,6 +2602,15 @@ function kbRenderDetail(id){
 
   $('#kbModalBody').querySelectorAll('[data-move]').forEach(b=>
     b.addEventListener('click',()=>{kbMove(id,b.dataset.move);}));
+  const pinBtn=$('#kbPinBtn');
+  if(pinBtn)pinBtn.addEventListener('click',async()=>{
+    pinBtn.disabled=true;
+    try{
+      const r=await api(`/admin/api/courier/orders/${id}/location`,{method:'POST'});
+      toast(`📍 Lokatsiya ${r.sent} ta adminga yuborildi`);
+    }catch(err){toast('⚠️ '+err.message);}
+    finally{pinBtn.disabled=false;}
+  });
   const sel=$('#kbCourierSel');
   if(sel)sel.addEventListener('change',async()=>{
     try{
@@ -2572,8 +2651,22 @@ $('#kbAutoBtn').addEventListener('click',()=>{
   kbPollOn();
   if(KB_AUTO)loadCourier({silent:true});
 });
+$('#kbScope').addEventListener('click',e=>{
+  const b=e.target.closest('[data-scope]');
+  if(!b||b.dataset.scope===KB_SCOPE)return;
+  KB_SCOPE=b.dataset.scope;
+  $$('#kbScope button').forEach(x=>x.classList.toggle('active',x.dataset.scope===KB_SCOPE));
+  try{localStorage.setItem(KB_SCOPE_KEY,KB_SCOPE);}catch(e){}
+  KB_LOADED=false;KB_COUNTS={};loadCourier();
+});
 $('#kbRefreshBtn').addEventListener('click',()=>loadCourier());
 $('#kbSearch').addEventListener('input',()=>renderKanban());
+try{
+  if(localStorage.getItem(KB_SCOPE_KEY)==='active'){
+    KB_SCOPE='active';
+    $$('#kbScope button').forEach(x=>x.classList.toggle('active',x.dataset.scope==='active'));
+  }
+}catch(e){}
 try{
   if(localStorage.getItem('ketoshop_kb_auto')==='0'){
     KB_AUTO=false;$('#kbAutoBtn').classList.remove('on');$('#kbAutoLab').textContent='To’xtatilgan';

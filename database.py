@@ -2220,36 +2220,58 @@ async def get_all_orders(page: int = 0, per_page: int = 20, status: str = None) 
 
 
 # Statuses the courier Kanban board (2026-09-18) shows as live work, in
-# pipeline order. 'delivered' is on the board too but time-boxed — see
+# pipeline order. Finished orders are on the board too, but bounded — see
 # get_courier_board_orders.
 COURIER_BOARD_STATUSES = ("pending", "confirmed", "preparing", "ready", "shipped")
+COURIER_DONE_STATUSES = ("delivered", "cancelled")
 
 
-async def get_courier_board_orders(delivered_hours: int = 24) -> list[dict]:
-    """Every order the courier board needs in one query: all live orders plus
-    the ones delivered in the last `delivered_hours` so the "Yetkazildi"
-    column shows today's finished work instead of the whole archive.
+async def get_courier_board_orders(delivered_hours: int = 24, scope: str = "active",
+                                   done_limit: int = 400) -> list[dict]:
+    """Every order the courier board needs, in one query.
+
+    Live orders are always returned in full — the board must never hide work
+    in progress. What changes with `scope` is how much finished history rides
+    along:
+
+      "active" — only orders delivered in the last `delivered_hours`, so the
+                 last column shows today's work rather than the whole archive.
+      "all"    — the most recent `done_limit` delivered *and* cancelled
+                 orders, for the admin who wants to look further back.
 
     Joins the buyer for the username/full_name a contact link needs, and the
     courier for the name shown on a claimed card.
     """
+    live = list(COURIER_BOARD_STATUSES)
+    if scope == "all":
+        done_clause = """SELECT id FROM orders WHERE status = ANY($2::text[])
+                         ORDER BY COALESCE(delivered_at, created_at) DESC LIMIT $3"""
+        args = (live, list(COURIER_DONE_STATUSES), int(done_limit))
+    else:
+        done_clause = """SELECT id FROM orders WHERE status = ANY($2::text[])
+                         AND COALESCE(delivered_at, created_at)
+                             >= CURRENT_TIMESTAMP - ($3 || ' hours')::interval"""
+        args = (live, ["delivered"], str(int(delivered_hours)))
+
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT o.*,
-                      u.username     AS buyer_username,
-                      u.full_name    AS buyer_full_name,
-                      u.language     AS buyer_language,
-                      c.full_name    AS courier_name,
-                      c.username     AS courier_username
-               FROM orders o
-               LEFT JOIN users u ON u.user_id = o.user_id
-               LEFT JOIN users c ON c.user_id = o.courier_id
-               WHERE o.status = ANY($1::text[])
-                  OR (o.status = 'delivered'
-                      AND COALESCE(o.delivered_at, o.created_at)
-                          >= CURRENT_TIMESTAMP - ($2 || ' hours')::interval)
-               ORDER BY o.created_at ASC""",
-            list(COURIER_BOARD_STATUSES), str(int(delivered_hours)),
+            f"""WITH picked AS (
+                    SELECT id FROM orders WHERE status = ANY($1::text[])
+                    UNION
+                    ({done_clause})
+                )
+                SELECT o.*,
+                       u.username     AS buyer_username,
+                       u.full_name    AS buyer_full_name,
+                       u.language     AS buyer_language,
+                       c.full_name    AS courier_name,
+                       c.username     AS courier_username
+                FROM orders o
+                JOIN picked p ON p.id = o.id
+                LEFT JOIN users u ON u.user_id = o.user_id
+                LEFT JOIN users c ON c.user_id = o.courier_id
+                ORDER BY o.created_at ASC""",
+            *args,
         )
         return [dict(r) for r in rows]
 

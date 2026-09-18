@@ -45,10 +45,12 @@ Routes (all mounted by setup_admin_routes):
   GET  /admin/api/ads/status      — ad-account health (account_status, balance) + per-ad issues_info
   GET  /admin/api/ads/leads       — {limit} -> stored Meta lead-form submissions, newest first
   POST /admin/api/ads/leads/{lead_id}/handled — claim a lead ("Bog'landim"), same as the Telegram button
-  GET  /admin/api/courier/board   — Kanban snapshot: 5 columns of live orders + today's delivered
+  GET  /admin/api/courier/board   — Kanban snapshot; {scope} 'all' (default) adds every recent
+                                    delivered/cancelled order, 'active' trims to today's deliveries
   POST /admin/api/courier/orders/{id}/move   — {status, from?, notify?} -> guarded status move
   POST /admin/api/courier/orders/{id}/courier — {courier_id|null} -> claim/release a card
   GET  /admin/api/courier/couriers — registered couriers for the card picker
+  POST /admin/api/courier/orders/{id}/location — push the buyer's map pin to the admins' Telegram
 
 Images are stored in Postgres (web_images) because Railway's filesystem is
 ephemeral — see database.py.
@@ -1328,7 +1330,8 @@ async def api_courier_board(request: web.Request):
     except ValueError:
         hours = courier_board.DELIVERED_WINDOW_HOURS
     hours = max(1, min(hours, 24 * 14))
-    snapshot = await courier_board.board_snapshot(hours)
+    scope = "active" if request.query.get("scope") == "active" else "all"
+    snapshot = await courier_board.board_snapshot(hours, scope)
     return _json(snapshot)
 
 
@@ -1384,6 +1387,18 @@ async def api_courier_couriers(request: web.Request):
     return _json({"couriers": await courier_board.courier_options()})
 
 
+@require_auth
+async def api_courier_location(request: web.Request):
+    """Send the buyer's Telegram pin for this order to the admins' chats, so
+    it opens in a navigation app instead of only as a maps link in a browser."""
+    order_id = int(request.match_info["id"])
+    bot = request.app.get("bot")
+    if bot is None:
+        return _json({"error": "bot ulanmagan"}, status=503)
+    result = await courier_board.send_pin_to_telegram(order_id, bot)
+    return _json(result, status=200 if result.get("ok") else 400)
+
+
 def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin", admin_page)
     app.router.add_post("/admin/api/login", api_login)
@@ -1430,4 +1445,5 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/courier/couriers", api_courier_couriers)
     app.router.add_post("/admin/api/courier/orders/{id:\\d+}/move", api_courier_move)
     app.router.add_post("/admin/api/courier/orders/{id:\\d+}/courier", api_courier_assign)
+    app.router.add_post("/admin/api/courier/orders/{id:\\d+}/location", api_courier_location)
     app.router.add_get("/img/{id:\\d+}", serve_image)

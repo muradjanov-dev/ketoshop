@@ -589,7 +589,7 @@ def admin_cancel_keyboard(lang: str) -> InlineKeyboardMarkup:
     ])
 
 def admin_panel_keyboard(lang: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    rows = [
         [
             InlineKeyboardButton(text="📊 Statistika va Hisobot", callback_data="admin_menu:stats"),
             InlineKeyboardButton(text="📦 Mahsulot va Buyurtma", callback_data="admin_menu:products")
@@ -598,8 +598,17 @@ def admin_panel_keyboard(lang: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="👥 Foydalanuvchilar", callback_data="admin_menu:users"),
             InlineKeyboardButton(text="🚀 Marketing va Aksiya", callback_data="admin_menu:marketing")
         ],
-        [InlineKeyboardButton(text=get_text("btn_back_to_menu", lang), callback_data="main_menu")],
-    ])
+    ]
+    # The browser panel (Kanban board, products, stats) — one tap from the
+    # main admin menu instead of two levels down under Statistika. Skipped
+    # when WEBAPP_URL is unset: Telegram rejects a url button with an empty
+    # URL and the whole keyboard would fail to render.
+    if WEBAPP_URL:
+        rows.append([InlineKeyboardButton(text=get_text("btn_admin_website", lang),
+                                          url=f"{WEBAPP_URL}/admin")])
+    rows.append([InlineKeyboardButton(text=get_text("btn_back_to_menu", lang),
+                                      callback_data="main_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def admin_stats_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -692,9 +701,10 @@ def admin_order_filter_keyboard(lang: str, counts: dict | None = None) -> Inline
             InlineKeyboardButton(text=_label("confirmed", get_text("order_status_confirmed", lang)), callback_data="admin:orders:confirmed"),
         ],
         [
-            # preparing/ready arrived with the courier Kanban board (2026-09-18);
-            # without their own filters those orders were only reachable via "Hammasi"
-            InlineKeyboardButton(text=_label("preparing", get_text("order_status_preparing", lang)), callback_data="admin:orders:preparing"),
+            # 'ready' arrived with the courier Kanban board (2026-09-18); without
+            # its own filter those orders were only reachable via "Hammasi".
+            # 'preparing' has no filter because its column was dropped — the few
+            # orders stamped with it before that still show under "Hammasi".
             InlineKeyboardButton(text=_label("ready", get_text("order_status_ready", lang)), callback_data="admin:orders:ready"),
         ],
         [
