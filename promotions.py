@@ -32,6 +32,7 @@ Public API:
   scheduler_loop(bot)                -> closes campaigns out when their window ends
 """
 import asyncio
+import json
 import logging
 import re
 import time
@@ -363,6 +364,10 @@ def compute_bonuses(promo: dict | None, items: list[dict]) -> list[dict]:
                 # deliberately NOT `original_price`, which the discount
                 # renderers would pick up and turn into a fake "-100%" badge.
                 "bonus_value": value,
+                # Booked into Chiqimlar when the order is delivered
+                # (book_delivered_bonuses), so profit must not charge it as
+                # cost of goods as well — see database.item_cost_qty.
+                "cost_in_expenses": True,
                 "photo_id": rule.get("bonus_photo_id"),
                 "promo_name": promo.get("name"),
                 "promo_name_ru": promo.get("name_ru"),
@@ -869,6 +874,15 @@ async def _tick(bot: Bot) -> None:
     except Exception:
         logger.exception("Showcase tick failed")
 
+    # Every delivered order's bonuses into Chiqimlar (owner, 2026-09-19).
+    # Idempotent, so a failed tick simply catches up on the next one.
+    try:
+        booked, amount = await book_delivered_bonuses()
+        if booked:
+            logger.info("Aksiya bonuses booked: %d orders, %d so'm", booked, amount)
+    except Exception:
+        logger.exception("Booking aksiya bonuses failed")
+
     if not ended:
         return
     for promo in ended:
@@ -878,6 +892,48 @@ async def _tick(bot: Bot) -> None:
                 await bot.send_message(admin_id, text, parse_mode=ParseMode.HTML)
             except Exception:
                 pass
+
+
+async def book_delivered_bonuses() -> tuple[int, float]:
+    """A Chiqimlar row for every delivered order that gave aksiya bonuses.
+
+    Same shape as gift_campaign.book_delivered_gifts: reconciled from the
+    orders table rather than hooked into each "delivered" path (admin bot,
+    courier, seller and web panel all set that status), so a path added later
+    can't quietly stop the booking. One row per order, summing every bonus
+    line in it. Cost is the product's cost_price; when that was never filled
+    in, the shelf price stands in and the row says so."""
+    orders = await database.get_unbooked_bonus_orders()
+    if not orders:
+        return 0, 0.0
+    cost_map = await database.get_all_cost_prices()
+    booked, total = 0, 0.0
+    for o in orders:
+        try:
+            items = json.loads(o["items"] or "[]")
+        except (ValueError, TypeError):
+            continue
+        amount, names, guessed = 0.0, [], False
+        for it in items:
+            if not it.get("cost_in_expenses") or it.get("is_gift"):
+                continue
+            pid = it.get("product_id")
+            qty = float(it.get("stock_quantity") or 0)
+            unit_cost = float(cost_map.get(int(pid), 0.0)) if pid else 0.0
+            if unit_cost <= 0:
+                unit_cost = float(it.get("bonus_value") or 0) / max(qty, 1)
+                guessed = True
+            amount += unit_cost * qty
+            names.append(f"{it.get('name') or '—'} {fmt_amount(it.get('quantity') or 0)}"
+                         f"{unit_label(it.get('unit') or 'gr', 'uz')}")
+        if not names:
+            continue
+        note = " (tannarx kiritilmagan — sotuv narxi bo'yicha)" if guessed else ""
+        name = f"🎁 Aksiya bonusi: {', '.join(names)} — buyurtma #{o['id']}{note}"
+        if await database.book_bonus_expense(int(o["id"]), name, round(amount)):
+            booked += 1
+            total += round(amount)
+    return booked, total
 
 
 async def scheduler_loop(bot: Bot) -> None:

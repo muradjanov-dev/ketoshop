@@ -728,6 +728,37 @@ TEXTS = {
         "uz": "🚚 Toshkent bo'ylab yetkazib berish <b>bepul</b> — buyurtmangiz {amount} so'mdan yuqori.",
         "ru": "🚚 Доставка по Ташкенту <b>бесплатно</b> — ваш заказ от {amount} сум.",
     },
+    # ── Sirli sovg'a (mystery_gift.py) ──────────────────────────────────────
+    # The copy never says what the gift is: the surprise is the offer. Every
+    # line teases and points at the same next step — add a bit more.
+    "mystery_card_line": {
+        "uz": "🎁 <b>{amount} so'mdan</b> — Ketoshop jamoasidan <b>SIRLI SOVG'A</b> 🤫",
+        "ru": "🎁 <b>От {amount} сум</b> — <b>ТАИНСТВЕННЫЙ ПОДАРОК</b> от команды Ketoshop 🤫",
+    },
+    "mystery_reached": {
+        "uz": "🎁 <b>Sirli sovg'a Sizniki!</b> Buyurtmangizga Ketoshop jamoasidan "
+              "sirli sovg'a qo'shiladi — ichida nima borligini qutini ochganda bilasiz 🤫",
+        "ru": "🎁 <b>Таинственный подарок ваш!</b> К заказу добавится сюрприз от команды "
+              "Ketoshop — что внутри, узнаете, когда откроете коробку 🤫",
+    },
+    "mystery_hint": {
+        "uz": "🎁 Yana <b>{left} so'm</b> — va qutingizda <b>sirli sovg'a</b> bo'ladi 🤫 "
+              "Uni hech kim oldindan ko'rmaydi.",
+        "ru": "🎁 Ещё <b>{left} сум</b> — и в коробке окажется <b>таинственный подарок</b> 🤫 "
+              "Его никто не видит заранее.",
+    },
+    "mystery_order_line": {
+        "uz": "🎁 <b>Sirli sovg'a</b> buyurtmangizga qo'shildi — qutini ochganda ko'rasiz 🤫",
+        "ru": "🎁 <b>Таинственный подарок</b> добавлен к заказу — увидите, когда откроете 🤫",
+    },
+    "mystery_admin_note": {
+        "uz": "🎁 <b>SIRLI SOVG'A</b> — buyurtma {amount} so'mdan yuqori, qutiga sovg'a soling!",
+        "ru": "🎁 <b>ТАИНСТВЕННЫЙ ПОДАРОК</b> — заказ от {amount} сум, положите подарок в коробку!",
+    },
+    "free_delivery_card_line": {
+        "uz": "🚚 <b>{amount} so'mdan</b> — Toshkent bo'ylab yetkazib berish <b>bepul</b>",
+        "ru": "🚚 <b>От {amount} сум</b> — доставка по Ташкенту <b>бесплатно</b>",
+    },
     "keto_redeemed_line": {
         "uz": "🥑 Keto chegirmasi (-{amount} Keto): -{amount} so'm\n",
         "ru": "🥑 Скидка Keto (-{amount} Keto): -{amount} сум\n",

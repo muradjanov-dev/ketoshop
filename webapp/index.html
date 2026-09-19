@@ -2136,6 +2136,24 @@
     .organic-leaves { display: none; }
   }
 
+  /* The two standing promises — the surprise pack and free delivery. They
+     sit above the goods on every page where a buyer is deciding, because
+     they are the cheapest reason to add one more item to the cart. */
+  .perk-strip {
+    display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px;
+  }
+  .perk-strip span {
+    flex: 1 1 150px; padding: 8px 10px; border-radius: 12px;
+    background: rgba(76,175,80,0.12); color: #3E9B4F;
+    font-size: 12px; font-weight: 700; line-height: 1.35;
+  }
+  .perk-strip span:first-child { background: rgba(232,114,44,0.14); color: #C4571B; }
+  .detail-perks { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .detail-perks span {
+    padding: 9px 11px; border-radius: 12px; font-size: 12.5px; font-weight: 700;
+    line-height: 1.4; background: rgba(76,175,80,0.12); color: #3E9B4F;
+  }
+  .detail-perks span:first-child { background: rgba(232,114,44,0.14); color: #C4571B; }
 </style>
 </head>
 <body>
@@ -2160,6 +2178,7 @@
     </span>
     <span class="pb-arrow">›</span>
   </button>
+  <div class="perk-strip" id="home-perks" style="display:none"></div>
   <div id="home-sections"></div>
   <div class="loading" id="home-loading" style="display:none"></div>
 </div>
@@ -2173,6 +2192,7 @@
     </div>
   </div>
   <button class="promo-strip" id="catalog-promo-strip" style="display:none" type="button" onclick="openPromoSheet()"></button>
+  <div class="perk-strip" id="catalog-perks" style="display:none"></div>
   <div class="categories" id="categories"></div>
   <div class="product-grid" id="product-grid"></div>
   <div class="loading" id="catalog-loading" style="display:none"></div>
@@ -2187,6 +2207,7 @@
 <div class="page" id="page-cart">
   <div class="cart-page-content">
     <div class="cart-page-header" id="cart-page-title"></div>
+    <div class="perk-strip" id="cart-perks" style="display:none"></div>
     <div id="cart-items"></div>
     <div class="empty-state" id="cart-empty" style="display:none">
       <div class="emoji">🛒</div>
@@ -2373,6 +2394,7 @@
       <div class="detail-saving" id="detail-saving" style="display:none"></div>
       <div class="detail-discount-until" id="detail-discount-until" style="margin-top:6px;font-size:12px;color:var(--berry);font-weight:600"></div>
       <div class="detail-bonus" id="detail-bonus" style="display:none"></div>
+      <div class="detail-perks" id="detail-perks" style="display:none"></div>
       <div class="detail-rating" id="detail-rating"></div>
       <div class="detail-seller" id="detail-seller"></div>
       <div class="detail-desc" id="detail-desc"></div>
@@ -3220,6 +3242,23 @@ async function loadPromo() {
     promo = { active: false, trigger_ids: [] };
   }
   renderPromoBanners();
+  renderPerks();
+}
+
+// The surprise pack (400 000) and free Tashkent delivery (800 000). The
+// server sends both lines already worded and translated — the thresholds
+// live in config.py, so the client never restates them.
+function renderPerks() {
+  const perks = promo && promo.perks;
+  const strip = perks
+    ? '<span>' + escapeHtml(perks.mystery) + '</span><span>' + escapeHtml(perks.delivery) + '</span>'
+    : '';
+  ['home-perks', 'catalog-perks', 'cart-perks', 'detail-perks'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = strip;
+    el.style.display = strip ? (id === 'detail-perks' ? 'flex' : 'flex') : 'none';
+  });
 }
 
 function renderPromoBanners() {
@@ -4246,6 +4285,17 @@ function renderCartPage() {
     gift.innerHTML = '<div class="cart-nudge-row"><span>' + escapeHtml(cartData.gift_hint) + '</span></div>';
     container.appendChild(gift);
   }
+
+  // "Yana 50 000 so'm — sirli sovg'a", then the same for free delivery. Both
+  // come from the server already measured against this exact cart, so the
+  // buyer is never told two different sums for the same basket.
+  [cartData.mystery_hint, cartData.delivery_hint].forEach(line => {
+    if (!line) return;
+    const el = document.createElement('div');
+    el.className = 'cart-nudge';
+    el.innerHTML = '<div class="cart-nudge-row"><span>' + escapeHtml(line) + '</span></div>';
+    container.appendChild(el);
+  });
 
   // Remove buttons
   container.querySelectorAll('.remove-btn').forEach(btn => {

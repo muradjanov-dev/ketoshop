@@ -35,6 +35,7 @@ import re
 from datetime import datetime, timedelta
 
 import database
+import mystery_gift
 from locales import get_text
 
 logger = logging.getLogger(__name__)
@@ -194,6 +195,9 @@ def _stage_stamp(order: dict) -> datetime | None:
 def _card(order: dict) -> dict:
     items = _parse_items(order.get("items"))
     total = float(order.get("total") or 0)
+    # Sirli sovg'a has no order line of its own — the team puts it in the box
+    # by hand — so the board has to shout about it or it never happens.
+    goods = sum(float(i.get("price") or 0) * float(i.get("quantity") or 0) for i in items)
     return {
         "id": order["id"],
         "status": order.get("status"),
@@ -213,6 +217,7 @@ def _card(order: dict) -> dict:
         "items": items,
         "items_count": sum(int(i["quantity"] or 0) for i in items),
         "total": total,
+        "mystery_gift": mystery_gift.qualifies(goods),
         "keto_redeemed": int(order.get("keto_redeemed") or 0),
         "courier_id": order.get("courier_id"),
         "courier_name": order.get("courier_name") or order.get("courier_username"),

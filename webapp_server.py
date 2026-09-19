@@ -52,7 +52,9 @@ from database import (
     InsufficientStockError, InsufficientKetoError, LEADERBOARD_EXCLUDED_USER_IDS,
 )
 import gamification
+import mystery_gift
 from gamification import EARN_RATE as KETO_EARN_RATE
+from handlers.cart import free_delivery_hint
 from locales import CATEGORIES, get_category_name, get_unit_name, get_display_unit, get_text, get_delivery_method_name, localize_product_text
 from config import ADMIN_IDS
 
@@ -525,6 +527,11 @@ async def api_cart(request: web.Request):
         "near_misses": [_nm(m) for m in misses[:3]],
         # Plain text (HTML tags stripped) for the Mini App's nudge area.
         "gift_hint": re.sub(r"<[^>]+>", "", gift_hint),
+        # The two standing promises a growing cart runs into: the surprise
+        # pack at 400 000 and free Tashkent delivery at 800 000. Sent as
+        # text so the client only has to place them.
+        "mystery_hint": re.sub(r"<[^>]+>", "", mystery_gift.cart_hint(total, lang)),
+        "delivery_hint": re.sub(r"<[^>]+>", "", free_delivery_hint(total, lang)),
     })
 
 
@@ -1319,9 +1326,16 @@ async def api_promo(request: web.Request):
     the 🎁 badges in one round trip — the badge list is sent as trigger_ids so
     the client can mark cards without a per-product lookup."""
     lang = request.get("user_lang", "uz")
+    # The two standing promises ride along with the aksiya payload: the Mini
+    # App reads this endpoint once per session, and rendering the lines here
+    # keeps the thresholds (config.py) and their wording out of the client.
+    perks = {
+        "mystery": re.sub(r"<[^>]+>", "", mystery_gift.card_line(lang)),
+        "delivery": re.sub(r"<[^>]+>", "", mystery_gift.free_delivery_card_line(lang)),
+    }
     promo = await promotions.get_active()
     if not promo:
-        return _json({"active": False})
+        return _json({"active": False, "perks": perks})
 
     rules = promo.get("bonuses") or []
     return _json({
@@ -1332,6 +1346,7 @@ async def api_promo(request: web.Request):
         "image_url": promo.get("image_url"),
         "bonuses": [promotions.rule_line(r, lang) for r in rules],
         "trigger_ids": sorted({r["trigger_product_id"] for r in rules}),
+        "perks": perks,
     })
 
 

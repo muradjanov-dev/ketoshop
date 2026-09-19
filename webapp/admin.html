@@ -2637,6 +2637,9 @@ function kbCardHtml(c,col,i){
   if(col.key==='delivery')
     chips.push(`<span class="kb-chip ${c.status==='shipped'?'tone':'soft'}">${c.status==='shipped'?"🚚 Yo'lda":'📦 Tayyor'}</span>`);
   if(c.courier_name)chips.push(`<span class="kb-chip tone">🧍 ${esc(c.courier_name)}</span>`);
+  // The surprise pack has no order line of its own — the team adds it by
+  // hand — so the board is the only thing that can remind them.
+  if(c.mystery_gift)chips.push('<span class="kb-chip hot">🎁 Sirli sovg’a</span>');
 
   const cash=!c.payment_method||c.payment_method==='cash';
   const pin=kbPin(c);
@@ -2882,6 +2885,8 @@ function kbRenderDetail(id,opts){
     </div>
     <div class="sec">
       <h4>Buyurtma</h4>
+      ${c.mystery_gift?`<div class="kb-line" style="font-weight:800">
+        <span>🎁 Sirli sovg’a</span><span>qutiga soling</span></div>`:''}
       ${lines}
       <div class="kb-line" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px">
         <span style="font-weight:800">Jami</span><span class="tnum" style="font-weight:800">${kbSom(c.total)} so'm</span></div>

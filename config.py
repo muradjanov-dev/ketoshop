@@ -27,6 +27,20 @@ _HARDCODED_ADMINS = {917456291, 1035429145}
 _env_admins = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()}
 ADMIN_IDS = list(_HARDCODED_ADMINS | _env_admins)
 
+# ── Buyurtma chegaralari ────────────────────────────────────────────────────
+# Two standing promises the whole shop advertises, so they are defined once
+# here rather than in whichever module happened to need them first.
+#
+# Sirli sovg'a (owner, 2026-09-19): every order at or above this goods
+# subtotal gets a surprise pack from the team. Deliberately NOT a catalogue
+# line — what goes in the box is the team's choice and the buyer is told only
+# that something is coming (see mystery_gift.py).
+MYSTERY_GIFT_FROM = 400_000
+# Free Ketoshop-courier delivery across Tashkent from this goods subtotal
+# (owner, 2026-09-17). Measured on products after discounts, before any Keto
+# redemption and without the fee itself.
+FREE_DELIVERY_FROM = 800_000
+
 # Currency
 CURRENCY = "UZS"  # Uzbek So'm
 

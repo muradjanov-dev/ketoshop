@@ -29,7 +29,9 @@ from keyboards import (
     main_menu_keyboard, payment_method_keyboard, delivery_method_keyboard,
     persistent_menu_keyboard, skip_step_keyboard, phone_request_keyboard,
 )
-from config import PAYMENT_PROVIDER_TOKEN, ADMIN_IDS, PAYMENT_CARD_NUMBER, PAYMENT_RECIPIENT_NAME
+from config import (PAYMENT_PROVIDER_TOKEN, ADMIN_IDS, PAYMENT_CARD_NUMBER,
+                    PAYMENT_RECIPIENT_NAME, FREE_DELIVERY_FROM)
+import mystery_gift
 import gift_campaign
 
 router = Router()
@@ -66,11 +68,9 @@ TASHKENT_BOUNDS = {
 # Yandex Taxi and the out-of-city courier services (Yandex Market/BTS/EMU)
 # aren't charged here — their delivery cost is between the buyer and courier.
 SELF_DELIVERY_FEE = 25_000
-# Free Ketoshop-courier delivery across Tashkent from this goods subtotal
-# (owner, 2026-09-17: "800 000 so'mdan yuqori buyurtmalar uchun Toshkent
-# bo'ylab bepul yetkazib berish"). Measured on products after discounts,
-# before any Keto redemption and without the fee itself.
-FREE_DELIVERY_FROM = 800_000
+# FREE_DELIVERY_FROM (800 000 so'm, owner 2026-09-17) now lives in config.py
+# next to MYSTERY_GIFT_FROM — the product cards and the Mini App advertise
+# both, and none of them should have to import a handler to read a number.
 
 
 async def order_history_block(user_id: int | None, order_id: int, lang: str) -> str:
@@ -313,6 +313,11 @@ async def send_added_to_cart(bot: Bot, user_id: int, name: str, lang: str | None
         hint = await gift_campaign.cart_hint(user_id, total, lang)
         if hint:
             text += "\n\n" + hint
+        # The cart just grew: if the surprise is one small step away, this is
+        # the moment to say so.
+        mystery = mystery_gift.cart_hint(total, lang)
+        if mystery:
+            text += "\n\n" + mystery
         keyboard, _toast = await _after_add(user_id, lang)
 
         old = _LAST_ADDED_MSG.pop(user_id, None)
@@ -652,7 +657,11 @@ async def build_cart_view(user_id: int, lang: str):
         hint = await gift_campaign.cart_hint(user_id, total, lang)
         if hint:
             text += "\n" + hint + "\n"
-    # Free Tashkent delivery from 800 000 so'm — reached, or within reach.
+    # The two standing promises, in the order a growing cart meets them:
+    # the surprise at 400 000, free Tashkent delivery at 800 000.
+    mystery = mystery_gift.cart_hint(total, lang)
+    if mystery:
+        text += "\n" + mystery + "\n"
     delivery_hint = free_delivery_hint(total, lang)
     if delivery_hint:
         text += "\n" + delivery_hint + "\n"
@@ -1569,6 +1578,11 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
         hint = await gift_campaign.cart_hint(user_id, items_subtotal, lang)
         if hint:
             items_text += "\n" + hint + "\n"
+    # Earned, or one step away — either way it belongs on the last screen
+    # before the order is placed, where "add more products" is one tap away.
+    mystery = mystery_gift.cart_hint(items_subtotal, lang)
+    if mystery:
+        items_text += "\n" + mystery + "\n"
 
     payment_method = data["payment_method"]
     payment_label = get_text("btn_pay_cash", lang) if payment_method == "cash" else get_text("btn_pay_online", lang)
@@ -1811,8 +1825,10 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
             await notify_low_stock(bot, low_stock)
 
         await state.clear()
+        mystery_line = mystery_gift.order_line(goods_subtotal(items_data), lang)
         await callback.message.edit_text(
-            text + "\n\n" + get_text("order_created", lang, order_id=order_id),
+            text + "\n\n" + get_text("order_created", lang, order_id=order_id)
+            + (("\n\n" + mystery_line) if mystery_line else ""),
             reply_markup=main_menu_keyboard(lang),
             parse_mode="HTML"
         )
@@ -2205,6 +2221,9 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
                 total=f"{int(data['total']):,}".replace(",", " "),
                 saved_block=saved_block,
             )
+            note = mystery_gift.admin_note(goods_subtotal(items), admin_lang)
+            if note:
+                text += "\n" + note
             await bot.send_message(
                 chat_id=admin_id,
                 text=text,

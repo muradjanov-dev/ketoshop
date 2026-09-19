@@ -40,11 +40,19 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     """
     import gamification
     import gift_campaign
+    import mystery_gift
     import promotions
 
-    # The standing Eritritol gift closes every card (owner, 2026-09-19), so
-    # like `extra` it is budgeted before the description is trimmed.
-    gift = await gift_campaign.card_line(lang)
+    # The three standing promises close every card (owner, 2026-09-19): the
+    # Eritritol on every order, the surprise from 400 000, free Tashkent
+    # delivery from 800 000. Built first because, like `extra`, their length
+    # is budgeted before the description is trimmed — the promises are the
+    # reason to order, so they never lose room to a long description.
+    gift = "\n".join(filter(None, [
+        await gift_campaign.card_line(lang),
+        mystery_gift.card_line(lang),
+        mystery_gift.free_delivery_card_line(lang),
+    ]))
 
     seller_name = product.get("seller_name") or product.get("seller_username") or "—"
     name = localize_product_text(product.get("name"), product.get("name_ru"), lang)
@@ -104,8 +112,8 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     if extra:
         text += "\n\n" + extra
 
-    # The gift has the last word on every card (owner, 2026-09-19) — it is the
-    # reason to order now, so nothing follows it.
+    # The promises have the last word on every card (owner, 2026-09-19) —
+    # they are the reason to order now, so nothing follows them.
     if gift:
         text += "\n\n" + gift
 

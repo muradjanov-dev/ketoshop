@@ -660,6 +660,11 @@ async def init_db():
         # order (gift_campaign.py). The unique order id is what makes that
         # booking idempotent: the reconcile loop can run every few minutes and
         # an order can never be charged twice.
+        await conn.execute("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS bonus_order_id INTEGER")
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_bonus_order "
+            "ON expenses(bonus_order_id) WHERE bonus_order_id IS NOT NULL"
+        )
         await conn.execute("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS gift_order_id INTEGER")
         await conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_gift_order "
@@ -1445,11 +1450,17 @@ def item_cost_qty(item: dict) -> float:
       * gift lines (gift_campaign.py) cost 0 here — the owner books them in
         Chiqimlar instead (2026-09-17), and charging them in both places would
         take the same Eritritol off the profit twice;
-      * aksiya bonus lines are charged by stock_quantity, what actually left
-        the shelf. Their `quantity` is the DISPLAY amount ("100" for 100 gr),
-        so costing by it overstated a 100 gr bonus a hundred- or thousand-fold;
+      * a line marked `cost_in_expenses` is the same story for aksiya bonuses
+        (2026-09-19): it is booked into Chiqimlar on delivery, so it costs 0
+        here. Only lines created after that change carry the flag, which is
+        what keeps older orders — already costed as goods and never booked —
+        reading exactly as they always did;
+      * aksiya bonus lines without the flag are charged by stock_quantity,
+        what actually left the shelf. Their `quantity` is the DISPLAY amount
+        ("100" for 100 gr), so costing by it overstated a 100 gr bonus a
+        hundred- or thousand-fold;
       * everything else by its quantity."""
-    if item.get("is_gift"):
+    if item.get("is_gift") or item.get("cost_in_expenses"):
         return 0.0
     if item.get("is_bonus"):
         return float(item.get("stock_quantity") or item.get("quantity") or 0)
@@ -2921,6 +2932,41 @@ async def get_unbooked_gift_orders(limit: int = 200) -> list[dict]:
             limit,
         )
         return [dict(r) for r in rows]
+
+
+async def get_unbooked_bonus_orders(limit: int = 200) -> list[dict]:
+    """Delivered orders carrying aksiya bonus lines that are meant to be
+    booked in Chiqimlar and have no row yet.
+
+    The `cost_in_expenses` marker is what scopes this to orders placed after
+    the switch: bonuses given before it were charged as cost of goods, and
+    booking them now would take the same stevia off the profit twice and dump
+    months of it onto today's date."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT o.id, o.items, o.delivered_at
+                 FROM orders o
+                WHERE o.status = 'delivered'
+                  AND o.items LIKE '%cost_in_expenses%'
+                  AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.bonus_order_id = o.id)
+                ORDER BY o.id
+                LIMIT $1""",
+            limit,
+        )
+        return [dict(r) for r in rows]
+
+
+async def book_bonus_expense(order_id: int, name: str, amount: float) -> bool:
+    """Book one order's aksiya bonuses into Chiqimlar. False when already
+    booked — the sweep is idempotent and may run every few minutes."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO expenses (name, amount, bonus_order_id) VALUES ($1, $2, $3)
+               ON CONFLICT (bonus_order_id) WHERE bonus_order_id IS NOT NULL DO NOTHING
+               RETURNING id""",
+            name, amount, order_id,
+        )
+        return row is not None
 
 
 async def book_gift_expense(order_id: int, name: str, amount: float) -> bool:
