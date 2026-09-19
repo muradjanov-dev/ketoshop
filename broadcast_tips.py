@@ -254,6 +254,27 @@ Kechqurun chia puding tayyorlab qo'ying.
 
 🌿 Balki aynan shu maslahat kimningdir sog'lom hayotini boshlashiga turtki bo'lar.
 @@@
+**🍫 Bugungi retsept**
+
+☕️ 3 daqiqada shakarsiz issiq kakao.
+
+Masalliqlar:
+• 1 stakan issiq sut (yoki kokos suti)
+• 1 osh qoshiq achchiq kakao
+• 1 choy qoshiq eritritol
+• bir chimdim tuz
+
+Tayyorlanishi:
+Kakao va eritritolni quruq holda aralashtiring — shunda quyuq bo'lib qolmaydi. Ustiga issiq sutni sekin quyib, aralashtiring. Tuz kakao ta'mini ochadi.
+
+Bir piyola: ~2 gr uglevod. Oddiy issiq shokolad qutisida 18-22 gr bo'ladi.
+
+🛒 Kerak bo'ladi: achchiq kakao, eritritol
+
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
+
+❤️ Sog'liq — eng yaxshi sovg'a. Ushbu retseptni yaqinlaringiz bilan baham ko'ring.
+@@@
 **🌱 Mahsulot bilan tanishing — Bodom uni**
 
 🌾 Bodom uni nima uchun mashhur?
@@ -520,6 +541,21 @@ Yeryong'oq pastasi ustiga chia urug'i seping.
 🎯 Challenge: Bugun foydali gazak tayyorlang.
 
 🌱 Ushbu retseptni ulashing.
+@@@
+**🔍 Raqamlar bilan**
+
+🍬 Kuniga 4 piyola choy ichasizmi? Har biriga 2 qoshiq shakar — bu kuniga 40 gr shakar, ya'ni 160 kaloriya va 40 gr uglevod.
+
+Bir oyda: 1,2 kg shakar.
+
+Eritritolda o'sha 4 piyola: 0 kaloriya, 0 uglevod. Ta'mi deyarli o'zgarmaydi — shirinligi shakarning 70% i, shuning uchun bir chimdim ko'proq solinadi.
+
+🍳 Bugungi tavsiya:
+Faqat ertalabki choyni almashtirib ko'ring. Bir hafta yetarli — keyin o'zingiz sezasiz.
+
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
+
+❤️ Bu maslahatni shakarni kamaytirmoqchi bo'lgan tanishingizga yuboring.
 @@@
 **🥗 Sog'lom odat**
 
@@ -788,6 +824,27 @@ Keyingi non retseptingizga 1-2 osh qoshiq psillium qo'shib ko'ring.
 
 📤 Ushbu postni yaqinlaringizga ham yuboring.
 @@@
+**🍓 Bugungi retsept**
+
+🫙 Pishirmasdan tayyorlanadigan chia-jem. Muzlatgichda 5 kun turadi.
+
+Masalliqlar:
+• 1 stakan muzlatilgan yoki yangi rezavor (qulupnay, malina)
+• 2 osh qoshiq chia urug'i
+• 1-2 osh qoshiq eritritol
+• 2 osh qoshiq suv
+
+Tayyorlanishi:
+Rezavorni vilka bilan ezing, hammasini aralashtiring va muzlatgichga 2 soatga qo'ying. Chia suvni tortib, jemni quyultiradi — pektin ham, uzoq qaynatish ham kerak emas.
+
+Do'kon jemining 100 grammida ~60 gr shakar bor. Bunda — deyarli yo'q.
+
+🛒 Kerak bo'ladi: chia urug'i, eritritol
+
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
+
+❤️ Foydali bo'lsa, bolali onalarga yuboring — nonushta uchun qulay.
+@@@
 **🍳 Bugungi retsept — Shakarsiz pechenye**
 
 🍪 Shakarsiz pechenye mazasiz chiqyaptimi?
@@ -1049,6 +1106,21 @@ Aralashtirib, 1 soat muzlatkichga qo'ying.
 🎯 Challenge: Bu hafta bitta shakarsiz desert tayyorlang.
 
 📤 Ushbu retseptni ulashing.
+@@@
+**🦷 Bilasizmi?**
+
+🍬 Og'izdagi bakteriyalar shakar bilan oziqlanadi va kislota ajratadi — tish emalini yemiradigan ham o'sha kislota.
+
+Eritritolni esa bu bakteriyalar hazm qila olmaydi. Shuning uchun u tishga zarar qilmaydi; ba'zi tadqiqotlarda karies xavfini kamaytirishi ham qayd etilgan.
+
+Shu sababli u ko'pgina "shakarsiz" saqichlar tarkibida turadi.
+
+🍳 Bugungi tavsiya:
+Kechqurun choy ichadigan odatingiz bo'lsa — aynan o'shani almashtiring. Uxlashdan oldingi shakar tishga eng ko'p zarar qiladi.
+
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
+
+❤️ Sog'liq — eng yaxshi sovg'a.
 @@@
 **🎒 Maktab uchun g'oya — Uyda pechenye**
 
@@ -1348,6 +1420,27 @@ Bugun bitta foydali mahsulotni sinab ko'ring.
 
 💛 Ushbu post sizga foydali bo'lgan bo'lsa, uni yaqinlaringiz bilan baham ko'ring.
 @@@
+**🥤 Bugungi retsept**
+
+🍋 Uy limonadi — do'kondagi gazli ichimliklar o'rniga.
+
+Masalliqlar:
+• 1 litr sovuq suv
+• 1 ta limon sharbati
+• 2-3 osh qoshiq eritritol
+• bir necha barg yalpiz
+
+Tayyorlanishi:
+Eritritolni ozgina issiq suvda eriting (sovuqda sekin eriydi), keyin qolgan sovuq suv, limon va yalpizni qo'shing. 30 daqiqa muzlatgichda tursa, ta'mi to'liq ochiladi.
+
+Bir litr do'kon limonadida ~100 gr shakar bor. Bunda — 0.
+
+🛒 Kerak bo'ladi: eritritol
+
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
+
+❤️ Yozda bolalar uchun ham qulay — ularga shakarsiz variant kerak.
+@@@
 **🌱 Mahsulot bilan tanishing — Psillium**
 
 🥣 Ich qotishi tez-tez bezovta qiladimi?
@@ -1636,6 +1729,23 @@ Sabzavotli salat ustiga qovoq urug'i va zaytun yog'i qo'shing.
 
 🌿 Ushbu maslahatni ulashing.
 @@@
+**⚖️ Raqamlar bilan**
+
+🍰 Pishiriqda shakarni almashtirmoqchimisiz? Nisbat sodda:
+
+• Shakar 100 gr → eritritol 120-130 gr (shirinligi biroz pastroq)
+• Qandolat shakari o'rniga: eritritolni qahva maydalagichda maydalang
+• Xamirga suyuqlik ozroq kerak bo'ladi — eritritol namni shakarday tortmaydi
+
+Bitta xususiyat: eritritol karamel bo'lmaydi. Shuning uchun karamel qatlam kerak bo'lsa, boshqa yechim qidiriladi — qolgan hamma pishiriqda muammo yo'q.
+
+🍳 Bugungi tavsiya:
+Birinchi marta o'zingiz doim pishiradigan retseptda sinab ko'ring — farqni shunda aniq sezasiz.
+
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
+
+❤️ Pishiriq qiladigan tanishingizga yuboring.
+@@@
 **🎉 Mehmon uchun retsept — Pechsiz kokos torti**
 
 🎂 Mehmonlar uchun tort tayyorlashga ko'p vaqt ketadimi?
@@ -1890,6 +2000,27 @@ Bugungi nonushtaga javdar unidan lepyoshka tayyorlang.
 
 🌿 Balki aynan shu maslahat kimningdir sog'lom hayotini boshlashiga turtki bo'lar. Ulashishni unutmang.
 @@@
+**🥣 Bugungi retsept**
+
+🌙 Kechqurun 5 daqiqa — ertalab tayyor nonushta. "Tungi bo'tqa".
+
+Masalliqlar:
+• 3 osh qoshiq chia urug'i
+• 200 ml sut yoki kokos suti
+• 1 choy qoshiq eritritol
+• bir chimdim dolchin
+
+Tayyorlanishi:
+Bankaga solib chayqating, muzlatgichga qo'ying. Ertalab ustiga bir hovuch mag'iz yoki rezavor soling.
+
+Tayyor nonushta bo'tqalarining aksariyatida birinchi o'rinda shakar turadi. Bunda tarkibni o'zingiz yozasiz.
+
+🛒 Kerak bo'ladi: chia urug'i, eritritol, dolchin
+
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
+
+❤️ Ertalab shoshadiganlarga yuboring.
+@@@
 **🍳 Bugungi retsept — Qora fermentlangan Solod bilan non**
 
 Masalliqlar:
@@ -2114,6 +2245,25 @@ Tostga xandonpista pastasi surtib nonushta qiling.
 👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 📤 Ushbu maslahatni sog'lom ovqatlanishni istaydigan yaqinlaringizga ham yuboring.
+@@@
+**📉 Bilasizmi?**
+
+🩸 Glikemik indeks — mahsulot qondagi shakarni qanchalik tez ko'tarishini ko'rsatadi.
+
+• Oq shakar — 65
+• Asal — 55
+• Eritritol — 0
+
+Nol degani: organizm uni deyarli o'zlashtirmaydi, qonga shakar chiqmaydi va insulin ko'tarilmaydi. Shuning uchun u diabetiklar va keto rejimidagilar uchun mos.
+
+Miqdorda me'yor bor: birdaniga ko'p iste'mol qilinsa, ba'zi odamlarda oshqozon noqulayligi bo'ladi. Kuniga 2-3 osh qoshiq — xavfsiz chegara.
+
+🍳 Bugungi tavsiya:
+Kichikdan boshlang, organizmingiz javobini kuzating.
+
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
+
+❤️ Diabeti bor tanishingizga foydali bo'lishi mumkin.
 @@@
 **🥗 Sog'lom odat**
 
@@ -2342,6 +2492,28 @@ Tushlikka qora guruch va sabzavotdan taom tayyorlang.
 
 ❤️ Sog'liq — eng yaxshi sovg'a. Ushbu maslahatni yaqin insonlaringiz bilan baham ko'ring.
 @@@
+**🍪 Bugungi retsept**
+
+🥜 Uch masalliqdan pechene. 15 daqiqa.
+
+Masalliqlar:
+• 200 gr bodom uni
+• 80 gr eritritol
+• 1 ta tuxum
+
+Tayyorlanishi:
+Aralashtiring, qo'l bilan yumaloqlang, bosib yassilang. 180°C da 12-15 daqiqa. Sovuganda qattiqlashadi — issiqligida yumshoq bo'lgani normal.
+
+Xohlasangiz: kakao, dolchin yoki bir chimdim tuz qo'shing.
+
+Bitta pechene: ~2 gr uglevod.
+
+🛒 Kerak bo'ladi: bodom uni, eritritol
+
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
+
+❤️ Bolalarga ham beriladigan shirinlik — baham ko'ring.
+@@@
 **🍳 Bugungi retsept — Bulgur guruchli salat**
 
 Masalliqlar:
@@ -2565,6 +2737,27 @@ Odatiy grechka o'rniga yashil grechka donidan bo'tqa tayyorlang.
 👉 Buyurtma: @ketoshopbot · 📞 +998993641343
 
 ✨ Foydali ma'lumotni o'zingizda saqlab qolmang. Uni boshqalar bilan ham bo'lishing.
+@@@
+**☕️ Bugungi retsept**
+
+💪 Ertalabki "quvvat qahvasi" — tushgacha och qolmaysiz.
+
+Masalliqlar:
+• 1 chashka issiq qahva
+• 1 choy qoshiq kokos yog'i yoki MCT
+• 1 choy qoshiq eritritol
+• bir chimdim tuz
+
+Tayyorlanishi:
+Blenderda 20 soniya aylantiring — yog' sut kabi ko'pikli bo'lib qo'shiladi. Oddiy aralashtirishda yog' ustida suzib qoladi.
+
+Sut qo'shmasdan ham to'yimli chiqadi: yog' uzoq quvvat beradi, eritritol esa shirinlikni qondagi shakarni ko'tarmasdan beradi.
+
+🛒 Kerak bo'ladi: kokos yog'i yoki MCT, eritritol
+
+👉 Buyurtma: @ketoshopbot · 📞 +998993641343
+
+❤️ Ertalab nonushta qilmaydiganlarga yuboring.
 @@@
 **🥗 Sog'lom odat**
 

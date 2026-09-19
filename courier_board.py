@@ -303,9 +303,21 @@ async def _notify_buyer(bot, order: dict, new_status: str) -> None:
         reply_markup = order_cancelled_keyboard(lang)
 
     when, timeline = _build_buyer_status_block(order, new_status, lang)
+    text = get_text(key, lang, order_id=order["id"], when=when, timeline=timeline)
+
+    # On delivery, close with one idea for what to make from what just
+    # arrived. It rides inside this message on purpose — the buyer has the
+    # product in their hands right now, and the shop's one-message-a-week
+    # budget (retention.py) stays free for the messages that bring people back.
+    if new_status == "delivered":
+        import product_ideas
+        idea = product_ideas.order_idea_block(_parse_items(order.get("items")), lang)
+        if idea:
+            text += "\n\n" + idea
+
     await bot.send_message(
         chat_id=order["user_id"],
-        text=get_text(key, lang, order_id=order["id"], when=when, timeline=timeline),
+        text=text,
         reply_markup=reply_markup,
         parse_mode="HTML",
     )

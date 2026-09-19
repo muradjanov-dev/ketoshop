@@ -2,6 +2,7 @@
 Seller panel — add products, manage listings, view orders & stats
 """
 import html
+import json
 import logging
 from io import BytesIO
 
@@ -1583,10 +1584,24 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
                     reply_markup = order_cancelled_keyboard(buyer_lang)
 
                 when, timeline = _build_buyer_status_block(order, new_status, buyer_lang)
+                buyer_text = get_text(buyer_key, buyer_lang,
+                                      order_id=order_id, when=when, timeline=timeline)
+                # On delivery, close with one idea for what to make from what
+                # just arrived — same block the courier board appends, see
+                # product_ideas.order_idea_block.
+                if new_status == "delivered":
+                    import product_ideas
+                    raw_items = order.get("items")
+                    try:
+                        order_items = json.loads(raw_items) if isinstance(raw_items, str) else (raw_items or [])
+                    except (ValueError, TypeError):
+                        order_items = []
+                    idea = product_ideas.order_idea_block(order_items, buyer_lang)
+                    if idea:
+                        buyer_text += "\n\n" + idea
                 await bot.send_message(
                     chat_id=order["user_id"],
-                    text=get_text(buyer_key, buyer_lang,
-                                  order_id=order_id, when=when, timeline=timeline),
+                    text=buyer_text,
                     reply_markup=reply_markup,
                     parse_mode="HTML",
                 )

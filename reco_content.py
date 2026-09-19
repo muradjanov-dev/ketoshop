@@ -837,6 +837,16 @@ def _s(profile, emoji, uz_name, ru_name, uz_why, ru_why):
 _SWEET = _s("sweeteners", "🍬", "Eritritol", "Эритрит",
             "pishiriqlaringizda shakar o'rnini bosadi, kaloriyasiz shirinlik beradi",
             "заменит сахар в выпечке, даёт сладость без калорий")
+# Baking families get their own wording: the reason to keep a sweetener in
+# the cupboard is concrete (the dough is ready, the sugar is the missing
+# piece), which persuades where a generic "goes well together" does not.
+_SWEET_BAKE = _s("sweeteners", "🍬", "Eritritol", "Эритрит",
+                 "xamir tayyor — shirinlik yetishmaydi; shakar o'rniga 1:1 qo'shiladi",
+                 "тесто готово — не хватает сладости; кладётся вместо сахара 1:1")
+_SWEET_DRINK = _s("sweeteners", "🍬", "Eritritol", "Эритрит",
+                  "choy va qahvaga: ta'mi o'sha, qondagi shakar ko'tarilmaydi",
+                  "в чай и кофе: вкус тот же, сахар в крови не поднимается")
+
 _CHIA = _s("chia", "🌱", "Chia urug'i", "Семена чиа",
            "xamirni bog'laydi, tola va omega-3 qo'shadi",
            "связывает тесто, добавляет клетчатку и омега-3")
@@ -869,11 +879,11 @@ _FLAX = _s("flax", "🌾", "Zig'ir urug'i", "Семена льна",
            "источник омега-3 и клетчатки, достаточно ложки в день")
 
 PAIRINGS = {
-    "almond_flour": [_SWEET, _CHIA, _COCO, _CACAO, _PSY],
-    "coconut": [_ALMOND, _SWEET, _CACAO, _CHIA],
+    "almond_flour": [_SWEET_BAKE, _CHIA, _COCO, _CACAO, _PSY],
+    "coconut": [_ALMOND, _SWEET_BAKE, _CACAO, _CHIA],
     "flax": [_PSY, _SESAME, _SALT, _CHIA],
     "chia": [_COCO, _SWEET, _FLAX, _CACAO],
-    "buckwheat": [_OIL, _SALT, _SESAME, _PSY],
+    "buckwheat": [_SWEET_BAKE, _OIL, _SALT, _SESAME],
     "rastaropsha": [
         _s("honey", "🍯", "Tabiiy asal", "Натуральный мёд",
            "rastaropsha ta'mining achchig'ini yumshatadi",
@@ -887,8 +897,8 @@ PAIRINGS = {
            "для домашней гранолы и ореховой смеси"),
         _SESAME, _CACAO, _SALT,
     ],
-    "chickpea": [_OIL, _SALT, _SESAME],
-    "rice_flour": [_ALMOND, _PSY, _SALT],
+    "chickpea": [_OIL, _SALT, _SESAME, _SWEET_BAKE],
+    "rice_flour": [_SWEET_BAKE, _ALMOND, _PSY, _SALT],
     "diet_rice": [
         _OIL, _SESAME,
         _s("fish", "🐟", "Losos tushonkasi", "Тушёнка из лосося",
@@ -896,8 +906,8 @@ PAIRINGS = {
            "с рисом получается полноценный обед за 5 минут"),
         _VIN,
     ],
-    "pp_flour": [_FLAX, _SESAME, _PSY, _SALT],
-    "bran": [_FLAX, _SESAME, _PSY],
+    "pp_flour": [_SWEET_BAKE, _FLAX, _SESAME, _PSY],
+    "bran": [_FLAX, _SESAME, _PSY, _SWEET_DRINK],
     "sourdough": [
         _s("pp_flour", "🌾", "Javdar uni", "Ржаная мука",
            "zakvaska uchun eng mos un, non chin ma'noda nordon chiqadi",
@@ -913,7 +923,7 @@ PAIRINGS = {
         _SESAME, _FLAX,
     ],
     "fiber_supp": [_ALMOND, _FLAX, _SWEET, _SALT],
-    "cacao": [_SWEET, _COCO, _SALT, _ALMOND],
+    "cacao": [_SWEET_BAKE, _COCO, _SALT, _ALMOND],
     "keto_icecream": [_CACAO, _COCO,
         _s("pastes", "🥄", "Yong'oq pastasi", "Ореховая паста",
            "muzqaymoq ustidan quyilsa — shakarsiz karamel o'rnini bosadi",

@@ -135,7 +135,13 @@ async def broadcast(bot: Bot, product: dict) -> tuple[int, int]:
     """Send the card to every eligible buyer, each in their own language."""
     user_ids = await database.get_all_user_ids()
     langs = await database.get_user_languages(user_ids)
-    captions = product_card.CaptionCache(product)
+    # "Bugun shundan nima tayyorlash mumkin" — one concrete idea under the
+    # card. It is what turns a product announcement into something worth
+    # reading, and it carries the product with it instead of selling it.
+    import product_ideas
+    name = product.get("name") or ""
+    captions = product_card.CaptionCache(
+        product, extra_for=lambda lang: product_ideas.idea_block(name, lang))
     sent = failed = 0
     for uid in user_ids:
         ok = await _send_to_user(bot, uid, product, langs.get(uid, "uz"), captions)
@@ -165,7 +171,10 @@ async def post_to_channel(bot: Bot, product: dict) -> bool:
         # No single reader to rate, so the channel advertises the entry-level
         # cashback every buyer is guaranteed — never more than they'd get.
         rate = gamification.EARN_RATE if await gamification.is_enabled() else None
-        caption = await product_card.build_caption(product, CHANNEL_LANG, rate)
+        import product_ideas
+        caption = await product_card.build_caption(
+            product, CHANNEL_LANG, rate,
+            product_ideas.idea_block(product.get("name") or "", CHANNEL_LANG))
         markup = channel_keyboard(product["id"])
         if product.get("photo_id"):
             await bot.send_photo(REQUIRED_CHANNEL_ID, photo=product["photo_id"],
