@@ -89,7 +89,7 @@ async def build_caption(product: dict, lang: str, rate: float | None,
                 date=discount_until.strftime("%d.%m.%Y %H:%M"),
             )
 
-    # 🥑 +N Keto this product brings back, at this reader's own cashback rate.
+    # 🎁 +N Keto this product brings back, at this reader's own cashback rate.
     if rate:
         reward = gamification.product_reward_line(
             gamification.keto_for(final_price, rate), rate, lang)

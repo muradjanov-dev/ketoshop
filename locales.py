@@ -177,7 +177,7 @@ TEXTS = {
         "ru": "❌ К сожалению, кто-то опередил вас и купил этот товар. Обновите корзину и попробуйте снова.",
     },
     "btn_admin_bulk_discount": {"uz": "🔥 To'plam chegirma", "ru": "🔥 Массовая скидка"},
-    "btn_admin_keto": {"uz": "🥑 Keto boshqaruvi", "ru": "🥑 Управление Keto"},
+    "btn_admin_keto": {"uz": "🎁 Keto boshqaruvi", "ru": "🎁 Управление Keto"},
     "btn_admin_promo": {"uz": "🎁 Aksiya / Bonus", "ru": "🎁 Акция / Бонус"},
     "btn_keto_toggle_on": {"uz": "🚀 Yoqish", "ru": "🚀 Включить"},
     "btn_keto_toggle_off": {"uz": "⏹ O'chirish", "ru": "⏹ Выключить"},
@@ -760,8 +760,8 @@ TEXTS = {
         "ru": "🚚 <b>От {amount} сум</b> — доставка по Ташкенту <b>бесплатно</b>",
     },
     "keto_redeemed_line": {
-        "uz": "🥑 Keto chegirmasi (-{amount} Keto): -{amount} so'm\n",
-        "ru": "🥑 Скидка Keto (-{amount} Keto): -{amount} сум\n",
+        "uz": "🎁 Keto chegirmasi (-{amount} Keto): -{amount} so'm\n",
+        "ru": "🎁 Скидка Keto (-{amount} Keto): -{amount} сум\n",
     },
     "btn_keto_redeem_start": {
         "uz": "🔘 Ketochalarni ishlatish ({balance} ta)",
@@ -772,16 +772,16 @@ TEXTS = {
         "ru": "🟢 Keto применены: −{amount} сум · выключить",
     },
     "keto_redeem_applied": {
-        "uz": "🥑 {amount} ta tangacha ishlatildi — summa qayta hisoblandi",
-        "ru": "🥑 Применено монеток: {amount} — сумма пересчитана",
+        "uz": "🎁 {amount} ta tangacha ishlatildi — summa qayta hisoblandi",
+        "ru": "🎁 Применено монеток: {amount} — сумма пересчитана",
     },
     "keto_redeem_none": {
         "uz": "Bu buyurtmaga tangacha ishlatib bo'lmadi.",
         "ru": "К этому заказу монетки применить не удалось.",
     },
     "keto_redeem_prompt": {
-        "uz": "🥑 Nechta Ketocha ishlatmoqchisiz?\n\nBalansingiz: {balance} Keto\nUshbu buyurtma uchun maksimum: {max} Keto\n\n0 dan {max} gacha son kiriting (1 Keto = 1 so'm chegirma).",
-        "ru": "🥑 Сколько Ketочек хотите использовать?\n\nВаш баланс: {balance} Keto\nМаксимум для этого заказа: {max} Keto\n\nВведите число от 0 до {max} (1 Keto = 1 сум скидки).",
+        "uz": "🎁 Nechta Ketocha ishlatmoqchisiz?\n\nBalansingiz: {balance} Keto\nUshbu buyurtma uchun maksimum: {max} Keto\n\n0 dan {max} gacha son kiriting (1 Keto = 1 so'm chegirma).",
+        "ru": "🎁 Сколько Ketочек хотите использовать?\n\nВаш баланс: {balance} Keto\nМаксимум для этого заказа: {max} Keto\n\nВведите число от 0 до {max} (1 Keto = 1 сум скидки).",
     },
     "keto_redeem_invalid": {
         "uz": "⚠️ Iltimos, 0 dan {max} gacha to'g'ri son kiriting.",
@@ -1287,7 +1287,7 @@ TEXTS = {
               "Ismingiz, telefoningiz, <i>Buyurtmalarim</i> (har birining holati: "
               "Kutilmoqda → Tasdiqlangan → Yo'lda → Yetkazildi) va Keto balansingiz — "
               "hammasi shu bo'limda, bitta joyda.\n\n"
-              "🥑 <b>5. Keto tanga (yangi!)</b>\n"
+              "🎁 <b>5. Keto tanga (yangi!)</b>\n"
               "Har bir yetkazib berilgan buyurtmangiz uchun <b>Keto tanga</b> beriladi — "
               "qancha ko'p xarid qilsangiz, shuncha ko'p Keto va yuqori daraja "
               "(🥉 Bronza → 🥈 Kumush → 🥇 Oltin → 💎 Olmos) qo'lga kiritasiz. "
@@ -1317,7 +1317,7 @@ TEXTS = {
               "👤 <b>4. Кабинет</b>\n"
               "Имя, телефон, <i>Мои заказы</i> (статус каждого: Ожидает → "
               "Подтверждён → В пути → Доставлен) и баланс Keto — всё в одном месте.\n\n"
-              "🥑 <b>5. Монеты Keto (новинка!)</b>\n"
+              "🎁 <b>5. Монеты Keto (новинка!)</b>\n"
               "За каждый доставленный заказ начисляются <b>Keto</b> — чем больше "
               "покупаете, тем больше Keto и выше уровень "
               "(🥉 Бронза → 🥈 Серебро → 🥇 Золото → 💎 Алмаз). Баланс всегда виден "
@@ -1349,7 +1349,7 @@ TEXTS = {
         "uz": "👤 <b>Kabinetimga xush kelibsiz!</b>\n\n"
               "Bu yerda barcha shaxsiy ma'lumotlaringiz bir joyda:\n\n"
               "🙍 <b>Ma'lumotlaringiz</b> — ism, telefon, til\n\n"
-              "🥑 <b>Keto balansi</b> — har bir yetkazib berilgan buyurtmangiz uchun "
+              "🎁 <b>Keto balansi</b> — har bir yetkazib berilgan buyurtmangiz uchun "
               "avtomatik Keto tanga olasiz (mahsulot summasining bir qismi). "
               "Keto to'plagan sari darajangiz oshib boradi: 🥉 Bronza → 🥈 Kumush → "
               "🥇 Oltin → 💎 Olmos\n\n"
@@ -1361,7 +1361,7 @@ TEXTS = {
         "ru": "👤 <b>Добро пожаловать в Кабинет!</b>\n\n"
               "Здесь собраны все ваши личные данные:\n\n"
               "🙍 <b>Ваши данные</b> — имя, телефон, язык\n\n"
-              "🥑 <b>Баланс Keto</b> — за каждый доставленный заказ вам автоматически "
+              "🎁 <b>Баланс Keto</b> — за каждый доставленный заказ вам автоматически "
               "начисляются монеты Keto (часть от суммы товаров). Чем больше Keto "
               "накопите, тем выше уровень: 🥉 Бронза → 🥈 Серебро → 🥇 Золото → 💎 Алмаз\n\n"
               "🏆 <b>Достижения</b> — открываются за разные цели (первый заказ, "
@@ -1376,7 +1376,7 @@ TEXTS = {
               "🙍 {name}\n"
               "📱 {phone}\n"
               "🌐 {lang_label}\n\n"
-              "🥑 <b>Keto balansim</b>\n"
+              "🎁 <b>Keto balansim</b>\n"
               "💰 Balans: <b>{balance} Keto</b>\n"
               "{level_line}\n"
               "{progress_line}\n\n"
@@ -1385,7 +1385,7 @@ TEXTS = {
               "🙍 {name}\n"
               "📱 {phone}\n"
               "🌐 {lang_label}\n\n"
-              "🥑 <b>Мои Keto</b>\n"
+              "🎁 <b>Мои Keto</b>\n"
               "💰 Баланс: <b>{balance} Keto</b>\n"
               "{level_line}\n"
               "{progress_line}\n\n"

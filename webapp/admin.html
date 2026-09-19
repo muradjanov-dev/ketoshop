@@ -507,7 +507,7 @@
     <button class="tab" data-view="products">📦 Mahsulotlar</button>
     <button class="tab" data-view="sets">🎁 To'plamlar (Set)</button>
     <button class="tab" data-view="promos">🎁 Aksiya / Bonus</button>
-    <button class="tab" data-view="keto">🥑 Keto</button>
+    <button class="tab" data-view="keto">🎁 Keto</button>
     <button class="tab" data-view="bloggers">📢 Blogerlar</button>
     <button class="tab" data-view="reklama">📣 Reklama</button>
     <button class="tab" data-view="retention">🔁 Qayta sotuv</button>
@@ -559,7 +559,7 @@
         <div class="reg-list" id="regionList"></div>
       </div>
       <div class="dash-card">
-        <h3>🥑 Keto dasturi</h3>
+        <h3>🎁 Keto dasturi</h3>
         <div class="kpi-grid" id="ketoStatsGrid" style="margin-bottom:0"></div>
       </div>
     </div>
@@ -1371,7 +1371,7 @@ function renderTopProducts(list){
 function renderKetoStats(k){
   const cards=[
     {lab:'Keto egalari', val:k.users_with_keto},
-    {lab:'Jami berilgan', val:k.total_awarded.toLocaleString('ru-RU')+' 🥑'},
+    {lab:'Jami berilgan', val:k.total_awarded.toLocaleString('ru-RU')+' 🎁'},
     {lab:'Ochilgan yutuqlar', val:k.achievements_unlocked},
   ];
   $('#ketoStatsGrid').innerHTML=cards.map(c=>
@@ -2890,7 +2890,7 @@ function kbRenderDetail(id,opts){
       ${lines}
       <div class="kb-line" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px">
         <span style="font-weight:800">Jami</span><span class="tnum" style="font-weight:800">${kbSom(c.total)} so'm</span></div>
-      ${c.keto_redeemed>0?`<div class="kb-line"><span>🥑 Keto bilan chegirma</span><span class="tnum">−${kbSom(c.keto_redeemed)}</span></div>`:''}
+      ${c.keto_redeemed>0?`<div class="kb-line"><span>🎁 Keto bilan chegirma</span><span class="tnum">−${kbSom(c.keto_redeemed)}</span></div>`:''}
       <div class="kb-kv" style="margin-top:6px"><span class="k">To’lov</span><span class="v">${KB_PAYMENT[c.payment_method]||esc(c.payment_method||'—')}</span></div>
       <div class="kb-kv"><span class="k">Yetkazish</span><span class="v">${KB_DELIVERY[c.delivery_method]||esc(c.delivery_method||'—')}</span></div>
     </div>

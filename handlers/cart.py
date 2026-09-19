@@ -621,7 +621,7 @@ async def build_cart_view(user_id: int, lang: str):
                 price=f"{int(unit_price):,}".replace(",", " "),
                 total=f"{int(item_total):,}".replace(",", " "),
             )
-        # "🥑+250" — the Keto this line brings back, like a bonus tag.
+        # "🎁+250" — the Keto this line brings back, like a bonus tag.
         badge = gamification.reward_badge(gamification.keto_for(item_total, keto_rate)) if keto_rate else ""
         text += (line.rstrip("\n") + f"  {badge}\n") if badge else line
 

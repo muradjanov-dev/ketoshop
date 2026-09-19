@@ -121,7 +121,7 @@ def keto_for(amount_som: float, rate: float) -> int:
 
 
 async def buyer_rate(user_id: int) -> float | None:
-    """The cashback rate to SHOW this buyer next to prices ("🥑 +250 Keto"),
+    """The cashback rate to SHOW this buyer next to prices ("🎁 +250 Keto"),
     or None when there is nothing to show (program switched off, or a shop
     account that never earns)."""
     if user_id in database.LEADERBOARD_EXCLUDED_USER_IDS:
@@ -137,16 +137,16 @@ async def buyer_rate(user_id: int) -> float | None:
 
 
 def reward_badge(keto: int) -> str:
-    """'🥑+250' — the compact tag after a cart line; same in every language."""
-    return f"🥑+{_fmt(keto)}" if keto > 0 else ""
+    """'🎁+250' — the compact tag after a cart line; same in every language."""
+    return f"🎁+{_fmt(keto)}" if keto > 0 else ""
 
 
 def product_reward_line(keto: int, rate: float, lang: str) -> str:
     if keto <= 0:
         return ""
     return _L(lang)(
-        f"🥑 <b>+{_fmt(keto)} Keto</b> tangacha qaytadi (keshbek {rate_label(rate)})",
-        f"🥑 <b>+{_fmt(keto)} Keto</b> монеток вернётся (кешбэк {rate_label(rate)})",
+        f"🎁 <b>+{_fmt(keto)} Keto</b> tangacha qaytadi (keshbek {rate_label(rate)})",
+        f"🎁 <b>+{_fmt(keto)} Keto</b> монеток вернётся (кешбэк {rate_label(rate)})",
     )
 
 
@@ -154,8 +154,8 @@ def order_reward_line(keto: int, lang: str) -> str:
     if keto <= 0:
         return ""
     return _L(lang)(
-        f"🥑 Bu xariddan Sizga <b>+{_fmt(keto)} Keto</b> tangacha qaytadi",
-        f"🥑 С этой покупки вам вернётся <b>+{_fmt(keto)} Keto</b>",
+        f"🎁 Bu xariddan Sizga <b>+{_fmt(keto)} Keto</b> tangacha qaytadi",
+        f"🎁 С этой покупки вам вернётся <b>+{_fmt(keto)} Keto</b>",
     )
 
 
@@ -208,7 +208,7 @@ ACHIEVEMENTS = [
     },
     {
         "code": "keto_1000",
-        "emoji": "🥑",
+        "emoji": "🎁",
         "title": {"uz": "Keto boshlang'ich", "ru": "Первые Keto"},
         "desc": {"uz": "1 000 Keto to'plandi", "ru": "Накоплено 1 000 Keto"},
         "check": lambda ctx: ctx["keto_lifetime"] >= 1_000,
@@ -348,7 +348,7 @@ def build_award_message(lang: str, amount: int, new_balance: int, level: dict,
     L = _L(lang)
     lines = [
         L("🎉 <b>Tabriklaymiz! Sizga Keto berildi!</b>", "🎉 <b>Поздравляем! Вам начислены Keto!</b>"),
-        L(f"🥑 +{_fmt(amount)} Keto", f"🥑 +{_fmt(amount)} Keto"),
+        L(f"🎁 +{_fmt(amount)} Keto", f"🎁 +{_fmt(amount)} Keto"),
         L(f"💰 Joriy balansingiz: <b>{_fmt(new_balance)} Keto</b>",
           f"💰 Ваш баланс: <b>{_fmt(new_balance)} Keto</b>"),
         L(f"{level['emoji']} Darajangiz: <b>{level['label']['uz']}</b>",
@@ -486,7 +486,7 @@ def build_pin_text(lang: str, full_name: str | None, balance: int, lifetime: int
     L = _L(lang)
     name = full_name or L("Xaridor", "Покупатель")
     lines = [
-        L("🥑 <b>Keto kartam</b>", "🥑 <b>Моя карта Keto</b>"),
+        L("🎁 <b>Keto kartam</b>", "🎁 <b>Моя карта Keto</b>"),
         f"👤 {name}",
         L(f"💰 Balans: <b>{_fmt(balance)} Keto</b>", f"💰 Баланс: <b>{_fmt(balance)} Keto</b>"),
         f"{level['emoji']} " + L(f"Daraja: <b>{level['label']['uz']}</b> · keshbek {rate_label(earn_rate(lifetime))}",

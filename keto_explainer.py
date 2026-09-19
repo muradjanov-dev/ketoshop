@@ -61,7 +61,7 @@ def _fmt(n: int) -> str:
 
 _TEXT = {
     "uz": (
-        "🥑 <b>Keto tangachalar — Sizga kichik minnatdorchiligimiz</b>\n\n"
+        "🎁 <b>Keto tangachalar — Sizga kichik minnatdorchiligimiz</b>\n\n"
         "Assalomu alaykum! 🤍\n"
         "Ketoshopni tanlaganingiz uchun chin dildan rahmat. Bugun Sizga bitta "
         "yoqimli yangilikni aytmoqchi edik.\n\n"
@@ -69,11 +69,11 @@ _TEXT = {
         "Bu — bizning Sizga bo'lgan rahmatimiz.\n\n"
         "🛒 Siz buyurtma berasiz.\n"
         "📦 Buyurtma qo'lingizga yetib borgan kuni tangachalar hisobingizga tushadi.\n"
-        "🥑 Har 100 000 so'mlik xaridga — <b>500 ta tangacha</b>.\n\n"
+        "🎁 Har 100 000 so'mlik xaridga — <b>500 ta tangacha</b>.\n\n"
         "Tangachalar yo'qolmaydi — xuddi pul yig'adigan idishga ozroqdan solib "
         "borgandek, ular yig'ilib boraveradi.\n\n"
         "💰 <b>Eng muhimi:</b> bugundan boshlab tangachalaringizni ishlatsangiz bo'ladi.\n"
-        "1 ta tangacha = 1 so'm. Buyurtma berayotganda «🥑 Ketochalarni ishlatish» "
+        "1 ta tangacha = 1 so'm. Buyurtma berayotganda «🎁 Ketochalarni ishlatish» "
         "tugmasini tanlasangiz, tangachalar pul o'rniga o'tadi va Siz kamroq to'laysiz.\n\n"
         "⭐ Qanchalik ko'p xarid qilsangiz, darajangiz shunchalik ko'tariladi va "
         "har safar ko'proq tangacha qaytadi.\n\n"
@@ -82,7 +82,7 @@ _TEXT = {
         "<i>Hurmat bilan, Ketoshop jamoasi</i>"
     ),
     "ru": (
-        "🥑 <b>Keto-монетки — наша небольшая благодарность вам</b>\n\n"
+        "🎁 <b>Keto-монетки — наша небольшая благодарность вам</b>\n\n"
         "Здравствуйте! 🤍\n"
         "Искренне благодарим вас за то, что выбираете Ketoshop. Сегодня хотим "
         "поделиться приятной новостью.\n\n"
@@ -90,11 +90,11 @@ _TEXT = {
         "Это наше спасибо вам.\n\n"
         "🛒 Вы оформляете заказ.\n"
         "📦 В день, когда заказ у вас в руках, монетки поступают на ваш счёт.\n"
-        "🥑 За каждые 100 000 сум покупки — <b>500 монеток</b>.\n\n"
+        "🎁 За каждые 100 000 сум покупки — <b>500 монеток</b>.\n\n"
         "Монетки не сгорают — они копятся, как деньги, которые вы понемногу "
         "откладываете в баночку.\n\n"
         "💰 <b>Самое главное:</b> с сегодняшнего дня монетки можно тратить.\n"
-        "1 монетка = 1 сум. При оформлении заказа выберите «🥑 Использовать Ketочки» — "
+        "1 монетка = 1 сум. При оформлении заказа выберите «🎁 Использовать Ketочки» — "
         "монетки пойдут вместо денег, и вы заплатите меньше.\n\n"
         "⭐ Чем больше вы покупаете, тем выше ваш уровень и тем больше монеток "
         "возвращается каждый раз.\n\n"
@@ -240,9 +240,9 @@ async def _tick(bot: Bot) -> None:
         try:
             await bot.send_message(
                 admin_id,
-                "🥑 <b>Keto tangachalar tushuntirildi va sarflash yoqildi</b>\n"
+                "🎁 <b>Keto tangachalar tushuntirildi va sarflash yoqildi</b>\n"
                 f"✅ {sent} ta yetkazildi · ⚠️ {failed} ta yetmadi\n"
-                "Endi mijozlar buyurtmada «🥑 Ketochalarni ishlatish» tugmasini ko'radi (1 Keto = 1 so'm).",
+                "Endi mijozlar buyurtmada «🎁 Ketochalarni ishlatish» tugmasini ko'radi (1 Keto = 1 so'm).",
                 parse_mode=ParseMode.HTML)
         except Exception:
             pass
@@ -299,7 +299,7 @@ async def cmd_preview(message: Message):
     state = "✅ yuborilgan" if await _already_sent() else f"⏳ {SEND_AT:%d.%m.%Y %H:%M} da yuboriladi"
     gs = await database.get_gamification_state()
     await message.answer(
-        f"🥑 <b>Keto tushuntirish xabari</b> — {state}\n"
+        f"🎁 <b>Keto tushuntirish xabari</b> — {state}\n"
         f"Sarflash hozir: {'✅ yoqilgan' if gs.get('redemption_enabled') else '⚪ o‘chiq (yuborilganda yoqiladi)'}\n"
         "Quyida uch tildagi ko'rinishi (Sizning balansingiz bilan):",
         parse_mode=ParseMode.HTML)

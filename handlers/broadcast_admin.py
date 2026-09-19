@@ -238,7 +238,7 @@ async def keto_status(message: Message):
     holat = "🟢 yoqilgan (test rejimi)" if state["enabled"] else "🔴 to'xtatilgan"
     stats = await database.get_keto_program_stats()
     await message.answer(
-        f"🥑 <b>Keto gemifikatsiya holati</b>\n\n"
+        f"🎁 <b>Keto gemifikatsiya holati</b>\n\n"
         f"Holat: {holat}\n"
         f"Keto olgan foydalanuvchilar: <b>{stats['users_with_keto']}</b>\n"
         f"Jami berilgan Keto: <b>{stats['total_awarded']:,}</b>".replace(",", " ") + "\n"

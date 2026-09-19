@@ -1258,7 +1258,7 @@ async def _render_keto_admin(lang: str) -> tuple[str, InlineKeyboardMarkup]:
         more_label = "… va yana {} kishi"
 
     shown = balances[:15]
-    lines = ["🥑 <b>Keto-chegirma (checkout)</b>", "", status_line, ""]
+    lines = ["🎁 <b>Keto-chegirma (checkout)</b>", "", status_line, ""]
     if not balances:
         lines.append(no_balances)
     else:

@@ -2622,7 +2622,7 @@ let lang = localStorage.getItem('ketoshop_lang') || ((tg.initDataUnsafe?.user?.l
 const L = {
   uz: {
     all: 'Hammasi',
-    sectionBestsellers: 'Eng ko‘p sotilganlar',
+    sectionBestsellers: 'Top mahsulotlar',
     sectionTopCustomers: 'Eng faol xaridorlar',
     sectionAllProducts: 'Barcha mahsulotlar',
     search: 'Mahsulot qidirish...',
@@ -2640,9 +2640,9 @@ const L = {
     ketoSwitchHint: "Balansingiz: {balance} ta tangacha (1 tangacha = 1 so'm)",
     ketoSwitchApplied: 'Buyurtmadan −{amount} UZS ayirildi',
     ketoSwitchEmpty: "Hozircha tangachangiz yo'q — har xariddan keyin yig'iladi",
-    ketoRedeemLine: '🥑 Keto chegirmasi',
+    ketoRedeemLine: '🎁 Keto chegirmasi',
     ketoBack: 'Pulingiz qaytadi: {n} Keto',
-    cartKetoLabel: "🥑 Ketochalar bilan to'lash",
+    cartKetoLabel: "🎁 Ketochalar bilan to'lash",
     clear: 'Tozalash',
     checkout: 'Buyurtma berish',
     currency: "so'm",
@@ -2705,7 +2705,7 @@ const L = {
     backToCart: '◀️ Savatga qaytish',
     orderSuccess: 'Buyurtma yaratildi!',
     orderSuccessDetail: 'Buyurtma #{id}. Tez orada siz bilan bog\'lanamiz.',
-    orderSuccessKeto: '🥑 Ushbu buyurtma yetkazib berilgach, sizga <b>+{amount} Keto</b> beriladi!',
+    orderSuccessKeto: '🎁 Ushbu buyurtma yetkazib berilgach, sizga <b>+{amount} Keto</b> beriladi!',
     orderSuccessOnline: 'Buyurtma #{id} yaratildi!\n\n💳 Karta raqami va to\'lov yo\'riqnomasi botga yuborildi. Iltimos, chatga qayting va to\'lov chekini yuboring.',
     continueShopping: 'Xaridni davom ettirish',
     chequeTitle: '💳 To\'lovni amalga oshiring',
@@ -2778,7 +2778,7 @@ const L = {
   },
   ru: {
     all: 'Все',
-    sectionBestsellers: 'Хиты продаж',
+    sectionBestsellers: 'Топ товаров',
     sectionTopCustomers: 'Самые активные покупатели',
     sectionAllProducts: 'Все товары',
     search: 'Поиск товаров...',
@@ -2796,9 +2796,9 @@ const L = {
     ketoSwitchHint: 'Ваш баланс: {balance} монеток (1 монетка = 1 сум)',
     ketoSwitchApplied: 'Из заказа вычтено −{amount} UZS',
     ketoSwitchEmpty: 'Пока монеток нет — они копятся с каждой покупки',
-    ketoRedeemLine: '🥑 Скидка Keto',
+    ketoRedeemLine: '🎁 Скидка Keto',
     ketoBack: 'Вам вернётся: {n} Keto',
-    cartKetoLabel: '🥑 Оплатить Keto-монетками',
+    cartKetoLabel: '🎁 Оплатить Keto-монетками',
     clear: 'Очистить',
     checkout: 'Оформить заказ',
     currency: 'сум',
@@ -2861,7 +2861,7 @@ const L = {
     backToCart: '◀️ Назад в корзину',
     orderSuccess: 'Заказ создан!',
     orderSuccessDetail: 'Заказ #{id}. Мы свяжемся с вами в ближайшее время.',
-    orderSuccessKeto: '🥑 После доставки этого заказа вам начислится <b>+{amount} Keto</b>!',
+    orderSuccessKeto: '🎁 После доставки этого заказа вам начислится <b>+{amount} Keto</b>!',
     orderSuccessOnline: 'Заказ #{id} создан!\n\n💳 Номер карты и инструкция по оплате отправлены в бот. Пожалуйста, вернитесь в чат и отправьте чек оплаты.',
     continueShopping: 'Продолжить покупки',
     chequeTitle: '💳 Произведите оплату',
@@ -3046,9 +3046,12 @@ async function switchLanguage(newLang) {
     applyLanguage();
     // Save to server
     try { await api('/api/lang', { method: 'POST', body: JSON.stringify({ lang }) }); } catch (_) { /* server-side preference is best-effort */ }
-    // Reload dynamic content
+    // Reload dynamic content. loadPromo() and not renderPromoBanners(): the
+    // two standing-promise lines are worded by the SERVER (see api_promo),
+    // so re-rendering the cached payload would keep showing them in the old
+    // language — which is exactly what happened after a switch to Cyrillic.
     renderCatalogCategories();
-    renderPromoBanners();
+    loadPromo();
     loadProducts();
     renderHomePage();
     if (activePage === 'cart') renderCartPage();
@@ -3442,9 +3445,12 @@ async function renderHomePage() {
 }
 
 function buildPodium(top) {
-  // `top` is in rank order: [1st, 2nd, 3rd]. Lay out as a classic podium —
-  // 2nd on the left, 1st (raised) in the center, 3rd on the right.
-  const medals = ['🥇', '🥈', '🥉'];
+  // Three of the shop's recent bestsellers, rotated daily
+  // (database.rotate_daily_window). The middle slot is raised because the
+  // layout reads better that way, NOT because it is first: these are not
+  // ranked 1-2-3 and must not be labelled as if they were, so no medals.
+  // The customer podium below keeps its medals — that one really is a rank.
+  const medals = ['', '', ''];
   const section = document.createElement('div');
   section.className = 'home-section podium-section';
 

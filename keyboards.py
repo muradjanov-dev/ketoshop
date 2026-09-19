@@ -50,8 +50,8 @@ ADMIN_COMMANDS = [
     BotCommand(command="ai_bilim", description="🧠 AI bilimlari va javobsiz savollar"),
     BotCommand(command="tips_status", description="💡 Maslahatlar holati"),
     BotCommand(command="kun_status", description="📦 Kun mahsuloti (kunlik e'lon)"),
-    BotCommand(command="keto_tushuntirish", description="🥑 Keto tushuntirish xabari (18.09 17:30)"),
-    BotCommand(command="keto_status", description="🥑 Keto dasturi holati"),
+    BotCommand(command="keto_tushuntirish", description="🎁 Keto tushuntirish xabari (18.09 17:30)"),
+    BotCommand(command="keto_status", description="🎁 Keto dasturi holati"),
     BotCommand(command="backup_now", description="💾 Bazadan nusxa olish"),
 ]
 

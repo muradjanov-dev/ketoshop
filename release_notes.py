@@ -44,7 +44,7 @@ NOTES = (
     "💸 <b>Aksiya bonuslari avtomatik Chiqimlarga yoziladi</b>\n"
     "Masalan 2 kg Steviyaga 0,5 kg bonus — buyurtma yetkazilgan zahoti bonusning tannarxi «Chiqimlar»ga tushadi, sovg'alar kabi. Bir buyurtma bir marta yoziladi va foydadan ikki marta yechilmaydi; eski buyurtmalar tegilmagan.\n"
     "Aksiyaning o'zini saytdagi «Aksiya» bo'limida tuzasiz: 2 kg Steviya → 0,5 kg Steviya bonus.\n\n"
-    "🥑 <b>Keto tangachalar tushunarli yozildi</b>\n"
+    "🎁 <b>Keto tangachalar tushunarli yozildi</b>\n"
     "Mini App'da «+525 Keto» hech narsa demas edi. Endi ochiq: «Pulingiz qaytadi: 525 Keto».\n\n"
     "🍬 <b>Eritritol sovg'asi har bir kartochkada</b>\n"
     "«Har bir buyurtmaga 100 gr Eritritol sovg'a» yozuvi endi mijoz mahsulotni tanlayotganda ko'rinadi, savatni to'ldirgandan keyin emas. Kampaniya tugasa yoki Eritritol omborda qolmasa — yozuv o'zi yo'qoladi.\n\n"

@@ -61,7 +61,7 @@ _TEXT = {
         "e'lon qilamiz: tarkibi, foydasi va shundan nima tayyorlash mumkinligi "
         "bilan. Xabarning o'zidan turib savatga qo'shasiz.\n\n"
 
-        "🥑 <b>Keto tangachalar</b>\n"
+        "🎁 <b>Keto tangachalar</b>\n"
         "Har xariddan pulingizning bir qismi Keto tangacha bo'lib qaytadi va "
         "keyingi buyurtmada chegirma bo'lib ishlatiladi.\n\n"
 
@@ -87,7 +87,7 @@ _TEXT = {
         "состав, польза и что из него приготовить. Добавить в корзину можно "
         "прямо из сообщения.\n\n"
 
-        "🥑 <b>Keto-монетки</b>\n"
+        "🎁 <b>Keto-монетки</b>\n"
         "С каждой покупки часть суммы возвращается монетками — и работает как "
         "скидка в следующем заказе.\n\n"
 

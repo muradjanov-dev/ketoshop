@@ -160,8 +160,8 @@ async def award_referral(referrer_id: int, referred_id: int, bot: Bot) -> None:
         lines = [
             L(f"🎉 <b>Tabriklaymiz!</b> Sizning havolangiz bilan <b>{who_joined}</b> Ketoshopga qo'shildi!",
               f"🎉 <b>Поздравляем!</b> По вашей ссылке в Ketoshop присоединился(-ась) <b>{who_joined}</b>!"),
-            L(f"🥑 +{REFERRAL_KETO_REWARD} Keto tanga qo'lga kiritdingiz! Joriy balans: <b>{_fmt(referrer_balance)} Keto</b>",
-              f"🥑 Вы получили +{REFERRAL_KETO_REWARD} монет Keto! Ваш баланс: <b>{_fmt(referrer_balance)} Keto</b>"),
+            L(f"🎁 +{REFERRAL_KETO_REWARD} Keto tanga qo'lga kiritdingiz! Joriy balans: <b>{_fmt(referrer_balance)} Keto</b>",
+              f"🎁 Вы получили +{REFERRAL_KETO_REWARD} монет Keto! Ваш баланс: <b>{_fmt(referrer_balance)} Keto</b>"),
         ]
 
         state = await database.get_referral_contest_state()
@@ -192,8 +192,8 @@ async def award_referral(referrer_id: int, referred_id: int, bot: Bot) -> None:
         referred_text = "\n\n".join([
             L2(f"🎉 <b>Xush kelibsiz!</b> Siz <b>{who_invited}</b> taklifi bilan Ketoshop oilasiga qo'shildingiz!",
                f"🎉 <b>Добро пожаловать!</b> Вы присоединились к Ketoshop по приглашению <b>{who_invited}</b>!"),
-            L2(f"🥑 Sovg'a sifatida +{REFERRAL_KETO_REWARD} Keto tanga oldingiz! Balansingiz: <b>{_fmt(referred_balance)} Keto</b>",
-               f"🥑 В подарок вы получили +{REFERRAL_KETO_REWARD} монет Keto! Ваш баланс: <b>{_fmt(referred_balance)} Keto</b>"),
+            L2(f"🎁 Sovg'a sifatida +{REFERRAL_KETO_REWARD} Keto tanga oldingiz! Balansingiz: <b>{_fmt(referred_balance)} Keto</b>",
+               f"🎁 В подарок вы получили +{REFERRAL_KETO_REWARD} монет Keto! Ваш баланс: <b>{_fmt(referred_balance)} Keto</b>"),
         ])
         try:
             await bot.send_message(referred_id, referred_text, parse_mode=ParseMode.HTML)
@@ -309,11 +309,11 @@ def build_share_teaser(lang: str, prizes: list[str | None] | None = None) -> str
     prize_line = f"\n\n{prize_block}" if prize_block else ""
     return L(
         "😩 Yana bir bor parhez boshladingiz-u, keto mahsulot topa olmay charchadingizmi? "
-        "O'zbekistondagi eng keng keto assortiment mahsulotlari — Ketoshop'da! 🥑\n\n"
+        "O'zbekistondagi eng keng keto assortiment mahsulotlari — Ketoshop'da! 🎁\n\n"
         "🏆 Ustiga, hozir Keto musobaqasi ham davom etmoqda!" + prize_line + "\n\n"
         "Mening havolam orqali qo'shiling, ikkalamizga ham foyda! 🎁",
         "😩 Опять начали диету — и опять негде найти нормальные кето-продукты? Самый широкий "
-        "ассортимент кето-продуктов в Узбекистане — в Ketoshop! 🥑\n\n"
+        "ассортимент кето-продуктов в Узбекистане — в Ketoshop! 🎁\n\n"
         "🏆 А ещё сейчас идёт конкурс Keto!" + prize_line + "\n\n"
         "Присоединяйтесь по моей ссылке, выгодно обоим! 🎁",
     )
@@ -432,7 +432,7 @@ def build_share_text(user_id: int, lang: str, prizes: list[str | None] | None = 
     return L(
         "😩 <b>Yana bir bor parhez boshladingiz-u, keto mahsulot topa olmay charchadingizmi?</b>\n\n"
         "Do'konlarda faqat oddiy un, oddiy shakar... Aslida esa O'zbekistondagi eng keng keto "
-        "assortiment mahsulotlari bitta joyda — Ketoshop'da bor. 🥑\n\n"
+        "assortiment mahsulotlari bitta joyda — Ketoshop'da bor. 🎁\n\n"
         "🏆 Ustiga, hozir Keto musobaqasi ham davom etmoqda!" + prize_line + "\n\n"
         "Mening shaxsiy havolam orqali qo'shiling — Sizga sog'lom boshlanish, menga esa reytingda "
         "bir qadam yuqoriga chiqish imkoni. Ikkalamizga ham foyda! 🎁\n\n"
@@ -440,7 +440,7 @@ def build_share_text(user_id: int, lang: str, prizes: list[str | None] | None = 
 
         "😩 <b>Опять начали диету — и опять негде найти нормальные кето-продукты?</b>\n\n"
         "В обычных магазинах только белая мука и сахар... А самый широкий ассортимент "
-        "кето-продуктов в Узбекистане — весь в одном месте, в Ketoshop. 🥑\n\n"
+        "кето-продуктов в Узбекистане — весь в одном месте, в Ketoshop. 🎁\n\n"
         "🏆 А ещё сейчас идёт конкурс Keto!" + prize_line + "\n\n"
         "Присоединяйтесь по моей личной ссылке — вам здоровый старт, а мне — шаг выше в "
         "рейтинге. Выгодно обоим! 🎁\n\n"
@@ -464,10 +464,10 @@ def _reminder_keyboard() -> InlineKeyboardMarkup:
 _REMINDER_TIERS: dict[str, list[tuple[str, str]]] = {
     "early": [
         (
-            "🥑 <b>Keto musobaqasi davom etmoqda!</b>\n\n"
+            "🎁 <b>Keto musobaqasi davom etmoqda!</b>\n\n"
             "{days_left} kun qoldi. Do'stlaringizga xabar bering — Ketoshopning eng keng keto "
             "assortimentidan ular ham foydalansin!",
-            "🥑 <b>Конкурс Keto продолжается!</b>\n\n"
+            "🎁 <b>Конкурс Keto продолжается!</b>\n\n"
             "Осталось {days_left} дн. Расскажите друзьям — пусть тоже узнают про самый широкий "
             "ассортимент кето-продуктов Ketoshop!",
         ),
