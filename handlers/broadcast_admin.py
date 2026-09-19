@@ -247,6 +247,65 @@ async def keto_status(message: Message):
     )
 
 
+@router.message(Command("keto_berish"))
+async def keto_berish(message: Message):
+    """Qo'lda Keto qo'shish — sinov uchun va nosozlikni tuzatish uchun.
+
+        /keto_berish 100              -> o'zingizga
+        /keto_berish 123456789 100    -> o'sha foydalanuvchiga
+
+    Faqat qo'shadi. Yechish uchun alohida yo'l kerak: credit_keto balans
+    bilan birga keto_lifetime'ni ham o'zgartiradi, u esa darajani belgilaydi
+    — manfiy son odamni darajasidan tushirib yuborardi.
+
+    Har bir harakat keto_ledger'ga kim bergani bilan yoziladi, shunda balans
+    o'z-o'zidan o'zgarganday ko'rinmaydi.
+    """
+    parts = (message.text or "").split()
+    target = message.from_user.id
+    raw_amount = None
+    if len(parts) == 2:
+        raw_amount = parts[1]
+    elif len(parts) >= 3:
+        target, raw_amount = parts[1], parts[2]
+    try:
+        amount = int(raw_amount)
+        target = int(target)
+    except (TypeError, ValueError):
+        await message.answer(
+            "Format:\n"
+            "<code>/keto_berish 100</code> — o'zingizga\n"
+            "<code>/keto_berish 123456789 100</code> — boshqa foydalanuvchiga\n"
+            "Faqat musbat son.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if amount <= 0:
+        await message.answer(
+            "Faqat musbat son qo'shiladi. Yechish darajani ham tushirib "
+            "yuboradi, shuning uchun bu buyruqda yo'q.")
+        return
+
+    user = await database.get_user(target)
+    if not user:
+        await message.answer(f"❌ <code>{target}</code> foydalanuvchi topilmadi.",
+                             parse_mode=ParseMode.HTML)
+        return
+
+    await database.credit_keto(
+        target, None, amount, kind="manual",
+        note=f"admin {message.from_user.id}",
+    )
+    fresh = await database.get_user(target)
+    balance = int(fresh.get("keto_balance") or 0)
+    who = "Sizga" if target == message.from_user.id else f"<code>{target}</code> ga"
+    await message.answer(
+        f"🎁 {who} <b>+{amount}</b> Keto yozildi.\n"
+        f"Yangi balans: <b>{balance:,}</b> Keto".replace(",", " "),
+        parse_mode=ParseMode.HTML,
+    )
+
+
 @router.message(Command("keto_on"))
 async def keto_on(message: Message):
     await database.set_gamification_enabled(True)
