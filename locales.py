@@ -759,6 +759,14 @@ TEXTS = {
         "uz": "🚚 <b>{amount} so'mdan</b> — Toshkent bo'ylab yetkazib berish <b>bepul</b>",
         "ru": "🚚 <b>От {amount} сум</b> — доставка по Ташкенту <b>бесплатно</b>",
     },
+    # Admins see the total AFTER the Keto discount, so without this line the
+    # payment looks short and the first question is "why did they pay less?".
+    "admin_order_keto_line": {
+        "uz": "🎁 <b>−{amount} so'm</b> Keto tangachalari bilan to'langan "
+              "(mahsulotlar summasi {full} so'm edi)",
+        "ru": "🎁 <b>−{amount} сум</b> оплачено монетками Keto "
+              "(сумма товаров была {full} сум)",
+    },
     "keto_redeemed_line": {
         "uz": "🎁 Keto chegirmasi (-{amount} Keto): -{amount} so'm\n",
         "ru": "🎁 Скидка Keto (-{amount} Keto): -{amount} сум\n",

@@ -2154,6 +2154,9 @@ async def notify_low_stock(bot: Bot, low_stock: list[dict]) -> None:
 
 async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang: str):
     """Notify admins (who act as sellers) about a new order"""
+    # Read back what the buyer actually spent in Keto — see the note below.
+    saved_order = await get_order(order_id)
+    keto_used = int((saved_order or {}).get("keto_redeemed") or 0)
     contact = buyer_contact_link(
         data.get("user_id"),
         data.get("username"),
@@ -2224,6 +2227,16 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
             note = mystery_gift.admin_note(goods_subtotal(items), admin_lang)
             if note:
                 text += "\n" + note
+            # The total above is already net of any Keto the buyer spent, so
+            # without saying so the payment reads as short. Taken from the
+            # order row rather than the caller's dict: three different flows
+            # reach this notifier and only one of them carries the amount.
+            if keto_used:
+                text += "\n" + get_text(
+                    "admin_order_keto_line", admin_lang,
+                    amount=f"{keto_used:,}".replace(",", " "),
+                    full=f"{int(data['total']) + keto_used:,}".replace(",", " "),
+                )
             await bot.send_message(
                 chat_id=admin_id,
                 text=text,
