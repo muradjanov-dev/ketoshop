@@ -247,7 +247,10 @@
     background: rgba(76,175,80,0.16); color: #3E9B4F;
     font-size: 11px; font-weight: 700; line-height: 1.35;
   }
-  .keto-badge::before { content: "F951  "; }
+  /* A literal emoji, not a CSS escape: the "\1F951" that used to be
+     here lost its backslash to a control character, so the badge printed
+     the bare text "F951" on every price. A character cannot break that way. */
+  .keto-badge::before { content: "🎁 "; }
   .detail-bonus {
     margin-top: 8px; padding: 10px 12px; border-radius: 12px;
     background: rgba(232,114,44,0.12); color: #C4571B;
