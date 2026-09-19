@@ -1308,8 +1308,14 @@ function renderDashKpiCard(lab,val,sub){
 
 function renderKpis(st){
   const cards=[
-    renderDashKpiCard('Jami Tushum', fmt(st.revenue), 'Yetkazilgan buyurtmalardan'),
-    renderDashKpiCard('B2B Tushum (optom)', fmt(st.b2b_revenue), st.b2b_orders+' ta savdo'),
+    // B2B revenue is a SLICE of total revenue, not an addition to it — the
+    // query filters the same SUM by source='b2b'. Without saying so, the two
+    // tiles invite the reader to add them up.
+    renderDashKpiCard('Jami Tushum', fmt(st.revenue),
+      st.b2b_revenue ? `Yetkazilganlardan · shundan ${fmt(st.b2b_revenue)} optom`
+                     : 'Yetkazilgan buyurtmalardan'),
+    renderDashKpiCard('B2B Tushum (optom)', fmt(st.b2b_revenue),
+      st.b2b_orders+" ta savdo · jami tushum ichida"),
     renderDashKpiCard('Maxsulot tannarxi', fmt(st.product_cost), 'Sotilganlar bo\'yicha'),
     renderDashKpiCard('Jami Chiqimlar', fmt(st.expenses), 'Barcha xarajatlar'),
     renderDashKpiCard('Foyda (sof)', fmt(st.profit), 'Tushum - Tannarx - Chiqimlar'),
