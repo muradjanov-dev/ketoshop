@@ -24,7 +24,7 @@ from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
-RELEASE_KEY = "2026-09-19-kuryer-tavsif-viloyat"
+RELEASE_KEY = "2026-09-19-sirli-sovga-bonus-chiqim"
 TZ_OFFSET = timedelta(hours=5)
 SEND_WINDOW = (8, 22)          # never wake admins at night
 # The owner asked for this release's notes to go out immediately (2026-09-19),
@@ -33,65 +33,32 @@ SEND_NOW = True
 CHECK_EVERY = 300
 
 NOTES = (
-    "🆕 <b>Bir kunda qo'shilganlar</b>\n\n"
-
-    "🚚 <b>Kuryer paneli</b> — saytda yangi «Kuryer» bo'limi\n"
-    "• Barcha buyurtma bir ekranda, ustunlar bo'ylab: Yangi → Qabul qilindi → "
-    "Tayyor+Yo'lda → Yetkazildi → Bekor qilindi\n"
-    "• Kartochkani ushlab surib yoki ◀ ▶ tugmalari bilan keyingi bosqichga o'tkaziladi\n"
-    "• Kartochkada faqat keraklisi: kim, qayerga, qancha pul olish kerak, qancha kutmoqda. "
-    "<b>Naqd</b> summa sariq fonda, oldindan to'langani xira — bir qarashda ko'rinadi\n"
-    "• Mijoz lokatsiya yuborgan bo'lsa: xaritada ochish yoki pinni Telegramga yuborish "
-    "(navigatorda ochiladi)\n"
-    "• Har qadamda mijozga o'z tilida xabar ketadi; kartochkani orqaga surish jim\n"
-    "• Ikki admin bir buyurtmani bir vaqtda surса, ikkinchisi ogohlantiriladi\n\n"
-
-    "💸 <b>Kuryer haqi endi avtomatik chiqimga yoziladi</b>\n"
-    "Toshkent ichida 25 000, viloyatga pochta orqali (BTS, EMU) 5 000 so'm — buyurtma "
-    "yetkazilgan zahoti «Chiqimlar»ga tushadi. Bepul yetkazib berishda ham yoziladi: "
-    "kuryerga baribir to'lanadi. Faqat bugundan keyingi buyurtmalardan.\n\n"
-
-    "📝 <b>Barcha mahsulotga tavsif — uchala tilda</b>\n"
-    "133 ta mahsulotning hammasiga o'zbekcha va ruscha tavsif yozildi, kirillcha "
-    "avtomatik o'giriladi. Ruscha tanlagan mijozga endi ruscha chiqadi.\n"
-    "Saytda: Mahsulotlar → «✍️ Tavsiflarni to'ldirish». Qo'lda tuzatish uchun JSON "
-    "yuklab olish/yuklash ham bor, tahrirlash oynasida kirillchasi jonli ko'rinadi.\n\n"
-
-    "🗺 <b>Dashboardda viloyatlar kesimi</b>\n"
-    "Qaysi viloyat qancha buyurtma qilyapti, qancha pul olib kelyapti, nechta xaridori "
-    "bor va o'rtacha cheki qancha. Qatorni ochsangiz — o'sha viloyat aynan nima "
-    "olayotgani. Ombor rejasi uchun.\n\n"
-
-    "🏆 <b>Do'kon bosh sahifasi endi yangilanib turadi</b>\n"
-    "«Eng ko'p sotilganlar» butun tarix bo'yicha qotib qolgan edi — uchta mahsulot "
-    "abadiy o'sha yerda turardi. Endi oxirgi 30 kunlik sotuvdan eng yaxshi 12 tasi "
-    "olinadi va har kuni uchtasi ko'rsatiladi: to'rt kunda hammasi navbat bilan chiqadi.\n\n"
-
-    "🌟 <b>Kun mahsuloti</b> — har kuni soat 13:00 da bitta mahsulot xaridorlarga va "
-    "kanalga e'lon qilinadi. Navbat aylanma: hamma mahsulot o'z kunini oladi.\n"
-    "Boshqarish: /kun_status · /kun_test · /kun_kanal · /kun_now · /kun_off\n\n"
-
-    "🏢 <b>B2B savdolar ro'yxati</b>\n"
-    "Optom tushum umumiy raqam ichida yashirin edi. Endi kim, qachon, nima olgani va "
-    "foydasi ko'rinadi — botda «B2B Savdo → B2B savdolar», saytda esa Dashboardda.\n\n"
-
-    "📈 <b>Foyda hisobidagi xato tuzatildi</b>\n"
-    "Optom Eritritol sotuvi tannarxsiz («0 so'm») hisoblanardi — oylik foyda butun "
-    "partiya miqdoricha oshib ko'rinardi. Endi to'g'ri hisoblanadi.\n\n"
-
-    "📦 <b>Yetkazish</b>: Yandex Market tanlovdan olib tashlandi. Viloyatlarga "
-    "faqat BTS va EMU qoldi.\n\n"
-
-    "📞 <b>Aloqa raqami</b> yangilandi: +998993641343 — salom xabari, yordam matnlari, "
-    "AI sotuvchi va keto maslahatlari, hammasida.\n\n"
-
-    "🔤 <b>Kirillcha yozuvdagi xato tuzatildi</b>\n"
-    "«чэк», «Чэхия», «печэне» kabi so'zlar noto'g'ri chiqardi — butun botning "
-    "kirillcha matniga tegishli edi.\n\n"
-
-    "🌐 Botdagi «Boshqaruv paneli» va «Mahsulot va Buyurtma» menyularidan endi "
-    "to'g'ridan-to'g'ri saytga o'tish tugmasi bor.\n\n"
-
+    "🆕 <b>Oxirgi 12 soatda qo'shilganlar</b>\n\n"
+    "🎁 <b>Sirli sovg'a — 400 000 so'mdan yuqori buyurtmalarga</b>\n"
+    "Ketoshop jamoasi nomidan, nima ekani aytilmaydi — sir bo'lgani uchun ham qiziq.\n"
+    "• Yozuv mijoz pul sanaydigan har bir joyda: mahsulot kartochkasi, savatga qo'shildi xabari, savat, tasdiqlash ekrani va tasdiqdan keyingi xabar\n"
+    "• Chegaraga yaqin qolganda o'zi hisoblab turadi: «yana 50 000 so'm va sovg'a sizniki» — o'rtacha chekni ko'taradigan aynan shu qator\n"
+    "• Sovg'aning buyurtmada alohida qatori yo'q — uni qo'lda solasiz. Shuning uchun adminning buyurtma xabarida va Kuryer panelida «🎁 Sirli sovg'a — qutiga soling» belgisi chiqadi\n\n"
+    "🚚 <b>Bepul yetkazib berish endi ko'rinadi</b>\n"
+    "800 000 so'mdan Toshkent bo'ylab bepul — ilgari buni faqat savatga yetib kelgan mijoz bilardi. Endi har bir mahsulot kartochkasida, kanaldagi e'londa, Mini App'ning bosh sahifasida, katalogda va savatda yozib qo'yilgan.\n\n"
+    "💸 <b>Aksiya bonuslari avtomatik Chiqimlarga yoziladi</b>\n"
+    "Masalan 2 kg Steviyaga 0,5 kg bonus — buyurtma yetkazilgan zahoti bonusning tannarxi «Chiqimlar»ga tushadi, sovg'alar kabi. Bir buyurtma bir marta yoziladi va foydadan ikki marta yechilmaydi; eski buyurtmalar tegilmagan.\n"
+    "Aksiyaning o'zini saytdagi «Aksiya» bo'limida tuzasiz: 2 kg Steviya → 0,5 kg Steviya bonus.\n\n"
+    "🥑 <b>Keto tangachalar tushunarli yozildi</b>\n"
+    "Mini App'da «+525 Keto» hech narsa demas edi. Endi ochiq: «Pulingiz qaytadi: 525 Keto».\n\n"
+    "🍬 <b>Eritritol sovg'asi har bir kartochkada</b>\n"
+    "«Har bir buyurtmaga 100 gr Eritritol sovg'a» yozuvi endi mijoz mahsulotni tanlayotganda ko'rinadi, savatni to'ldirgandan keyin emas. Kampaniya tugasa yoki Eritritol omborda qolmasa — yozuv o'zi yo'qoladi.\n\n"
+    "🌟 <b>Kun mahsuloti ishga tushdi</b>\n"
+    "Har kuni soat 13:00 da bitta mahsulot barcha mijozlarga o'z tilida, kanalga esa kirillchada chiqadi; kanaldagi «Botda sotib olish» tugmasi aynan o'sha mahsulotni ochadi. Yuborilgan kartochka mijozning chatidan o'chmaydi.\n"
+    "• /kun_status — navbatdagi mahsulot\n"
+    "• /kun_test — faqat o'zingizga\n"
+    "• /kun_kanal — faqat kanalga sinov\n"
+    "• /kun_otkaz — navbatdagini o'tkazib yuborish\n"
+    "• /kun_off — to'xtatish\n\n"
+    "📊 <b>Sovg'a hisoboti aniqlashdi</b>\n"
+    "/sovga endi nechta buyurtma emas, nechta MIJOZ sovg'a olganini ham ko'rsatadi.\n\n"
+    "💰 <b>Panelda tannarx ustuni</b>\n"
+    "Mahsulotlar ro'yxatida tannarx narx yonida turadi — har birini ochib ko'rishning hojati yo'q.\n\n"
     "Hammasi serverga yuklandi va ishlayapti ✅"
 )
 

@@ -121,7 +121,8 @@ async def build_caption(product: dict, lang: str, rate: float | None,
 
 
 async def detail_keyboard(user_id: int, product_id: int, back_category: str,
-                          back_page: int, lang: str, out_of_stock: bool) -> InlineKeyboardMarkup:
+                          back_page: int, lang: str, out_of_stock: bool,
+                          keep: bool = False) -> InlineKeyboardMarkup:
     """Primary row (add / stepper / soon), reviews row, cart shortcut, back row.
     Shared by the first render and the +/- handlers, so a step click just swaps
     reply_markup — no need to re-send the photo."""
@@ -143,7 +144,12 @@ async def detail_keyboard(user_id: int, product_id: int, back_category: str,
     cart_count, cart_total = await get_cart_badge(user_id)
     cart_row = cart_shortcut_row(lang, cart_count, cart_total)
 
-    back_cb = f"cat:{back_category}:{back_page}" if back_category else "catalog"
+    # A card the shop SENT (the daily spotlight, a channel link) is the
+    # buyer's own message history — «Orqaga» must not delete it the way it
+    # does for a card they opened themselves while browsing. `catalog_keep`
+    # opens the catalogue in a new message and leaves the card where it is.
+    back_cb = f"cat:{back_category}:{back_page}" if back_category else (
+        "catalog_keep" if keep else "catalog")
     rows = [primary_row, [InlineKeyboardButton(text=get_text("btn_reviews", lang),
                                                callback_data=f"reviews:{product_id}")]]
     if cart_row:
@@ -164,7 +170,7 @@ async def send_card(bot: Bot, chat_id: int, product: dict, lang: str,
     if caption is None:
         caption = await build_caption(product, lang, rate)
     keyboard = await detail_keyboard(chat_id, product["id"], back_category, back_page,
-                                     lang, product["quantity"] <= 0)
+                                     lang, product["quantity"] <= 0, keep=True)
     if product.get("photo_id"):
         return await bot.send_photo(chat_id, photo=product["photo_id"], caption=caption,
                                     reply_markup=keyboard, parse_mode="HTML")

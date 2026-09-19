@@ -41,6 +41,25 @@ async def show_catalog(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(F.data == "catalog_keep")
+async def show_catalog_keep(callback: CallbackQuery):
+    """Catalogue as a NEW message, leaving the card that opened it in place.
+
+    The «Orqaga» of a card the shop sent — the daily Kun mahsuloti, or a
+    channel link — comes here. The ordinary catalog handler deletes a photo
+    message before replying, which would quietly erase the announcement from
+    the buyer's chat (owner, 2026-09-19: "yuborilgan mahsulotlar o'chib
+    ketmasin")."""
+    lang = await get_user_language(callback.from_user.id)
+    cart_count, cart_total = await get_cart_badge(callback.from_user.id)
+    await callback.message.answer(
+        get_text("categories_title", lang),
+        reply_markup=categories_keyboard(lang, cart_count, cart_total),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "discounts")
 async def show_discounts(callback: CallbackQuery):
     """Discounts section — only products with an active discount, all categories."""

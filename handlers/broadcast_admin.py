@@ -468,3 +468,46 @@ async def kun_now(message: Message):
         f"Kanal: {'📣 yuborildi' if result['channel_ok'] else '⚠️ yuborilmadi'}",
         parse_mode=ParseMode.HTML,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Yangiliklar e'loni — what changed FOR THE BUYER, in their own words
+#
+#   /yangilik_test    — uchala tilda, faqat o'zingizga
+#   /yangilik_kanal   — faqat kanalga (kirillcha)
+#   /yangilik_hammaga — barcha mijozlarga, har biriga o'z tilida
+# ─────────────────────────────────────────────────────────────────────────────
+import news_announce
+
+
+@router.message(Command("yangilik_test"))
+async def yangilik_test(message: Message):
+    """All three languages, to the admin who asked — nobody else sees it."""
+    for lang in ("uz", "uz_cyr", "ru"):
+        await message.answer(news_announce.text_for(lang),
+                             parse_mode=ParseMode.HTML,
+                             reply_markup=news_announce.buyer_keyboard(lang),
+                             disable_web_page_preview=True)
+    await message.answer(
+        "👆 Yuqoridagi uchtasi — mijoz o'z tilida oladigan xabar.\n"
+        "Kanalga: /yangilik_kanal · Hammaga: /yangilik_hammaga"
+    )
+
+
+@router.message(Command("yangilik_kanal"))
+async def yangilik_kanal(message: Message):
+    ok = await news_announce.post_to_channel(message.bot)
+    await message.answer(
+        "📣 Kanalga e'lon qo'yildi. Yoqmasa — kanaldan o'chirib tashlang."
+        if ok else
+        "⚠️ Kanalga yuborib bo'lmadi. Bot kanalda admin ekanini tekshiring."
+    )
+
+
+@router.message(Command("yangilik_hammaga"))
+async def yangilik_hammaga(message: Message):
+    await message.answer("📤 E'lon barcha mijozlarga yuborilmoqda — biroz vaqt oladi…")
+    sent, failed = await news_announce.broadcast(message.bot)
+    await message.answer(
+        f"✅ {sent} ta mijozga yetkazildi, ⚠️ {failed} ta yetmadi.",
+    )

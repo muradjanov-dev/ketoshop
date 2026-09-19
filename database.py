@@ -1086,6 +1086,12 @@ async def init_db():
                 CONSTRAINT product_of_day_state_single CHECK (id = 1)
             )
         """)
+        # Armed once, by the first bot that boots with the feature: the owner
+        # asked for a product every day, not for a switch to remember to
+        # press. A later /kun_off is respected — `armed` stays TRUE, so
+        # nothing turns it back on behind their back.
+        await conn.execute(
+            "ALTER TABLE product_of_day_state ADD COLUMN IF NOT EXISTS armed BOOLEAN NOT NULL DEFAULT FALSE")
         await conn.execute(
             "INSERT INTO product_of_day_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING"
         )
@@ -4036,6 +4042,16 @@ async def get_product_of_day_state() -> dict:
                 "INSERT INTO product_of_day_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
             row = await conn.fetchrow("SELECT * FROM product_of_day_state WHERE id = 1")
         return dict(row)
+
+
+async def arm_product_of_day() -> bool:
+    """Switch the daily spotlight on the very first time, and say whether
+    this call is the one that did it."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "UPDATE product_of_day_state SET armed = TRUE, enabled = TRUE "
+            "WHERE id = 1 AND armed = FALSE RETURNING id")
+        return row is not None
 
 
 async def set_product_of_day_enabled(enabled: bool):

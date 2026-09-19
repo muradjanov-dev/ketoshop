@@ -253,6 +253,18 @@ async def _tick(bot: Bot):
 async def scheduler_loop(bot: Bot):
     """Background task: every CHECK_EVERY seconds, is today's spotlight due?"""
     logger.info("Product-of-the-day scheduler started (%02d:00 Tashkent)", SEND_HOUR)
+    try:
+        if await database.arm_product_of_day():
+            logger.info("Product-of-the-day armed on first boot")
+            await _notify_admins(
+                bot,
+                "🌟 <b>Kun mahsuloti yoqildi</b>\n"
+                f"Har kuni soat {SEND_HOUR:02d}:00 da bitta mahsulot barcha "
+                "mijozlarga (o'z tilida) va kanalga chiqadi.\n"
+                "To'xtatish: /kun_off · Holat: /kun_status",
+            )
+    except Exception:
+        logger.exception("Arming the daily spotlight failed")
     while True:
         try:
             await _tick(bot)
