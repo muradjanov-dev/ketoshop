@@ -618,6 +618,7 @@
       <table>
         <thead><tr>
           <th>Mahsulot</th><th>Kategoriya</th><th style="text-align:right">Narx</th>
+          <th style="text-align:right">Tannarx</th>
           <th style="text-align:right">Qoldiq</th><th>Chegirma</th><th>Holat</th><th></th>
         </tr></thead>
         <tbody id="prodRows"></tbody>
@@ -1425,7 +1426,9 @@ async function loadProducts(){
 function renderProducts(){
   const q=($('#prodSearch').value||'').toLowerCase();
   const list=PRODUCTS.filter(p=>!q||(p.name||'').toLowerCase().includes(q)||(p.name_ru||'').toLowerCase().includes(q));
-  $('#prodCount').textContent=list.length+' ta mahsulot';
+  const noCost=list.filter(p=>!(+p.cost_price>0)).length;
+  $('#prodCount').textContent=list.length+' ta mahsulot'
+    +(noCost?` · ⚠️ ${noCost} tasida tannarx yo'q`:'');
   $('#prodEmpty').style.display=list.length?'none':'block';
   $('#prodRows').innerHTML=list.map(p=>{
     const img=p.image_url?`<img src="${p.image_url}" alt="">`:'📦';
@@ -1435,6 +1438,7 @@ function renderProducts(){
       <td><div class="pname"><div class="pthumb">${img}</div><div>${esc(p.name)}<div style="font-size:11.5px;color:var(--ink-3)">#${p.id}</div></div></div></td>
       <td>${catLabel(p.category)}</td>
       <td class="tnum" style="text-align:right;font-weight:700">${fmt(p.price)}</td>
+      <td class="tnum" style="text-align:right">${costCell(p)}</td>
       <td class="tnum" style="text-align:right">${(+p.quantity).toLocaleString()}</td>
       <td>${disc}</td><td>${st}</td>
       <td><div class="row-actions">
@@ -1443,6 +1447,11 @@ function renderProducts(){
                      :`<button class="btn btn-o btn-sm" onclick="restoreProd(${p.id})">Tiklash</button>`}
       </div></td></tr>`;
   }).join('');
+}
+function costCell(p){
+  const c=+p.cost_price||0;
+  if(c>0)return `<span style="color:var(--ink-2)">${fmt(c)}</span>`;
+  return '<span class="pill disc" title="Tannarxsiz mahsulot foydani oshirib ko’rsatadi">kiritilmagan</span>';
 }
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 $('#prodSearch').addEventListener('input',renderProducts);
