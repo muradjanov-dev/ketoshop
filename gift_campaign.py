@@ -112,12 +112,21 @@ async def is_active() -> bool:
     return _active_row(await _state())
 
 
-def is_eligible_user(user_id: int | None) -> bool:
-    """Admin and shop accounts never get the gift — their orders are placed on
-    behalf of someone else or are tests, and would book fake giveaways."""
+def is_internal_user(user_id: int | None) -> bool:
+    """An admin or shop account — orders placed on behalf of someone else, or
+    tests. They SEE the gift like anybody else (owner, 2026-09-20: the panel
+    should look the same from an admin account), but their giveaways are not
+    booked into Chiqimlar, or every test order would show up as a real cost.
+    The exclusion lives in database.get_unbooked_gift_orders."""
     if not user_id:
         return False
-    return user_id not in ADMIN_IDS and user_id not in database.LEADERBOARD_EXCLUDED_USER_IDS
+    return user_id in ADMIN_IDS or user_id in database.LEADERBOARD_EXCLUDED_USER_IDS
+
+
+def is_eligible_user(user_id: int | None) -> bool:
+    """Whether this buyer is shown the gift at all. Only a missing user id
+    disqualifies now — see is_internal_user for what admins still skip."""
+    return bool(user_id)
 
 
 async def gift_product(force: bool = False) -> dict | None:

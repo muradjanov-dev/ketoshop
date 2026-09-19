@@ -2925,17 +2925,26 @@ async def find_products_by_name_fragment(fragment: str) -> list[dict]:
 
 async def get_unbooked_gift_orders(limit: int = 200) -> list[dict]:
     """Delivered orders that carry a gift line but have no Chiqimlar row yet.
-    The LIKE is only a cheap pre-filter; callers parse items to be sure."""
+    The LIKE is only a cheap pre-filter; callers parse items to be sure.
+
+    Admin and shop accounts are skipped here rather than at the point the
+    gift is offered: the owner wants the gift to LOOK the same from an admin
+    account as from a buyer's (2026-09-20), but a test order must not book a
+    real giveaway cost. This is the single place where that distinction is
+    enforced, so the two can't drift apart.
+    """
+    internal = list(set(ADMIN_IDS) | set(LEADERBOARD_EXCLUDED_USER_IDS))
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """SELECT o.id, o.items, o.delivered_at
                  FROM orders o
                 WHERE o.status = 'delivered'
                   AND o.items LIKE '%is_gift%'
+                  AND NOT (o.user_id = ANY($1::bigint[]))
                   AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.gift_order_id = o.id)
                 ORDER BY o.id
-                LIMIT $1""",
-            limit,
+                LIMIT $2""",
+            internal, limit,
         )
         return [dict(r) for r in rows]
 
