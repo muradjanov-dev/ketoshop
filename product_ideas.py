@@ -39,6 +39,24 @@ IDEAS = {
         "ru": "Печенье из трёх ингредиентов: 200 г этой муки + 80 г эритрита "
               "+ 1 яйцо. 180°C, 12 минут. В штуке ~2 г углеводов.",
     },
+    "buckwheat_flour": {
+        "uz": "Quymoq: 100 gr shu un + 1 tuxum + 150 ml sut. Boshqa un bilan "
+              "yarmi-yarmi qilsangiz ta'mi yumshoqroq chiqadi.",
+        "ru": "Панкейки: 100 г этой муки + 1 яйцо + 150 мл молока. Пополам "
+              "с другой мукой вкус мягче.",
+    },
+    "nut_flour": {
+        "uz": "Bodom uni o'rniga sinab ko'ring — narxi past, ta'mi o'sha: "
+              "keks va pechene uchun bug'doy unining 1/3 qismini almashtiring.",
+        "ru": "Попробуйте вместо миндальной — дешевле, вкус тот же: замените "
+              "1/3 пшеничной муки в кексах и печенье.",
+    },
+    "coconut_flour": {
+        "uz": "Bu un suvni juda tortadi: bug'doy unining 1/4 qismini "
+              "almashtiring va suyuqlikni ko'paytiring, aks holda xamir quruq chiqadi.",
+        "ru": "Эта мука сильно впитывает влагу: замените 1/4 пшеничной и "
+              "добавьте больше жидкости, иначе тесто выйдет сухим.",
+    },
     "chia": {
         "uz": "Kechqurun 5 daqiqa — ertalab tayyor nonushta: 3 osh qoshiq shundan "
               "+ 200 ml sut + bir chimdim dolchin, muzlatgichga qo'ying.",

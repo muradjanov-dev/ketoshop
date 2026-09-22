@@ -45,6 +45,23 @@ logger = logging.getLogger(__name__)
 #
 # The apostrophe is followed by "i", whitespace or end-of-name on purpose:
 # "yog'lanmagan" (unoiled, as in the Devzira rice) must NOT read as an oil.
+# "X uni" is FLOUR, not X. The family matcher answers with the ingredient,
+# which is right for a recommendation ("you buy buckwheat") but wrong for a
+# description: the buckwheat entry talks about soaking grain overnight and
+# sprouting it for salad, which is nonsense printed on a bag of flour.
+#
+# Only the families whose raw-ingredient text cannot double as flour text are
+# redirected. Bodom, guruch and no'xat already have their own flour families;
+# zig'ir's entry IS about the ground seed; rastaropsha and psillium are sold
+# as powder anyway. Those are left alone.
+_FLOUR_OF = {
+    "buckwheat": "buckwheat_flour",
+    "nuts": "nut_flour",
+    "coconut": "coconut_flour",
+}
+_FLOUR_RE = re.compile(r"\bun(?:i|ining)?\b|мука|муки", re.I)
+
+
 _FORM_RULES = (
     ("oils", re.compile(r"yog['ʻ‘’](?:i\b|\s|$)|\bmoy\b|\bmaslo\b|масл|\boil\b", re.I)),
     ("pastes", re.compile(r"\bpasta|паста|urbech|урбеч", re.I)),
@@ -164,6 +181,60 @@ FAMILY = {
                       "Низкий гликемический индекс"],
             use="каша, пророщенная — в салат; мука — для хлеба и панкейков.",
             keep="в сухом, прохладном и тёмном месте."),
+    },
+    "buckwheat_flour": {
+        "uz": dict(
+            intro="Yashil grechkadan tortilgan un — glyutensiz pishiriqqa to'q ta'm va rang beradi.",
+            benefits=["To'liq o'simlik oqsili",
+                      "Glyuten yo'q",
+                      "Temir va magniyga boy",
+                      "Glikemik indeksi past"],
+            use="quymoq, non va keks; boshqa un bilan yarmi-yarmi aralashtirilsa ta'mi yumshoqroq bo'ladi.",
+            keep="quruq, salqin va qorong'i joyda, og'zi yopiq idishda."),
+        "ru": dict(
+            intro="Мука из зелёной гречки — насыщенный вкус и цвет для безглютеновой выпечки.",
+            benefits=["Полноценный растительный белок",
+                      "Без глютена",
+                      "Богата железом и магнием",
+                      "Низкий гликемический индекс"],
+            use="панкейки, хлеб и кексы; пополам с другой мукой вкус мягче.",
+            keep="в сухом, прохладном и тёмном месте, в закрытой таре."),
+    },
+    "nut_flour": {
+        "uz": dict(
+            intro="Yog'i olingan mag'izdan tortilgan un — oqsili ko'p, uglevodi kam.",
+            benefits=["Oqsilga boy, uglevodi kam",
+                      "Glyuten yo'q",
+                      "Pishiriqqa yong'oq ta'mi beradi",
+                      "Bodom uniga arzonroq o'rindosh"],
+            use="keks, pechene va non; bug'doy unining 1/3 qismini almashtirib boshlang.",
+            keep="og'zi yopiq idishda, salqin joyda; yozda muzlatgichda."),
+        "ru": dict(
+            intro="Мука из обезжиренных ядер — много белка, мало углеводов.",
+            benefits=["Богата белком, мало углеводов",
+                      "Без глютена",
+                      "Даёт выпечке ореховый вкус",
+                      "Более доступная замена миндальной муке"],
+            use="кексы, печенье и хлеб; начните с замены 1/3 пшеничной муки.",
+            keep="в закрытой таре, в прохладном месте; летом в холодильнике."),
+    },
+    "coconut_flour": {
+        "uz": dict(
+            intro="Kokosdan tortilgan un — suvni juda ko'p tortadi, shuning uchun ozgina miqdori yetadi.",
+            benefits=["Tolaga juda boy",
+                      "Glyuten va sut yo'q",
+                      "Uglevodi kam — ketoga mos",
+                      "Yengil kokos ta'mi"],
+            use="bug'doy unining 1/4 qismini almashtiring va suyuqlikni ko'paytiring — bu un quruqlikni tortadi.",
+            keep="quruq, salqin joyda; ochilgach og'zini mahkam yoping."),
+        "ru": dict(
+            intro="Кокосовая мука — впитывает очень много влаги, поэтому её нужно совсем немного.",
+            benefits=["Очень много клетчатки",
+                      "Без глютена и молока",
+                      "Мало углеводов — подходит для кето",
+                      "Лёгкий кокосовый вкус"],
+            use="замените 1/4 пшеничной муки и добавьте больше жидкости — эта мука сушит тесто.",
+            keep="в сухом прохладном месте; после вскрытия плотно закрывайте."),
     },
     "rastaropsha": {
         "uz": dict(
@@ -601,7 +672,10 @@ def family_key(product_name: str) -> str | None:
         logger.exception("tavsif: oila aniqlagichni yuklab bo'lmadi")
         return None
     profile = name_profile(product_name or "")
-    return profile["key"] if profile else None
+    key = profile["key"] if profile else None
+    if key and _FLOUR_RE.search(product_name or ""):
+        key = _FLOUR_OF.get(key, key)
+    return key
 
 
 def describe(product_name: str) -> tuple[str, str, str | None]:

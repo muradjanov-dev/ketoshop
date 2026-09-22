@@ -20,7 +20,8 @@ class FamilyMatchTest(unittest.TestCase):
             "Bodom uni 500gr": "almond_flour",
             "Eritritol 1kg": "sweeteners",
             "Chia urug'i 250gr": "chia",
-            "Kokos uni 1000gr": "coconut",
+            # Flour, not the raw coconut — see the redirect test below.
+            "Kokos uni 1000gr": "coconut_flour",
             "Zomin tog' asali 700 gr": "honey",
             "Psillium 200gr": "fiber_supp",
             "Losos baliq tushonkasi 1L": "fish",
@@ -56,6 +57,31 @@ class FamilyMatchTest(unittest.TestCase):
     def test_flour_keeps_its_ingredient_family(self):
         self.assertEqual(pd.family_key("Bodom uni 500gr"), "almond_flour")
         self.assertEqual(pd.family_key("Zig'ir uni 300gr"), "flax")
+
+    def test_flour_is_not_described_as_the_raw_ingredient(self):
+        """"Grechka uni" is FLOUR, not grain.
+
+        The matcher answers with the ingredient, which suits a
+        recommendation but not a description: the buckwheat entry talks
+        about soaking the grain overnight and sprouting it for salad —
+        nonsense printed on a bag of flour.
+        """
+        self.assertEqual(pd.family_key("Grechka uni"), "buckwheat_flour")
+        self.assertEqual(pd.family_key("Yashil grechka uni 500gr"), "buckwheat_flour")
+        self.assertEqual(pd.family_key("Fistashka uni 1000gr"), "nut_flour")
+        self.assertEqual(pd.family_key("Kokos uni 500gr"), "coconut_flour")
+
+    def test_only_the_word_flour_triggers_the_redirect(self):
+        # Same ingredient, other forms — these must keep their own family.
+        self.assertEqual(pd.family_key("Kokos qirindisi 200gr"), "coconut")
+        self.assertEqual(pd.family_key("Kokos shakari 250gr"), "coconut")
+        self.assertEqual(pd.family_key("Yeryong'oq pasta 200gr"), "pastes")
+        self.assertEqual(pd.family_key("Bulungur guruchi"), "diet_rice")
+
+    def test_flour_text_talks_about_baking(self):
+        for name in ("Grechka uni", "Fistashka uni 1000gr", "Kokos uni 500gr"):
+            uz, _ru, _key = pd.describe(name)
+            self.assertIn("un", uz.lower(), name)
 
     def test_cyrillic_name_still_matches(self):
         # Some products are keyed into the shop in Cyrillic; the matcher
