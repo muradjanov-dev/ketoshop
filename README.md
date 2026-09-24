@@ -84,21 +84,22 @@ marketplace_bot/
 
 ## 🔧 Deployment Tips
 
-**For production**, consider:
-- Use **webhooks** instead of polling (faster, more reliable)
-- Switch to **PostgreSQL** with `asyncpg` for larger scale
-- Add **Redis** for FSM storage (`aiogram.fsm.storage.redis`)
-- Deploy on a VPS (e.g., Timeweb, Aeza) or use **Railway** / **Render**
-- Set up **systemd** or **Docker** for auto-restart
+Amaldagi production deploy yo‘li: GitHub Actions → GHCR → netcup.
 
-### Docker Example
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY . .
-RUN pip install --no-cache-dir -r requirements.txt
-CMD ["python", "bot.py"]
-```
+1. `master` ga push qilinganda [CI](.github/workflows/ci.yml) ishga tushadi.
+   U Python 3.12 muhitida bog‘liqliklarni o‘rnatib, sintaksis tekshiruvi,
+   modullarni import qilish sinovi va `unittest` testlarini bajaradi. CI pull
+   requestlarda ham ishlaydi.
+2. [Deploy](.github/workflows/deploy.yml) ish oqimi `master` ga push qilinganda
+   (yoki qo‘lda `workflow_dispatch` orqali) CI ni chaqiradi. CI muvaffaqiyatli
+   tugagach, Docker tasviri GHCR ga commit SHA va `latest` teglari bilan
+   yuboriladi: `ghcr.io/<repository_owner>/ketoshop:<commit_sha>`.
+3. Build tugagach, `production` muhiti uchun SSH bosqichi netcup serverida
+   `/srv/stack/scripts/deploy.sh ketoshop <commit_sha>` ni ishga tushiradi.
+   Deploy uchun zarur maxfiy qiymatlar GitHub Actions secrets orqali beriladi.
+4. Yakunda netcup da ishlayotgan tasvirning SHA qiymati aynan yuborilgan commit
+   SHA ga mosligini va xizmat sog‘lom ishlayotganini tekshiring. SSH bosqichi
+   o‘tkazib yuborilgan bo‘lsa, yashil workflow natijasi deploy tasdig‘i emas.
 
 ## 📝 License
 
