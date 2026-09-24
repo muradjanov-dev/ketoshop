@@ -1,5 +1,10 @@
 # 🛒 Ketoshop
 
+> Current production uses PostgreSQL (`asyncpg` in `database.py`), a polling
+> Telegram bot, and GitHub Actions → GHCR → netcup from `master`. The setup
+> example below is an old standalone guide; follow the current code,
+> `.github/workflows/` and `AGENTS.md` for development and deployment.
+
 Telegram Marketplace Bot for organic & natural products in Uzbekistan.
 
 **Features:**
