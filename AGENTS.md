@@ -6,6 +6,18 @@ contains old SQLite/Railway setup examples. Current code uses PostgreSQL via
 `.github/workflows/{ci,deploy}.yml` to netcup. Production bot transport is
 polling, so do not start a second process with its live token.
 
+## Working style
+
+- Understand the request, repository guidance and relevant code before editing.
+  Ask one focused question if a material product decision is unclear; otherwise
+  state the assumption.
+- Prefer the simplest change that meets the task; avoid unrelated refactors and
+  dependencies.
+- Keep edits within the requested behavior and preserve existing business,
+  safety and release rules.
+- Run relevant checks and report what changed, what passed, and anything that
+  could not be verified.
+
 ## Checks and boundaries
 
 - The bot, Mini App server and scheduled jobs share one process. A startup
