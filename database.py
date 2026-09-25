@@ -2666,6 +2666,7 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
             SELECT COUNT(*)                                            AS total,
                    COUNT(*) FILTER (WHERE status = 'pending')          AS pending,
                    COUNT(*) FILTER (WHERE status = 'confirmed')        AS confirmed,
+                   COUNT(*) FILTER (WHERE status = 'delivered')        AS delivered,
                    COUNT(*) FILTER (WHERE status = 'cancelled')        AS cancelled
               FROM orders{where}
         """, *args)
@@ -2750,6 +2751,7 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         "orders_pending": int(orders_row["pending"]),
         "orders_confirmed": int(orders_row["confirmed"]),
         "orders_delivered": orders_delivered,
+        "orders_delivered_created": int(orders_row["delivered"]),
         "orders_cancelled": int(orders_row["cancelled"]),
         # Daily goal/order intake count, scoped by created_at.
         "orders_sold": orders_sold,

@@ -13,6 +13,8 @@ from datetime import date
 
 import database
 import targets
+from handlers.admin import _month_block_text
+from locales import get_text
 
 COSTS = {10: 40_000, 20: 0}
 SET_COSTS = {7: 95_000}
@@ -73,7 +75,8 @@ class _FakeConn:
             return {"users_total": 500, "reviews_total": 40,
                     "products_active": 116, "products_in_stock": 100}
         if "FILTER (WHERE status = 'pending')" in sql:
-            return {"total": 6, "pending": 3, "confirmed": 1, "cancelled": 1}
+            return {"total": 6, "pending": 3, "confirmed": 1, "delivered": 1,
+                    "cancelled": 1}
         if "AS booked_value" in sql:
             return {"sold": 5, "booked_value": 1_568_000, "keto_discount": 20_000}
         if "AS revenue" in sql:
@@ -195,6 +198,20 @@ class SaleBasisTest(unittest.TestCase):
         self.assertIn("created_at <= $2", expense_query)
         self.assertEqual(len(orders), 1)
         self.assertEqual(len(expenses), 1)
+
+    def test_telegram_monthly_report_labels_both_time_bases(self):
+        month = {
+            "month": 9, "year": 2026, "is_current": False,
+            "orders": 5, "booked_value": 1_568_000,
+            "delivered_orders": 3, "delivered_revenue": 561_000,
+            "revenue": 561_000, "b2b_revenue": 0,
+        }
+        with patch("handlers.admin.get_month_name", return_value="Sentabr"):
+            text = _month_block_text("uz", month)
+        self.assertIn("Yangi buyurtmalar: 5 ta · 1 568 000 so'm", text)
+        self.assertIn("Yetkazilgan savdo: 3 ta · 561 000 so'm", text)
+        self.assertIn("{booked_value}", get_text("admin_stats", "uz"))
+        self.assertIn("{delivered_orders}", get_text("admin_stats", "uz"))
 
 
 class CancelledOrderTest(unittest.TestCase):
