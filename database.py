@@ -787,6 +787,26 @@ async def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        await conn.execute(
+            "ALTER TABLE target_days ADD COLUMN IF NOT EXISTS booked_value DOUBLE PRECISION NOT NULL DEFAULT 0"
+        )
+        # Unlike target_days, which is a live, recalculated history, this is
+        # the immutable evidence of the figures and text sent to admins at a
+        # scheduled slot. Recalculation after a cancellation/cost correction
+        # must not rewrite what the earlier message said.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS target_report_snapshots (
+                report_date DATE NOT NULL,
+                slot INTEGER NOT NULL,
+                sent_at TIMESTAMP,
+                status TEXT NOT NULL DEFAULT 'prepared',
+                attempted_count INTEGER NOT NULL DEFAULT 0,
+                delivered_count INTEGER NOT NULL DEFAULT 0,
+                snapshot JSONB NOT NULL,
+                message TEXT NOT NULL,
+                PRIMARY KEY (report_date, slot)
+            )
+        """)
 
         # ===== Aksiya / Bonus (2026-08-31) =====
         # An "aksiya" is a named, time-boxed campaign the owner writes up in
@@ -2599,24 +2619,17 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
 
     Read by the bot's Statistika screen (an admin waiting on it), the admin
     website's Dashboard, and the Maqsadlar scheduler twice every half hour —
-    so it is worth it not being slow. It used to fire ~15 sequential queries,
-    six of them separate COUNT(*) passes over `orders` differing only by
-    status, and each round trip paid for itself in latency. Same numbers now
-    come out of four:
+    so it is worth it not being slow. It reads catalogue/status counters,
+    booked order aggregates, delivered aggregates, expenses, and delivered
+    line items separately so each time basis stays explicit.
 
-      1. catalogue/lifetime counters (period-independent)
-      2. one pass over `orders` with FILTER aggregates for every status,
-         revenue and the B2B split
-      3. the window's new users, new reviews and booked expenses
-      4. the sold orders' item lines + the cost table behind them
+    New-order count/value follow created_at and exclude cancellations.
+    Delivered revenue and COGS follow delivered_at. Net profit is the latter
+    less expenses booked in the selected period. This keeps the daily sales
+    goal actionable while making revenue/profit describe completed sales.
 
-    Revenue, cost and profit follow SALE_SQL — every order placed in the
-    window that was not cancelled — so `orders_sold` and `revenue` always
-    describe the same orders and a new sale lands in the figures at once.
-
-    Deliberately still not one query: mixing unrelated tables into a single
-    statement makes the plan worse, not better, and the four are independent
-    enough to stay readable.
+    Deliberately not one query: mixing unrelated tables into a single
+    statement makes the plan worse, not better, and these scopes stay readable.
     """
     start_time, end_time = _period_range(period)
 
@@ -2631,6 +2644,14 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         args.append(end_time)
     where = (" WHERE " + " AND ".join(conds)) if conds else ""
     order_where = (" AND " + " AND ".join(conds)) if conds else ""
+    delivered_conds, delivered_args = [], []
+    if start_time:
+        delivered_conds.append(f"delivered_at >= ${len(delivered_args) + 1}")
+        delivered_args.append(start_time)
+    if end_time:
+        delivered_conds.append(f"delivered_at <= ${len(delivered_args) + 1}")
+        delivered_args.append(end_time)
+    delivered_where = (" AND " + " AND ".join(delivered_conds)) if delivered_conds else ""
 
     async with pool.acquire() as conn:
         catalog = await conn.fetchrow("""
@@ -2649,18 +2670,22 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
               FROM orders{where}
         """, *args)
 
-        # The money half of the report — see SALE_SQL for why it is the placed
-        # orders and not the delivered ones.
-        sale_where = f" WHERE {SALE_SQL}{order_where}"
-        money_row = await conn.fetchrow(f"""
-            SELECT COUNT(*)                                     AS sold,
-                   COUNT(*) FILTER (WHERE status = 'delivered')  AS delivered,
-                   COALESCE(SUM(total), 0)                      AS revenue,
-                   COALESCE(SUM(total) FILTER (WHERE source = 'b2b'), 0) AS b2b_revenue,
-                   COUNT(*) FILTER (WHERE source = 'b2b')       AS b2b_orders,
+        # Booked orders answer how many new orders arrived and their order
+        # value. Delivery revenue is a separate clock used for profit.
+        booked_row = await conn.fetchrow(f"""
+            SELECT COUNT(*) AS sold,
+                   COALESCE(SUM(total), 0) AS booked_value,
                    COALESCE(SUM(COALESCE(keto_redeemed, 0)), 0) AS keto_discount
-              FROM orders{sale_where}
+              FROM orders WHERE {SALE_SQL}{order_where}
         """, *args)
+        delivered_row = await conn.fetchrow(f"""
+            SELECT COUNT(*) AS delivered,
+                   COALESCE(SUM(total), 0) AS revenue,
+                   COALESCE(SUM(total) FILTER (WHERE source = 'b2b'), 0) AS b2b_revenue,
+                   COUNT(*) FILTER (WHERE source = 'b2b') AS b2b_orders,
+                   COALESCE(SUM(COALESCE(keto_redeemed, 0)), 0) AS keto_discount
+              FROM orders WHERE status = 'delivered'{delivered_where}
+        """, *delivered_args)
 
         if where:
             window = await conn.fetchrow(f"""
@@ -2682,8 +2707,9 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         # Cost of goods. The item lines live as JSON text inside orders.items,
         # so this stays in Python: a malformed row must be skipped, not blow up
         # a dashboard, and casting text to jsonb in SQL cannot be made to skip.
+        delivered_orders_where = (f" WHERE status = 'delivered'{delivered_where}")
         orders_rows = await conn.fetch(
-            f"SELECT items FROM orders{sale_where}", *args
+            f"SELECT items FROM orders{delivered_orders_where}", *delivered_args
         )
         cost_map = {
             row["id"]: row["cost_price"] or 0
@@ -2704,10 +2730,11 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
             # One unreadable order must not cost the whole report.
             continue
 
-    revenue = int(money_row["revenue"] or 0)
-    orders_sold = int(money_row["sold"])
-    keto_discount = int(money_row["keto_discount"] or 0)
-    orders_delivered = int(money_row["delivered"])
+    revenue = int(delivered_row["revenue"] or 0)
+    booked_value = int(booked_row["booked_value"] or 0)
+    orders_sold = int(booked_row["sold"])
+    keto_discount = int(delivered_row["keto_discount"] or 0)
+    orders_delivered = int(delivered_row["delivered"])
     product_cost_total = int(product_cost_total)
     profit = revenue - expenses_total - product_cost_total
 
@@ -2724,10 +2751,11 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         "orders_confirmed": int(orders_row["confirmed"]),
         "orders_delivered": orders_delivered,
         "orders_cancelled": int(orders_row["cancelled"]),
-        # The orders behind `revenue`: orders_total minus the cancelled ones.
-        # Callers that show a sales count next to the money should use this
-        # rather than recomputing it, so the two can never drift apart.
+        # Daily goal/order intake count, scoped by created_at.
         "orders_sold": orders_sold,
+        "orders_booked": orders_sold,
+        "booked_value": booked_value,
+        "delivered_revenue": revenue,
         # Keto spent as a checkout discount. Deliberately NOT an expense: the
         # buyer already paid that much less, so `revenue` is lower by exactly
         # this, and booking it in Chiqimlar as well would subtract the same
@@ -2736,9 +2764,9 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         # without that cost being counted against the shop a second time.
         "keto_discount": keto_discount,
         "revenue": revenue,
-        "aov": int(revenue / orders_sold) if orders_sold else 0,
-        "b2b_revenue": int(money_row["b2b_revenue"] or 0),
-        "b2b_orders": int(money_row["b2b_orders"]),
+        "aov": int(booked_value / orders_sold) if orders_sold else 0,
+        "b2b_revenue": int(delivered_row["b2b_revenue"] or 0),
+        "b2b_orders": int(delivered_row["b2b_orders"]),
         "expenses": expenses_total,
         "product_cost": product_cost_total,
         "profit": profit,
@@ -2746,6 +2774,50 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         # as 0, so profit is overstated by exactly what they really cost.
         "missing_cost_products": sorted(missing_cost),
     }
+
+
+async def get_delivered_orders_for_period(period: str | dict = "all") -> list[dict]:
+    """Order detail behind delivered-sales summaries, using delivered_at.
+
+    Keep the filter identical to get_admin_stats so exports can reconcile to
+    their summary without including orders created in the period but delivered
+    later. No buyer or address fields are returned.
+    """
+    start_time, end_time = _period_range(period)
+    conds = ["status = 'delivered'"]
+    args = []
+    if start_time:
+        args.append(start_time)
+        conds.append(f"delivered_at >= ${len(args)}")
+    if end_time:
+        args.append(end_time)
+        conds.append(f"delivered_at <= ${len(args)}")
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, items, total, source, created_at, delivered_at
+                 FROM orders WHERE """ + " AND ".join(conds) + " ORDER BY delivered_at, id",
+            *args,
+        )
+        return [dict(row) for row in rows]
+
+
+async def get_expenses_for_period(period: str | dict = "all") -> list[dict]:
+    """Expense detail behind profit, scoped by when each expense was booked."""
+    start_time, end_time = _period_range(period)
+    conds, args = [], []
+    if start_time:
+        args.append(start_time)
+        conds.append(f"created_at >= ${len(args)}")
+    if end_time:
+        args.append(end_time)
+        conds.append(f"created_at <= ${len(args)}")
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, name, amount, created_at FROM expenses" + where + " ORDER BY created_at, id",
+            *args,
+        )
+        return [dict(row) for row in rows]
 
 # ===== MAQSADLAR / TARGETS (2026-09-02) =====
 
@@ -2786,27 +2858,64 @@ async def mark_targets_sent(day, slot: int) -> None:
 
 async def record_target_day(day, orders: int, daily_target: int, revenue: float,
                             profit: float, month_profit: float,
-                            monthly_target_usd: float, usd_rate: float) -> None:
+                            monthly_target_usd: float, usd_rate: float,
+                            booked_value: float = 0) -> None:
     """Upsert today's line in the target history. Called on every tick, so the
     row tracks the day as it happens instead of freezing at whatever moment a
     report was generated."""
     async with pool.acquire() as conn:
         await conn.execute(
             """INSERT INTO target_days
-                   (day, orders, daily_target, revenue, profit, month_profit,
+                   (day, orders, daily_target, revenue, booked_value, profit, month_profit,
                     monthly_target_usd, usd_rate, updated_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
                ON CONFLICT (day) DO UPDATE SET
                    orders = EXCLUDED.orders,
                    daily_target = EXCLUDED.daily_target,
                    revenue = EXCLUDED.revenue,
+                   booked_value = EXCLUDED.booked_value,
                    profit = EXCLUDED.profit,
                    month_profit = EXCLUDED.month_profit,
                    monthly_target_usd = EXCLUDED.monthly_target_usd,
                    usd_rate = EXCLUDED.usd_rate,
                    updated_at = CURRENT_TIMESTAMP""",
-            day, int(orders), int(daily_target), float(revenue), float(profit),
-            float(month_profit), float(monthly_target_usd), float(usd_rate),
+            day, int(orders), int(daily_target), float(revenue), float(booked_value),
+            float(profit), float(month_profit), float(monthly_target_usd), float(usd_rate),
+        )
+
+
+async def record_target_report_snapshot(day, slot: int, snapshot: dict,
+                                        message: str) -> bool:
+    """Freeze figures and text prepared for a scheduled admin report.
+
+    A later live refresh may change target_days, but an already issued report
+    is immutable. Delivery outcome and sent_at are recorded separately after
+    the attempt. The primary key makes scheduler retries idempotent.
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO target_report_snapshots (report_date, slot, snapshot, message)
+               VALUES ($1, $2, $3::jsonb, $4)
+               ON CONFLICT (report_date, slot) DO NOTHING
+               RETURNING report_date""",
+            day, int(slot), json.dumps(snapshot, ensure_ascii=False, default=str), message,
+        )
+        return row is not None
+
+
+async def finish_target_report_snapshot(day, slot: int, attempted: int,
+                                        delivered: int) -> None:
+    """Record actual delivery outcome without changing the frozen report."""
+    status = "sent" if delivered == attempted and delivered else (
+        "partial" if delivered else "failed"
+    )
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE target_report_snapshots
+                  SET status = $3, attempted_count = $4, delivered_count = $5,
+                      sent_at = CASE WHEN $5 > 0 THEN CURRENT_TIMESTAMP ELSE NULL END
+                WHERE report_date = $1 AND slot = $2""",
+            day, int(slot), status, int(attempted), int(delivered),
         )
 
 
@@ -3309,19 +3418,24 @@ def _month_window_utc(year: int, month: int, cap_at_now: bool = False):
 
 
 async def _query_month(conn, start_utc, end_utc) -> dict:
-    row = await conn.fetchrow(
-        f"""SELECT COALESCE(SUM(total), 0) AS revenue, COUNT(*) AS orders
+    booked = await conn.fetchrow(
+        f"""SELECT COALESCE(SUM(total), 0) AS booked_value, COUNT(*) AS orders
            FROM orders WHERE {SALE_SQL} AND created_at >= $1 AND created_at < $2""",
         start_utc, end_utc,
     )
-    b2b_revenue = await conn.fetchval(
-        f"""SELECT COALESCE(SUM(total), 0) FROM orders
-           WHERE {SALE_SQL} AND source = 'b2b' AND created_at >= $1 AND created_at < $2""",
+    delivered = await conn.fetchrow(
+        """SELECT COALESCE(SUM(total), 0) AS delivered_revenue, COUNT(*) AS delivered_orders,
+                  COALESCE(SUM(total) FILTER (WHERE source = 'b2b'), 0) AS b2b_revenue
+             FROM orders WHERE status = 'delivered' AND delivered_at >= $1 AND delivered_at < $2""",
         start_utc, end_utc,
     )
+    b2b_revenue = delivered["b2b_revenue"]
     return {
-        "revenue": int(row["revenue"] or 0),
-        "orders": row["orders"],
+        "revenue": int(delivered["delivered_revenue"] or 0),
+        "delivered_revenue": int(delivered["delivered_revenue"] or 0),
+        "delivered_orders": int(delivered["delivered_orders"] or 0),
+        "booked_value": int(booked["booked_value"] or 0),
+        "orders": int(booked["orders"] or 0),
         "b2b_revenue": int(b2b_revenue or 0),
     }
 

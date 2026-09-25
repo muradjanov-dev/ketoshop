@@ -11,17 +11,14 @@ Two numbers, two different clocks, so the message always answers the same two
 questions: how far off are we right now, and what does that mean for the rest
 of the month.
 
-Definitions, chosen to match the numbers the admin screens already show:
-  * a SALE is an order placed today that has not been cancelled. It is the
-    number the team can move during the day, which is what a mid-day nudge
-    has to be about.
+Definitions:
+  * new orders and their booked value use created_at and exclude cancellations.
+  * delivered revenue and COGS use delivered_at. Net profit subtracts expenses
+    booked in the period from that delivered revenue and COGS.
   * The last REFRESH_DAYS days of the history are rewritten on every tick, so
     an order cancelled after its day has closed leaves that day's figures too.
-  * NET PROFIT is get_admin_stats' `profit` — the revenue of those same sales
-    minus the cost_price of the goods minus the expenses booked in the period.
-    It moves the moment a sale is entered (owner, 2026-09-25), so the two
-    halves of "5 ta sotuv · 561 000 so'm" always describe the same orders;
-    see SALE_SQL in database.py for why it is not the delivered ones.
+  * NET PROFIT is get_admin_stats' `profit`, based on delivered orders and
+    expenses booked in the period.
 
 The dollar target is converted at TODAY's Central Bank of Uzbekistan rate
 (owner, 2026-09-17: "dollar kursini hozirgi kursdan hisobla"). It is fetched
@@ -30,8 +27,8 @@ cbu.uz outage falls back to the last real rate instead of a stale default.
 
 Where it sits in the day (Asia/Tashkent), alongside the buyer-facing pushes:
     13:00  mid-day  — "bugun 4 ta, yana 6 ta kerak"
-    20:00  yakun    — how the day closed, and where the month stands, plus
-                      what the AI sales assistant cost today (owner request
+    20:00  status   — where the day and month stand at 20:00, plus what the AI
+                      sales assistant cost today (owner request
                       2026-09-13: "$ da, nechta token va qaysi model")
 These go to ADMINS ONLY, so they are outside the two-push-a-day ceiling that
 governs broadcasts to buyers (see daily_interest.py).
@@ -125,9 +122,9 @@ async def snapshot() -> dict:
         {"start": first.isoformat(), "end": today.isoformat()}
     )
 
-    # orders_sold is the count behind `revenue` — taking it straight from
-    # get_admin_stats is what keeps the sale count and the money on this line
-    # from ever describing different orders again.
+    # New orders and delivered sales are separate clocks: a newly booked
+    # order counts toward the daily goal before delivery, while profit only
+    # includes orders delivered during the period.
     sales = int(day_stats.get("orders_sold") or 0)
 
     daily_target = int(state.get("daily_orders") or 10)
@@ -159,12 +156,18 @@ async def snapshot() -> dict:
         "daily_target": daily_target,
         "sales_left": max(0, daily_target - sales),
         "day_revenue": float(day_stats.get("revenue") or 0),
+        "day_booked_value": float(day_stats.get("booked_value") or 0),
+        "day_delivered_revenue": float(day_stats.get("delivered_revenue", day_stats.get("revenue")) or 0),
+        "day_delivered_count": int(day_stats.get("orders_delivered") or 0),
         "day_profit": float(day_stats.get("profit") or 0),
         "day_keto_discount": float(day_stats.get("keto_discount") or 0),
         "month_keto_discount": float(month_stats.get("keto_discount") or 0),
         "month_profit": month_profit,
         "month_profit_usd": month_profit / usd_rate if usd_rate else 0.0,
         "month_revenue": float(month_stats.get("revenue") or 0),
+        "month_booked_value": float(month_stats.get("booked_value") or 0),
+        "month_delivered_revenue": float(month_stats.get("delivered_revenue", month_stats.get("revenue")) or 0),
+        "month_delivered_count": int(month_stats.get("orders_delivered") or 0),
         "month_orders": int(month_stats.get("orders_sold") or 0),
         "monthly_target_usd": monthly_usd,
         "monthly_target_uzs": monthly_uzs,
@@ -198,25 +201,25 @@ def _percent(done: float, target: float) -> int:
 
 
 def build_message(snap: dict, slot: int) -> str:
-    """The admin push. 13:00 asks for the rest of the day, 20:00 reports how
-    it closed — same figures, different tense."""
+    """The admin push: a live status at either the midday or 20:00 slot."""
     midday = slot < 20
-    lines = ["🎯 <b>MAQSADLAR</b>" if midday else "🎯 <b>KUN YAKUNI</b>", ""]
+    lines = ["🎯 <b>MAQSADLAR</b>" if midday else "🎯 <b>20:00 HOLATIGA</b>", ""]
 
     # ----- daily sales -----
     sales, target = snap["sales"], snap["daily_target"]
-    lines.append(f"📦 <b>Bugungi sotuv: {sales} / {target}</b>")
+    lines.append(f"📦 <b>Bugungi yangi buyurtmalar: {sales} / {target}</b>")
     lines.append(f"{_bar(sales, target)}  {_percent(sales, target)}%")
     if sales >= target:
         lines.append(f"✅ Kunlik maqsad bajarildi! (+{sales - target} ta ortiqcha)"
                      if sales > target else "✅ Kunlik maqsad bajarildi!")
     elif midday:
-        lines.append(f"⏳ Yana <b>{snap['sales_left']} ta</b> sotuv kerak — kun tugagani yo'q.")
+        lines.append(f"⏳ Hozircha maqsadgacha <b>{snap['sales_left']} ta</b> yangi buyurtma qoldi.")
     else:
-        lines.append(f"❌ <b>{snap['sales_left']} ta</b> yetmadi.")
-    if snap["day_revenue"]:
-        lines.append(f"💵 Bugun: {fmt_sum(snap['day_revenue'])} so'm tushum · "
-                     f"{fmt_sum(snap['day_profit'])} so'm foyda")
+        lines.append(f"⏳ 20:00 holatiga kunlik maqsadgacha <b>{snap['sales_left']} ta</b> buyurtma qoldi.")
+    if snap.get("day_booked_value") or snap.get("day_delivered_revenue", snap["day_revenue"]):
+        lines.append(f"🧾 Yangi buyurtmalar summasi: {fmt_sum(snap.get('day_booked_value', 0))} so'm")
+        lines.append(f"🚚 Yetkazilgan savdo: {fmt_sum(snap.get('day_delivered_revenue', snap['day_revenue']))} so'm")
+        lines.append(f"💵 Yetkazilgan savdodan sof foyda: {fmt_sum(snap['day_profit'])} so'm")
     # Keto chegirmasi tushumdan allaqachon ayrilgan — Chiqimlarga IKKINCHI
     # marta yozilmaydi, aks holda bir xil pul ikki marta ayrilgan bo'lardi.
     if snap.get("day_keto_discount"):
@@ -246,8 +249,10 @@ def build_message(snap: dict, slot: int) -> str:
         lines.append(f"📅 Oyning oxirigacha <b>{snap['days_left']} kun</b> — "
                      f"kuniga {fmt_usd(snap['needed_per_day_usd'])} qilish kerak")
     lines.append("")
-    lines.append(f"📊 Oy boshidan: {snap['month_orders']} ta sotuv · "
-                 f"{fmt_sum(snap['month_revenue'])} so'm tushum")
+    lines.append(f"📊 Oy boshidan: {snap['month_orders']} ta yangi buyurtma · "
+                 f"{fmt_sum(snap.get('month_booked_value', 0))} so'm buyurtma summasi")
+    lines.append(f"🚚 Shu davrda yetkazilgan savdo: "
+                 f"{fmt_sum(snap.get('month_delivered_revenue', snap['month_revenue']))} so'm")
     if snap.get("month_keto_discount"):
         lines.append(f"🎁 Shu oyda Keto bilan to'langan: "
                      f"{fmt_sum(snap['month_keto_discount'])} so'm")
@@ -333,6 +338,7 @@ async def _refresh_history(snap: dict) -> None:
                 float(stats.get("revenue") or 0), float(stats.get("profit") or 0),
                 float(month.get("profit") or 0),
                 snap["monthly_target_usd"], snap["usd_rate"],
+                booked_value=float(stats.get("booked_value") or 0),
             )
         except Exception:
             logger.exception("Could not refresh target day %s", day)
@@ -357,6 +363,7 @@ async def _tick(bot: Bot) -> None:
             snap["date"], snap["sales"], snap["daily_target"],
             snap["day_revenue"], snap["day_profit"], snap["month_profit"],
             snap["monthly_target_usd"], snap["usd_rate"],
+            booked_value=snap.get("day_booked_value", 0),
         )
     except Exception:
         logger.exception("Could not record target day")
@@ -376,17 +383,38 @@ async def _tick(bot: Bot) -> None:
             and int(state.get("last_sent_slot") or 0) >= slot):
         return
 
-    # Claim the slot before sending, so a crash mid-fan-out cannot re-push to
-    # the admins who already got it.
-    await database.mark_targets_sent(snap["date"], slot)
-
+    # Keep an immutable copy of the figures and exact text for this slot.
     text = build_message(snap, slot)
+    try:
+        created = await database.record_target_report_snapshot(snap["date"], slot, snap, text)
+    except Exception:
+        logger.exception("Could not save target report snapshot")
+        return
+    if not created:
+        # A previous attempt already froze this slot. Don't send a newer
+        # live report under an older immutable snapshot.
+        await database.mark_targets_sent(snap["date"], slot)
+        return
+
+    # Claim the slot before sending, so a crash mid-fan-out cannot re-push to
+    # admins who already got it.
+    await database.mark_targets_sent(snap["date"], slot)
+    delivered = 0
+    attempted = 0
     for admin_id in ADMIN_IDS:
+        attempted += 1
         try:
             await bot.send_message(admin_id, text, parse_mode=ParseMode.HTML)
+            delivered += 1
         except Exception:
             logger.debug("Target reminder to %s failed", admin_id)
         await asyncio.sleep(SEND_DELAY)
+    try:
+        await database.finish_target_report_snapshot(
+            snap["date"], slot, attempted, delivered
+        )
+    except Exception:
+        logger.exception("Could not save target report delivery outcome")
     logger.info("Target reminder sent for slot %02d:00 (%d sales, %.0f so'm month profit)",
                 slot, snap["sales"], snap["month_profit"])
 
@@ -422,17 +450,17 @@ def build_status_reminder(snap: dict) -> str:
         f"🗓 <b>{today_str}</b> (bugun) · {month_str}",
         "",
         "🎯 <b>Ikkita maqsad turibdi:</b>",
-        f"   1️⃣ Har kuni <b>{target} ta sotuv</b>",
+        f"   1️⃣ Har kuni <b>{target} ta yangi buyurtma</b>",
         f"   2️⃣ Oyiga <b>{fmt_usd(snap['monthly_target_usd'])} sof foyda</b>"
         f" ({fmt_sum(snap['monthly_target_uzs'])} so'm)",
         "",
-        f"📦 <b>Bugun ({today_str}): {sales} / {target}</b>",
+        f"📦 <b>Bugun ({today_str}) yangi buyurtmalar: {sales} / {target}</b>",
         f"{_bar(sales, target)}  {_percent(sales, target)}%",
     ]
     if sales >= target:
         lines.append("✅ Bugungi maqsad bajarildi!")
     else:
-        lines.append(f"⏳ Bugun yana <b>{snap['sales_left']} ta</b> sotuv kerak.")
+        lines.append(f"⏳ Bugun yana <b>{snap['sales_left']} ta</b> yangi buyurtma kerak.")
 
     lines += [
         "",
@@ -457,14 +485,16 @@ def build_status_reminder(snap: dict) -> str:
             f"   Har kuni <b>{fmt_usd(snap['needed_per_day_usd'])}</b> sof foyda "
             f"({fmt_sum(snap['needed_per_day_usd'] * snap['usd_rate'])} so'm) "
             f"qilsak, maqsadga yetamiz.",
-            f"   Ya'ni kuniga <b>{snap['daily_target']} ta sotuv</b> — bu ikkalasi "
+            f"   Ya'ni kuniga <b>{snap['daily_target']} ta yangi buyurtma</b> — bu ikkalasi "
             f"bitta ish.",
         ]
 
     lines += [
         "",
-        f"📊 Oy boshidan ({window_str}): <b>{snap['month_orders']} ta sotuv</b> · "
-        f"{fmt_sum(snap['month_revenue'])} so'm tushum",
+        f"📊 Oy boshidan ({window_str}): <b>{snap['month_orders']} ta yangi buyurtma</b> · "
+        f"{fmt_sum(snap.get('month_booked_value', 0))} so'm buyurtma summasi",
+        f"🚚 Shu davrda yetkazilgan savdo: "
+        f"{fmt_sum(snap.get('month_delivered_revenue', snap['month_revenue']))} so'm",
     ]
     missing = snap.get("missing_cost_products") or []
     if missing:
