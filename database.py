@@ -1884,9 +1884,11 @@ async def get_b2b_orders(period: str | dict = "all", limit: int = 200) -> list[d
     dashboards say "12 mln, 5 ta savdo" and nothing anywhere said WHICH five.
     Until now the only place the detail existed was the Excel export.
 
-    Windowed on COALESCE(delivered_at, created_at) — the same money basis
+    Windowed on created_at under SALE_SQL — the same money basis
     get_admin_stats uses — so a period picked on the dashboard lists exactly
-    the sales behind the b2b_revenue tile next to it.
+    the sales behind the b2b_revenue tile next to it. (B2B rows are stamped
+    delivered at insert, so in practice this window did not move; it is
+    spelled the same way as the tile's so it cannot drift from it later.)
 
     `cost` / `profit` follow the one shared rule (line_cost), and
     `cost_known` is False when some line still has no tannarx behind it — the
@@ -1894,22 +1896,22 @@ async def get_b2b_orders(period: str | dict = "all", limit: int = 200) -> list[d
     guesswork can be labelled as such instead of being quietly trusted.
     """
     start_time, end_time = _period_range(period)
-    conds, args = ["source = 'b2b'"], []
+    conds, args = ["source = 'b2b'", SALE_SQL], []
     if start_time:
         args.append(start_time)
-        conds.append(f"COALESCE(delivered_at, created_at) >= ${len(args)}")
+        conds.append(f"created_at >= ${len(args)}")
     if end_time:
         args.append(end_time)
-        conds.append(f"COALESCE(delivered_at, created_at) <= ${len(args)}")
+        conds.append(f"created_at <= ${len(args)}")
     args.append(limit)
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             f"""SELECT id, customer_name, phone, address, items, total, status,
-                       COALESCE(delivered_at, created_at) AS dt
+                       created_at AS dt
                   FROM orders
                  WHERE {' AND '.join(conds)}
-                 ORDER BY COALESCE(delivered_at, created_at) DESC, id DESC
+                 ORDER BY created_at DESC, id DESC
                  LIMIT ${len(args)}""",
             *args,
         )
@@ -2422,6 +2424,40 @@ async def get_all_products(page: int = 0, per_page: int = 20) -> tuple[list[dict
         return [dict(r) for r in rows], total
 
 
+# Which orders count as money, and on which day (owner, 2026-09-25: "yangi
+# savdo qo'shilishi bilan uni kunlik va umumiy statistikaga shu zahoti
+# qo'shgin"). A sale belongs to the day it was MADE, and every order that was
+# not cancelled is a sale.
+#
+# The 20:00 report for 24.09 read "5 ta sotuv · 561 000 so'm" on a day that
+# took more than a million, because the two halves of that line came from two
+# different sets of orders: the count from orders created that day, the money
+# from orders *delivered* that day. Anything still waiting for a courier —
+# which, in the evening, is most of what was sold since lunch — showed up as a
+# sale with no money behind it.
+#
+# The delivered-only basis was introduced on 2026-09-17 to fix the opposite
+# complaint ("bugungi foyda" was ~0, because only orders both placed and
+# delivered today counted while the whole day's expenses were subtracted). It
+# moved the lag rather than removing it. Counting the order itself removes it
+# in both directions, and it is self-correcting: an order that falls through
+# gets cancelled and leaves the totals again on its own.
+SALE_SQL = "status <> 'cancelled'"
+
+
+def sale_sql(alias: str = "") -> str:
+    """SALE_SQL for a query that aliases the orders table (`o.status <> ...`).
+
+    Money that is actually PAID OUT on the strength of an order — blogger
+    cashback, gift/bonus/courier expenses, Keto coins — deliberately does not
+    use this: those wait for `status = 'delivered'`, because an order that
+    never arrives must not cost the shop anything. The same goes for the
+    retention nudges, which have nothing to offer a buyer whose first parcel
+    is still on its way. This rule is for the figures the shop READS.
+    """
+    return f"{alias}.{SALE_SQL}" if alias else SALE_SQL
+
+
 def _period_start(period: str):
     """Translate a period label into a UTC-naive cutoff datetime, or None for all-time.
 
@@ -2568,7 +2604,11 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
       2. one pass over `orders` with FILTER aggregates for every status,
          revenue and the B2B split
       3. the window's new users, new reviews and booked expenses
-      4. the delivered orders' item lines + the cost table behind them
+      4. the sold orders' item lines + the cost table behind them
+
+    Revenue, cost and profit follow SALE_SQL — every order placed in the
+    window that was not cancelled — so `orders_sold` and `revenue` always
+    describe the same orders and a new sale lands in the figures at once.
 
     Deliberately still not one query: mixing unrelated tables into a single
     statement makes the plan worse, not better, and the four are independent
@@ -2605,21 +2645,16 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
               FROM orders{where}
         """, *args)
 
-        # Money is earned when the order is DELIVERED, so revenue, cost and
-        # profit follow delivered_at, not created_at (2026-09-17). Counting by
-        # creation day put an order placed on the 30th and delivered on the
-        # 2nd into the wrong month, and made "bugungi foyda" nearly always ~0
-        # or negative: only orders both placed and delivered today counted,
-        # while today's expenses were subtracted in full. created_at stands in
-        # for rows that never got a delivered_at stamp.
-        delivered_and = order_where.replace("created_at", "COALESCE(delivered_at, created_at)")
+        # The money half of the report — see SALE_SQL for why it is the placed
+        # orders and not the delivered ones.
+        sale_where = f" WHERE {SALE_SQL}{order_where}"
         money_row = await conn.fetchrow(f"""
-            SELECT COUNT(*)                                     AS delivered,
+            SELECT COUNT(*)                                     AS sold,
+                   COUNT(*) FILTER (WHERE status = 'delivered')  AS delivered,
                    COALESCE(SUM(total), 0)                      AS revenue,
                    COALESCE(SUM(total) FILTER (WHERE source = 'b2b'), 0) AS b2b_revenue,
                    COUNT(*) FILTER (WHERE source = 'b2b')       AS b2b_orders
-              FROM orders
-             WHERE status = 'delivered'{delivered_and}
+              FROM orders{sale_where}
         """, *args)
 
         if where:
@@ -2643,7 +2678,7 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         # so this stays in Python: a malformed row must be skipped, not blow up
         # a dashboard, and casting text to jsonb in SQL cannot be made to skip.
         orders_rows = await conn.fetch(
-            f"SELECT items FROM orders WHERE status = 'delivered'{delivered_and}", *args
+            f"SELECT items FROM orders{sale_where}", *args
         )
         cost_map = {
             row["id"]: row["cost_price"] or 0
@@ -2665,6 +2700,7 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
             continue
 
     revenue = int(money_row["revenue"] or 0)
+    orders_sold = int(money_row["sold"])
     orders_delivered = int(money_row["delivered"])
     product_cost_total = int(product_cost_total)
     profit = revenue - expenses_total - product_cost_total
@@ -2682,8 +2718,12 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         "orders_confirmed": int(orders_row["confirmed"]),
         "orders_delivered": orders_delivered,
         "orders_cancelled": int(orders_row["cancelled"]),
+        # The orders behind `revenue`: orders_total minus the cancelled ones.
+        # Callers that show a sales count next to the money should use this
+        # rather than recomputing it, so the two can never drift apart.
+        "orders_sold": orders_sold,
         "revenue": revenue,
-        "aov": int(revenue / orders_delivered) if orders_delivered else 0,
+        "aov": int(revenue / orders_sold) if orders_sold else 0,
         "b2b_revenue": int(money_row["b2b_revenue"] or 0),
         "b2b_orders": int(money_row["b2b_orders"]),
         "expenses": expenses_total,
@@ -3207,13 +3247,13 @@ def _month_window_utc(year: int, month: int, cap_at_now: bool = False):
 
 async def _query_month(conn, start_utc, end_utc) -> dict:
     row = await conn.fetchrow(
-        """SELECT COALESCE(SUM(total), 0) AS revenue, COUNT(*) AS orders
-           FROM orders WHERE status = 'delivered' AND created_at >= $1 AND created_at < $2""",
+        f"""SELECT COALESCE(SUM(total), 0) AS revenue, COUNT(*) AS orders
+           FROM orders WHERE {SALE_SQL} AND created_at >= $1 AND created_at < $2""",
         start_utc, end_utc,
     )
     b2b_revenue = await conn.fetchval(
-        """SELECT COALESCE(SUM(total), 0) FROM orders
-           WHERE status = 'delivered' AND source = 'b2b' AND created_at >= $1 AND created_at < $2""",
+        f"""SELECT COALESCE(SUM(total), 0) FROM orders
+           WHERE {SALE_SQL} AND source = 'b2b' AND created_at >= $1 AND created_at < $2""",
         start_utc, end_utc,
     )
     return {
@@ -3320,9 +3360,12 @@ async def get_top_actions(period: str = "today", limit: int = 8) -> list[dict]:
 
 async def get_top_products(period: str | dict = "all", limit: int = 5) -> list[dict]:
     start_time, end_time = _period_range(period)
-    
+
     async with pool.acquire() as conn:
-        q = "SELECT items FROM orders WHERE status = 'delivered'"
+        # SALE_SQL, not delivered-only: this list sits directly under the
+        # window's revenue on the Statistika screen, so it has to be built
+        # from the same orders that revenue was.
+        q = f"SELECT items FROM orders WHERE {SALE_SQL}"
         a = []
         if start_time:
             q += f" AND created_at >= ${len(a)+1}"
@@ -3361,9 +3404,9 @@ async def get_top_products(period: str | dict = "all", limit: int = 5) -> list[d
 
 async def get_abc_analysis(period: str | dict = "all") -> list[dict]:
     start_time, end_time = _period_range(period)
-    
+
     async with pool.acquire() as conn:
-        q = "SELECT items FROM orders WHERE status = 'delivered'"
+        q = f"SELECT items FROM orders WHERE {SALE_SQL}"
         a = []
         if start_time:
             q += f" AND created_at >= ${len(a)+1}"
@@ -3967,7 +4010,7 @@ async def get_seller_stats(seller_id: int, all_stats: bool = False) -> dict:
                 "SELECT COUNT(*) FROM orders WHERE status = 'delivered'"
             )
             revenue = await conn.fetchval(
-                "SELECT COALESCE(SUM(total), 0) FROM orders WHERE status = 'delivered'"
+                f"SELECT COALESCE(SUM(total), 0) FROM orders WHERE {SALE_SQL}"
             )
         else:
             products = await conn.fetchval(
@@ -3983,7 +4026,7 @@ async def get_seller_stats(seller_id: int, all_stats: bool = False) -> dict:
                 seller_id
             )
             revenue = await conn.fetchval(
-                "SELECT COALESCE(SUM(total), 0) FROM orders WHERE seller_id = $1 AND status = 'delivered'",
+                f"SELECT COALESCE(SUM(total), 0) FROM orders WHERE seller_id = $1 AND {SALE_SQL}",
                 seller_id
             )
         return {
@@ -5747,14 +5790,14 @@ async def get_retention_summary(since: datetime | None = None) -> dict:
     """Qayta sotuv manzarasi: nechta mijoz bir marta, nechtasi 2-3, nechtasi
     4+ marta olgan, qayta sotuvdan tushgan pul va o'rtacha chek.
 
-    Faqat YETKAZILGAN buyurtmalar, admin qo'lda kiritgan va B2B qatorlarsiz —
-    boshqa hisobotlar bilan bir xil asos."""
+    Bekor qilinmagan buyurtmalar (database.SALE_SQL), admin qo'lda kiritgan
+    va B2B qatorlarsiz — boshqa hisobotlar bilan bir xil asos."""
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             f"""WITH per_user AS (
                     SELECT o.user_id, COUNT(*) AS orders, SUM(o.total) AS revenue
                       FROM orders o
-                     WHERE o.status = 'delivered' AND {_REAL_ORDER}
+                     WHERE {sale_sql('o')} AND {_REAL_ORDER}
                        AND ($1::timestamp IS NULL OR o.created_at >= $1)
                        AND o.user_id <> ALL($2::bigint[])
                      GROUP BY o.user_id
@@ -5786,7 +5829,7 @@ async def get_repeat_customers(since: datetime | None = None, limit: int = 20,
         base = f"""SELECT o.user_id, COUNT(*) AS orders, SUM(o.total) AS revenue,
                           MIN(o.created_at) AS first_order, MAX(o.created_at) AS last_order
                      FROM orders o
-                    WHERE o.status = 'delivered' AND {_REAL_ORDER}
+                    WHERE {sale_sql('o')} AND {_REAL_ORDER}
                       AND ($1::timestamp IS NULL OR o.created_at >= $1)
                       AND o.user_id <> ALL($2::bigint[])
                     GROUP BY o.user_id
@@ -5847,12 +5890,12 @@ async def get_customer_purchase_profile(user_id: int) -> dict:
             f"""SELECT COUNT(*) AS orders, COALESCE(SUM(o.total), 0) AS revenue,
                        MIN(o.created_at) AS first_order, MAX(o.created_at) AS last_order
                   FROM orders o
-                 WHERE o.user_id = $1 AND o.status = 'delivered' AND {_REAL_ORDER}""",
+                 WHERE o.user_id = $1 AND {sale_sql('o')} AND {_REAL_ORDER}""",
             user_id,
         )
         rows = await conn.fetch(
             f"""SELECT o.items FROM orders o
-                 WHERE o.user_id = $1 AND o.status = 'delivered' AND {_REAL_ORDER}""",
+                 WHERE o.user_id = $1 AND {sale_sql('o')} AND {_REAL_ORDER}""",
             user_id,
         )
         user = await conn.fetchrow(
@@ -5878,18 +5921,18 @@ async def get_repeat_top_products(since: datetime | None = None, limit: int = 10
                                    repeat_only: bool = True) -> list[dict]:
     """Qayta keladigan mijozlar asosan nima olishini ko'rsatadi — ya'ni
     do'konni ushlab turadigan mahsulotlar. repeat_only=False bo'lsa hamma
-    yetkazilgan buyurtmalar bo'yicha."""
+    savdolar bo'yicha."""
     repeat_clause = ""
     if repeat_only:
-        repeat_clause = """AND o.user_id IN (
+        repeat_clause = f"""AND o.user_id IN (
                     SELECT user_id FROM orders
-                     WHERE status = 'delivered'
+                     WHERE {SALE_SQL}
                        AND COALESCE(source, 'bot') NOT IN ('manual', 'b2b')
                      GROUP BY user_id HAVING COUNT(*) > 1)"""
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             f"""SELECT o.items FROM orders o
-                 WHERE o.status = 'delivered' AND {_REAL_ORDER}
+                 WHERE {sale_sql('o')} AND {_REAL_ORDER}
                    AND ($1::timestamp IS NULL OR o.created_at >= $1)
                    AND o.user_id <> ALL($2::bigint[])
                    {repeat_clause}""",

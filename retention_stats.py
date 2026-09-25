@@ -16,8 +16,9 @@ o'sha bo'shliqni yopadi:
 
 Hisob database.py da (get_retention_summary / get_repeat_customers /
 get_customer_purchase_profile / get_repeat_top_products), sayt paneli ham
-o'shani chaqiradi. Hamma joyda asos bitta: YETKAZILGAN buyurtmalar, admin
-qo'lda kiritgan va B2B qatorlarsiz, admin/ichki akkauntlarsiz.
+o'shani chaqiradi. Hamma joyda asos bitta: BEKOR QILINMAGAN buyurtmalar
+(database.SALE_SQL — savdo tushgan zahoti sanaladi, kuryerni kutmaydi),
+admin qo'lda kiritgan va B2B qatorlarsiz, admin/ichki akkauntlarsiz.
 
 Kirish: Admin panel -> Statistika -> 🔁 Qayta sotuv, yoki /qayta_sotuv.
 """
@@ -111,7 +112,7 @@ async def build_report(period: str = "all", sort: str = "revenue") -> tuple[str,
 
     lines = [f"🔁 <b>Qayta sotuv — {label}</b>", ""]
     if not customers:
-        lines.append("Bu davrda yetkazilgan buyurtma yo'q.")
+        lines.append("Bu davrda savdo yo'q.")
         return "\n".join(lines), []
 
     lines.append(f"👤 <b>Xaridorlar:</b> {_fmt(customers)} ta")
@@ -149,8 +150,8 @@ async def build_report(period: str = "all", sort: str = "revenue") -> tuple[str,
                          f"{_unit(p['unit'])} · {_fmt(p['amount'])} so'm")
         lines.append("")
 
-    lines.append("<i>Faqat yetkazilgan buyurtmalar. Mijoz tafsiloti uchun pastdagi "
-                 "tugmani bosing.</i>")
+    lines.append("<i>Bekor qilinganlardan tashqari hamma savdo. Mijoz tafsiloti "
+                 "uchun pastdagi tugmani bosing.</i>")
     return "\n".join(lines), rows
 
 
@@ -161,7 +162,7 @@ async def build_customer(user_id: int) -> str:
 
     lines = [f"👤 <b>{_name(user, 64)}</b>", ""]
     if not orders:
-        lines.append("Bu mijozda yetkazilgan buyurtma yo'q.")
+        lines.append("Bu mijozda savdo yo'q.")
         return "\n".join(lines)
 
     lines.append(f"🔁 <b>Buyurtmalari:</b> {_fmt(orders)} ta")

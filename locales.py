@@ -1631,7 +1631,7 @@ TEXTS = {
               "✅ Tasdiqlangan: {orders_confirmed}\n"
               "📦 Yetkazilgan: {orders_delivered}\n"
               "❌ Bekor qilingan: {orders_cancelled}\n\n"
-              "💰 Daromad: <b>{revenue} so'm</b>\n"
+              "💰 Daromad: <b>{revenue} so'm</b> ({orders_sold} ta savdo)\n"
               "🏢 B2B tushum: <b>{b2b_revenue} so'm</b> ({b2b_orders} ta savdo)\n"
               "📊 O'rtacha buyurtma: {aov} so'm\n\n"
               "🏆 <b>TOP sotilgan mahsulotlar:</b>\n{top_products}\n\n"
@@ -1646,7 +1646,7 @@ TEXTS = {
               "✅ Подтверждено: {orders_confirmed}\n"
               "📦 Доставлено: {orders_delivered}\n"
               "❌ Отменено: {orders_cancelled}\n\n"
-              "💰 Доход: <b>{revenue} сум</b>\n"
+              "💰 Доход: <b>{revenue} сум</b> ({orders_sold} продаж)\n"
               "🏢 B2B доход: <b>{b2b_revenue} сум</b> ({b2b_orders} продаж)\n"
               "📊 Средний чек: {aov} сум\n\n"
               "🏆 <b>ТОП проданные товары:</b>\n{top_products}\n\n"
@@ -1666,8 +1666,8 @@ TEXTS = {
     "stats_period_30d": {"uz": "30 kun", "ru": "30 дней"},
     "stats_period_all": {"uz": "Hammasi", "ru": "Всё время"},
     "stats_top_empty": {
-        "uz": "— (hozircha yetkazilgan buyurtma yo'q)",
-        "ru": "— (нет доставленных заказов)",
+        "uz": "— (hozircha sotuv yo'q)",
+        "ru": "— (пока нет продаж)",
     },
     "stats_top_item": {
         "uz": "{n}. {name} — {qty} × ({revenue} so'm)",

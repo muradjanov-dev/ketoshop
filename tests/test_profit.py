@@ -1,5 +1,7 @@
-"""Foyda hisobi — bitta tannarx qoidasi (database.line_cost) va dollar kursi."""
+"""Foyda hisobi — bitta tannarx qoidasi (database.line_cost), savdo qaysi
+kunga yozilishi (database.SALE_SQL) va dollar kursi."""
 import asyncio
+import contextlib
 import os
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -53,6 +55,111 @@ class LineCostTest(unittest.TestCase):
         self.assertEqual(database.line_cost({"product_id": 20, "quantity": 1}, COSTS, SET_COSTS), (0, False))
         self.assertEqual(database.line_cost({"is_set": True, "set_id": 99, "quantity": 1}, COSTS, SET_COSTS),
                          (0, False))
+
+
+class _FakeConn:
+    """Records every statement get_admin_stats issues and answers each one
+    with a canned row, so the test can assert on the WHERE clauses that decide
+    which orders the money comes from."""
+
+    def __init__(self):
+        self.queries: list[str] = []
+
+    async def fetchrow(self, sql, *args):
+        self.queries.append(sql)
+        if "users_total" in sql:
+            return {"users_total": 500, "reviews_total": 40,
+                    "products_active": 116, "products_in_stock": 100}
+        if "FILTER (WHERE status = 'pending')" in sql:
+            return {"total": 6, "pending": 3, "confirmed": 1, "cancelled": 1}
+        if "AS revenue" in sql:
+            return {"sold": 5, "delivered": 2, "revenue": 1_040_000,
+                    "b2b_revenue": 0, "b2b_orders": 0}
+        return {"users_new": 4, "reviews_new": 1, "expenses": 25_000}
+
+    async def fetch(self, sql, *args):
+        self.queries.append(sql)
+        if "cost_price FROM products" in sql:
+            return [{"id": 10, "cost_price": 40_000}]
+        if "product_set_items" in sql:
+            return []
+        return [{"items": '[{"product_id": 10, "quantity": 1}]'}]
+
+    async def fetchval(self, sql, *args):
+        self.queries.append(sql)
+        return 0
+
+
+class _FakePool:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def acquire(self):
+        @contextlib.asynccontextmanager
+        async def _cm():
+            yield self._conn
+        return _cm()
+
+
+class SaleBasisTest(unittest.TestCase):
+    """24.09.2026: the 20:00 report said "5 ta sotuv · 561 000 so'm" on a day
+    that took more than a million. The count came from the orders created that
+    day, the money from the orders delivered that day — two different sets of
+    orders on one line. Both must come from the same set."""
+
+    def _stats(self, period="today"):
+        conn = _FakeConn()
+        with patch.object(database, "pool", _FakePool(conn)):
+            stats = asyncio.run(database.get_admin_stats(period))
+        return stats, conn.queries
+
+    def test_money_and_count_come_from_the_same_orders(self):
+        _, queries = self._stats()
+        money = next(q for q in queries if "AS revenue" in q)
+        items = next(q for q in queries if q.startswith("SELECT items FROM orders"))
+        self.assertIn(database.SALE_SQL, money)
+        # Identical scope, so a sale can never land in one and not the other.
+        self.assertEqual(money.split("FROM orders", 1)[1].strip(),
+                         items.split("FROM orders", 1)[1].strip())
+
+    def test_revenue_is_not_scoped_to_delivered_orders(self):
+        _, queries = self._stats()
+        money = next(q for q in queries if "AS revenue" in q)
+        # Only the scope after FROM — 'delivered' may still appear above it as
+        # a FILTER, which counts deliveries without narrowing the money.
+        scope = money.split("FROM orders", 1)[1]
+        self.assertNotIn("delivered", scope)
+        self.assertNotIn("delivered_at", scope)
+
+    def test_orders_sold_is_the_count_behind_revenue(self):
+        stats, _ = self._stats()
+        self.assertEqual(stats["orders_sold"], 5)
+        self.assertEqual(stats["revenue"], 1_040_000)
+        # Average check is per sale, not per delivery.
+        self.assertEqual(stats["aov"], 1_040_000 // 5)
+
+    def test_report_takes_its_sale_count_straight_from_the_stats(self):
+        day = {"orders_sold": 5, "orders_total": 6, "orders_cancelled": 1,
+               "revenue": 1_040_000, "profit": 300_000}
+        month = {"orders_sold": 136, "revenue": 53_758_281, "profit": 16_157_899,
+                 "missing_cost_products": []}
+
+        async def _stats(period):
+            return month if isinstance(period, dict) else day
+
+        with patch.object(database, "get_admin_stats", _stats), \
+             patch.object(database, "get_targets_state", AsyncMock(return_value={})), \
+             patch.object(database, "get_ai_usage_today", AsyncMock(return_value=[])), \
+             patch.object(database, "get_ai_usage_month", AsyncMock(return_value={})), \
+             patch.object(database, "count_ai_questions_today", AsyncMock(return_value=0)), \
+             patch.object(targets, "current_usd_rate", AsyncMock(return_value=(11_814.0, "24.09.2026"))):
+            snap = asyncio.run(targets.snapshot())
+
+        self.assertEqual(snap["sales"], 5)
+        self.assertEqual(snap["day_revenue"], 1_040_000)
+        self.assertEqual(snap["month_orders"], 136)
+        self.assertIn("5 / 10", targets.build_message(snap, 20))
+        self.assertIn("1 040 000 so'm tushum", targets.build_message(snap, 20))
 
 
 class UsdRateTest(unittest.TestCase):

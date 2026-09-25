@@ -165,14 +165,17 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
     ws.title = "Xulosa" if lang == "uz" else "Сводка"
 
     delivered = [o for o in orders if o.get("status") == "delivered"]
-    revenue = sum(float(o.get("total") or 0) for o in delivered)
-    aov = (revenue / len(delivered)) if delivered else 0
+    # Revenue counts every order placed in the window that was not cancelled
+    # — the same rule the bot and the website use (database.SALE_SQL), so the
+    # export and the dashboard cannot disagree about the same period. The
+    # "Yetkazilgan" row below still says how much of it has actually shipped.
+    sold = [o for o in orders if (o.get("status") or "pending") != "cancelled"]
+    revenue = sum(float(o.get("total") or 0) for o in sold)
+    aov = (revenue / len(sold)) if sold else 0
 
-    # Cost & profit on delivered orders only — accounting truth is "what we
-    # actually shipped", not pending/cancelled. Lines without product_id
-    # (legacy or imported) contribute 0 cost.
+    # Lines without product_id (legacy or imported) contribute 0 cost.
     total_cost = 0.0
-    for o in delivered:
+    for o in sold:
         for it in (o.get("items_data") or []):
             total_cost += line_cost(it, cost_map, set_costs or {})[0]
     profit = revenue - total_cost
@@ -193,6 +196,7 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
     rows: list[tuple[str, object]] = [
         (("Davr"             if lang == "uz" else "Период"), period_label),
         (("Jami buyurtmalar" if lang == "uz" else "Всего заказов"), len(orders)),
+        (("Sotuv"            if lang == "uz" else "Продаж"), len(sold)),
         (("Yetkazilgan"      if lang == "uz" else "Доставлено"), len(delivered)),
         (("Daromad (so'm)"   if lang == "uz" else "Выручка (сум)"), int(revenue)),
         (("Asl narx jami"    if lang == "uz" else "Себестоимость"),  int(total_cost)),
@@ -209,8 +213,8 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
     for source, count in sorted(by_source.items()):
         rows.append((_source_label(source, lang), count))
 
-    # Top block (period + revenue/cost/profit/aov) is highlighted
-    HIGHLIGHT_TOP_ROWS = 8
+    # Top block (period + sales/revenue/cost/profit/aov) is highlighted
+    HIGHLIGHT_TOP_ROWS = 9
     for i, (k, v) in enumerate(rows, start=1):
         a = ws.cell(row=i, column=1, value=k)
         b = ws.cell(row=i, column=2, value=v)

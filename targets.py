@@ -15,10 +15,11 @@ Definitions, chosen to match the numbers the admin screens already show:
   * a SALE is an order placed today that has not been cancelled. It is the
     number the team can move during the day, which is what a mid-day nudge
     has to be about.
-  * NET PROFIT is get_admin_stats' `profit` — delivered revenue minus the
-    cost_price of the goods minus the expenses booked in the period. It lags
-    behind sales by the delivery time, on purpose: money that has not been
-    delivered has not been earned.
+  * NET PROFIT is get_admin_stats' `profit` — the revenue of those same sales
+    minus the cost_price of the goods minus the expenses booked in the period.
+    It moves the moment a sale is entered (owner, 2026-09-25), so the two
+    halves of "5 ta sotuv · 561 000 so'm" always describe the same orders;
+    see SALE_SQL in database.py for why it is not the delivered ones.
 
 The dollar target is converted at TODAY's Central Bank of Uzbekistan rate
 (owner, 2026-09-17: "dollar kursini hozirgi kursdan hisobla"). It is fetched
@@ -121,10 +122,10 @@ async def snapshot() -> dict:
         {"start": first.isoformat(), "end": today.isoformat()}
     )
 
-    # Cancelled orders are not sales. get_admin_stats counts them in
-    # orders_total, so they have to come back out here.
-    sales = max(0, int(day_stats.get("orders_total") or 0)
-                - int(day_stats.get("orders_cancelled") or 0))
+    # orders_sold is the count behind `revenue` — taking it straight from
+    # get_admin_stats is what keeps the sale count and the money on this line
+    # from ever describing different orders again.
+    sales = int(day_stats.get("orders_sold") or 0)
 
     daily_target = int(state.get("daily_orders") or 10)
     live_rate, rate_date = await current_usd_rate()
@@ -159,8 +160,7 @@ async def snapshot() -> dict:
         "month_profit": month_profit,
         "month_profit_usd": month_profit / usd_rate if usd_rate else 0.0,
         "month_revenue": float(month_stats.get("revenue") or 0),
-        "month_orders": max(0, int(month_stats.get("orders_total") or 0)
-                            - int(month_stats.get("orders_cancelled") or 0)),
+        "month_orders": int(month_stats.get("orders_sold") or 0),
         "monthly_target_usd": monthly_usd,
         "monthly_target_uzs": monthly_uzs,
         "remaining_uzs": remaining_uzs,

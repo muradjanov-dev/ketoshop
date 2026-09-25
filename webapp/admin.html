@@ -770,9 +770,9 @@
     </div>
     <p class="hint" style="margin:-6px 0 16px">
       Bu yerda <b>bor mijozga qayta sotuv</b> ko'rinadi: kim necha marta qaytib keldi,
-      qancha pul qoldirdi, oxirgi marta qachon olgan va asosan nima oladi. Hisob faqat
-      <b>yetkazilgan</b> buyurtmalar bo'yicha — admin qo'lda kiritgan va B2B qatorlar,
-      shuningdek admin/ichki akkauntlar hisobga olinmaydi.
+      qancha pul qoldirdi, oxirgi marta qachon olgan va asosan nima oladi. Hisob
+      <b>bekor qilinmagan</b> buyurtmalar bo'yicha — admin qo'lda kiritgan va B2B
+      qatorlar, shuningdek admin/ichki akkauntlar hisobga olinmaydi.
     </p>
 
     <div class="period-switch" id="retPeriod">
@@ -802,7 +802,7 @@
           </tr></thead>
           <tbody id="retRows"></tbody>
         </table>
-        <div class="empty" id="retEmpty" style="display:none">Hozircha yetkazilgan buyurtma yo'q.</div>
+        <div class="empty" id="retEmpty" style="display:none">Hozircha savdo yo'q.</div>
       </div>
     </div>
 
@@ -1312,14 +1312,14 @@ function renderKpis(st){
     // query filters the same SUM by source='b2b'. Without saying so, the two
     // tiles invite the reader to add them up.
     renderDashKpiCard('Jami Tushum', fmt(st.revenue),
-      st.b2b_revenue ? `Yetkazilganlardan · shundan ${fmt(st.b2b_revenue)} optom`
-                     : 'Yetkazilgan buyurtmalardan'),
+      st.b2b_revenue ? `${st.orders_sold} ta savdo · shundan ${fmt(st.b2b_revenue)} optom`
+                     : `${st.orders_sold} ta savdo (bekor qilinganlardan tashqari)`),
     renderDashKpiCard('B2B Tushum (optom)', fmt(st.b2b_revenue),
       st.b2b_orders+" ta savdo · jami tushum ichida"),
     renderDashKpiCard('Maxsulot tannarxi', fmt(st.product_cost), 'Sotilganlar bo\'yicha'),
     renderDashKpiCard('Jami Chiqimlar', fmt(st.expenses), 'Barcha xarajatlar'),
     renderDashKpiCard('Foyda (sof)', fmt(st.profit), 'Tushum - Tannarx - Chiqimlar'),
-    renderDashKpiCard('O\'rtacha Chek', fmt(st.aov), 'Buyurtma boshiga'),
+    renderDashKpiCard('O\'rtacha Chek', fmt(st.aov), 'Savdo boshiga'),
     renderDashKpiCard('Yangi mijozlar',st.users_new+' ta','Jami ro\'yxatdan o\'tganlar: '+st.users_total),
     renderDashKpiCard('Jami Buyurtmalar',st.orders_total+' ta','Yangi: '+st.orders_pending+' / Tasdiqlangan: '+st.orders_confirmed),
   ].join('');
@@ -2159,7 +2159,7 @@ window.openCustomer=async function(userId){
           <td class="tnum" style="text-align:right">${(+it.quantity).toLocaleString('ru-RU')}</td>
           <td class="tnum" style="text-align:right">${it.times}</td>
           <td class="tnum" style="text-align:right">${fmtSom(+it.amount)}</td></tr>`).join('')
-          || '<tr><td colspan="4" style="color:var(--ink-3)">Yetkazilgan buyurtma yo\'q</td></tr>'}
+          || '<tr><td colspan="4" style="color:var(--ink-3)">Savdo yo\'q</td></tr>'}
         </tbody></table></div>`;
   }catch(err){
     box.innerHTML='<p style="color:var(--red)">⚠️ '+esc(err.message)+'</p>';
