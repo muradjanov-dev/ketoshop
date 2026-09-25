@@ -183,6 +183,24 @@ class SaleBasisTest(unittest.TestCase):
         self.assertIn("171 050 so'm", text)
         self.assertNotIn("yetmadi", text.lower())
 
+    def test_expense_only_day_shows_zero_sales_and_negative_profit(self):
+        snap = {
+            "sales": 0, "daily_target": 10, "sales_left": 10,
+            "day_revenue": 0, "day_booked_value": 0,
+            "day_delivered_revenue": 0, "day_profit": -35_000,
+            "month_profit_usd": 0, "monthly_target_usd": 2_000,
+            "month_profit": -35_000, "monthly_target_uzs": 23_600_000,
+            "usd_rate_date": None, "usd_rate": 11_800,
+            "missing_cost_products": [], "remaining_uzs": 23_635_000,
+            "remaining_usd": 2_003, "needed_per_day_usd": 67,
+            "days_left": 30, "month_orders": 0, "month_revenue": 0,
+            "month_booked_value": 0, "month_delivered_revenue": 0,
+        }
+        text = targets.build_message(snap, 13)
+        self.assertIn("Yangi buyurtmalar summasi: 0 so'm", text)
+        self.assertIn("Yetkazilgan savdo: 0 so'm", text)
+        self.assertIn("sof foyda: -35 000 so'm", text)
+
     def test_export_detail_uses_delivered_and_expense_periods(self):
         conn = _FakeConn()
         period = {"start": "2026-09-24", "end": "2026-09-24"}

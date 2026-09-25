@@ -216,10 +216,9 @@ def build_message(snap: dict, slot: int) -> str:
         lines.append(f"⏳ Hozircha maqsadgacha <b>{snap['sales_left']} ta</b> yangi buyurtma qoldi.")
     else:
         lines.append(f"⏳ 20:00 holatiga kunlik maqsadgacha <b>{snap['sales_left']} ta</b> buyurtma qoldi.")
-    if snap.get("day_booked_value") or snap.get("day_delivered_revenue", snap["day_revenue"]):
-        lines.append(f"🧾 Yangi buyurtmalar summasi: {fmt_sum(snap.get('day_booked_value', 0))} so'm")
-        lines.append(f"🚚 Yetkazilgan savdo: {fmt_sum(snap.get('day_delivered_revenue', snap['day_revenue']))} so'm")
-        lines.append(f"💵 Yetkazilgan savdodan sof foyda: {fmt_sum(snap['day_profit'])} so'm")
+    lines.append(f"🧾 Yangi buyurtmalar summasi: {fmt_sum(snap.get('day_booked_value', 0))} so'm")
+    lines.append(f"🚚 Yetkazilgan savdo: {fmt_sum(snap.get('day_delivered_revenue', snap['day_revenue']))} so'm")
+    lines.append(f"💵 Yetkazilgan savdodan sof foyda: {fmt_sum(snap['day_profit'])} so'm")
     # Keto chegirmasi tushumdan allaqachon ayrilgan — Chiqimlarga IKKINCHI
     # marta yozilmaydi, aks holda bir xil pul ikki marta ayrilgan bo'lardi.
     if snap.get("day_keto_discount"):
