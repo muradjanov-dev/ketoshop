@@ -47,7 +47,7 @@ from database import (
     get_delivery_zones, get_product_rating, get_product_media,
     create_order, get_user_language, update_user_language,
     add_product_view, effective_price, active_discount,
-    get_user_orders, get_order, cancel_order, get_user,
+    get_user_orders, get_order, cancel_order, get_user, create_user,
     get_product_reviews, add_review, delete_review, get_user_review,
     InsufficientStockError, InsufficientKetoError, LEADERBOARD_EXCLUDED_USER_IDS,
 )
@@ -150,7 +150,13 @@ async def auth_middleware(request: web.Request, handler):
         return _json({"error": "invalid initData"}, status=403)
 
     user = parsed.get("user", {})
-    request["user_id"] = user.get("id")
+    user_id = user.get("id") if isinstance(user, dict) else None
+    if not isinstance(user_id, int) or isinstance(user_id, bool):
+        return _json({"error": "invalid initData"}, status=403)
+    request["user_id"] = user_id
+    # Keep only the Telegram profile carried by successfully verified initData.
+    # Mutating routes may use this data to create a missing user row.
+    request["telegram_user"] = user
     # Use saved language from DB, fall back to Telegram app language
     db_lang = await get_user_language(user.get("id")) if user.get("id") else None
     if db_lang and db_lang in ("uz", "uz_cyr", "ru"):
@@ -568,6 +574,24 @@ async def api_cart_add(request: web.Request):
     else:
         _line, before = await get_cart_line_for_set(user_id, set_id) if set_id else (None, 0)
 
+    # Cart rows reference users(user_id). Telegram-verified Mini App users may
+    # arrive here before sending /start to the bot, so ensure their row exists.
+    # create_user uses INSERT ... ON CONFLICT DO NOTHING to preserve existing
+    # profile, contact and language fields.
+    telegram_user = request.get("telegram_user")
+    if not isinstance(telegram_user, dict) or telegram_user.get("id") != user_id:
+        return _json({"error": "invalid initData"}, status=403)
+    name_parts = [
+        value.strip()
+        for value in (telegram_user.get("first_name"), telegram_user.get("last_name"))
+        if isinstance(value, str) and value.strip()
+    ]
+    await create_user(
+        user_id,
+        username=telegram_user.get("username"),
+        full_name=" ".join(name_parts) or None,
+        language=request.get("user_lang", "uz"),
+    )
     await add_to_cart(user_id, product_id=product_id, quantity=quantity, set_id=set_id)
 
     if not before:
