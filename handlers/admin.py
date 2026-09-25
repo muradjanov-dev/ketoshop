@@ -251,9 +251,11 @@ async def render_stats(callback: CallbackQuery, period: str,
         orders_total=stats["orders_total"],
         orders_pending=stats["orders_pending"],
         orders_confirmed=stats["orders_confirmed"],
-        orders_delivered=stats["orders_delivered"],
+        orders_delivered=stats["orders_delivered_created"],
         orders_cancelled=stats["orders_cancelled"],
         orders_sold=stats["orders_sold"],
+        booked_value=_fmt_num(stats["booked_value"]),
+        delivered_orders=stats["orders_delivered"],
         revenue=_fmt_num(stats["revenue"]),
         b2b_revenue=_fmt_num(stats["b2b_revenue"]),
         b2b_orders=stats["b2b_orders"],
@@ -306,9 +308,16 @@ def _month_block_text(lang: str, m: dict) -> str:
         label = f"🗓 <b>{name} {m['year']}</b> (1–{today_local}, {hozirgi})"
     else:
         label = f"🗓 <b>{name} {m['year']}</b>"
-    savdo = "buyurtma" if lang != "ru" else "заказ(ов)"
-    line = f"{label}\n💰 {_fmt_num(m['revenue'])} so'm — {m['orders']} ta {savdo}" if lang != "ru" else \
-           f"{label}\n💰 {_fmt_num(m['revenue'])} сум — {m['orders']} {savdo}"
+    if lang != "ru":
+        line = (f"{label}\n🧾 Yangi buyurtmalar: {m['orders']} ta · "
+                f"{_fmt_num(m['booked_value'])} so'm\n"
+                f"🚚 Yetkazilgan savdo: {m['delivered_orders']} ta · "
+                f"{_fmt_num(m['delivered_revenue'])} so'm")
+    else:
+        line = (f"{label}\n🧾 Новые заказы: {m['orders']} · "
+                f"{_fmt_num(m['booked_value'])} сум\n"
+                f"🚚 Доставлено: {m['delivered_orders']} · "
+                f"{_fmt_num(m['delivered_revenue'])} сум")
     if m["b2b_revenue"]:
         line += (f"\n🏢 shundan B2B: {_fmt_num(m['b2b_revenue'])} so'm" if lang != "ru"
                   else f"\n🏢 из них B2B: {_fmt_num(m['b2b_revenue'])} сум")
@@ -326,7 +335,8 @@ async def show_monthly_stats(callback: CallbackQuery):
         return
     lang = await get_user_language(callback.from_user.id)
     months = await get_monthly_breakdown(months_back=6)
-    current, others = months[0], [m for m in months[1:] if m["orders"] > 0]
+    current, others = months[0], [m for m in months[1:]
+                                   if m["orders"] > 0 or m["delivered_orders"] > 0]
 
     text = "📅 <b>Oylik hisobot</b>\n\n" + _month_block_text(lang, current)
 

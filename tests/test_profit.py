@@ -9,10 +9,12 @@ from unittest.mock import AsyncMock, patch
 os.environ.setdefault("DATABASE_URL", "postgresql://test/test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 
-from datetime import date
+from datetime import date, datetime
 
 import database
 import targets
+from handlers.admin import _month_block_text
+from locales import get_text
 
 COSTS = {10: 40_000, 20: 0}
 SET_COSTS = {7: 95_000}
@@ -36,6 +38,17 @@ class LineCostTest(unittest.TestCase):
         cost, known = database.line_cost(line, COSTS, SET_COSTS)
         self.assertAlmostEqual(cost, 4_000)
         self.assertTrue(known)
+
+    def test_legacy_bonus_with_missing_catalog_cost_is_flagged(self):
+        line = {"product_id": 20, "quantity": 100, "stock_quantity": 0.1, "is_bonus": True}
+        self.assertEqual(database.line_cost(line, COSTS, SET_COSTS), (0, False))
+
+    def test_expense_booked_bonus_costs_zero_without_missing_cost_warning(self):
+        line = {
+            "product_id": 20, "quantity": 100, "stock_quantity": 0.1,
+            "is_bonus": True, "cost_in_expenses": True,
+        }
+        self.assertEqual(database.line_cost(line, COSTS, SET_COSTS), (0, True))
 
     def test_line_carrying_its_own_cost_price_is_costed_by_it(self):
         # B2B Eritritol: sold by the kilo out of a wholesale sack, and the
@@ -66,6 +79,15 @@ class _FakeConn:
 
     def __init__(self):
         self.queries: list[str] = []
+        self.transaction_settings: list[dict] = []
+
+    def transaction(self, **settings):
+        self.transaction_settings.append(settings)
+
+        @contextlib.asynccontextmanager
+        async def _cm():
+            yield
+        return _cm()
 
     async def fetchrow(self, sql, *args):
         self.queries.append(sql)
@@ -73,11 +95,14 @@ class _FakeConn:
             return {"users_total": 500, "reviews_total": 40,
                     "products_active": 116, "products_in_stock": 100}
         if "FILTER (WHERE status = 'pending')" in sql:
-            return {"total": 6, "pending": 3, "confirmed": 1, "cancelled": 1}
+            return {"total": 6, "pending": 3, "confirmed": 1, "delivered": 1,
+                    "cancelled": 1}
+        if "AS booked_value" in sql:
+            return {"sold": 5, "booked_value": 1_568_000, "keto_discount": 20_000}
         if "AS revenue" in sql:
-            return {"sold": 5, "delivered": 2, "revenue": 1_040_000,
+            return {"delivered": 3, "revenue": 561_000,
                     "b2b_revenue": 0, "b2b_orders": 0, "keto_discount": 18_000}
-        return {"users_new": 4, "reviews_new": 1, "expenses": 25_000}
+        return {"users_new": 4, "reviews_new": 1, "expenses": 35_000}
 
     async def fetch(self, sql, *args):
         self.queries.append(sql)
@@ -85,7 +110,7 @@ class _FakeConn:
             return [{"id": 10, "cost_price": 40_000}]
         if "product_set_items" in sql:
             return []
-        return [{"items": '[{"product_id": 10, "quantity": 1}]'}]
+        return [{"items": '[{"product_id": 10, "quantity": 1, "cost_price": 354950}]'}]
 
     async def fetchval(self, sql, *args):
         self.queries.append(sql)
@@ -104,10 +129,9 @@ class _FakePool:
 
 
 class SaleBasisTest(unittest.TestCase):
-    """24.09.2026: the 20:00 report said "5 ta sotuv · 561 000 so'm" on a day
-    that took more than a million. The count came from the orders created that
-    day, the money from the orders delivered that day — two different sets of
-    orders on one line. Both must come from the same set."""
+    """24.09.2026 example: 5 new orders totaling 1,568,000 so'm, while
+    deliveries were 561,000 so'm. Profit is deliveries less cost and period
+    expenses (171,050 so'm)."""
 
     def _stats(self, period="today"):
         conn = _FakeConn()
@@ -115,35 +139,54 @@ class SaleBasisTest(unittest.TestCase):
             stats = asyncio.run(database.get_admin_stats(period))
         return stats, conn.queries
 
-    def test_money_and_count_come_from_the_same_orders(self):
+    def test_new_orders_and_deliveries_use_their_own_date_fields(self):
         _, queries = self._stats()
-        money = next(q for q in queries if "AS revenue" in q)
+        booked = next(q for q in queries if "AS booked_value" in q)
+        delivered = next(q for q in queries if "AS revenue" in q)
         items = next(q for q in queries if q.startswith("SELECT items FROM orders"))
-        self.assertIn(database.SALE_SQL, money)
-        # Identical scope, so a sale can never land in one and not the other.
-        self.assertEqual(money.split("FROM orders", 1)[1].strip(),
-                         items.split("FROM orders", 1)[1].strip())
+        self.assertIn("created_at", booked)
+        self.assertIn(database.SALE_SQL, booked)
+        self.assertIn("status = 'delivered'", delivered)
+        self.assertIn("delivered_at", delivered)
+        self.assertIn("status = 'delivered'", items)
+        self.assertIn("delivered_at", items)
+        self.assertNotIn("delivered_at", booked)
 
-    def test_revenue_is_not_scoped_to_delivered_orders(self):
+    def test_delivered_revenue_is_scoped_by_delivery_time(self):
         _, queries = self._stats()
         money = next(q for q in queries if "AS revenue" in q)
-        # Only the scope after FROM — 'delivered' may still appear above it as
-        # a FILTER, which counts deliveries without narrowing the money.
         scope = money.split("FROM orders", 1)[1]
-        self.assertNotIn("delivered", scope)
-        self.assertNotIn("delivered_at", scope)
+        self.assertIn("status = 'delivered'", scope)
+        self.assertIn("delivered_at", scope)
 
-    def test_orders_sold_is_the_count_behind_revenue(self):
+    def test_booked_sales_and_delivered_money_are_distinct_fields(self):
         stats, _ = self._stats()
         self.assertEqual(stats["orders_sold"], 5)
-        self.assertEqual(stats["revenue"], 1_040_000)
-        # Average check is per sale, not per delivery.
-        self.assertEqual(stats["aov"], 1_040_000 // 5)
+        self.assertEqual(stats["booked_value"], 1_568_000)
+        self.assertEqual(stats["orders_delivered"], 3)
+        self.assertEqual(stats["delivered_revenue"], 561_000)
+        self.assertEqual(stats["revenue"], 561_000)
+        self.assertEqual(stats["product_cost"], 354_950)
+        self.assertEqual(stats["expenses"], 35_000)
+        self.assertEqual(stats["profit"], 171_050)
+        self.assertEqual(stats["aov"], 1_568_000 // 5)
+
+    def test_all_financial_reads_share_a_repeatable_read_only_snapshot(self):
+        conn = _FakeConn()
+        with patch.object(database, "pool", _FakePool(conn)):
+            asyncio.run(database.get_admin_stats("today"))
+        self.assertEqual(conn.transaction_settings, [
+            {"isolation": "repeatable_read", "readonly": True}
+        ])
+        set_cost_query = next(q for q in conn.queries if "product_set_items" in q)
+        self.assertTrue(set_cost_query, "set costs must be read in the same transaction")
 
     def test_report_takes_its_sale_count_straight_from_the_stats(self):
-        day = {"orders_sold": 5, "orders_total": 6, "orders_cancelled": 1,
-               "revenue": 1_040_000, "profit": 300_000}
-        month = {"orders_sold": 136, "revenue": 53_758_281, "profit": 16_157_899,
+        day = {"orders_sold": 5, "booked_value": 1_568_000,
+               "orders_delivered": 3, "orders_total": 6, "orders_cancelled": 1,
+               "revenue": 561_000, "profit": 171_050}
+        month = {"orders_sold": 136, "booked_value": 53_758_281,
+                 "revenue": 48_000_000, "profit": 16_157_899,
                  "missing_cost_products": []}
 
         async def _stats(period):
@@ -154,14 +197,82 @@ class SaleBasisTest(unittest.TestCase):
              patch.object(database, "get_ai_usage_today", AsyncMock(return_value=[])), \
              patch.object(database, "get_ai_usage_month", AsyncMock(return_value={})), \
              patch.object(database, "count_ai_questions_today", AsyncMock(return_value=0)), \
+             patch.object(targets, "_now_tk", return_value=datetime(2026, 9, 24, 20, 17)), \
              patch.object(targets, "current_usd_rate", AsyncMock(return_value=(11_814.0, "24.09.2026"))):
             snap = asyncio.run(targets.snapshot())
 
         self.assertEqual(snap["sales"], 5)
-        self.assertEqual(snap["day_revenue"], 1_040_000)
+        self.assertEqual(snap["day_booked_value"], 1_568_000)
+        self.assertEqual(snap["day_delivered_revenue"], 561_000)
+        self.assertEqual(snap["day_profit"], 171_050)
+        self.assertEqual(snap["observed_at"], datetime(2026, 9, 24, 20, 17))
         self.assertEqual(snap["month_orders"], 136)
-        self.assertIn("5 / 10", targets.build_message(snap, 20))
-        self.assertIn("1 040 000 so'm tushum", targets.build_message(snap, 20))
+        text = targets.build_message(snap, 20)
+        self.assertIn("5 / 10", text)
+        self.assertIn("20:17 HOLATIGA", text)
+        self.assertIn("1 568 000 so'm", text)
+        self.assertIn("561 000 so'm", text)
+        self.assertIn("171 050 so'm", text)
+        self.assertNotIn("yetmadi", text.lower())
+
+    def test_expense_only_day_shows_zero_sales_and_negative_profit(self):
+        snap = {
+            "sales": 0, "daily_target": 10, "sales_left": 10,
+            "day_revenue": 0, "day_booked_value": 0,
+            "day_delivered_revenue": 0, "day_profit": -35_000,
+            "month_profit_usd": 0, "monthly_target_usd": 2_000,
+            "month_profit": -35_000, "monthly_target_uzs": 23_600_000,
+            "usd_rate_date": None, "usd_rate": 11_800,
+            "missing_cost_products": [], "remaining_uzs": 23_635_000,
+            "remaining_usd": 2_003, "needed_per_day_usd": 67,
+            "days_left": 30, "month_orders": 0, "month_revenue": 0,
+            "month_booked_value": 0, "month_delivered_revenue": 0,
+        }
+        text = targets.build_message(snap, 13)
+        self.assertIn("Yangi buyurtmalar summasi: 0 so'm", text)
+        self.assertIn("Yetkazilgan savdo: 0 so'm", text)
+        self.assertIn("sof foyda: -35 000 so'm", text)
+
+        snap["observed_at"] = datetime(2026, 9, 24, 20, 17)
+        late_status = targets.build_message(snap, 20)
+        self.assertIn("20:17 HOLATIGA", late_status)
+        self.assertNotIn("20:00 HOLATIGA", late_status)
+
+    def test_export_detail_uses_delivered_and_expense_periods(self):
+        conn = _FakeConn()
+        period = {"start": "2026-09-24", "end": "2026-09-24"}
+        with patch.object(database, "pool", _FakePool(conn)):
+            orders = asyncio.run(database.get_delivered_orders_for_period(period))
+            expenses = asyncio.run(database.get_expenses_for_period(period))
+        order_query = next(q for q in conn.queries if "SELECT id, items, total" in q)
+        expense_query = next(q for q in conn.queries if "FROM expenses" in q)
+        self.assertIn("status = 'delivered'", order_query)
+        self.assertIn("delivered_at >= $1", order_query)
+        self.assertIn("delivered_at <= $2", order_query)
+        self.assertIn("created_at >= $1", expense_query)
+        self.assertIn("created_at <= $2", expense_query)
+        self.assertEqual(len(orders), 1)
+        self.assertEqual(len(expenses), 1)
+
+    def test_telegram_monthly_report_labels_both_time_bases(self):
+        month = {
+            "month": 9, "year": 2026, "is_current": False,
+            "orders": 5, "booked_value": 1_568_000,
+            "delivered_orders": 3, "delivered_revenue": 561_000,
+            "revenue": 561_000, "b2b_revenue": 0,
+        }
+        with patch("handlers.admin.get_month_name", return_value="Sentabr"):
+            text = _month_block_text("uz", month)
+        self.assertIn("Yangi buyurtmalar: 5 ta · 1 568 000 so'm", text)
+        self.assertIn("Yetkazilgan savdo: 3 ta · 561 000 so'm", text)
+        uz_stats = get_text("admin_stats", "uz")
+        ru_stats = get_text("admin_stats", "ru")
+        self.assertIn("{booked_value}", uz_stats)
+        self.assertIn("{delivered_orders}", uz_stats)
+        self.assertIn("Davrda yaratilgan buyurtmalar", uz_stats)
+        self.assertIn("Ulardan yetkazilgan", uz_stats)
+        self.assertIn("Заказы, созданные за период", ru_stats)
+        self.assertIn("Из них доставлены", ru_stats)
 
 
 class CancelledOrderTest(unittest.TestCase):
@@ -202,6 +313,43 @@ class CancelledOrderTest(unittest.TestCase):
         with patch.object(database, "pool", _FakePool(conn)):
             asyncio.run(database.update_order_status(41, "delivered"))
         self.assertFalse([q for q in seen if "DELETE FROM expenses" in q])
+
+
+class SentReportSnapshotTest(unittest.TestCase):
+    def test_snapshot_is_idempotent_and_delivery_time_requires_success(self):
+        conn = _FakeConn()
+        writes = []
+        inserts = {"count": 0}
+
+        async def _fetchrow(sql, *args):
+            writes.append((sql, args))
+            inserts["count"] += 1
+            return {"report_date": args[0]} if inserts["count"] == 1 else None
+
+        async def _execute(sql, *args):
+            writes.append((sql, args))
+            return "UPDATE 1"
+
+        conn.fetchrow = _fetchrow
+        conn.execute = _execute
+        with patch.object(database, "pool", _FakePool(conn)):
+            self.assertTrue(asyncio.run(database.record_target_report_snapshot(
+                date(2026, 9, 24), 20, {"sales": 5}, "report text"
+            )))
+            self.assertFalse(asyncio.run(database.record_target_report_snapshot(
+                date(2026, 9, 24), 20, {"sales": 6}, "newer text"
+            )))
+            asyncio.run(database.finish_target_report_snapshot(date(2026, 9, 24), 20, 3, 2))
+            asyncio.run(database.finish_target_report_snapshot(date(2026, 9, 24), 13, 3, 0))
+
+        insert_sql = writes[0][0]
+        self.assertIn("ON CONFLICT (report_date, slot) DO NOTHING", insert_sql)
+        self.assertEqual(writes[0][1][3], "report text")
+        outcome_sql = [sql for sql, _ in writes if "UPDATE target_report_snapshots" in sql]
+        self.assertEqual(len(outcome_sql), 2)
+        self.assertIn("sent_at = CASE WHEN $5 > 0", outcome_sql[0])
+        self.assertEqual(writes[-2][1][2:], ("partial", 3, 2))
+        self.assertEqual(writes[-1][1][2:], ("failed", 3, 0))
 
 
 class KetoDiscountTest(unittest.TestCase):
@@ -255,10 +403,10 @@ class StatusReminderTest(unittest.TestCase):
 
     def test_states_both_targets_and_what_is_left(self):
         text = targets.build_status_reminder(dict(self.BASE))
-        self.assertIn("Har kuni <b>10 ta sotuv</b>", text)
+        self.assertIn("Har kuni <b>10 ta yangi buyurtma</b>", text)
         self.assertIn("Oyiga <b>$2 000 sof foyda</b>", text)
-        self.assertIn("Bugun (25.09.2026): 3 / 10", text)
-        self.assertIn("yana <b>7 ta</b> sotuv kerak", text)
+        self.assertIn("Bugun (25.09.2026) yangi buyurtmalar: 3 / 10", text)
+        self.assertIn("yana <b>7 ta</b> yangi buyurtma kerak", text)
         self.assertIn("Oyning oxirigacha 6 kun", text)
         self.assertIn("<b>$109</b> sof foyda", text)
         # Every figure carries the date it belongs to.

@@ -3,6 +3,7 @@ Database layer using asyncpg (PostgreSQL)
 """
 import asyncpg
 import json
+import math
 import os
 from datetime import datetime, timedelta
 from config import DATABASE_URL, ADMIN_IDS
@@ -86,6 +87,46 @@ async def init_db():
                 payment_method TEXT DEFAULT 'cash',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS order_line_cost_audit (
+                id BIGSERIAL PRIMARY KEY,
+                order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+                line_index INTEGER NOT NULL CHECK (line_index >= 0),
+                old_unit_cost DOUBLE PRECISION,
+                new_unit_cost DOUBLE PRECISION NOT NULL CHECK (new_unit_cost > 0),
+                reason TEXT NOT NULL CHECK (length(trim(reason)) BETWEEN 3 AND 500),
+                changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS order_line_cost_audit_order_idx "
+            "ON order_line_cost_audit (order_id, id DESC)"
+        )
+        await conn.execute("""
+            CREATE OR REPLACE FUNCTION reject_order_line_cost_audit_mutation()
+            RETURNS trigger AS $$
+            BEGIN
+                RAISE EXCEPTION 'order line cost audit records are immutable';
+                RETURN OLD;
+            END;
+            $$ LANGUAGE plpgsql
+        """)
+        await conn.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_trigger
+                     WHERE tgname = 'order_line_cost_audit_immutable'
+                       AND tgrelid = 'order_line_cost_audit'::regclass
+                       AND NOT tgisinternal
+                ) THEN
+                    EXECUTE 'CREATE TRIGGER order_line_cost_audit_immutable
+                             BEFORE UPDATE OR DELETE ON order_line_cost_audit
+                             FOR EACH ROW EXECUTE FUNCTION reject_order_line_cost_audit_mutation()';
+                END IF;
+            END;
+            $$
         """)
         try:
             await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS courier_id BIGINT")
@@ -787,6 +828,26 @@ async def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        await conn.execute(
+            "ALTER TABLE target_days ADD COLUMN IF NOT EXISTS booked_value DOUBLE PRECISION NOT NULL DEFAULT 0"
+        )
+        # Unlike target_days, which is a live, recalculated history, this is
+        # the immutable evidence of the figures and text sent to admins at a
+        # scheduled slot. Recalculation after a cancellation/cost correction
+        # must not rewrite what the earlier message said.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS target_report_snapshots (
+                report_date DATE NOT NULL,
+                slot INTEGER NOT NULL,
+                sent_at TIMESTAMP,
+                status TEXT NOT NULL DEFAULT 'prepared',
+                attempted_count INTEGER NOT NULL DEFAULT 0,
+                delivered_count INTEGER NOT NULL DEFAULT 0,
+                snapshot JSONB NOT NULL,
+                message TEXT NOT NULL,
+                PRIMARY KEY (report_date, slot)
+            )
+        """)
 
         # ===== Aksiya / Bonus (2026-08-31) =====
         # An "aksiya" is a named, time-boxed campaign the owner writes up in
@@ -1473,6 +1534,155 @@ def item_cost_qty(item: dict) -> float:
     return float(item.get("quantity") or 0)
 
 
+def _valid_unit_cost(value) -> tuple[float, bool]:
+    if isinstance(value, bool):
+        return 0.0, False
+    try:
+        cost = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0, False
+    if not math.isfinite(cost) or cost <= 0:
+        return 0.0, False
+    return cost, True
+
+
+def _line_product_id(item: dict) -> int | None:
+    raw_id = item.get("product_id") or item.get("id")
+    if not raw_id:
+        return None
+    try:
+        product_id = int(raw_id)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return product_id if product_id > 0 else None
+
+
+def _line_set_id(item: dict) -> int | None:
+    raw_id = item.get("set_id") or item.get("product_id") or item.get("id")
+    if not raw_id:
+        return None
+    try:
+        set_id = int(raw_id)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return set_id if set_id > 0 else None
+
+
+async def _order_cost_maps(conn, items: list[dict]) -> tuple[dict[int, tuple[float, bool]], dict[int, tuple[float, bool]]]:
+    """Read current per-product and per-set costs for the given order lines."""
+    product_ids = set()
+    set_ids = set()
+    for item in items:
+        if item.get("is_set"):
+            if set_id := _line_set_id(item):
+                set_ids.add(set_id)
+        elif product_id := _line_product_id(item):
+            product_ids.add(product_id)
+
+    product_costs: dict[int, tuple[float, bool]] = {}
+    if product_ids:
+        rows = await conn.fetch(
+            "SELECT id, cost_price FROM products WHERE id = ANY($1::int[])",
+            list(product_ids),
+        )
+        for row in rows:
+            product_costs[int(row["id"])] = _valid_unit_cost(row["cost_price"])
+
+    set_costs: dict[int, tuple[float, bool]] = {}
+    if set_ids:
+        rows = await conn.fetch(
+            """SELECT i.set_id, i.quantity, p.cost_price
+                 FROM product_set_items i
+                 JOIN products p ON p.id = i.product_id
+                WHERE i.set_id = ANY($1::int[])""",
+            list(set_ids),
+        )
+        totals: dict[int, float] = {}
+        known: dict[int, bool] = {}
+        counts: dict[int, int] = {}
+        for row in rows:
+            set_id = int(row["set_id"])
+            component_cost, component_known = _valid_unit_cost(row["cost_price"])
+            try:
+                component_quantity = float(row["quantity"])
+            except (TypeError, ValueError, OverflowError):
+                component_quantity = 0
+            if not math.isfinite(component_quantity) or component_quantity <= 0:
+                component_known = False
+                component_quantity = 0
+            totals[set_id] = totals.get(set_id, 0.0) + component_cost * component_quantity
+            known[set_id] = known.get(set_id, True) and component_known
+            counts[set_id] = counts.get(set_id, 0) + 1
+        for set_id in set_ids:
+            total = totals.get(set_id, 0.0)
+            set_costs[set_id] = (total, bool(counts.get(set_id)) and known.get(set_id, False) and
+                                 math.isfinite(total) and total > 0)
+    return product_costs, set_costs
+
+
+async def _snapshot_order_costs(conn, items: list[dict]) -> list[dict]:
+    """Freeze unit costs on product/set lines without altering the input list.
+
+    The explicit known flag matters: a zero snapshot means the cost was
+    missing at sale time and must stay missing even after the catalog is fixed.
+    Gifts and bonuses already charged to expenses are deliberately left alone.
+    """
+    product_costs, set_costs = await _order_cost_maps(conn, items)
+    snapshots = []
+    for original in items:
+        item = dict(original)
+        if (item.get("is_gift") or item.get("cost_in_expenses") or
+                "unit_cost_snapshot" in item or
+                _valid_unit_cost(item.get("cost_price"))[1]):
+            snapshots.append(item)
+            continue
+        if item.get("is_set"):
+            set_id = _line_set_id(item)
+            cost, known = set_costs.get(set_id, (0.0, False)) if set_id else (0.0, False)
+        else:
+            product_id = _line_product_id(item)
+            cost, known = product_costs.get(product_id, (0.0, False)) if product_id else (0.0, False)
+        item["unit_cost_snapshot"] = cost
+        item["unit_cost_known"] = known
+        snapshots.append(item)
+    return snapshots
+
+
+def _line_unit_cost(item: dict, cost_map: dict, set_costs: dict) -> tuple[float, bool]:
+    """Return per-line-unit cost and whether its amount is known."""
+    def _mapped_cost(mapping, key):
+        value = mapping.get(key, 0) if key is not None else 0
+        if isinstance(value, tuple) and len(value) == 2:
+            raw_cost, known = value
+            try:
+                cost = float(raw_cost)
+            except (TypeError, ValueError, OverflowError):
+                return 0.0, False
+            if not math.isfinite(cost) or cost < 0:
+                return 0.0, False
+            return cost, bool(known) and cost > 0
+        cost, known = _valid_unit_cost(value)
+        return cost, known
+
+    if item.get("is_gift") or item.get("cost_in_expenses"):
+        return 0.0, True
+    if "unit_cost_snapshot" in item:
+        cost, valid = _valid_unit_cost(item.get("unit_cost_snapshot"))
+        if not valid:
+            return 0.0, bool(item.get("unit_cost_known", False)) and valid
+        return cost, bool(item.get("unit_cost_known", True))
+    own_cost, own_cost_known = _valid_unit_cost(item.get("cost_price"))
+    if own_cost_known:
+        return own_cost, True
+    if item.get("is_set"):
+        set_id = _line_set_id(item)
+        cost, known = _mapped_cost(set_costs, set_id)
+        return cost, known
+    product_id = _line_product_id(item)
+    cost, known = _mapped_cost(cost_map, product_id)
+    return (cost if known else 0.0), known
+
+
 def line_cost(item: dict, cost_map: dict, set_costs: dict) -> tuple[float, bool]:
     """(cost of goods for one order line, whether that cost is actually known).
 
@@ -1483,23 +1693,121 @@ def line_cost(item: dict, cost_map: dict, set_costs: dict) -> tuple[float, bool]
     a paid line's product has no cost_price filled in, so the reports can say
     how much of the profit is guesswork.
 
-    A line carrying its own `cost_price` is costed by that and nothing else.
-    Wholesale Eritritol (add_b2b_eritritol_order) is weighed by the kilogram
-    out of a sack while the catalog only sells it in 100gr/500gr packs, so no
-    product row's per-package cost describes that line — and a cost fixed at
-    sale time also survives later edits to the product."""
-    if item.get("is_gift"):
-        return 0.0, True
-    own_cost = float(item.get("cost_price") or 0)
-    if own_cost > 0:
-        return own_cost * item_cost_qty(item), True
-    if item.get("is_set"):
-        set_id = item.get("set_id") or item.get("product_id") or item.get("id")
-        cost = float(set_costs.get(int(set_id), 0.0)) if set_id else 0.0
-        return cost * float(item.get("quantity") or 0), cost > 0
-    pid = item.get("product_id") or item.get("id")
-    unit_cost = float(cost_map.get(int(pid), 0) or 0) if pid else 0.0
-    return unit_cost * item_cost_qty(item), unit_cost > 0 or bool(item.get("is_bonus"))
+    A line carrying `unit_cost_snapshot` or its own `cost_price` is costed by
+    that and nothing else. Wholesale Eritritol (add_b2b_eritritol_order) is
+    weighed by the kilogram out of a sack while the catalog only sells it in
+    100gr/500gr packs, so no product row's per-package cost describes that
+    line — and the stored per-kg cost survives later catalog edits."""
+    unit_cost, known = _line_unit_cost(item, cost_map, set_costs)
+    return unit_cost * item_cost_qty(item), known
+
+
+async def get_order_line_cost_review(order_id: int) -> dict | None:
+    """Return order-line costs and append-only corrections, without buyer PII."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, created_at, status, items FROM orders WHERE id = $1",
+            int(order_id),
+        )
+        if not row:
+            return None
+        raw_items = row["items"]
+        items = json.loads(raw_items) if isinstance(raw_items, str) else (raw_items or [])
+        cost_map, set_costs = await _order_cost_maps(conn, items)
+        lines = []
+        for index, item in enumerate(items):
+            unit_cost, known = _line_unit_cost(item, cost_map, set_costs)
+            if "unit_cost_snapshot" in item:
+                cost_source = "snapshot"
+            elif _valid_unit_cost(item.get("cost_price"))[1]:
+                cost_source = "line"
+            elif item.get("is_set"):
+                cost_source = "catalog_set" if known else "missing"
+            else:
+                cost_source = "catalog_product" if known else "missing"
+            lines.append({
+                "line_index": index,
+                "name": item.get("name") or "",
+                "quantity": float(item.get("quantity") or 0),
+                "cost_quantity": item_cost_qty(item),
+                "unit": item.get("unit") or "",
+                "unit_price": float(item.get("price") or 0),
+                "unit_cost": unit_cost if known else None,
+                "cost_known": known,
+                "cost_source": cost_source,
+                "editable": not item.get("is_gift") and not item.get("cost_in_expenses"),
+                "is_bonus": bool(item.get("is_bonus")),
+                "is_set": bool(item.get("is_set")),
+            })
+        audit_rows = await conn.fetch(
+            """SELECT line_index, old_unit_cost, new_unit_cost, reason, changed_at
+                 FROM order_line_cost_audit
+                WHERE order_id = $1 ORDER BY id DESC""",
+            int(order_id),
+        )
+    return {
+        "order_id": int(row["id"]),
+        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        "status": row["status"],
+        "lines": lines,
+        "audit": [{
+            "line_index": int(a["line_index"]),
+            "old_unit_cost": float(a["old_unit_cost"]) if a["old_unit_cost"] is not None else None,
+            "new_unit_cost": float(a["new_unit_cost"]),
+            "reason": a["reason"],
+            "changed_at": a["changed_at"].isoformat() if a["changed_at"] else None,
+        } for a in audit_rows],
+    }
+
+
+async def set_order_line_unit_cost(order_id: int, line_index: int,
+                                   unit_cost: float, reason: str) -> dict:
+    """Correct one historical order-line cost and append an audit event."""
+    new_cost, valid = _valid_unit_cost(unit_cost)
+    clean_reason = (reason or "").strip()
+    if not valid:
+        raise ValueError("unit_cost must be a positive finite number")
+    if not 3 <= len(clean_reason) <= 500:
+        raise ValueError("reason must contain 3 to 500 characters")
+    try:
+        line_index = int(line_index)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("line_index is invalid") from None
+    if line_index < 0:
+        raise ValueError("line_index is invalid")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT items FROM orders WHERE id = $1 FOR UPDATE", int(order_id)
+            )
+            if not row:
+                raise LookupError("order not found")
+            raw_items = row["items"]
+            items = json.loads(raw_items) if isinstance(raw_items, str) else (raw_items or [])
+            if line_index >= len(items):
+                raise LookupError("order line not found")
+            item = dict(items[line_index])
+            if item.get("is_gift") or item.get("cost_in_expenses"):
+                raise ValueError("gift or expense-booked lines cannot be edited here")
+            cost_map, set_costs = await _order_cost_maps(conn, [item])
+            old_cost, old_known = _line_unit_cost(item, cost_map, set_costs)
+            item["unit_cost_snapshot"] = new_cost
+            item["unit_cost_known"] = True
+            items[line_index] = item
+            await conn.execute(
+                "UPDATE orders SET items = $2 WHERE id = $1",
+                int(order_id), json.dumps(items, ensure_ascii=False),
+            )
+            audit_id = await conn.fetchval(
+                """INSERT INTO order_line_cost_audit
+                       (order_id, line_index, old_unit_cost, new_unit_cost, reason)
+                   VALUES ($1, $2, $3, $4, $5) RETURNING id""",
+                int(order_id), line_index, old_cost if old_known else None,
+                new_cost, clean_reason,
+            )
+    return {"id": int(audit_id), "old_unit_cost": old_cost if old_known else None,
+            "new_unit_cost": new_cost, "reason": clean_reason}
 
 
 async def get_cart(user_id: int) -> list[dict]:
@@ -1669,6 +1977,7 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
 
     async with pool.acquire() as conn:
         async with conn.transaction():
+            items = await _snapshot_order_costs(conn, items)
             for item in items:
                 qty = item["quantity"]
                 if item.get("is_bonus"):
@@ -1794,20 +2103,22 @@ async def add_manual_order(admin_user_id: int, customer_name: str, phone: str,
     they can edit the product quantity manually.
     """
     async with pool.acquire() as conn:
-        order_id = await conn.fetchval(
-            """INSERT INTO orders (user_id, customer_name, phone, address, items, total,
-                                    payment_method, delivery_method, address_note, status,
-                                    source, confirmed_at, shipped_at, delivered_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'manual',
-                       CASE WHEN $10 IN ('confirmed','shipped','delivered') THEN CURRENT_TIMESTAMP END,
-                       CASE WHEN $10 IN ('shipped','delivered')             THEN CURRENT_TIMESTAMP END,
-                       CASE WHEN $10 = 'delivered'                          THEN CURRENT_TIMESTAMP END)
-               RETURNING id""",
-            admin_user_id, customer_name, phone, address,
-            json.dumps(items_data, ensure_ascii=False), total,
-            payment_method, delivery_method, address_note, status,
-        )
-        return order_id
+        async with conn.transaction():
+            items_data = await _snapshot_order_costs(conn, items_data)
+            order_id = await conn.fetchval(
+                """INSERT INTO orders (user_id, customer_name, phone, address, items, total,
+                                        payment_method, delivery_method, address_note, status,
+                                        source, confirmed_at, shipped_at, delivered_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'manual',
+                           CASE WHEN $10 IN ('confirmed','shipped','delivered') THEN CURRENT_TIMESTAMP END,
+                           CASE WHEN $10 IN ('shipped','delivered')             THEN CURRENT_TIMESTAMP END,
+                           CASE WHEN $10 = 'delivered'                          THEN CURRENT_TIMESTAMP END)
+                   RETURNING id""",
+                admin_user_id, customer_name, phone, address,
+                json.dumps(items_data, ensure_ascii=False), total,
+                payment_method, delivery_method, address_note, status,
+            )
+            return order_id
 
 
 async def add_b2b_order(admin_user_id: int, company_name: str,
@@ -1825,16 +2136,18 @@ async def add_b2b_order(admin_user_id: int, company_name: str,
     and broken out separately as b2b_revenue/b2b_orders.
     """
     async with pool.acquire() as conn:
-        order_id = await conn.fetchval(
-            """INSERT INTO orders (user_id, customer_name, items, total, status,
-                                    source, confirmed_at, shipped_at, delivered_at)
-               VALUES ($1, $2, $3, $4, 'delivered', 'b2b',
-                       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-               RETURNING id""",
-            admin_user_id, company_name,
-            json.dumps(items_data, ensure_ascii=False), total,
-        )
-        return order_id
+        async with conn.transaction():
+            items_data = await _snapshot_order_costs(conn, items_data)
+            order_id = await conn.fetchval(
+                """INSERT INTO orders (user_id, customer_name, items, total, status,
+                                        source, confirmed_at, shipped_at, delivered_at)
+                   VALUES ($1, $2, $3, $4, 'delivered', 'b2b',
+                           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                   RETURNING id""",
+                admin_user_id, company_name,
+                json.dumps(items_data, ensure_ascii=False), total,
+            )
+            return order_id
 
 async def add_b2b_eritritol_order(admin_user_id: int, address: str, phone: str,
                                  quantity: float, total: float,
@@ -2599,24 +2912,19 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
 
     Read by the bot's Statistika screen (an admin waiting on it), the admin
     website's Dashboard, and the Maqsadlar scheduler twice every half hour —
-    so it is worth it not being slow. It used to fire ~15 sequential queries,
-    six of them separate COUNT(*) passes over `orders` differing only by
-    status, and each round trip paid for itself in latency. Same numbers now
-    come out of four:
+    so it is worth it not being slow. It reads catalogue/status counters,
+    booked order aggregates, delivered aggregates, expenses, and delivered
+    line items separately so each time basis stays explicit.
 
-      1. catalogue/lifetime counters (period-independent)
-      2. one pass over `orders` with FILTER aggregates for every status,
-         revenue and the B2B split
-      3. the window's new users, new reviews and booked expenses
-      4. the sold orders' item lines + the cost table behind them
+    New-order count/value follow created_at and exclude cancellations.
+    Delivered revenue and COGS follow delivered_at. Net profit is the latter
+    less expenses booked in the selected period. This keeps the daily sales
+    goal actionable while making revenue/profit describe completed sales.
+    All database reads run in one repeatable-read, read-only transaction so a
+    delivery or cost edit cannot land between the revenue and COGS queries.
 
-    Revenue, cost and profit follow SALE_SQL — every order placed in the
-    window that was not cancelled — so `orders_sold` and `revenue` always
-    describe the same orders and a new sale lands in the figures at once.
-
-    Deliberately still not one query: mixing unrelated tables into a single
-    statement makes the plan worse, not better, and the four are independent
-    enough to stay readable.
+    Deliberately not one query: mixing unrelated tables into a single
+    statement makes the plan worse, not better, and these scopes stay readable.
     """
     start_time, end_time = _period_range(period)
 
@@ -2631,65 +2939,89 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         args.append(end_time)
     where = (" WHERE " + " AND ".join(conds)) if conds else ""
     order_where = (" AND " + " AND ".join(conds)) if conds else ""
+    delivered_conds, delivered_args = [], []
+    if start_time:
+        delivered_conds.append(f"delivered_at >= ${len(delivered_args) + 1}")
+        delivered_args.append(start_time)
+    if end_time:
+        delivered_conds.append(f"delivered_at <= ${len(delivered_args) + 1}")
+        delivered_args.append(end_time)
+    delivered_where = (" AND " + " AND ".join(delivered_conds)) if delivered_conds else ""
 
     async with pool.acquire() as conn:
-        catalog = await conn.fetchrow("""
-            SELECT (SELECT COUNT(*) FROM users)   AS users_total,
-                   (SELECT COUNT(*) FROM reviews) AS reviews_total,
-                   (SELECT COUNT(*) FROM products WHERE is_active = 1) AS products_active,
-                   (SELECT COUNT(*) FROM products WHERE is_active = 1 AND quantity > 0)
-                       AS products_in_stock
-        """)
+        async with conn.transaction(isolation="repeatable_read", readonly=True):
+            catalog = await conn.fetchrow("""
+                SELECT (SELECT COUNT(*) FROM users)   AS users_total,
+                       (SELECT COUNT(*) FROM reviews) AS reviews_total,
+                       (SELECT COUNT(*) FROM products WHERE is_active = 1) AS products_active,
+                       (SELECT COUNT(*) FROM products WHERE is_active = 1 AND quantity > 0)
+                           AS products_in_stock
+            """)
 
-        orders_row = await conn.fetchrow(f"""
-            SELECT COUNT(*)                                            AS total,
-                   COUNT(*) FILTER (WHERE status = 'pending')          AS pending,
-                   COUNT(*) FILTER (WHERE status = 'confirmed')        AS confirmed,
-                   COUNT(*) FILTER (WHERE status = 'cancelled')        AS cancelled
-              FROM orders{where}
-        """, *args)
-
-        # The money half of the report — see SALE_SQL for why it is the placed
-        # orders and not the delivered ones.
-        sale_where = f" WHERE {SALE_SQL}{order_where}"
-        money_row = await conn.fetchrow(f"""
-            SELECT COUNT(*)                                     AS sold,
-                   COUNT(*) FILTER (WHERE status = 'delivered')  AS delivered,
-                   COALESCE(SUM(total), 0)                      AS revenue,
-                   COALESCE(SUM(total) FILTER (WHERE source = 'b2b'), 0) AS b2b_revenue,
-                   COUNT(*) FILTER (WHERE source = 'b2b')       AS b2b_orders,
-                   COALESCE(SUM(COALESCE(keto_redeemed, 0)), 0) AS keto_discount
-              FROM orders{sale_where}
-        """, *args)
-
-        if where:
-            window = await conn.fetchrow(f"""
-                SELECT (SELECT COUNT(*) FROM users{where})    AS users_new,
-                       (SELECT COUNT(*) FROM reviews{where})  AS reviews_new,
-                       (SELECT COALESCE(SUM(amount), 0) FROM expenses{where})
-                           AS expenses
+            orders_row = await conn.fetchrow(f"""
+                SELECT COUNT(*)                                            AS total,
+                       COUNT(*) FILTER (WHERE status = 'pending')          AS pending,
+                       COUNT(*) FILTER (WHERE status = 'confirmed')        AS confirmed,
+                       COUNT(*) FILTER (WHERE status = 'delivered')        AS delivered,
+                       COUNT(*) FILTER (WHERE status = 'cancelled')        AS cancelled
+                  FROM orders{where}
             """, *args)
-            users_new = int(window["users_new"])
-            reviews_new = int(window["reviews_new"])
-            expenses_total = int(window["expenses"] or 0)
-        else:
-            users_new = int(catalog["users_total"])
-            reviews_new = int(catalog["reviews_total"])
-            expenses_total = int(
-                await conn.fetchval("SELECT COALESCE(SUM(amount), 0) FROM expenses") or 0
-            )
 
-        # Cost of goods. The item lines live as JSON text inside orders.items,
-        # so this stays in Python: a malformed row must be skipped, not blow up
-        # a dashboard, and casting text to jsonb in SQL cannot be made to skip.
-        orders_rows = await conn.fetch(
-            f"SELECT items FROM orders{sale_where}", *args
-        )
-        cost_map = {
-            row["id"]: row["cost_price"] or 0
-            for row in await conn.fetch("SELECT id, cost_price FROM products")
-        }
-    set_costs = await get_set_costs()
+            # Booked orders answer how many new orders arrived and their order
+            # value. Delivery revenue is a separate clock used for profit.
+            booked_row = await conn.fetchrow(f"""
+                SELECT COUNT(*) AS sold,
+                       COALESCE(SUM(total), 0) AS booked_value,
+                       COALESCE(SUM(COALESCE(keto_redeemed, 0)), 0) AS keto_discount
+                  FROM orders WHERE {SALE_SQL}{order_where}
+            """, *args)
+            delivered_row = await conn.fetchrow(f"""
+                SELECT COUNT(*) AS delivered,
+                       COALESCE(SUM(total), 0) AS revenue,
+                       COALESCE(SUM(total) FILTER (WHERE source = 'b2b'), 0) AS b2b_revenue,
+                       COUNT(*) FILTER (WHERE source = 'b2b') AS b2b_orders,
+                       COALESCE(SUM(COALESCE(keto_redeemed, 0)), 0) AS keto_discount
+                  FROM orders WHERE status = 'delivered'{delivered_where}
+            """, *delivered_args)
+
+            if where:
+                window = await conn.fetchrow(f"""
+                    SELECT (SELECT COUNT(*) FROM users{where})    AS users_new,
+                           (SELECT COUNT(*) FROM reviews{where})  AS reviews_new,
+                           (SELECT COALESCE(SUM(amount), 0) FROM expenses{where})
+                               AS expenses
+                """, *args)
+                users_new = int(window["users_new"])
+                reviews_new = int(window["reviews_new"])
+                expenses_total = int(window["expenses"] or 0)
+            else:
+                users_new = int(catalog["users_total"])
+                reviews_new = int(catalog["reviews_total"])
+                expenses_total = int(
+                    await conn.fetchval("SELECT COALESCE(SUM(amount), 0) FROM expenses") or 0
+                )
+
+            # Cost of goods. The item lines live as JSON text inside orders.items,
+            # so this stays in Python: a malformed row must be skipped, not blow up
+            # a dashboard, and casting text to jsonb in SQL cannot be made to skip.
+            delivered_orders_where = (f" WHERE status = 'delivered'{delivered_where}")
+            orders_rows = await conn.fetch(
+                f"SELECT items FROM orders{delivered_orders_where}", *delivered_args
+            )
+            cost_map = {
+                row["id"]: row["cost_price"] or 0
+                for row in await conn.fetch("SELECT id, cost_price FROM products")
+            }
+            set_costs = {
+                row["set_id"]: float(row["cost"])
+                for row in await conn.fetch(
+                    """SELECT i.set_id,
+                              COALESCE(SUM(COALESCE(p.cost_price, 0) * i.quantity), 0) AS cost
+                         FROM product_set_items i
+                         JOIN products p ON p.id = i.product_id
+                        GROUP BY i.set_id"""
+                )
+            }
 
     product_cost_total = 0.0
     missing_cost = set()
@@ -2704,10 +3036,11 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
             # One unreadable order must not cost the whole report.
             continue
 
-    revenue = int(money_row["revenue"] or 0)
-    orders_sold = int(money_row["sold"])
-    keto_discount = int(money_row["keto_discount"] or 0)
-    orders_delivered = int(money_row["delivered"])
+    revenue = int(delivered_row["revenue"] or 0)
+    booked_value = int(booked_row["booked_value"] or 0)
+    orders_sold = int(booked_row["sold"])
+    keto_discount = int(delivered_row["keto_discount"] or 0)
+    orders_delivered = int(delivered_row["delivered"])
     product_cost_total = int(product_cost_total)
     profit = revenue - expenses_total - product_cost_total
 
@@ -2723,11 +3056,13 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         "orders_pending": int(orders_row["pending"]),
         "orders_confirmed": int(orders_row["confirmed"]),
         "orders_delivered": orders_delivered,
+        "orders_delivered_created": int(orders_row["delivered"]),
         "orders_cancelled": int(orders_row["cancelled"]),
-        # The orders behind `revenue`: orders_total minus the cancelled ones.
-        # Callers that show a sales count next to the money should use this
-        # rather than recomputing it, so the two can never drift apart.
+        # Daily goal/order intake count, scoped by created_at.
         "orders_sold": orders_sold,
+        "orders_booked": orders_sold,
+        "booked_value": booked_value,
+        "delivered_revenue": revenue,
         # Keto spent as a checkout discount. Deliberately NOT an expense: the
         # buyer already paid that much less, so `revenue` is lower by exactly
         # this, and booking it in Chiqimlar as well would subtract the same
@@ -2736,9 +3071,9 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         # without that cost being counted against the shop a second time.
         "keto_discount": keto_discount,
         "revenue": revenue,
-        "aov": int(revenue / orders_sold) if orders_sold else 0,
-        "b2b_revenue": int(money_row["b2b_revenue"] or 0),
-        "b2b_orders": int(money_row["b2b_orders"]),
+        "aov": int(booked_value / orders_sold) if orders_sold else 0,
+        "b2b_revenue": int(delivered_row["b2b_revenue"] or 0),
+        "b2b_orders": int(delivered_row["b2b_orders"]),
         "expenses": expenses_total,
         "product_cost": product_cost_total,
         "profit": profit,
@@ -2746,6 +3081,50 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         # as 0, so profit is overstated by exactly what they really cost.
         "missing_cost_products": sorted(missing_cost),
     }
+
+
+async def get_delivered_orders_for_period(period: str | dict = "all") -> list[dict]:
+    """Order detail behind delivered-sales summaries, using delivered_at.
+
+    Keep the filter identical to get_admin_stats so exports can reconcile to
+    their summary without including orders created in the period but delivered
+    later. No buyer or address fields are returned.
+    """
+    start_time, end_time = _period_range(period)
+    conds = ["status = 'delivered'"]
+    args = []
+    if start_time:
+        args.append(start_time)
+        conds.append(f"delivered_at >= ${len(args)}")
+    if end_time:
+        args.append(end_time)
+        conds.append(f"delivered_at <= ${len(args)}")
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, items, total, source, created_at, delivered_at
+                 FROM orders WHERE """ + " AND ".join(conds) + " ORDER BY delivered_at, id",
+            *args,
+        )
+        return [dict(row) for row in rows]
+
+
+async def get_expenses_for_period(period: str | dict = "all") -> list[dict]:
+    """Expense detail behind profit, scoped by when each expense was booked."""
+    start_time, end_time = _period_range(period)
+    conds, args = [], []
+    if start_time:
+        args.append(start_time)
+        conds.append(f"created_at >= ${len(args)}")
+    if end_time:
+        args.append(end_time)
+        conds.append(f"created_at <= ${len(args)}")
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, name, amount, created_at FROM expenses" + where + " ORDER BY created_at, id",
+            *args,
+        )
+        return [dict(row) for row in rows]
 
 # ===== MAQSADLAR / TARGETS (2026-09-02) =====
 
@@ -2786,27 +3165,64 @@ async def mark_targets_sent(day, slot: int) -> None:
 
 async def record_target_day(day, orders: int, daily_target: int, revenue: float,
                             profit: float, month_profit: float,
-                            monthly_target_usd: float, usd_rate: float) -> None:
+                            monthly_target_usd: float, usd_rate: float,
+                            booked_value: float = 0) -> None:
     """Upsert today's line in the target history. Called on every tick, so the
     row tracks the day as it happens instead of freezing at whatever moment a
     report was generated."""
     async with pool.acquire() as conn:
         await conn.execute(
             """INSERT INTO target_days
-                   (day, orders, daily_target, revenue, profit, month_profit,
+                   (day, orders, daily_target, revenue, booked_value, profit, month_profit,
                     monthly_target_usd, usd_rate, updated_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
                ON CONFLICT (day) DO UPDATE SET
                    orders = EXCLUDED.orders,
                    daily_target = EXCLUDED.daily_target,
                    revenue = EXCLUDED.revenue,
+                   booked_value = EXCLUDED.booked_value,
                    profit = EXCLUDED.profit,
                    month_profit = EXCLUDED.month_profit,
                    monthly_target_usd = EXCLUDED.monthly_target_usd,
                    usd_rate = EXCLUDED.usd_rate,
                    updated_at = CURRENT_TIMESTAMP""",
-            day, int(orders), int(daily_target), float(revenue), float(profit),
-            float(month_profit), float(monthly_target_usd), float(usd_rate),
+            day, int(orders), int(daily_target), float(revenue), float(booked_value),
+            float(profit), float(month_profit), float(monthly_target_usd), float(usd_rate),
+        )
+
+
+async def record_target_report_snapshot(day, slot: int, snapshot: dict,
+                                        message: str) -> bool:
+    """Freeze figures and text prepared for a scheduled admin report.
+
+    A later live refresh may change target_days, but an already issued report
+    is immutable. Delivery outcome and sent_at are recorded separately after
+    the attempt. The primary key makes scheduler retries idempotent.
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO target_report_snapshots (report_date, slot, snapshot, message)
+               VALUES ($1, $2, $3::jsonb, $4)
+               ON CONFLICT (report_date, slot) DO NOTHING
+               RETURNING report_date""",
+            day, int(slot), json.dumps(snapshot, ensure_ascii=False, default=str), message,
+        )
+        return row is not None
+
+
+async def finish_target_report_snapshot(day, slot: int, attempted: int,
+                                        delivered: int) -> None:
+    """Record actual delivery outcome without changing the frozen report."""
+    status = "sent" if delivered == attempted and delivered else (
+        "partial" if delivered else "failed"
+    )
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE target_report_snapshots
+                  SET status = $3, attempted_count = $4, delivered_count = $5,
+                      sent_at = CASE WHEN $5 > 0 THEN CURRENT_TIMESTAMP ELSE NULL END
+                WHERE report_date = $1 AND slot = $2""",
+            day, int(slot), status, int(attempted), int(delivered),
         )
 
 
@@ -3309,19 +3725,24 @@ def _month_window_utc(year: int, month: int, cap_at_now: bool = False):
 
 
 async def _query_month(conn, start_utc, end_utc) -> dict:
-    row = await conn.fetchrow(
-        f"""SELECT COALESCE(SUM(total), 0) AS revenue, COUNT(*) AS orders
+    booked = await conn.fetchrow(
+        f"""SELECT COALESCE(SUM(total), 0) AS booked_value, COUNT(*) AS orders
            FROM orders WHERE {SALE_SQL} AND created_at >= $1 AND created_at < $2""",
         start_utc, end_utc,
     )
-    b2b_revenue = await conn.fetchval(
-        f"""SELECT COALESCE(SUM(total), 0) FROM orders
-           WHERE {SALE_SQL} AND source = 'b2b' AND created_at >= $1 AND created_at < $2""",
+    delivered = await conn.fetchrow(
+        """SELECT COALESCE(SUM(total), 0) AS delivered_revenue, COUNT(*) AS delivered_orders,
+                  COALESCE(SUM(total) FILTER (WHERE source = 'b2b'), 0) AS b2b_revenue
+             FROM orders WHERE status = 'delivered' AND delivered_at >= $1 AND delivered_at < $2""",
         start_utc, end_utc,
     )
+    b2b_revenue = delivered["b2b_revenue"]
     return {
-        "revenue": int(row["revenue"] or 0),
-        "orders": row["orders"],
+        "revenue": int(delivered["delivered_revenue"] or 0),
+        "delivered_revenue": int(delivered["delivered_revenue"] or 0),
+        "delivered_orders": int(delivered["delivered_orders"] or 0),
+        "booked_value": int(booked["booked_value"] or 0),
+        "orders": int(booked["orders"] or 0),
         "b2b_revenue": int(b2b_revenue or 0),
     }
 
