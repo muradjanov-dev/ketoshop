@@ -23,9 +23,12 @@ class SnapshotConn:
         self.executed = []
         self.order_items = [{"product_id": 10, "name": "Flax", "quantity": 2}]
         self.audit_records = []
+        self.cost_write_events = []
+        self.transaction_active = False
 
     async def fetch(self, sql, *args):
         if "FROM products WHERE id = ANY" in sql:
+            self.cost_write_events.append(("snapshot", self.transaction_active))
             return [
                 {"id": 10, "cost_price": 40_000},
                 {"id": 11, "cost_price": 0},
@@ -52,6 +55,7 @@ class SnapshotConn:
 
     async def fetchval(self, sql, *args):
         if "INSERT INTO orders" in sql:
+            self.cost_write_events.append(("insert", self.transaction_active))
             if "latitude" in sql:
                 index = 5
             elif "B2B Eritritol" in sql:
@@ -81,7 +85,11 @@ class SnapshotConn:
     def transaction(self):
         @contextlib.asynccontextmanager
         async def _transaction():
-            yield
+            self.transaction_active = True
+            try:
+                yield
+            finally:
+                self.transaction_active = False
         return _transaction()
 
 
@@ -162,6 +170,7 @@ class CostSnapshotTests(unittest.TestCase):
             with mock.patch.object(database, "pool", FakePool(conn)):
                 asyncio.run(create())
             self.assertEqual(conn.inserted_items[0][0]["unit_cost_snapshot"], 40_000)
+            self.assertEqual(conn.cost_write_events, [("snapshot", True), ("insert", True)])
 
         b2b_eritritol_conn = SnapshotConn()
         with mock.patch.object(database, "pool", FakePool(b2b_eritritol_conn)):

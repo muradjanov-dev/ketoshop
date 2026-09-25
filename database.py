@@ -112,11 +112,21 @@ async def init_db():
             END;
             $$ LANGUAGE plpgsql
         """)
-        await conn.execute("DROP TRIGGER IF EXISTS order_line_cost_audit_immutable ON order_line_cost_audit")
         await conn.execute("""
-            CREATE TRIGGER order_line_cost_audit_immutable
-            BEFORE UPDATE OR DELETE ON order_line_cost_audit
-            FOR EACH ROW EXECUTE FUNCTION reject_order_line_cost_audit_mutation()
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_trigger
+                     WHERE tgname = 'order_line_cost_audit_immutable'
+                       AND tgrelid = 'order_line_cost_audit'::regclass
+                       AND NOT tgisinternal
+                ) THEN
+                    EXECUTE 'CREATE TRIGGER order_line_cost_audit_immutable
+                             BEFORE UPDATE OR DELETE ON order_line_cost_audit
+                             FOR EACH ROW EXECUTE FUNCTION reject_order_line_cost_audit_mutation()';
+                END IF;
+            END;
+            $$
         """)
         try:
             await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS courier_id BIGINT")
@@ -2093,21 +2103,22 @@ async def add_manual_order(admin_user_id: int, customer_name: str, phone: str,
     they can edit the product quantity manually.
     """
     async with pool.acquire() as conn:
-        items_data = await _snapshot_order_costs(conn, items_data)
-        order_id = await conn.fetchval(
-            """INSERT INTO orders (user_id, customer_name, phone, address, items, total,
-                                    payment_method, delivery_method, address_note, status,
-                                    source, confirmed_at, shipped_at, delivered_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'manual',
-                       CASE WHEN $10 IN ('confirmed','shipped','delivered') THEN CURRENT_TIMESTAMP END,
-                       CASE WHEN $10 IN ('shipped','delivered')             THEN CURRENT_TIMESTAMP END,
-                       CASE WHEN $10 = 'delivered'                          THEN CURRENT_TIMESTAMP END)
-               RETURNING id""",
-            admin_user_id, customer_name, phone, address,
-            json.dumps(items_data, ensure_ascii=False), total,
-            payment_method, delivery_method, address_note, status,
-        )
-        return order_id
+        async with conn.transaction():
+            items_data = await _snapshot_order_costs(conn, items_data)
+            order_id = await conn.fetchval(
+                """INSERT INTO orders (user_id, customer_name, phone, address, items, total,
+                                        payment_method, delivery_method, address_note, status,
+                                        source, confirmed_at, shipped_at, delivered_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'manual',
+                           CASE WHEN $10 IN ('confirmed','shipped','delivered') THEN CURRENT_TIMESTAMP END,
+                           CASE WHEN $10 IN ('shipped','delivered')             THEN CURRENT_TIMESTAMP END,
+                           CASE WHEN $10 = 'delivered'                          THEN CURRENT_TIMESTAMP END)
+                   RETURNING id""",
+                admin_user_id, customer_name, phone, address,
+                json.dumps(items_data, ensure_ascii=False), total,
+                payment_method, delivery_method, address_note, status,
+            )
+            return order_id
 
 
 async def add_b2b_order(admin_user_id: int, company_name: str,
@@ -2125,17 +2136,18 @@ async def add_b2b_order(admin_user_id: int, company_name: str,
     and broken out separately as b2b_revenue/b2b_orders.
     """
     async with pool.acquire() as conn:
-        items_data = await _snapshot_order_costs(conn, items_data)
-        order_id = await conn.fetchval(
-            """INSERT INTO orders (user_id, customer_name, items, total, status,
-                                    source, confirmed_at, shipped_at, delivered_at)
-               VALUES ($1, $2, $3, $4, 'delivered', 'b2b',
-                       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-               RETURNING id""",
-            admin_user_id, company_name,
-            json.dumps(items_data, ensure_ascii=False), total,
-        )
-        return order_id
+        async with conn.transaction():
+            items_data = await _snapshot_order_costs(conn, items_data)
+            order_id = await conn.fetchval(
+                """INSERT INTO orders (user_id, customer_name, items, total, status,
+                                        source, confirmed_at, shipped_at, delivered_at)
+                   VALUES ($1, $2, $3, $4, 'delivered', 'b2b',
+                           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                   RETURNING id""",
+                admin_user_id, company_name,
+                json.dumps(items_data, ensure_ascii=False), total,
+            )
+            return order_id
 
 async def add_b2b_eritritol_order(admin_user_id: int, address: str, phone: str,
                                  quantity: float, total: float,
