@@ -1664,7 +1664,7 @@ def _line_unit_cost(item: dict, cost_map: dict, set_costs: dict) -> tuple[float,
         cost, known = _valid_unit_cost(value)
         return cost, known
 
-    if item.get("is_gift"):
+    if item.get("is_gift") or item.get("cost_in_expenses"):
         return 0.0, True
     if "unit_cost_snapshot" in item:
         cost, valid = _valid_unit_cost(item.get("unit_cost_snapshot"))
@@ -1680,7 +1680,7 @@ def _line_unit_cost(item: dict, cost_map: dict, set_costs: dict) -> tuple[float,
         return cost, known
     product_id = _line_product_id(item)
     cost, known = _mapped_cost(cost_map, product_id)
-    return (cost if known else 0.0), known or bool(item.get("is_bonus"))
+    return (cost if known else 0.0), known
 
 
 def line_cost(item: dict, cost_map: dict, set_costs: dict) -> tuple[float, bool]:

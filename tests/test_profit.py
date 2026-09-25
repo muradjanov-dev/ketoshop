@@ -39,6 +39,17 @@ class LineCostTest(unittest.TestCase):
         self.assertAlmostEqual(cost, 4_000)
         self.assertTrue(known)
 
+    def test_legacy_bonus_with_missing_catalog_cost_is_flagged(self):
+        line = {"product_id": 20, "quantity": 100, "stock_quantity": 0.1, "is_bonus": True}
+        self.assertEqual(database.line_cost(line, COSTS, SET_COSTS), (0, False))
+
+    def test_expense_booked_bonus_costs_zero_without_missing_cost_warning(self):
+        line = {
+            "product_id": 20, "quantity": 100, "stock_quantity": 0.1,
+            "is_bonus": True, "cost_in_expenses": True,
+        }
+        self.assertEqual(database.line_cost(line, COSTS, SET_COSTS), (0, True))
+
     def test_line_carrying_its_own_cost_price_is_costed_by_it(self):
         # B2B Eritritol: sold by the kilo out of a wholesale sack, and the
         # catalog only has 100gr/500gr packs, so the line keeps its own cost.
