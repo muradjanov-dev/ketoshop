@@ -37,9 +37,19 @@ class FinanceExcelReportTest(unittest.TestCase):
             "orders_delivered": 1, "delivered_revenue": 225,
             "product_cost": 80, "expenses": 25, "profit": 120,
         }
+        delivered_orders = [{
+            "id": 201, "delivered_at": None, "total": 225.7,
+            "items": '[{"name":"A","product_id":10,"quantity":1,"price":225.7}]',
+        }]
+        expenses = [
+            {"id": 1, "name": "Yetkazish", "amount": 10.7, "created_at": None},
+            {"id": 2, "name": "Qadoq", "amount": 15.3, "created_at": None},
+        ]
 
         with patch.object(reports, "get_orders_for_export", AsyncMock(return_value=orders)), \
              patch.object(reports, "get_admin_stats", AsyncMock(return_value=stats)), \
+             patch.object(reports, "get_delivered_orders_for_period", AsyncMock(return_value=delivered_orders)), \
+             patch.object(reports, "get_expenses_for_period", AsyncMock(return_value=expenses)), \
              patch.object(reports, "get_all_cost_prices", AsyncMock(return_value={10: 80})), \
              patch.object(reports, "get_set_costs", AsyncMock(return_value={})), \
              patch.object(reports, "_fmt_dt", return_value=""):
@@ -54,10 +64,25 @@ class FinanceExcelReportTest(unittest.TestCase):
         summary = workbook["Xulosa"]
         amounts = {summary.cell(row=r, column=1).value: summary.cell(row=r, column=2).value
                    for r in range(1, summary.max_row + 1)}
-        self.assertEqual(amounts["Buyurtma qiymati (tushumga yozilgan)"], 250)
+        self.assertEqual(amounts["Yangi buyurtmalar qiymati (yaratilgan sana)"], 250)
         self.assertEqual(amounts["Yetkazilgan tushum"], 225)
         self.assertEqual(amounts["Davr xarajatlari"], 25)
         self.assertEqual(amounts["Sof foyda (yetkazilgan tushum − tannarx − xarajat)"], 120)
+
+        delivered_sheet = workbook["Yetkazilganlar"]
+        delivered_total = delivered_sheet.cell(row=delivered_sheet.max_row, column=8).value
+        self.assertEqual(delivered_total, amounts["Yetkazilgan tushum"])
+        self.assertEqual(delivered_sheet.cell(row=3, column=7).value, "Hisobot bilan tafovut")
+        self.assertAlmostEqual(delivered_sheet.cell(row=3, column=8).value, -0.7)
+        self.assertAlmostEqual(sum(delivered_sheet.cell(row=r, column=8).value or 0
+                                  for r in range(2, delivered_sheet.max_row)), delivered_total)
+        expense_sheet = workbook["Xarajatlar"]
+        expense_total = expense_sheet.cell(row=expense_sheet.max_row, column=3).value
+        self.assertEqual(expense_total, amounts["Davr xarajatlari"])
+        self.assertEqual(expense_sheet.cell(row=4, column=2).value, "Hisobot bilan tafovut")
+        self.assertAlmostEqual(expense_sheet.cell(row=4, column=3).value, -1.0)
+        self.assertAlmostEqual(sum(expense_sheet.cell(row=r, column=3).value or 0
+                                  for r in range(2, expense_sheet.max_row)), expense_total)
 
 
 class FinanceDashboardPayloadTest(unittest.TestCase):

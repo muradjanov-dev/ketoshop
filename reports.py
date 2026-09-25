@@ -7,6 +7,7 @@ file built with openpyxl so we don't touch the filesystem.
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 from io import BytesIO
 from typing import Iterable
@@ -15,7 +16,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from database import (get_orders_for_export, get_all_cost_prices, get_set_costs,
+from database import (get_orders_for_export, get_delivered_orders_for_period,
+                      get_expenses_for_period, get_all_cost_prices, get_set_costs,
                       get_admin_stats, format_local_dt, line_cost)
 from locales import get_delivery_method_name, get_order_status
 
@@ -197,7 +199,7 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
         (("Buyurtmalar varag'i yaratilgan sana bo'yicha; sof foyda yetkazilgan sana va shu davr xarajatlari bo'yicha" if lang == "uz" else "Лист заказов сгруппирован по дате создания; чистая прибыль — по дате доставки и расходам периода"), ""),
         (("Buyurtmalar (yaratilgan davr)" if lang == "uz" else "Заказы (по дате создания)"), len(orders)),
         (("Bekor qilinmagan savdolar" if lang == "uz" else "Заказы без отмен"), int(stats.get("orders_sold") or 0)),
-        (("Buyurtma qiymati (tushumga yozilgan)" if lang == "uz" else "Сумма заказов (начислено)"), int(booked_value)),
+        (("Yangi buyurtmalar qiymati (yaratilgan sana)" if lang == "uz" else "Сумма новых заказов (по дате создания)"), int(booked_value)),
         (("Yetkazilgan buyurtmalar (yetkazilgan sana bo'yicha)" if lang == "uz" else "Доставлено (по дате доставки)"), int(stats.get("orders_delivered") or 0)),
         (("Yetkazilgan tushum" if lang == "uz" else "Выручка по доставленным"), int(delivered_revenue)),
         (("Yetkazilgan mahsulot tannarxi" if lang == "uz" else "Себестоимость доставленных"), int(delivered_cost)),
@@ -233,12 +235,116 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
     ws.column_dimensions["B"].width = 22
 
 
+def _decoded_items(order: dict) -> list[dict]:
+    items = order.get("items_data", order.get("items")) or []
+    if isinstance(items, str):
+        try:
+            items = json.loads(items)
+        except (TypeError, ValueError):
+            return []
+    return items if isinstance(items, list) else []
+
+
+def _delivered_orders_sheet(ws, orders: list[dict], lang: str,
+                            cost_map: dict[int, float],
+                            set_costs: dict[int, float],
+                            delivered_revenue: int,
+                            delivered_cost: int) -> None:
+    ws.title = "Yetkazilganlar" if lang == "uz" else "Доставленные"
+    headers = (["Buyurtma №", "Yetkazilgan sana", "Mahsulot", "Miqdor",
+                "Qator summa", "Tannarx", "Qator yalpi foyda", "Yetkazilgan tushum"]
+               if lang == "uz" else
+               ["Заказ №", "Дата доставки", "Товар", "Кол-во",
+                "Сумма строки", "Себестоимость", "Валовая прибыль строки", "Выручка доставки"])
+    _write_header(ws, headers)
+    row = 2
+    revenue_total = 0.0
+    cost_total = 0.0
+    for order in orders:
+        items = _decoded_items(order)
+        if not items:
+            items = [{"name": "—", "quantity": 1, "price": float(order.get("total") or 0)}]
+        first_item = True
+        for item in items:
+            quantity = float(item.get("quantity") or 0)
+            line_total = quantity * float(item.get("price") or 0)
+            line_total_cost, _ = line_cost(item, cost_map, set_costs)
+            order_total = float(order.get("total") or 0) if first_item else None
+            if first_item:
+                revenue_total += order_total or 0
+            cost_total += line_total_cost
+            values = [
+                int(order["id"]), _fmt_dt(order.get("delivered_at")),
+                item.get("name") or "—", quantity, int(line_total),
+                int(line_total_cost), int(line_total - line_total_cost), order_total,
+            ]
+            for col, value in enumerate(values, start=1):
+                cell = ws.cell(row=row, column=col, value=value)
+                cell.border = _BORDER
+                if col in (1, 4, 5, 6, 7, 8):
+                    cell.alignment = Alignment(horizontal="right")
+            row += 1
+            first_item = False
+
+    revenue_rounding = delivered_revenue - revenue_total
+    cost_rounding = delivered_cost - cost_total
+    if abs(revenue_rounding) > 1e-8 or abs(cost_rounding) > 1e-8:
+        ws.cell(row, 7, "Hisobot bilan tafovut" if lang == "uz" else "Разница с итогом отчёта")
+        ws.cell(row, 6, cost_rounding)
+        ws.cell(row, 8, revenue_rounding)
+        for cell in ws[row]:
+            cell.border = _BORDER
+        row += 1
+    ws.cell(row, 1, (f"Jami ({len(orders)} ta buyurtma)" if lang == "uz" else
+                     f"Итого ({len(orders)} заказов)"))
+    ws.cell(row, 6, delivered_cost)
+    ws.cell(row, 8, delivered_revenue)
+    for cell in ws[row]:
+        cell.fill = _TOTAL_FILL
+        cell.font = _TOTAL_FONT
+        cell.border = _BORDER
+    _autosize(ws, [10, 18, 24, 10, 14, 14, 20, 17])
+
+
+def _expenses_sheet(ws, expenses: list[dict], lang: str, period_total: int) -> None:
+    ws.title = "Xarajatlar" if lang == "uz" else "Расходы"
+    headers = (["Sana", "Xarajat", "Summa"] if lang == "uz" else
+               ["Дата", "Расход", "Сумма"])
+    _write_header(ws, headers)
+    total = 0.0
+    for row, expense in enumerate(expenses, start=2):
+        amount = float(expense.get("amount") or 0)
+        total += amount
+        values = [_fmt_dt(expense.get("created_at")), expense.get("name") or "—", amount]
+        for col, value in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=col, value=value)
+            cell.border = _BORDER
+            if col == 3:
+                cell.alignment = Alignment(horizontal="right")
+    total_row = len(expenses) + 2
+    rounding = period_total - total
+    if abs(rounding) > 1e-8:
+        ws.cell(total_row, 2, "Hisobot bilan tafovut" if lang == "uz" else "Разница с итогом отчёта")
+        ws.cell(total_row, 3, rounding)
+        for cell in ws[total_row]:
+            cell.border = _BORDER
+        total_row += 1
+    ws.cell(total_row, 2, "Jami" if lang == "uz" else "Итого")
+    ws.cell(total_row, 3, period_total)
+    for cell in ws[total_row]:
+        cell.fill = _TOTAL_FILL
+        cell.font = _TOTAL_FONT
+        cell.border = _BORDER
+    _autosize(ws, [18, 30, 16])
+
+
 # ----- Public API --------------------------------------------------
 
 async def generate_orders_excel(period: str = "all", lang: str = "uz") -> tuple[BytesIO, str]:
     """Build an .xlsx report for the given period. Returns (buffer, filename)."""
-    orders, stats = await asyncio.gather(
-        get_orders_for_export(period), get_admin_stats(period)
+    orders, stats, delivered_orders, expenses = await asyncio.gather(
+        get_orders_for_export(period), get_admin_stats(period),
+        get_delivered_orders_for_period(period), get_expenses_for_period(period),
     )
     # One DB call → in-memory map; avoids N+1 lookups while iterating items.
     cost_map = await get_all_cost_prices()
@@ -248,6 +354,14 @@ async def generate_orders_excel(period: str = "all", lang: str = "uz") -> tuple[
     _orders_sheet(wb.active, orders, lang, cost_map, set_costs)
     summary = wb.create_sheet()
     _summary_sheet(summary, orders, lang, period, stats)
+    delivered = wb.create_sheet()
+    _delivered_orders_sheet(
+        delivered, delivered_orders, lang, cost_map, set_costs,
+        int(stats.get("delivered_revenue", stats.get("revenue", 0)) or 0),
+        int(stats.get("product_cost") or 0),
+    )
+    expense_sheet = wb.create_sheet()
+    _expenses_sheet(expense_sheet, expenses, lang, int(stats.get("expenses") or 0))
 
     buf = BytesIO()
     wb.save(buf)
