@@ -210,8 +210,14 @@ class SaleBasisTest(unittest.TestCase):
             text = _month_block_text("uz", month)
         self.assertIn("Yangi buyurtmalar: 5 ta · 1 568 000 so'm", text)
         self.assertIn("Yetkazilgan savdo: 3 ta · 561 000 so'm", text)
-        self.assertIn("{booked_value}", get_text("admin_stats", "uz"))
-        self.assertIn("{delivered_orders}", get_text("admin_stats", "uz"))
+        uz_stats = get_text("admin_stats", "uz")
+        ru_stats = get_text("admin_stats", "ru")
+        self.assertIn("{booked_value}", uz_stats)
+        self.assertIn("{delivered_orders}", uz_stats)
+        self.assertIn("Davrda yaratilgan buyurtmalar", uz_stats)
+        self.assertIn("Ulardan yetkazilgan", uz_stats)
+        self.assertIn("Заказы, созданные за период", ru_stats)
+        self.assertIn("Из них доставлены", ru_stats)
 
 
 class CancelledOrderTest(unittest.TestCase):
