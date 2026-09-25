@@ -6,6 +6,7 @@ file built with openpyxl so we don't touch the filesystem.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from io import BytesIO
 from typing import Iterable
@@ -14,7 +15,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from database import get_orders_for_export, get_all_cost_prices, get_set_costs, format_local_dt, line_cost
+from database import (get_orders_for_export, get_all_cost_prices, get_set_costs,
+                      get_admin_stats, format_local_dt, line_cost)
 from locales import get_delivery_method_name, get_order_status
 
 
@@ -100,15 +102,15 @@ def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float],
     headers_uz = [
         "Buyurtma №", "Sana", "Mijoz", "Telefon",
         "Mahsulot", "Miqdor", "Birlik narx", "Qator summa",
-        "Asl narx", "Foyda",
-        "Buyurtma jami", "To'lov", "Yetkazib berish", "Holat", "Manba",
+        "Asl narx", "Qator yalpi foyda",
+        "Buyurtma jami (bekor qilinmagan)", "To'lov", "Yetkazib berish", "Holat", "Manba",
         "Manzil", "Izoh", "Tasdiqlangan", "Yo'lda", "Yetkazilgan",
     ]
     headers_ru = [
         "Заказ №", "Дата", "Клиент", "Телефон",
         "Товар", "Кол-во", "Цена за ед.", "Сумма строки",
-        "Себестоимость", "Прибыль",
-        "Сумма заказа", "Оплата", "Доставка", "Статус", "Источник",
+        "Себестоимость", "Валовая прибыль строки",
+        "Сумма заказа (без отмены)", "Оплата", "Доставка", "Статус", "Источник",
         "Адрес", "Комментарий", "Подтверждён", "В пути", "Доставлен",
     ]
     headers = headers_uz if lang == "uz" else headers_ru
@@ -120,6 +122,7 @@ def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float],
         if not items:
             items = [{"name": "—", "quantity": 1, "price": float(o.get("total") or 0)}]
         # One row per item — accountants want each line separately.
+        first_item = True
         for it in items:
             qty = float(it.get("quantity") or 0)
             price = float(it.get("price") or 0)
@@ -140,7 +143,11 @@ def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float],
             ws.cell(row=row, column=8,  value=int(line_total))
             ws.cell(row=row, column=9,  value=int(unit_cost))
             ws.cell(row=row, column=10, value=int(line_profit))
-            ws.cell(row=row, column=11, value=int(float(o.get("total") or 0)))
+            # Order totals repeat on every item row, which makes a flat export
+            # easy to over-sum. Keep the total on the first line only.
+            booked_order = (o.get("status") or "pending") != "cancelled"
+            ws.cell(row=row, column=11, value=(int(float(o.get("total") or 0))
+                                                if first_item and booked_order else None))
             ws.cell(row=row, column=12, value=_payment_label(o.get("payment_method"), lang))
             ws.cell(row=row, column=13, value=get_delivery_method_name(o.get("delivery_method"), lang))
             ws.cell(row=row, column=14, value=get_order_status(o.get("status") or "pending", lang))
@@ -157,29 +164,21 @@ def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float],
             for col in range(1, 21):
                 ws.cell(row=row, column=col).border = _BORDER
             row += 1
+            first_item = False
     _autosize(ws, min_widths=[10, 17, 18, 14, 24, 8, 12, 12, 12, 12, 14, 14, 18, 16, 12, 28, 22, 17, 17, 17])
 
 
 def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
-                   cost_map: dict[int, float], set_costs: dict[int, float] | None = None) -> None:
+                   stats: dict) -> None:
     ws.title = "Xulosa" if lang == "uz" else "Сводка"
 
-    delivered = [o for o in orders if o.get("status") == "delivered"]
-    # Revenue counts every order placed in the window that was not cancelled
-    # — the same rule the bot and the website use (database.SALE_SQL), so the
-    # export and the dashboard cannot disagree about the same period. The
-    # "Yetkazilgan" row below still says how much of it has actually shipped.
-    sold = [o for o in orders if (o.get("status") or "pending") != "cancelled"]
-    revenue = sum(float(o.get("total") or 0) for o in sold)
-    aov = (revenue / len(sold)) if sold else 0
-
-    # Lines without product_id (legacy or imported) contribute 0 cost.
-    total_cost = 0.0
-    for o in sold:
-        for it in (o.get("items_data") or []):
-            total_cost += line_cost(it, cost_map, set_costs or {})[0]
-    profit = revenue - total_cost
-    margin_pct = (profit / revenue * 100) if revenue else 0
+    booked_value = float(stats.get("booked_value") or 0)
+    delivered_revenue = float(stats.get("delivered_revenue", stats.get("revenue", 0)) or 0)
+    delivered_cost = float(stats.get("product_cost") or 0)
+    expenses = float(stats.get("expenses") or 0)
+    net_profit = float(stats.get("profit") or 0)
+    gross_profit = delivered_revenue - delivered_cost
+    margin_pct = (gross_profit / delivered_revenue * 100) if delivered_revenue else 0
 
     by_status: dict[str, int] = {}
     for o in orders:
@@ -195,16 +194,20 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
 
     rows: list[tuple[str, object]] = [
         (("Davr"             if lang == "uz" else "Период"), period_label),
-        (("Jami buyurtmalar" if lang == "uz" else "Всего заказов"), len(orders)),
-        (("Sotuv"            if lang == "uz" else "Продаж"), len(sold)),
-        (("Yetkazilgan"      if lang == "uz" else "Доставлено"), len(delivered)),
-        (("Daromad (so'm)"   if lang == "uz" else "Выручка (сум)"), int(revenue)),
-        (("Asl narx jami"    if lang == "uz" else "Себестоимость"),  int(total_cost)),
-        (("Foyda (so'm)"     if lang == "uz" else "Прибыль (сум)"),  int(profit)),
-        (("Foyda %"          if lang == "uz" else "Маржа %"),        round(margin_pct, 1)),
-        (("O'rtacha chek"    if lang == "uz" else "Средний чек"), int(aov)),
+        (("Buyurtmalar varag'i yaratilgan sana bo'yicha; sof foyda yetkazilgan sana va shu davr xarajatlari bo'yicha" if lang == "uz" else "Лист заказов сгруппирован по дате создания; чистая прибыль — по дате доставки и расходам периода"), ""),
+        (("Buyurtmalar (yaratilgan davr)" if lang == "uz" else "Заказы (по дате создания)"), len(orders)),
+        (("Bekor qilinmagan savdolar" if lang == "uz" else "Заказы без отмен"), int(stats.get("orders_sold") or 0)),
+        (("Buyurtma qiymati (tushumga yozilgan)" if lang == "uz" else "Сумма заказов (начислено)"), int(booked_value)),
+        (("Yetkazilgan buyurtmalar (yetkazilgan sana bo'yicha)" if lang == "uz" else "Доставлено (по дате доставки)"), int(stats.get("orders_delivered") or 0)),
+        (("Yetkazilgan tushum" if lang == "uz" else "Выручка по доставленным"), int(delivered_revenue)),
+        (("Yetkazilgan mahsulot tannarxi" if lang == "uz" else "Себестоимость доставленных"), int(delivered_cost)),
+        (("Yalpi foyda" if lang == "uz" else "Валовая прибыль"), int(gross_profit)),
+        (("Yalpi foyda %" if lang == "uz" else "Валовая маржа %"), round(margin_pct, 1)),
+        (("Davr xarajatlari" if lang == "uz" else "Расходы за период"), int(expenses)),
+        (("Sof foyda (yetkazilgan tushum − tannarx − xarajat)" if lang == "uz" else "Чистая прибыль (доставки − себестоимость − расходы)"), int(net_profit)),
+        (("O'rtacha buyurtma qiymati" if lang == "uz" else "Средняя сумма заказа"), int(booked_value / int(stats.get("orders_sold") or 1)) if stats.get("orders_sold") else 0),
         ("", ""),
-        ((" Holat bo'yicha"  if lang == "uz" else " По статусу"), ""),
+        (("Buyurtmalar holati (yaratilgan sana bo'yicha)" if lang == "uz" else "Статусы заказов (по дате создания)"), ""),
     ]
     for status, count in sorted(by_status.items()):
         rows.append((get_order_status(status, lang), count))
@@ -213,8 +216,8 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
     for source, count in sorted(by_source.items()):
         rows.append((_source_label(source, lang), count))
 
-    # Top block (period + sales/revenue/cost/profit/aov) is highlighted
-    HIGHLIGHT_TOP_ROWS = 9
+    # Highlight the accounting totals separately from the detail breakdown.
+    HIGHLIGHT_TOP_ROWS = 13
     for i, (k, v) in enumerate(rows, start=1):
         a = ws.cell(row=i, column=1, value=k)
         b = ws.cell(row=i, column=2, value=v)
@@ -234,7 +237,9 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
 
 async def generate_orders_excel(period: str = "all", lang: str = "uz") -> tuple[BytesIO, str]:
     """Build an .xlsx report for the given period. Returns (buffer, filename)."""
-    orders = await get_orders_for_export(period)
+    orders, stats = await asyncio.gather(
+        get_orders_for_export(period), get_admin_stats(period)
+    )
     # One DB call → in-memory map; avoids N+1 lookups while iterating items.
     cost_map = await get_all_cost_prices()
     set_costs = await get_set_costs()
@@ -242,7 +247,7 @@ async def generate_orders_excel(period: str = "all", lang: str = "uz") -> tuple[
     wb = Workbook()
     _orders_sheet(wb.active, orders, lang, cost_map, set_costs)
     summary = wb.create_sheet()
-    _summary_sheet(summary, orders, lang, period, cost_map, set_costs)
+    _summary_sheet(summary, orders, lang, period, stats)
 
     buf = BytesIO()
     wb.save(buf)
