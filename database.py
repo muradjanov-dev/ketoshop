@@ -1993,6 +1993,8 @@ async def update_order_status(order_id: int, status: str):
             )
         else:
             await conn.execute("UPDATE orders SET status = $1 WHERE id = $2", status, order_id)
+    if status == "cancelled":
+        await drop_order_expenses(order_id)
 
 
 async def transition_order_status(order_id: int, expected_from, new_status: str) -> bool:
@@ -2020,7 +2022,9 @@ async def transition_order_status(order_id: int, expected_from, new_status: str)
             f"UPDATE orders SET {set_clause} WHERE id=$2 AND status = ANY($3::text[]) RETURNING id",
             new_status, order_id, expected,
         )
-        return row is not None
+    if row is not None and new_status == "cancelled":
+        await drop_order_expenses(order_id)
+    return row is not None
 
 
 async def set_order_cheque(order_id: int, file_id: str, cheque_type: str = "photo"):
@@ -2653,7 +2657,8 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
                    COUNT(*) FILTER (WHERE status = 'delivered')  AS delivered,
                    COALESCE(SUM(total), 0)                      AS revenue,
                    COALESCE(SUM(total) FILTER (WHERE source = 'b2b'), 0) AS b2b_revenue,
-                   COUNT(*) FILTER (WHERE source = 'b2b')       AS b2b_orders
+                   COUNT(*) FILTER (WHERE source = 'b2b')       AS b2b_orders,
+                   COALESCE(SUM(COALESCE(keto_redeemed, 0)), 0) AS keto_discount
               FROM orders{sale_where}
         """, *args)
 
@@ -2701,6 +2706,7 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
 
     revenue = int(money_row["revenue"] or 0)
     orders_sold = int(money_row["sold"])
+    keto_discount = int(money_row["keto_discount"] or 0)
     orders_delivered = int(money_row["delivered"])
     product_cost_total = int(product_cost_total)
     profit = revenue - expenses_total - product_cost_total
@@ -2722,6 +2728,13 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         # Callers that show a sales count next to the money should use this
         # rather than recomputing it, so the two can never drift apart.
         "orders_sold": orders_sold,
+        # Keto spent as a checkout discount. Deliberately NOT an expense: the
+        # buyer already paid that much less, so `revenue` is lower by exactly
+        # this, and booking it in Chiqimlar as well would subtract the same
+        # so'm twice and under-report the month's profit. It is reported on
+        # its own line instead, so the owner can see what the coins cost
+        # without that cost being counted against the shop a second time.
+        "keto_discount": keto_discount,
         "revenue": revenue,
         "aov": int(revenue / orders_sold) if orders_sold else 0,
         "b2b_revenue": int(money_row["b2b_revenue"] or 0),
@@ -3009,6 +3022,56 @@ async def get_unbooked_bonus_orders(limit: int = 200) -> list[dict]:
             limit,
         )
         return [dict(r) for r in rows]
+
+
+async def drop_order_expenses(order_id: int) -> int:
+    """Unbook the gift / aksiya bonus / courier rows Chiqimlar holds for one
+    order, and say how many went. Called whenever an order becomes cancelled.
+
+    The parcel never left, so the shop never paid for any of it: the gift is
+    back on the shelf and the courier was never sent. Left behind, those rows
+    go on eating the month's profit for goods that were never given away —
+    the mirror image of the sale itself, which SALE_SQL already takes back out
+    of the revenue the moment the order is cancelled.
+
+    The three sweeps that book them only look at delivered orders and skip an
+    order that already has its row, so an order that is cancelled by mistake
+    and delivered after all simply gets booked again on the next pass.
+    """
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """DELETE FROM expenses
+                WHERE gift_order_id = $1 OR bonus_order_id = $1
+                   OR delivery_order_id = $1""",
+            order_id,
+        )
+    # asyncpg returns "DELETE <n>".
+    try:
+        return int(str(result).rsplit(" ", 1)[1])
+    except (IndexError, ValueError):
+        return 0
+
+
+async def drop_cancelled_order_expenses() -> int:
+    """The same unbooking, swept over every cancelled order at once.
+
+    drop_order_expenses runs at the moment of cancellation, which only helps
+    from the day it ships. This catches the rows already sitting in Chiqimlar
+    against orders cancelled before that, and any cancellation that went
+    around the three status helpers (a hand-run SQL fix, say). Cheap enough to
+    run on the Maqsadlar tick: it touches nothing unless something is wrong.
+    """
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """DELETE FROM expenses e
+                USING orders o
+                WHERE o.status = 'cancelled'
+                  AND o.id IN (e.gift_order_id, e.bonus_order_id, e.delivery_order_id)"""
+        )
+    try:
+        return int(str(result).rsplit(" ", 1)[1])
+    except (IndexError, ValueError):
+        return 0
 
 
 async def book_bonus_expense(order_id: int, name: str, amount: float) -> bool:
@@ -3723,7 +3786,8 @@ async def cancel_order(order_id: int) -> dict | None:
                 "UPDATE orders SET status = 'cancelled' WHERE id = $1", order_id
             )
             order["status"] = "cancelled"
-            return order
+    await drop_order_expenses(order_id)
+    return order
 
 
 async def add_product_view(product_id: int, user_id: int | None = None):

@@ -1318,6 +1318,9 @@ function renderKpis(st){
       st.b2b_orders+" ta savdo · jami tushum ichida"),
     renderDashKpiCard('Maxsulot tannarxi', fmt(st.product_cost), 'Sotilganlar bo\'yicha'),
     renderDashKpiCard('Jami Chiqimlar', fmt(st.expenses), 'Barcha xarajatlar'),
+    // Keto chegirmasi tushumdan allaqachon ayrilgan, shuning uchun Chiqimlarga
+    // kirmaydi — bo'lmasa bir xil pul ikki marta ayrilgan bo'lardi.
+    renderDashKpiCard('Keto chegirmasi', fmt(st.keto_discount || 0), 'Tushumdan ayrilgan'),
     renderDashKpiCard('Foyda (sof)', fmt(st.profit), 'Tushum - Tannarx - Chiqimlar'),
     renderDashKpiCard('O\'rtacha Chek', fmt(st.aov), 'Savdo boshiga'),
     renderDashKpiCard('Yangi mijozlar',st.users_new+' ta','Jami ro\'yxatdan o\'tganlar: '+st.users_total),

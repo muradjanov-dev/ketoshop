@@ -15,6 +15,8 @@ Definitions, chosen to match the numbers the admin screens already show:
   * a SALE is an order placed today that has not been cancelled. It is the
     number the team can move during the day, which is what a mid-day nudge
     has to be about.
+  * The last REFRESH_DAYS days of the history are rewritten on every tick, so
+    an order cancelled after its day has closed leaves that day's figures too.
   * NET PROFIT is get_admin_stats' `profit` — the revenue of those same sales
     minus the cost_price of the goods minus the expenses booked in the period.
     It moves the moment a sale is entered (owner, 2026-09-25), so the two
@@ -157,6 +159,8 @@ async def snapshot() -> dict:
         "sales_left": max(0, daily_target - sales),
         "day_revenue": float(day_stats.get("revenue") or 0),
         "day_profit": float(day_stats.get("profit") or 0),
+        "day_keto_discount": float(day_stats.get("keto_discount") or 0),
+        "month_keto_discount": float(month_stats.get("keto_discount") or 0),
         "month_profit": month_profit,
         "month_profit_usd": month_profit / usd_rate if usd_rate else 0.0,
         "month_revenue": float(month_stats.get("revenue") or 0),
@@ -212,6 +216,11 @@ def build_message(snap: dict, slot: int) -> str:
     if snap["day_revenue"]:
         lines.append(f"💵 Bugun: {fmt_sum(snap['day_revenue'])} so'm tushum · "
                      f"{fmt_sum(snap['day_profit'])} so'm foyda")
+    # Keto chegirmasi tushumdan allaqachon ayrilgan — Chiqimlarga IKKINCHI
+    # marta yozilmaydi, aks holda bir xil pul ikki marta ayrilgan bo'lardi.
+    if snap.get("day_keto_discount"):
+        lines.append(f"🎁 Keto chegirmasi: {fmt_sum(snap['day_keto_discount'])} so'm "
+                     f"(tushumdan ayrilgan)")
     lines.append("")
 
     # ----- monthly profit -----
@@ -238,6 +247,9 @@ def build_message(snap: dict, slot: int) -> str:
     lines.append("")
     lines.append(f"📊 Oy boshidan: {snap['month_orders']} ta sotuv · "
                  f"{fmt_sum(snap['month_revenue'])} so'm tushum")
+    if snap.get("month_keto_discount"):
+        lines.append(f"🎁 Shu oyda Keto bilan to'langan: "
+                     f"{fmt_sum(snap['month_keto_discount'])} so'm")
 
     # Kun yakunida AI xarajati. AI umuman ishlatilmagan va yoqilmagan bo'lsa
     # blok chiqmaydi — bo'sh "$0.00" har kuni ko'z o'ngida turmasin.
@@ -290,8 +302,52 @@ async def progress_screen() -> str:
     return "\n".join(lines)
 
 
+# Kunlik tarixni nechta kun orqaga qayta yozish. Bugungi kun yetarli emas:
+# kecha tushgan buyurtma bugun bekor qilinsa, o'sha kunning qatori eski
+# raqam bilan qotib qolar edi va «Oxirgi kunlar» ro'yxati hech qachon
+# tuzalmasdi (egasi, 2026-09-25: "agar buyurtma bekor bo'lsa unda u savdodan
+# olib tashlansin"). Bir hafta — buyurtma bekor bo'ladigan real oraliq.
+REFRESH_DAYS = 7
+
+
+async def _refresh_history(snap: dict) -> None:
+    """Rewrite the last REFRESH_DAYS days of target_days from the live data.
+
+    Every figure is recomputed, so a cancellation, a corrected tannarx or a
+    late-entered sale all reach the history by themselves. record_target_day
+    upserts on the day, so this only ever overwrites the shop's own rows.
+    """
+    for back in range(1, REFRESH_DAYS + 1):
+        day = snap["date"] - timedelta(days=back)
+        try:
+            stats = await database.get_admin_stats(
+                {"start": day.isoformat(), "end": day.isoformat()}
+            )
+            month_first = day.replace(day=1)
+            month = await database.get_admin_stats(
+                {"start": month_first.isoformat(), "end": day.isoformat()}
+            )
+            await database.record_target_day(
+                day, int(stats.get("orders_sold") or 0), snap["daily_target"],
+                float(stats.get("revenue") or 0), float(stats.get("profit") or 0),
+                float(month.get("profit") or 0),
+                snap["monthly_target_usd"], snap["usd_rate"],
+            )
+        except Exception:
+            logger.exception("Could not refresh target day %s", day)
+
+
 async def _tick(bot: Bot) -> None:
     snap = await snapshot()
+
+    # Bekor qilingan buyurtmalarning sovg'a / bonus / kuryer chiqimlari
+    # Chiqimlardan olib tashlansin — jo'natilmagan buyurtma pul yemasin.
+    try:
+        dropped = await database.drop_cancelled_order_expenses()
+        if dropped:
+            logger.info("Unbooked %d expense row(s) from cancelled orders", dropped)
+    except Exception:
+        logger.exception("Could not unbook cancelled orders' expenses")
 
     # Record first, always — the history has to keep filling even when the
     # reminders are switched off, or the statistics grow holes.
@@ -303,6 +359,8 @@ async def _tick(bot: Bot) -> None:
         )
     except Exception:
         logger.exception("Could not record target day")
+
+    await _refresh_history(snap)
 
     if not snap["enabled"]:
         return

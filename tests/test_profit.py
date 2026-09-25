@@ -74,7 +74,7 @@ class _FakeConn:
             return {"total": 6, "pending": 3, "confirmed": 1, "cancelled": 1}
         if "AS revenue" in sql:
             return {"sold": 5, "delivered": 2, "revenue": 1_040_000,
-                    "b2b_revenue": 0, "b2b_orders": 0}
+                    "b2b_revenue": 0, "b2b_orders": 0, "keto_discount": 18_000}
         return {"users_new": 4, "reviews_new": 1, "expenses": 25_000}
 
     async def fetch(self, sql, *args):
@@ -160,6 +160,79 @@ class SaleBasisTest(unittest.TestCase):
         self.assertEqual(snap["month_orders"], 136)
         self.assertIn("5 / 10", targets.build_message(snap, 20))
         self.assertIn("1 040 000 so'm tushum", targets.build_message(snap, 20))
+
+
+class CancelledOrderTest(unittest.TestCase):
+    """Egasi, 2026-09-25: "agar buyurtma bekor bo'lsa unda u savdodan olib
+    tashlansin raqamlari". The sale leaves the money by itself (SALE_SQL is
+    evaluated on every read); what did NOT leave was the gift / bonus /
+    courier the shop had already booked against it."""
+
+    def test_cancelling_unbooks_the_order_s_expenses(self):
+        conn = _FakeConn()
+        seen = []
+
+        async def _execute(sql, *args):
+            seen.append((sql, args))
+            return "DELETE 2"
+
+        conn.execute = _execute
+        with patch.object(database, "pool", _FakePool(conn)):
+            dropped = asyncio.run(database.update_order_status(41, "cancelled"))
+            self.assertIsNone(dropped)
+            n = asyncio.run(database.drop_order_expenses(41))
+        self.assertEqual(n, 2)
+        deletes = [q for q, _ in seen if "DELETE FROM expenses" in q]
+        self.assertTrue(deletes, "cancelling must unbook the order's expenses")
+        self.assertIn("gift_order_id", deletes[0])
+        self.assertIn("bonus_order_id", deletes[0])
+        self.assertIn("delivery_order_id", deletes[0])
+
+    def test_delivering_does_not_unbook_anything(self):
+        conn = _FakeConn()
+        seen = []
+
+        async def _execute(sql, *args):
+            seen.append(sql)
+            return "UPDATE 1"
+
+        conn.execute = _execute
+        with patch.object(database, "pool", _FakePool(conn)):
+            asyncio.run(database.update_order_status(41, "delivered"))
+        self.assertFalse([q for q in seen if "DELETE FROM expenses" in q])
+
+
+class KetoDiscountTest(unittest.TestCase):
+    """Keto spent at checkout is already off the revenue, so it must be
+    reported without also being charged to Chiqimlar."""
+
+    def test_reported_but_not_booked_as_an_expense(self):
+        conn = _FakeConn()
+        with patch.object(database, "pool", _FakePool(conn)):
+            stats = asyncio.run(database.get_admin_stats("today"))
+        self.assertEqual(stats["keto_discount"], 18_000)
+        # Profit = revenue - expenses - cost. The Keto discount is in none of
+        # those terms: the buyer simply paid 18 000 less, and `revenue` is
+        # already that much lower.
+        self.assertEqual(stats["profit"],
+                         stats["revenue"] - stats["expenses"] - stats["product_cost"])
+
+    def test_report_shows_the_keto_line(self):
+        snap = {
+            "sales": 5, "daily_target": 10, "sales_left": 5,
+            "day_revenue": 1_040_000, "day_profit": 300_000,
+            "day_keto_discount": 18_000, "month_keto_discount": 240_000,
+            "month_profit": 16_157_899, "month_profit_usd": 1368,
+            "monthly_target_usd": 2000, "monthly_target_uzs": 23_628_000,
+            "remaining_uzs": 7_470_201, "remaining_usd": 632,
+            "needed_per_day_usd": 90, "days_left": 7, "usd_rate": 11_814,
+            "usd_rate_date": "24.09.2026", "month_orders": 136,
+            "month_revenue": 53_758_281, "missing_cost_products": [],
+        }
+        text = targets.build_message(snap, 20)
+        self.assertIn("Keto chegirmasi: 18 000 so'm", text)
+        self.assertIn("tushumdan ayrilgan", text)
+        self.assertIn("Shu oyda Keto bilan to'langan: 240 000 so'm", text)
 
 
 class UsdRateTest(unittest.TestCase):
