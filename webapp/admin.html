@@ -1326,13 +1326,18 @@ function renderKpis(st){
     renderDashKpiCard('Yetkazilgan tushum', fmt(st.delivered_revenue),
       `${st.orders_delivered} ta buyurtma · yetkazilgan sana bo'yicha`),
     renderDashKpiCard('B2B yetkazilgan tushum', fmt(st.b2b_revenue),
-      st.b2b_orders+" ta buyurtma · yetkazilgan sana bo'yicha"),
+      st.b2b_orders+" ta buyurtma · yetkazilgan sana bo'yicha · jami yetkazilgan tushum ichida"),
     renderDashKpiCard('Yetkazilgan mahsulot tannarxi', fmt(st.product_cost), 'Yetkazilgan sana bo\'yicha'),
     renderDashKpiCard('Davr xarajatlari', fmt(st.expenses), 'Tanlangan davrda yozilgan xarajatlar'),
     // Keto chegirmasi tushumdan allaqachon ayrilgan, shuning uchun Chiqimlarga
     // kirmaydi — bo'lmasa bir xil pul ikki marta ayrilgan bo'lardi.
     renderDashKpiCard('Keto chegirmasi', fmt(st.keto_discount || 0), 'Tushumdan ayrilgan'),
     renderDashKpiCard('Sof foyda', fmt(st.profit), 'Yetkazilgan tushum − tannarx − davr xarajatlari'),
+    renderDashKpiCard('Tannarxi topilmagan mahsulotlar',
+      `${(st.missing_cost_products||[]).length} ta`,
+      (st.missing_cost_products||[]).slice(0,3).join(', ')
+        + ((st.missing_cost_products||[]).length>3?' …':'')
+        || 'Muammo yo\'q'),
     renderDashKpiCard('O\'rtacha buyurtma qiymati', fmt(st.aov), 'Bekor qilinmagan buyurtmalar bo\'yicha'),
     renderDashKpiCard('Yangi mijozlar',st.users_new+' ta','Jami ro\'yxatdan o\'tganlar: '+st.users_total),
     renderDashKpiCard('Jami Buyurtmalar',st.orders_total+' ta','Yangi: '+st.orders_pending+' / Tasdiqlangan: '+st.orders_confirmed),
@@ -1356,7 +1361,7 @@ function renderStatusChart(s){
   const rows=[
     {lab:'⏳ Kutilmoqda', val:s.orders_pending, color:'var(--amber)'},
     {lab:'✅ Tasdiqlangan', val:s.orders_confirmed, color:'var(--ink-3)'},
-    {lab:'🚚 Yetkazildi', val:s.orders_delivered, color:'var(--green)'},
+    {lab:'🚚 Yetkazildi', val:s.orders_delivered_created, color:'var(--green)'},
     {lab:'❌ Bekor qilindi', val:s.orders_cancelled, color:'var(--red)'},
   ];
   const max=Math.max(1,...rows.map(r=>r.val));

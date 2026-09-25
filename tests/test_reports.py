@@ -21,14 +21,14 @@ class FinanceExcelReportTest(unittest.TestCase):
     def test_order_total_appears_once_and_summary_uses_delivery_period_stats(self):
         orders = [
             {
-                "id": 101, "created_at": None, "status": "pending", "total": 250,
+                "id": 101, "created_at": None, "status": "pending", "total": 250.6,
                 "items_data": [
-                    {"name": "A", "product_id": 10, "quantity": 1, "price": 100},
-                    {"name": "B", "product_id": 10, "quantity": 1, "price": 150},
+                    {"name": "A", "product_id": 10, "quantity": 1, "price": 100.3},
+                    {"name": "B", "product_id": 10, "quantity": 1, "price": 150.3},
                 ],
             },
             {
-                "id": 102, "created_at": None, "status": "cancelled", "total": 90,
+                "id": 102, "created_at": None, "status": "cancelled", "total": 90.6,
                 "items_data": [{"name": "C", "product_id": 10, "quantity": 1, "price": 90}],
             },
         ]
@@ -36,6 +36,7 @@ class FinanceExcelReportTest(unittest.TestCase):
             "orders_sold": 1, "booked_value": 250,
             "orders_delivered": 1, "delivered_revenue": 225,
             "product_cost": 80, "expenses": 25, "profit": 120,
+            "missing_cost_products": ["Psillium 250gr"],
         }
         delivered_orders = [{
             "id": 201, "delivered_at": None, "total": 225.7,
@@ -57,9 +58,14 @@ class FinanceExcelReportTest(unittest.TestCase):
 
         workbook = load_workbook(BytesIO(buffer.getvalue()), data_only=True)
         detail = workbook["Buyurtmalar"]
-        self.assertEqual(detail.cell(row=2, column=11).value, 250)
+        self.assertAlmostEqual(detail.cell(row=2, column=11).value, 250.6)
         self.assertIsNone(detail.cell(row=3, column=11).value)
         self.assertIsNone(detail.cell(row=4, column=11).value)  # cancelled order
+        self.assertEqual(detail.cell(row=5, column=10).value, "Hisobot bilan tafovut")
+        self.assertAlmostEqual(detail.cell(row=5, column=11).value, -0.6)
+        self.assertEqual(detail.cell(row=6, column=11).value, 250)
+        self.assertAlmostEqual(sum(detail.cell(row=r, column=11).value or 0
+                                   for r in range(2, 6)), 250)
 
         summary = workbook["Xulosa"]
         amounts = {summary.cell(row=r, column=1).value: summary.cell(row=r, column=2).value
@@ -68,6 +74,8 @@ class FinanceExcelReportTest(unittest.TestCase):
         self.assertEqual(amounts["Yetkazilgan tushum"], 225)
         self.assertEqual(amounts["Davr xarajatlari"], 25)
         self.assertEqual(amounts["Sof foyda (yetkazilgan tushum − tannarx − xarajat)"], 120)
+        self.assertEqual(amounts["Tannarxi topilmagan mahsulotlar (foyda oshib ko'rinishi mumkin)"],
+                         "Psillium 250gr")
 
         delivered_sheet = workbook["Yetkazilganlar"]
         delivered_total = delivered_sheet.cell(row=delivered_sheet.max_row, column=8).value
@@ -94,6 +102,7 @@ class FinanceDashboardPayloadTest(unittest.TestCase):
             "b2b_revenue": 100, "b2b_orders": 1, "orders_total": 5,
             "orders_pending": 1, "orders_confirmed": 0, "orders_cancelled": 0,
             "keto_discount": 0,
+            "orders_delivered_created": 3, "missing_cost_products": ["Psillium 250gr"],
         }
         request = SimpleNamespace(
             cookies={admin_web.SESSION_COOKIE: admin_web._make_session()},
@@ -120,6 +129,9 @@ class FinanceDashboardPayloadTest(unittest.TestCase):
         self.assertIn("fmt(st.delivered_revenue)", dashboard)
         self.assertIn("st.orders_sold", dashboard)
         self.assertIn("st.orders_delivered", dashboard)
+        self.assertIn("s.orders_delivered_created", dashboard)
+        self.assertIn("st.missing_cost_products", dashboard)
+        self.assertIn("jami yetkazilgan tushum ichida", dashboard)
         self.assertIn("r.delivered_revenue", dashboard)
         self.assertIn("r.delivered_orders", dashboard)
 

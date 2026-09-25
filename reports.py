@@ -99,7 +99,8 @@ PERIOD_LABELS = {
 
 
 def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float],
-                  set_costs: dict[int, float] | None = None) -> None:
+                  set_costs: dict[int, float] | None = None,
+                  booked_value: int | float = 0) -> None:
     ws.title = "Buyurtmalar" if lang == "uz" else "Заказы"
     headers_uz = [
         "Buyurtma №", "Sana", "Mijoz", "Telefon",
@@ -119,6 +120,7 @@ def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float],
     _write_header(ws, headers)
 
     row = 2
+    detail_booked_value = 0.0
     for o in orders:
         items = o.get("items_data") or []
         if not items:
@@ -148,8 +150,10 @@ def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float],
             # Order totals repeat on every item row, which makes a flat export
             # easy to over-sum. Keep the total on the first line only.
             booked_order = (o.get("status") or "pending") != "cancelled"
-            ws.cell(row=row, column=11, value=(int(float(o.get("total") or 0))
-                                                if first_item and booked_order else None))
+            order_total = float(o.get("total") or 0)
+            ws.cell(row=row, column=11, value=order_total if first_item and booked_order else None)
+            if first_item and booked_order:
+                detail_booked_value += order_total
             ws.cell(row=row, column=12, value=_payment_label(o.get("payment_method"), lang))
             ws.cell(row=row, column=13, value=get_delivery_method_name(o.get("delivery_method"), lang))
             ws.cell(row=row, column=14, value=get_order_status(o.get("status") or "pending", lang))
@@ -167,6 +171,19 @@ def _orders_sheet(ws, orders: list[dict], lang: str, cost_map: dict[int, float],
                 ws.cell(row=row, column=col).border = _BORDER
             row += 1
             first_item = False
+    booked_rounding = float(booked_value) - detail_booked_value
+    if abs(booked_rounding) > 1e-8:
+        ws.cell(row, column=10, value="Hisobot bilan tafovut" if lang == "uz" else "Разница с итогом отчёта")
+        ws.cell(row, column=11, value=booked_rounding)
+        for cell in ws[row]:
+            cell.border = _BORDER
+        row += 1
+    ws.cell(row, column=10, value="Jami yangi buyurtmalar" if lang == "uz" else "Итого новые заказы")
+    ws.cell(row, column=11, value=booked_value)
+    for cell in ws[row]:
+        cell.fill = _TOTAL_FILL
+        cell.font = _TOTAL_FONT
+        cell.border = _BORDER
     _autosize(ws, min_widths=[10, 17, 18, 14, 24, 8, 12, 12, 12, 12, 14, 14, 18, 16, 12, 28, 22, 17, 17, 17])
 
 
@@ -179,6 +196,7 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
     delivered_cost = float(stats.get("product_cost") or 0)
     expenses = float(stats.get("expenses") or 0)
     net_profit = float(stats.get("profit") or 0)
+    missing_cost_products = stats.get("missing_cost_products") or []
     gross_profit = delivered_revenue - delivered_cost
     margin_pct = (gross_profit / delivered_revenue * 100) if delivered_revenue else 0
 
@@ -207,6 +225,8 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
         (("Yalpi foyda %" if lang == "uz" else "Валовая маржа %"), round(margin_pct, 1)),
         (("Davr xarajatlari" if lang == "uz" else "Расходы за период"), int(expenses)),
         (("Sof foyda (yetkazilgan tushum − tannarx − xarajat)" if lang == "uz" else "Чистая прибыль (доставки − себестоимость − расходы)"), int(net_profit)),
+        (("Tannarxi topilmagan mahsulotlar (foyda oshib ko'rinishi mumkin)" if lang == "uz" else "Товары без себестоимости (прибыль может быть завышена)"),
+         ", ".join(str(name) for name in missing_cost_products) if missing_cost_products else ("Yo'q" if lang == "uz" else "Нет")),
         (("O'rtacha buyurtma qiymati" if lang == "uz" else "Средняя сумма заказа"), int(booked_value / int(stats.get("orders_sold") or 1)) if stats.get("orders_sold") else 0),
         ("", ""),
         (("Buyurtmalar holati (yaratilgan sana bo'yicha)" if lang == "uz" else "Статусы заказов (по дате создания)"), ""),
@@ -219,7 +239,7 @@ def _summary_sheet(ws, orders: list[dict], lang: str, period: str,
         rows.append((_source_label(source, lang), count))
 
     # Highlight the accounting totals separately from the detail breakdown.
-    HIGHLIGHT_TOP_ROWS = 13
+    HIGHLIGHT_TOP_ROWS = 14
     for i, (k, v) in enumerate(rows, start=1):
         a = ws.cell(row=i, column=1, value=k)
         b = ws.cell(row=i, column=2, value=v)
@@ -351,7 +371,8 @@ async def generate_orders_excel(period: str = "all", lang: str = "uz") -> tuple[
     set_costs = await get_set_costs()
 
     wb = Workbook()
-    _orders_sheet(wb.active, orders, lang, cost_map, set_costs)
+    _orders_sheet(wb.active, orders, lang, cost_map, set_costs,
+                  int(stats.get("booked_value") or 0))
     summary = wb.create_sheet()
     _summary_sheet(summary, orders, lang, period, stats)
     delivered = wb.create_sheet()
