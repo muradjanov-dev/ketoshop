@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 os.environ.setdefault("DATABASE_URL", "postgresql://test/test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 
-from datetime import date
+from datetime import date, datetime
 
 import database
 import targets
@@ -68,6 +68,15 @@ class _FakeConn:
 
     def __init__(self):
         self.queries: list[str] = []
+        self.transaction_settings: list[dict] = []
+
+    def transaction(self, **settings):
+        self.transaction_settings.append(settings)
+
+        @contextlib.asynccontextmanager
+        async def _cm():
+            yield
+        return _cm()
 
     async def fetchrow(self, sql, *args):
         self.queries.append(sql)
@@ -151,6 +160,16 @@ class SaleBasisTest(unittest.TestCase):
         self.assertEqual(stats["profit"], 171_050)
         self.assertEqual(stats["aov"], 1_568_000 // 5)
 
+    def test_all_financial_reads_share_a_repeatable_read_only_snapshot(self):
+        conn = _FakeConn()
+        with patch.object(database, "pool", _FakePool(conn)):
+            asyncio.run(database.get_admin_stats("today"))
+        self.assertEqual(conn.transaction_settings, [
+            {"isolation": "repeatable_read", "readonly": True}
+        ])
+        set_cost_query = next(q for q in conn.queries if "product_set_items" in q)
+        self.assertTrue(set_cost_query, "set costs must be read in the same transaction")
+
     def test_report_takes_its_sale_count_straight_from_the_stats(self):
         day = {"orders_sold": 5, "booked_value": 1_568_000,
                "orders_delivered": 3, "orders_total": 6, "orders_cancelled": 1,
@@ -167,6 +186,7 @@ class SaleBasisTest(unittest.TestCase):
              patch.object(database, "get_ai_usage_today", AsyncMock(return_value=[])), \
              patch.object(database, "get_ai_usage_month", AsyncMock(return_value={})), \
              patch.object(database, "count_ai_questions_today", AsyncMock(return_value=0)), \
+             patch.object(targets, "_now_tk", return_value=datetime(2026, 9, 24, 20, 17)), \
              patch.object(targets, "current_usd_rate", AsyncMock(return_value=(11_814.0, "24.09.2026"))):
             snap = asyncio.run(targets.snapshot())
 
@@ -174,10 +194,11 @@ class SaleBasisTest(unittest.TestCase):
         self.assertEqual(snap["day_booked_value"], 1_568_000)
         self.assertEqual(snap["day_delivered_revenue"], 561_000)
         self.assertEqual(snap["day_profit"], 171_050)
+        self.assertEqual(snap["observed_at"], datetime(2026, 9, 24, 20, 17))
         self.assertEqual(snap["month_orders"], 136)
         text = targets.build_message(snap, 20)
         self.assertIn("5 / 10", text)
-        self.assertIn("20:00 HOLATIGA", text)
+        self.assertIn("20:17 HOLATIGA", text)
         self.assertIn("1 568 000 so'm", text)
         self.assertIn("561 000 so'm", text)
         self.assertIn("171 050 so'm", text)
@@ -200,6 +221,11 @@ class SaleBasisTest(unittest.TestCase):
         self.assertIn("Yangi buyurtmalar summasi: 0 so'm", text)
         self.assertIn("Yetkazilgan savdo: 0 so'm", text)
         self.assertIn("sof foyda: -35 000 so'm", text)
+
+        snap["observed_at"] = datetime(2026, 9, 24, 20, 17)
+        late_status = targets.build_message(snap, 20)
+        self.assertIn("20:17 HOLATIGA", late_status)
+        self.assertNotIn("20:00 HOLATIGA", late_status)
 
     def test_export_detail_uses_delivered_and_expense_periods(self):
         conn = _FakeConn()

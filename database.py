@@ -2908,6 +2908,8 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
     Delivered revenue and COGS follow delivered_at. Net profit is the latter
     less expenses booked in the selected period. This keeps the daily sales
     goal actionable while making revenue/profit describe completed sales.
+    All database reads run in one repeatable-read, read-only transaction so a
+    delivery or cost edit cannot land between the revenue and COGS queries.
 
     Deliberately not one query: mixing unrelated tables into a single
     statement makes the plan worse, not better, and these scopes stay readable.
@@ -2935,69 +2937,79 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
     delivered_where = (" AND " + " AND ".join(delivered_conds)) if delivered_conds else ""
 
     async with pool.acquire() as conn:
-        catalog = await conn.fetchrow("""
-            SELECT (SELECT COUNT(*) FROM users)   AS users_total,
-                   (SELECT COUNT(*) FROM reviews) AS reviews_total,
-                   (SELECT COUNT(*) FROM products WHERE is_active = 1) AS products_active,
-                   (SELECT COUNT(*) FROM products WHERE is_active = 1 AND quantity > 0)
-                       AS products_in_stock
-        """)
+        async with conn.transaction(isolation="repeatable_read", readonly=True):
+            catalog = await conn.fetchrow("""
+                SELECT (SELECT COUNT(*) FROM users)   AS users_total,
+                       (SELECT COUNT(*) FROM reviews) AS reviews_total,
+                       (SELECT COUNT(*) FROM products WHERE is_active = 1) AS products_active,
+                       (SELECT COUNT(*) FROM products WHERE is_active = 1 AND quantity > 0)
+                           AS products_in_stock
+            """)
 
-        orders_row = await conn.fetchrow(f"""
-            SELECT COUNT(*)                                            AS total,
-                   COUNT(*) FILTER (WHERE status = 'pending')          AS pending,
-                   COUNT(*) FILTER (WHERE status = 'confirmed')        AS confirmed,
-                   COUNT(*) FILTER (WHERE status = 'delivered')        AS delivered,
-                   COUNT(*) FILTER (WHERE status = 'cancelled')        AS cancelled
-              FROM orders{where}
-        """, *args)
-
-        # Booked orders answer how many new orders arrived and their order
-        # value. Delivery revenue is a separate clock used for profit.
-        booked_row = await conn.fetchrow(f"""
-            SELECT COUNT(*) AS sold,
-                   COALESCE(SUM(total), 0) AS booked_value,
-                   COALESCE(SUM(COALESCE(keto_redeemed, 0)), 0) AS keto_discount
-              FROM orders WHERE {SALE_SQL}{order_where}
-        """, *args)
-        delivered_row = await conn.fetchrow(f"""
-            SELECT COUNT(*) AS delivered,
-                   COALESCE(SUM(total), 0) AS revenue,
-                   COALESCE(SUM(total) FILTER (WHERE source = 'b2b'), 0) AS b2b_revenue,
-                   COUNT(*) FILTER (WHERE source = 'b2b') AS b2b_orders,
-                   COALESCE(SUM(COALESCE(keto_redeemed, 0)), 0) AS keto_discount
-              FROM orders WHERE status = 'delivered'{delivered_where}
-        """, *delivered_args)
-
-        if where:
-            window = await conn.fetchrow(f"""
-                SELECT (SELECT COUNT(*) FROM users{where})    AS users_new,
-                       (SELECT COUNT(*) FROM reviews{where})  AS reviews_new,
-                       (SELECT COALESCE(SUM(amount), 0) FROM expenses{where})
-                           AS expenses
+            orders_row = await conn.fetchrow(f"""
+                SELECT COUNT(*)                                            AS total,
+                       COUNT(*) FILTER (WHERE status = 'pending')          AS pending,
+                       COUNT(*) FILTER (WHERE status = 'confirmed')        AS confirmed,
+                       COUNT(*) FILTER (WHERE status = 'delivered')        AS delivered,
+                       COUNT(*) FILTER (WHERE status = 'cancelled')        AS cancelled
+                  FROM orders{where}
             """, *args)
-            users_new = int(window["users_new"])
-            reviews_new = int(window["reviews_new"])
-            expenses_total = int(window["expenses"] or 0)
-        else:
-            users_new = int(catalog["users_total"])
-            reviews_new = int(catalog["reviews_total"])
-            expenses_total = int(
-                await conn.fetchval("SELECT COALESCE(SUM(amount), 0) FROM expenses") or 0
-            )
 
-        # Cost of goods. The item lines live as JSON text inside orders.items,
-        # so this stays in Python: a malformed row must be skipped, not blow up
-        # a dashboard, and casting text to jsonb in SQL cannot be made to skip.
-        delivered_orders_where = (f" WHERE status = 'delivered'{delivered_where}")
-        orders_rows = await conn.fetch(
-            f"SELECT items FROM orders{delivered_orders_where}", *delivered_args
-        )
-        cost_map = {
-            row["id"]: row["cost_price"] or 0
-            for row in await conn.fetch("SELECT id, cost_price FROM products")
-        }
-    set_costs = await get_set_costs()
+            # Booked orders answer how many new orders arrived and their order
+            # value. Delivery revenue is a separate clock used for profit.
+            booked_row = await conn.fetchrow(f"""
+                SELECT COUNT(*) AS sold,
+                       COALESCE(SUM(total), 0) AS booked_value,
+                       COALESCE(SUM(COALESCE(keto_redeemed, 0)), 0) AS keto_discount
+                  FROM orders WHERE {SALE_SQL}{order_where}
+            """, *args)
+            delivered_row = await conn.fetchrow(f"""
+                SELECT COUNT(*) AS delivered,
+                       COALESCE(SUM(total), 0) AS revenue,
+                       COALESCE(SUM(total) FILTER (WHERE source = 'b2b'), 0) AS b2b_revenue,
+                       COUNT(*) FILTER (WHERE source = 'b2b') AS b2b_orders,
+                       COALESCE(SUM(COALESCE(keto_redeemed, 0)), 0) AS keto_discount
+                  FROM orders WHERE status = 'delivered'{delivered_where}
+            """, *delivered_args)
+
+            if where:
+                window = await conn.fetchrow(f"""
+                    SELECT (SELECT COUNT(*) FROM users{where})    AS users_new,
+                           (SELECT COUNT(*) FROM reviews{where})  AS reviews_new,
+                           (SELECT COALESCE(SUM(amount), 0) FROM expenses{where})
+                               AS expenses
+                """, *args)
+                users_new = int(window["users_new"])
+                reviews_new = int(window["reviews_new"])
+                expenses_total = int(window["expenses"] or 0)
+            else:
+                users_new = int(catalog["users_total"])
+                reviews_new = int(catalog["reviews_total"])
+                expenses_total = int(
+                    await conn.fetchval("SELECT COALESCE(SUM(amount), 0) FROM expenses") or 0
+                )
+
+            # Cost of goods. The item lines live as JSON text inside orders.items,
+            # so this stays in Python: a malformed row must be skipped, not blow up
+            # a dashboard, and casting text to jsonb in SQL cannot be made to skip.
+            delivered_orders_where = (f" WHERE status = 'delivered'{delivered_where}")
+            orders_rows = await conn.fetch(
+                f"SELECT items FROM orders{delivered_orders_where}", *delivered_args
+            )
+            cost_map = {
+                row["id"]: row["cost_price"] or 0
+                for row in await conn.fetch("SELECT id, cost_price FROM products")
+            }
+            set_costs = {
+                row["set_id"]: float(row["cost"])
+                for row in await conn.fetch(
+                    """SELECT i.set_id,
+                              COALESCE(SUM(COALESCE(p.cost_price, 0) * i.quantity), 0) AS cost
+                         FROM product_set_items i
+                         JOIN products p ON p.id = i.product_id
+                        GROUP BY i.set_id"""
+                )
+            }
 
     product_cost_total = 0.0
     missing_cost = set()

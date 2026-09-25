@@ -114,7 +114,8 @@ async def snapshot() -> dict:
     """Everything both the push and the panel screen need, in one place so the
     two can never disagree about where we stand."""
     state = await database.get_targets_state()
-    today = _now_tk().date()
+    observed_at = _now_tk()
+    today = observed_at.date()
     first = today.replace(day=1)
 
     day_stats = await database.get_admin_stats("today")
@@ -151,6 +152,7 @@ async def snapshot() -> dict:
 
     return {
         "date": today,
+        "observed_at": observed_at,
         "month_first": first,
         "sales": sales,
         "daily_target": daily_target,
@@ -203,7 +205,13 @@ def _percent(done: float, target: float) -> int:
 def build_message(snap: dict, slot: int) -> str:
     """The admin push: a live status at either the midday or 20:00 slot."""
     midday = slot < 20
-    lines = ["🎯 <b>MAQSADLAR</b>" if midday else "🎯 <b>20:00 HOLATIGA</b>", ""]
+    observed_at = snap.get("observed_at")
+    if hasattr(observed_at, "strftime"):
+        report_time = observed_at.strftime("%H:%M")
+    else:
+        report_time = "20:00"
+    lines = ["🎯 <b>MAQSADLAR</b>" if midday else
+             f"🎯 <b>{report_time} HOLATIGA</b>", ""]
 
     # ----- daily sales -----
     sales, target = snap["sales"], snap["daily_target"]
