@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, patch
 os.environ.setdefault("DATABASE_URL", "postgresql://test/test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 
+from datetime import date
+
 import database
 import targets
 
@@ -233,6 +235,67 @@ class KetoDiscountTest(unittest.TestCase):
         self.assertIn("Keto chegirmasi: 18 000 so'm", text)
         self.assertIn("tushumdan ayrilgan", text)
         self.assertIn("Shu oyda Keto bilan to'langan: 240 000 so'm", text)
+
+
+class StatusReminderTest(unittest.TestCase):
+    """The one-off "where we stand" push: the two standing targets, today
+    against them, and what the rest of the month needs per day."""
+
+    BASE = {
+        "date": date(2026, 9, 25), "month_first": date(2026, 9, 1), "days_total": 30,
+        "usd_rate_date": "25.09.2026",
+        "sales": 3, "daily_target": 10, "sales_left": 7,
+        "month_profit": 15_949_725, "month_profit_usd": 1348,
+        "monthly_target_usd": 2000, "monthly_target_uzs": 23_662_000,
+        "remaining_uzs": 7_712_015, "remaining_usd": 652,
+        "needed_per_day_usd": 109, "days_left": 6, "usd_rate": 11_831,
+        "month_orders": 136, "month_revenue": 54_983_281,
+        "missing_cost_products": [],
+    }
+
+    def test_states_both_targets_and_what_is_left(self):
+        text = targets.build_status_reminder(dict(self.BASE))
+        self.assertIn("Har kuni <b>10 ta sotuv</b>", text)
+        self.assertIn("Oyiga <b>$2 000 sof foyda</b>", text)
+        self.assertIn("Bugun (25.09.2026): 3 / 10", text)
+        self.assertIn("yana <b>7 ta</b> sotuv kerak", text)
+        self.assertIn("Oyning oxirigacha 6 kun", text)
+        self.assertIn("<b>$109</b> sof foyda", text)
+        # Every figure carries the date it belongs to.
+        self.assertIn("25.09.2026", text)
+        self.assertIn("Sentabr 2026", text)
+        self.assertIn("Oy boshidan (01.09 - 25.09)".replace("-", chr(8211)), text)
+
+    def test_hit_target_does_not_ask_for_zero_more_sales(self):
+        snap = dict(self.BASE, sales=12, sales_left=0, remaining_uzs=0,
+                    remaining_usd=0, month_profit_usd=2114)
+        text = targets.build_status_reminder(snap)
+        self.assertNotIn("bugungi 0 tani", text)
+        self.assertIn("Bugungi maqsad bajarildi", text)
+
+    def test_sent_once_per_key(self):
+        calls = []
+
+        class _Bot:
+            async def send_message(self, chat_id, text, **kw):
+                calls.append(chat_id)
+
+        claimed = {"n": 0}
+
+        async def _claim(key):
+            claimed["n"] += 1
+            return claimed["n"] == 1        # only the first run wins the key
+
+        async def _snap():
+            return dict(self.BASE)
+
+        with patch.object(targets.database, "claim_release_notes", _claim),              patch.object(targets, "snapshot", _snap),              patch.object(targets, "ADMIN_IDS", [1, 2, 2, 3]):
+            first = asyncio.run(targets.send_status_reminder(_Bot()))
+            second = asyncio.run(targets.send_status_reminder(_Bot()))
+
+        self.assertTrue(first)
+        self.assertFalse(second, "a redeploy must not push the same status twice")
+        self.assertEqual(calls, [1, 2, 3], "each admin exactly once")
 
 
 class UsdRateTest(unittest.TestCase):

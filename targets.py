@@ -52,6 +52,7 @@ from aiogram.enums import ParseMode
 
 import database
 from config import ADMIN_IDS
+from locales import get_month_name
 
 logger = logging.getLogger(__name__)
 
@@ -390,10 +391,132 @@ async def _tick(bot: Bot) -> None:
                 slot, snap["sales"], snap["month_profit"])
 
 
+# A one-off "where we stand" push to every admin, outside the 13:00/20:00
+# slots. The owner asks for one when something has changed and the whole team
+# needs the same picture at the same moment (2026-09-25: "barcha adminlarga
+# maqsadlarimiz raqamlarini va hozirgi statusini eslatib va kunlik qancha
+# savdo qilishimiz kerakligini eslatib yana bir status yubor").
+#
+# Keyed like the release notes, and claimed in the database before sending, so
+# a restart or a redeploy cannot push it twice. To send another one later,
+# change the date in the key.
+STATUS_PUSH_KEY = "targets-status-2026-09-25"
+
+
+def build_status_reminder(snap: dict) -> str:
+    """The standing targets, where we are against them right now, and what the
+    rest of the month asks for per day — the three things an owner's reminder
+    has to answer, in that order."""
+    sales, target = snap["sales"], snap["daily_target"]
+    # Every figure gets the date it belongs to. The same message is read at
+    # 13:00 and forwarded on at midnight, and "136 ta sotuv" means nothing
+    # without the window it was counted over.
+    day = snap.get("date")
+    first = snap.get("month_first") or (day.replace(day=1) if day else None)
+    today_str = f"{day:%d.%m.%Y}" if day else "—"
+    month_str = (f"{get_month_name(day.month, 'uz')} {day.year}" if day else "—")
+    window_str = f"{first:%d.%m} – {day:%d.%m}" if day and first else "—"
+
+    lines = [
+        "📣 <b>ESLATMA — MAQSADLARIMIZ</b>",
+        f"🗓 <b>{today_str}</b> (bugun) · {month_str}",
+        "",
+        "🎯 <b>Ikkita maqsad turibdi:</b>",
+        f"   1️⃣ Har kuni <b>{target} ta sotuv</b>",
+        f"   2️⃣ Oyiga <b>{fmt_usd(snap['monthly_target_usd'])} sof foyda</b>"
+        f" ({fmt_sum(snap['monthly_target_uzs'])} so'm)",
+        "",
+        f"📦 <b>Bugun ({today_str}): {sales} / {target}</b>",
+        f"{_bar(sales, target)}  {_percent(sales, target)}%",
+    ]
+    if sales >= target:
+        lines.append("✅ Bugungi maqsad bajarildi!")
+    else:
+        lines.append(f"⏳ Bugun yana <b>{snap['sales_left']} ta</b> sotuv kerak.")
+
+    lines += [
+        "",
+        f"💰 <b>{month_str} foydasi: {fmt_usd(snap['month_profit_usd'])} / "
+        f"{fmt_usd(snap['monthly_target_usd'])}</b>",
+        f"{_bar(snap['month_profit'], snap['monthly_target_uzs'])}  "
+        f"{_percent(snap['month_profit'], snap['monthly_target_uzs'])}%",
+        f"   ({fmt_sum(snap['month_profit'])} so'm · 1$ = {fmt_sum(snap['usd_rate'])} so'm"
+        + (f", Markaziy bank {snap['usd_rate_date']}" if snap.get("usd_rate_date") else "")
+        + ")",
+    ]
+    if snap["remaining_uzs"] <= 0:
+        lines.append("🏆 <b>Oylik maqsad bajarildi!</b>")
+    else:
+        lines += [
+            f"⏳ Yana <b>{fmt_usd(snap['remaining_usd'])}</b> "
+            f"({fmt_sum(snap['remaining_uzs'])} so'm) kerak",
+            "",
+            f"📅 <b>Oyning oxirigacha {snap['days_left']} kun qoldi</b>"
+            + (f" ({day:%d.%m} – {snap['days_total']:02d}.{day.month:02d})" if day else "")
+            + ".",
+            f"   Har kuni <b>{fmt_usd(snap['needed_per_day_usd'])}</b> sof foyda "
+            f"({fmt_sum(snap['needed_per_day_usd'] * snap['usd_rate'])} so'm) "
+            f"qilsak, maqsadga yetamiz.",
+            f"   Ya'ni kuniga <b>{snap['daily_target']} ta sotuv</b> — bu ikkalasi "
+            f"bitta ish.",
+        ]
+
+    lines += [
+        "",
+        f"📊 Oy boshidan ({window_str}): <b>{snap['month_orders']} ta sotuv</b> · "
+        f"{fmt_sum(snap['month_revenue'])} so'm tushum",
+    ]
+    missing = snap.get("missing_cost_products") or []
+    if missing:
+        names = ", ".join(missing[:5]) + (f" va yana {len(missing) - 5} ta"
+                                          if len(missing) > 5 else "")
+        lines.append(f"⚠️ Tannarxi kiritilmagan: {names} — foyda haqiqiydan "
+                     f"yuqori ko'rinadi.")
+    # The closing line has to mean something on a day the target is already
+    # met, too — "bugungi 0 tani yopamiz" would read as a mistake.
+    lines.append("")
+    if snap["sales_left"]:
+        lines.append(f"💪 Qani, bugungi {snap['sales_left']} tani yopamiz!")
+    else:
+        lines.append("💪 Zo'r ketyapmiz — shu suratni ushlab turaylik!")
+    return "\n".join(lines)
+
+
+async def send_status_reminder(bot: Bot, key: str = STATUS_PUSH_KEY) -> bool:
+    """Push build_status_reminder to every admin, at most once per key."""
+    if not await database.claim_release_notes(key):
+        return False
+    try:
+        snap = await snapshot()
+        text = build_status_reminder(snap)
+    except Exception:
+        # Give the key back, or a transient database hiccup would burn the
+        # send and the admins would never get it.
+        logger.exception("Could not build the targets status reminder")
+        await database.release_release_notes(key)
+        return False
+
+    sent = failed = 0
+    for admin_id in list(dict.fromkeys(ADMIN_IDS)):
+        try:
+            await bot.send_message(admin_id, text, parse_mode=ParseMode.HTML)
+            sent += 1
+        except Exception as exc:
+            failed += 1
+            logger.warning("Targets status to admin %s failed: %s", admin_id, exc)
+        await asyncio.sleep(SEND_DELAY)
+    logger.info("Targets status %s: %d sent, %d failed", key, sent, failed)
+    return True
+
+
 async def scheduler_loop(bot: Bot) -> None:
     logger.info("Targets scheduler started (%s Asia/Tashkent)",
                 ", ".join(f"{h:02d}:00" for h in SEND_SLOTS))
     await asyncio.sleep(45)   # let startup settle
+    try:
+        await send_status_reminder(bot)
+    except Exception:
+        logger.exception("Targets status reminder failed")
     while True:
         try:
             await _tick(bot)
