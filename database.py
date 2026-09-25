@@ -3,6 +3,7 @@ Database layer using asyncpg (PostgreSQL)
 """
 import asyncpg
 import json
+import math
 import os
 from datetime import datetime, timedelta
 from config import DATABASE_URL, ADMIN_IDS
@@ -86,6 +87,36 @@ async def init_db():
                 payment_method TEXT DEFAULT 'cash',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS order_line_cost_audit (
+                id BIGSERIAL PRIMARY KEY,
+                order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+                line_index INTEGER NOT NULL CHECK (line_index >= 0),
+                old_unit_cost DOUBLE PRECISION,
+                new_unit_cost DOUBLE PRECISION NOT NULL CHECK (new_unit_cost > 0),
+                reason TEXT NOT NULL CHECK (length(trim(reason)) BETWEEN 3 AND 500),
+                changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS order_line_cost_audit_order_idx "
+            "ON order_line_cost_audit (order_id, id DESC)"
+        )
+        await conn.execute("""
+            CREATE OR REPLACE FUNCTION reject_order_line_cost_audit_mutation()
+            RETURNS trigger AS $$
+            BEGIN
+                RAISE EXCEPTION 'order line cost audit records are immutable';
+                RETURN OLD;
+            END;
+            $$ LANGUAGE plpgsql
+        """)
+        await conn.execute("DROP TRIGGER IF EXISTS order_line_cost_audit_immutable ON order_line_cost_audit")
+        await conn.execute("""
+            CREATE TRIGGER order_line_cost_audit_immutable
+            BEFORE UPDATE OR DELETE ON order_line_cost_audit
+            FOR EACH ROW EXECUTE FUNCTION reject_order_line_cost_audit_mutation()
         """)
         try:
             await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS courier_id BIGINT")
@@ -1493,6 +1524,155 @@ def item_cost_qty(item: dict) -> float:
     return float(item.get("quantity") or 0)
 
 
+def _valid_unit_cost(value) -> tuple[float, bool]:
+    if isinstance(value, bool):
+        return 0.0, False
+    try:
+        cost = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0, False
+    if not math.isfinite(cost) or cost <= 0:
+        return 0.0, False
+    return cost, True
+
+
+def _line_product_id(item: dict) -> int | None:
+    raw_id = item.get("product_id") or item.get("id")
+    if not raw_id:
+        return None
+    try:
+        product_id = int(raw_id)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return product_id if product_id > 0 else None
+
+
+def _line_set_id(item: dict) -> int | None:
+    raw_id = item.get("set_id") or item.get("product_id") or item.get("id")
+    if not raw_id:
+        return None
+    try:
+        set_id = int(raw_id)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return set_id if set_id > 0 else None
+
+
+async def _order_cost_maps(conn, items: list[dict]) -> tuple[dict[int, tuple[float, bool]], dict[int, tuple[float, bool]]]:
+    """Read current per-product and per-set costs for the given order lines."""
+    product_ids = set()
+    set_ids = set()
+    for item in items:
+        if item.get("is_set"):
+            if set_id := _line_set_id(item):
+                set_ids.add(set_id)
+        elif product_id := _line_product_id(item):
+            product_ids.add(product_id)
+
+    product_costs: dict[int, tuple[float, bool]] = {}
+    if product_ids:
+        rows = await conn.fetch(
+            "SELECT id, cost_price FROM products WHERE id = ANY($1::int[])",
+            list(product_ids),
+        )
+        for row in rows:
+            product_costs[int(row["id"])] = _valid_unit_cost(row["cost_price"])
+
+    set_costs: dict[int, tuple[float, bool]] = {}
+    if set_ids:
+        rows = await conn.fetch(
+            """SELECT i.set_id, i.quantity, p.cost_price
+                 FROM product_set_items i
+                 JOIN products p ON p.id = i.product_id
+                WHERE i.set_id = ANY($1::int[])""",
+            list(set_ids),
+        )
+        totals: dict[int, float] = {}
+        known: dict[int, bool] = {}
+        counts: dict[int, int] = {}
+        for row in rows:
+            set_id = int(row["set_id"])
+            component_cost, component_known = _valid_unit_cost(row["cost_price"])
+            try:
+                component_quantity = float(row["quantity"])
+            except (TypeError, ValueError, OverflowError):
+                component_quantity = 0
+            if not math.isfinite(component_quantity) or component_quantity <= 0:
+                component_known = False
+                component_quantity = 0
+            totals[set_id] = totals.get(set_id, 0.0) + component_cost * component_quantity
+            known[set_id] = known.get(set_id, True) and component_known
+            counts[set_id] = counts.get(set_id, 0) + 1
+        for set_id in set_ids:
+            total = totals.get(set_id, 0.0)
+            set_costs[set_id] = (total, bool(counts.get(set_id)) and known.get(set_id, False) and
+                                 math.isfinite(total) and total > 0)
+    return product_costs, set_costs
+
+
+async def _snapshot_order_costs(conn, items: list[dict]) -> list[dict]:
+    """Freeze unit costs on product/set lines without altering the input list.
+
+    The explicit known flag matters: a zero snapshot means the cost was
+    missing at sale time and must stay missing even after the catalog is fixed.
+    Gifts and bonuses already charged to expenses are deliberately left alone.
+    """
+    product_costs, set_costs = await _order_cost_maps(conn, items)
+    snapshots = []
+    for original in items:
+        item = dict(original)
+        if (item.get("is_gift") or item.get("cost_in_expenses") or
+                "unit_cost_snapshot" in item or
+                _valid_unit_cost(item.get("cost_price"))[1]):
+            snapshots.append(item)
+            continue
+        if item.get("is_set"):
+            set_id = _line_set_id(item)
+            cost, known = set_costs.get(set_id, (0.0, False)) if set_id else (0.0, False)
+        else:
+            product_id = _line_product_id(item)
+            cost, known = product_costs.get(product_id, (0.0, False)) if product_id else (0.0, False)
+        item["unit_cost_snapshot"] = cost
+        item["unit_cost_known"] = known
+        snapshots.append(item)
+    return snapshots
+
+
+def _line_unit_cost(item: dict, cost_map: dict, set_costs: dict) -> tuple[float, bool]:
+    """Return per-line-unit cost and whether its amount is known."""
+    def _mapped_cost(mapping, key):
+        value = mapping.get(key, 0) if key is not None else 0
+        if isinstance(value, tuple) and len(value) == 2:
+            raw_cost, known = value
+            try:
+                cost = float(raw_cost)
+            except (TypeError, ValueError, OverflowError):
+                return 0.0, False
+            if not math.isfinite(cost) or cost < 0:
+                return 0.0, False
+            return cost, bool(known) and cost > 0
+        cost, known = _valid_unit_cost(value)
+        return cost, known
+
+    if item.get("is_gift"):
+        return 0.0, True
+    if "unit_cost_snapshot" in item:
+        cost, valid = _valid_unit_cost(item.get("unit_cost_snapshot"))
+        if not valid:
+            return 0.0, bool(item.get("unit_cost_known", False)) and valid
+        return cost, bool(item.get("unit_cost_known", True))
+    own_cost, own_cost_known = _valid_unit_cost(item.get("cost_price"))
+    if own_cost_known:
+        return own_cost, True
+    if item.get("is_set"):
+        set_id = _line_set_id(item)
+        cost, known = _mapped_cost(set_costs, set_id)
+        return cost, known
+    product_id = _line_product_id(item)
+    cost, known = _mapped_cost(cost_map, product_id)
+    return (cost if known else 0.0), known or bool(item.get("is_bonus"))
+
+
 def line_cost(item: dict, cost_map: dict, set_costs: dict) -> tuple[float, bool]:
     """(cost of goods for one order line, whether that cost is actually known).
 
@@ -1503,23 +1683,121 @@ def line_cost(item: dict, cost_map: dict, set_costs: dict) -> tuple[float, bool]
     a paid line's product has no cost_price filled in, so the reports can say
     how much of the profit is guesswork.
 
-    A line carrying its own `cost_price` is costed by that and nothing else.
-    Wholesale Eritritol (add_b2b_eritritol_order) is weighed by the kilogram
-    out of a sack while the catalog only sells it in 100gr/500gr packs, so no
-    product row's per-package cost describes that line — and a cost fixed at
-    sale time also survives later edits to the product."""
-    if item.get("is_gift"):
-        return 0.0, True
-    own_cost = float(item.get("cost_price") or 0)
-    if own_cost > 0:
-        return own_cost * item_cost_qty(item), True
-    if item.get("is_set"):
-        set_id = item.get("set_id") or item.get("product_id") or item.get("id")
-        cost = float(set_costs.get(int(set_id), 0.0)) if set_id else 0.0
-        return cost * float(item.get("quantity") or 0), cost > 0
-    pid = item.get("product_id") or item.get("id")
-    unit_cost = float(cost_map.get(int(pid), 0) or 0) if pid else 0.0
-    return unit_cost * item_cost_qty(item), unit_cost > 0 or bool(item.get("is_bonus"))
+    A line carrying `unit_cost_snapshot` or its own `cost_price` is costed by
+    that and nothing else. Wholesale Eritritol (add_b2b_eritritol_order) is
+    weighed by the kilogram out of a sack while the catalog only sells it in
+    100gr/500gr packs, so no product row's per-package cost describes that
+    line — and the stored per-kg cost survives later catalog edits."""
+    unit_cost, known = _line_unit_cost(item, cost_map, set_costs)
+    return unit_cost * item_cost_qty(item), known
+
+
+async def get_order_line_cost_review(order_id: int) -> dict | None:
+    """Return order-line costs and append-only corrections, without buyer PII."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, created_at, status, items FROM orders WHERE id = $1",
+            int(order_id),
+        )
+        if not row:
+            return None
+        raw_items = row["items"]
+        items = json.loads(raw_items) if isinstance(raw_items, str) else (raw_items or [])
+        cost_map, set_costs = await _order_cost_maps(conn, items)
+        lines = []
+        for index, item in enumerate(items):
+            unit_cost, known = _line_unit_cost(item, cost_map, set_costs)
+            if "unit_cost_snapshot" in item:
+                cost_source = "snapshot"
+            elif _valid_unit_cost(item.get("cost_price"))[1]:
+                cost_source = "line"
+            elif item.get("is_set"):
+                cost_source = "catalog_set" if known else "missing"
+            else:
+                cost_source = "catalog_product" if known else "missing"
+            lines.append({
+                "line_index": index,
+                "name": item.get("name") or "",
+                "quantity": float(item.get("quantity") or 0),
+                "cost_quantity": item_cost_qty(item),
+                "unit": item.get("unit") or "",
+                "unit_price": float(item.get("price") or 0),
+                "unit_cost": unit_cost if known else None,
+                "cost_known": known,
+                "cost_source": cost_source,
+                "editable": not item.get("is_gift") and not item.get("cost_in_expenses"),
+                "is_bonus": bool(item.get("is_bonus")),
+                "is_set": bool(item.get("is_set")),
+            })
+        audit_rows = await conn.fetch(
+            """SELECT line_index, old_unit_cost, new_unit_cost, reason, changed_at
+                 FROM order_line_cost_audit
+                WHERE order_id = $1 ORDER BY id DESC""",
+            int(order_id),
+        )
+    return {
+        "order_id": int(row["id"]),
+        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        "status": row["status"],
+        "lines": lines,
+        "audit": [{
+            "line_index": int(a["line_index"]),
+            "old_unit_cost": float(a["old_unit_cost"]) if a["old_unit_cost"] is not None else None,
+            "new_unit_cost": float(a["new_unit_cost"]),
+            "reason": a["reason"],
+            "changed_at": a["changed_at"].isoformat() if a["changed_at"] else None,
+        } for a in audit_rows],
+    }
+
+
+async def set_order_line_unit_cost(order_id: int, line_index: int,
+                                   unit_cost: float, reason: str) -> dict:
+    """Correct one historical order-line cost and append an audit event."""
+    new_cost, valid = _valid_unit_cost(unit_cost)
+    clean_reason = (reason or "").strip()
+    if not valid:
+        raise ValueError("unit_cost must be a positive finite number")
+    if not 3 <= len(clean_reason) <= 500:
+        raise ValueError("reason must contain 3 to 500 characters")
+    try:
+        line_index = int(line_index)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("line_index is invalid") from None
+    if line_index < 0:
+        raise ValueError("line_index is invalid")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT items FROM orders WHERE id = $1 FOR UPDATE", int(order_id)
+            )
+            if not row:
+                raise LookupError("order not found")
+            raw_items = row["items"]
+            items = json.loads(raw_items) if isinstance(raw_items, str) else (raw_items or [])
+            if line_index >= len(items):
+                raise LookupError("order line not found")
+            item = dict(items[line_index])
+            if item.get("is_gift") or item.get("cost_in_expenses"):
+                raise ValueError("gift or expense-booked lines cannot be edited here")
+            cost_map, set_costs = await _order_cost_maps(conn, [item])
+            old_cost, old_known = _line_unit_cost(item, cost_map, set_costs)
+            item["unit_cost_snapshot"] = new_cost
+            item["unit_cost_known"] = True
+            items[line_index] = item
+            await conn.execute(
+                "UPDATE orders SET items = $2 WHERE id = $1",
+                int(order_id), json.dumps(items, ensure_ascii=False),
+            )
+            audit_id = await conn.fetchval(
+                """INSERT INTO order_line_cost_audit
+                       (order_id, line_index, old_unit_cost, new_unit_cost, reason)
+                   VALUES ($1, $2, $3, $4, $5) RETURNING id""",
+                int(order_id), line_index, old_cost if old_known else None,
+                new_cost, clean_reason,
+            )
+    return {"id": int(audit_id), "old_unit_cost": old_cost if old_known else None,
+            "new_unit_cost": new_cost, "reason": clean_reason}
 
 
 async def get_cart(user_id: int) -> list[dict]:
@@ -1689,6 +1967,7 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
 
     async with pool.acquire() as conn:
         async with conn.transaction():
+            items = await _snapshot_order_costs(conn, items)
             for item in items:
                 qty = item["quantity"]
                 if item.get("is_bonus"):
@@ -1814,6 +2093,7 @@ async def add_manual_order(admin_user_id: int, customer_name: str, phone: str,
     they can edit the product quantity manually.
     """
     async with pool.acquire() as conn:
+        items_data = await _snapshot_order_costs(conn, items_data)
         order_id = await conn.fetchval(
             """INSERT INTO orders (user_id, customer_name, phone, address, items, total,
                                     payment_method, delivery_method, address_note, status,
@@ -1845,6 +2125,7 @@ async def add_b2b_order(admin_user_id: int, company_name: str,
     and broken out separately as b2b_revenue/b2b_orders.
     """
     async with pool.acquire() as conn:
+        items_data = await _snapshot_order_costs(conn, items_data)
         order_id = await conn.fetchval(
             """INSERT INTO orders (user_id, customer_name, items, total, status,
                                     source, confirmed_at, shipped_at, delivered_at)

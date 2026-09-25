@@ -66,6 +66,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import time
 from pathlib import Path
 
@@ -878,6 +879,46 @@ async def api_expenses_add(request: web.Request):
     return _json({"ok": True, "id": eid})
 
 
+@require_auth
+async def api_order_line_costs(request: web.Request):
+    try:
+        order_id = int(request.match_info["id"])
+    except (KeyError, TypeError, ValueError):
+        return _json({"error": "buyurtma raqami noto'g'ri"}, status=400)
+    review = await database.get_order_line_cost_review(order_id)
+    if review is None:
+        return _json({"error": "buyurtma topilmadi"}, status=404)
+    return _json(review)
+
+
+@require_auth
+async def api_order_line_cost_update(request: web.Request):
+    try:
+        order_id = int(request.match_info["id"])
+        line_index = int(request.match_info["line"])
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError
+        if isinstance(body.get("unit_cost"), bool):
+            raise ValueError
+        unit_cost = float(body.get("unit_cost"))
+        reason = body.get("reason")
+        if (not math.isfinite(unit_cost) or unit_cost <= 0 or
+                not isinstance(reason, str) or not 3 <= len(reason.strip()) <= 500):
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        return _json({"error": "ijobiy tannarx va izoh kiriting"}, status=400)
+    try:
+        result = await database.set_order_line_unit_cost(
+            order_id, line_index, unit_cost, reason
+        )
+    except LookupError as exc:
+        return _json({"error": str(exc)}, status=404)
+    except ValueError as exc:
+        return _json({"error": str(exc)}, status=400)
+    return _json({"ok": True, "audit": result})
+
+
 # ───────────────────────────── dashboard ─────────────────────────────────────
 
 def _b2b_sale_json(o: dict) -> dict:
@@ -1627,6 +1668,8 @@ def setup_admin_routes(app: web.Application):
     app.router.add_post("/admin/api/reco/backfill", api_reco_backfill)
     app.router.add_get("/admin/api/expenses", api_expenses_list)
     app.router.add_post("/admin/api/expenses", api_expenses_add)
+    app.router.add_get("/admin/api/orders/{id:\\d+}/costs", api_order_line_costs)
+    app.router.add_post("/admin/api/orders/{id:\\d+}/lines/{line:\\d+}/cost", api_order_line_cost_update)
     app.router.add_get("/admin/api/dashboard", api_dashboard)
     app.router.add_get("/admin/api/promos", api_promos_list)
     app.router.add_post("/admin/api/promos", api_promos_create)

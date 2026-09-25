@@ -502,6 +502,7 @@
 
   <div class="tabs">
     <button class="tab active" data-view="dashboard">📊 Dashboard</button>
+    <button class="tab" data-view="order-costs">🧾 Buyurtma tannarxi</button>
     <button class="tab" data-view="courier">🚚 Kuryer</button>
     <button class="tab" data-view="products">📦 Mahsulotlar</button>
     <button class="tab" data-view="sets">🎁 To'plamlar (Set)</button>
@@ -566,6 +567,22 @@
     <div class="dash-card" style="margin-top:16px">
       <h3>🏢 B2B savdolar <span id="b2bSummary" class="b2b-sum"></span></h3>
       <div id="b2bSales" style="overflow-x:auto"></div>
+    </div>
+  </section>
+
+  <!-- ===== ORDER COST REVIEW VIEW ===== -->
+  <section class="view" id="view-order-costs">
+    <div class="dash-card">
+      <h3>🧾 Tarixiy buyurtma tannarxini tuzatish</h3>
+      <p style="color:var(--ink-2);font-size:13px;margin:8px 0 16px">
+        Buyurtma raqamini kiriting. Har bir qator uchun birlik tannarxini va tuzatish sababini yozing.
+        Set uchun bir set tannarxi, bonus uchun ombordan chiqadigan birlik tannarxi ishlatiladi.
+      </p>
+      <form id="orderCostLookup" class="toolbar" style="margin-bottom:16px">
+        <input id="orderCostId" type="number" min="1" step="1" placeholder="Buyurtma raqami" required style="max-width:240px">
+        <button class="btn btn-p" type="submit">Ko'rish</button>
+      </form>
+      <div id="orderCostResult"></div>
     </div>
   </section>
 
@@ -1401,7 +1418,7 @@ $('#dashCustomDateBtn').addEventListener('click', () => {
 });
 
 /* ===== tabs ===== */
-const VIEWS=['dashboard','courier','products','sets','promos','keto','bloggers','reklama','retention','expenses'];
+const VIEWS=['dashboard','order-costs','courier','products','sets','promos','keto','bloggers','reklama','retention','expenses'];
 function switchView(v){
   if(!VIEWS.includes(v))v='dashboard';
   localStorage.setItem('ketoshop_admin_view',v);
@@ -1411,6 +1428,7 @@ function switchView(v){
   $('#shell').classList.toggle('wide',v==='courier');
   if(v==='courier'){loadCourier();kbPollOn();}else{kbPollOff();}
   if(v==='dashboard')loadDashboard();
+  if(v==='order-costs')$('#orderCostId').focus();
   if(v==='products')loadProducts();
   if(v==='sets')loadSets();
   if(v==='promos')loadPromos();
@@ -1421,6 +1439,65 @@ function switchView(v){
   if(v==='expenses')loadExpenses();
 }
 $$('.tab').forEach(t=>t.addEventListener('click',()=>switchView(t.dataset.view)));
+
+$('#orderCostLookup').addEventListener('submit',async e=>{
+  e.preventDefault();
+  await loadOrderCostReview();
+});
+
+async function loadOrderCostReview(){
+  const orderId=Number($('#orderCostId').value);
+  const box=$('#orderCostResult');
+  if(!Number.isSafeInteger(orderId)||orderId<1){toast('⚠️ Buyurtma raqamini kiriting');return;}
+  box.innerHTML='<div class="empty" style="padding:18px">Yuklanmoqda…</div>';
+  try{
+    const d=await api(`/admin/api/orders/${orderId}/costs`);
+    renderOrderCostReview(d);
+  }catch(err){box.innerHTML=`<div class="empty" style="padding:18px">${esc(err.message)}</div>`;}
+}
+
+function renderOrderCostReview(d){
+  const box=$('#orderCostResult');
+  const qty=n=>Number.isInteger(+n)?+n:(+n).toFixed(3);
+  const lines=(d.lines||[]).map(line=>{
+    const current=line.cost_known?fmtSom(line.unit_cost):'Tannarx kiritilmagan';
+    const source=line.cost_source==='snapshot'?'Buyurtmada saqlangan':line.cost_source==='line'?'Buyurtma qatorida saqlangan':line.cost_source==='catalog_set'||line.cost_source==='catalog_product'?'Katalogdagi hozirgi tannarx — tarixiy tannarx emas':'Tannarx topilmadi';
+    const editable=line.editable?`<form class="toolbar" style="align-items:end;margin-top:8px" onsubmit="saveOrderLineCost(event,${d.order_id},${line.line_index})">
+      <label style="min-width:190px;flex:1">Birlik tannarx (so'm)<input name="unit_cost" type="number" min="0.01" step="any" value="${line.cost_known?esc(String(line.unit_cost)):''}" placeholder="Aniq tannarx" required></label>
+      <label style="min-width:240px;flex:2">Sabab<input name="reason" type="text" minlength="3" maxlength="500" placeholder="Masalan: yetkazib beruvchi hisob-fakturasi" required></label>
+      <button class="btn btn-p btn-sm" type="submit">Saqlash</button>
+    </form>`:'<div class="b2b-note">Bu sovg‘a yoki chiqimga yozilgan bonus; u alohida chiqim orqali hisoblanadi.</div>';
+    return `<div class="dash-card" style="margin:12px 0;padding:14px">
+      <b>${esc(line.name||'Mahsulot')}</b>${line.is_set?' · Set':''}${line.is_bonus?' · Bonus':''}
+      <div style="color:var(--ink-2);font-size:13px;margin-top:4px">Miqdor: ${esc(String(qty(line.quantity)))} ${esc(line.unit||'')}${line.is_bonus?` · Tannarx miqdori: ${esc(String(qty(line.cost_quantity)))}`:''} · Sotuv birligi: ${fmtSom(line.unit_price)} · Birlik tannarxi: ${esc(current)} · ${esc(source)}</div>
+      ${editable}
+    </div>`;
+  }).join('');
+  const lineNames=new Map((d.lines||[]).map(line=>[line.line_index,line.name||'Mahsulot']));
+  const history=(d.audit||[]).map(a=>`<tr>
+    <td>#${a.line_index+1} · ${esc(lineNames.get(a.line_index)||'Mahsulot')}</td>
+    <td>${a.old_unit_cost===null?'Kiritilmagan':fmtSom(a.old_unit_cost)}</td>
+    <td>${fmtSom(a.new_unit_cost)}</td>
+    <td>${esc(a.reason)}</td>
+    <td>${a.changed_at?esc(new Date(a.changed_at).toLocaleString()):'—'}</td>
+  </tr>`).join('');
+  box.innerHTML=`<div style="margin:8px 0 12px;color:var(--ink-2)">Buyurtma #${d.order_id} · ${esc(d.status||'')} · ${d.created_at?esc(new Date(d.created_at).toLocaleString()):''}</div>
+    ${lines||'<div class="empty" style="padding:18px">Buyurtmada mahsulot qatori yo‘q</div>'}
+    <h3 style="margin:20px 0 8px">O‘zgarishlar tarixi</h3>
+    <div class="tbl-wrap"><table><thead><tr><th>Qator</th><th>Oldingi tannarx</th><th>Yangi tannarx</th><th>Sabab</th><th>Vaqt</th></tr></thead>
+    <tbody>${history||'<tr><td colspan="5" class="empty">Hozircha tuzatish yo‘q</td></tr>'}</tbody></table></div>`;
+}
+
+window.saveOrderLineCost=async function(event,orderId,lineIndex){
+  event.preventDefault();
+  const form=event.currentTarget;
+  const body={unit_cost:Number(form.unit_cost.value),reason:form.reason.value.trim()};
+  try{
+    await api(`/admin/api/orders/${orderId}/lines/${lineIndex}/cost`,{method:'POST',body:JSON.stringify(body)});
+    toast('✅ Tannarx saqlandi va tarixga yozildi');
+    await loadOrderCostReview();
+  }catch(err){toast('⚠️ '+err.message);}
+};
 
 /* ===== products ===== */
 async function loadProducts(){
