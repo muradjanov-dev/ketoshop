@@ -323,6 +323,10 @@ async def main():
     from product_of_day import scheduler_loop as product_of_day_loop
     product_of_day_task = asyncio.create_task(product_of_day_loop(bot))
 
+    # Kunlik kanal posti: 19:47 da bitta kontent posti @ketoshop_uz ga.
+    from channel_posts import scheduler_loop as channel_posts_loop
+    channel_posts_task = asyncio.create_task(channel_posts_loop(bot))
+
     from release_notes import scheduler_loop as release_notes_loop
     release_notes_task = asyncio.create_task(release_notes_loop(bot))
 
@@ -345,6 +349,7 @@ async def main():
         keto_explainer_task.cancel()
         stock_alerts_task.cancel()
         product_of_day_task.cancel()
+        channel_posts_task.cancel()
         release_notes_task.cancel()
         meta_leads_task.cancel()
         meta_ads_task.cancel()

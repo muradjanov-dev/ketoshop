@@ -1168,6 +1168,35 @@ async def init_db():
             )
         """)
 
+        # "Kanal postlari" — one content post a day to the channel. The order
+        # lives in channel_posts_content.ORDER; `position` is the cursor into
+        # it and `cycle` counts full passes, so a restart can neither repeat a
+        # day nor lose the reader's place mid-course.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS channel_post_state (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                position INTEGER NOT NULL DEFAULT 0,
+                cycle INTEGER NOT NULL DEFAULT 0,
+                last_sent_date DATE,
+                enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                armed BOOLEAN NOT NULL DEFAULT FALSE,
+                CONSTRAINT channel_post_state_single CHECK (id = 1)
+            )
+        """)
+        await conn.execute(
+            "INSERT INTO channel_post_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING"
+        )
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS channel_post_log (
+                id SERIAL PRIMARY KEY,
+                slug TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                cycle INTEGER NOT NULL,
+                message_id BIGINT,
+                sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
 
 
 async def close_db():
@@ -4655,6 +4684,77 @@ async def get_product_of_day_history(limit: int = 7) -> list[dict]:
               FROM product_of_day_log l
               LEFT JOIN products p ON p.id = l.product_id
              ORDER BY l.sent_at DESC
+             LIMIT $1
+        """, limit)
+        return [dict(r) for r in rows]
+
+
+# ===== CHANNEL POSTS (one content post a day) =====
+
+async def get_channel_post_state() -> dict:
+    """The single channel-post state row, creating it if missing."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM channel_post_state WHERE id = 1")
+        if row is None:
+            await conn.execute(
+                "INSERT INTO channel_post_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+            row = await conn.fetchrow("SELECT * FROM channel_post_state WHERE id = 1")
+        return dict(row)
+
+
+async def arm_channel_posts() -> bool:
+    """Switch the daily channel post on the very first time, and say whether
+    this call is the one that did it. A later /kanal_off is respected —
+    `armed` stays TRUE, so nothing turns it back on behind the owner's back."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "UPDATE channel_post_state SET armed = TRUE, enabled = TRUE "
+            "WHERE id = 1 AND armed = FALSE RETURNING id")
+        return row is not None
+
+
+async def set_channel_posts_enabled(enabled: bool):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE channel_post_state SET enabled = $1 WHERE id = 1", enabled)
+
+
+async def set_channel_post_position(position: int, cycle: int):
+    """Move the cursor without sending anything (skip, or rewind by hand)."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE channel_post_state SET position = $1, cycle = $2 WHERE id = 1",
+            position, cycle)
+
+
+async def advance_channel_post(slug: str, position: int, cycle: int,
+                               message_id: int | None, new_position: int,
+                               new_cycle: int, day=None):
+    """Log the post that just went out and move the cursor on. `day` also
+    closes the calendar day, so a redeploy can't send a second post today;
+    leave it out for a manual test that shouldn't use up the day."""
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO channel_post_log (slug, position, cycle, message_id)
+            VALUES ($1, $2, $3, $4)
+        """, slug, position, cycle, message_id)
+        if day is not None:
+            await conn.execute(
+                "UPDATE channel_post_state SET position = $1, cycle = $2, "
+                "last_sent_date = $3 WHERE id = 1",
+                new_position, new_cycle, day)
+        else:
+            await conn.execute(
+                "UPDATE channel_post_state SET position = $1, cycle = $2 WHERE id = 1",
+                new_position, new_cycle)
+
+
+async def get_channel_post_history(limit: int = 7) -> list[dict]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT slug, position, cycle, message_id, sent_at
+              FROM channel_post_log
+             ORDER BY sent_at DESC
              LIMIT $1
         """, limit)
         return [dict(r) for r in rows]

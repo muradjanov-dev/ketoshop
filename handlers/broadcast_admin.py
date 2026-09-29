@@ -594,3 +594,142 @@ async def hisobot_kanal(message: Message):
         if ok else
         "⚠️ Kanalga yuborib bo'lmadi. Bot kanalda admin ekanini tekshiring."
     )
+
+
+# Kanal postlari — one content post a day to the channel, in course order
+#
+#   /kanal_status  — holat: qaysi kun, qaysi hafta, navbatdagi post
+#   /kanal_on      — kunlik postni yoqish
+#   /kanal_off     — to'xtatish
+#   /kanal_test    — navbatdagi postni FAQAT o'zingizga ko'rsatadi
+#   /kanal_now     — navbatdagini hoziroq kanalga chiqaradi
+#   /kanal_otkaz   — navbatdagini o'tkazib yuboradi (hech qayerga ketmaydi)
+#   /kanal_set N   — navbatni N-kunga qo'yish (1 dan 105 gacha)
+# ─────────────────────────────────────────────────────────────────────────────
+import channel_posts
+import channel_posts_content as _cpc
+
+
+@router.message(Command("kanal_status"))
+async def kanal_status(message: Message):
+    state = await database.get_channel_post_state()
+    holat = "🟢 yoqilgan" if state["enabled"] else "🔴 to'xtatilgan"
+    pos = state["position"]
+    slug = channel_posts.slug_at(pos)
+    title = _cpc.POSTS[slug][0]
+    week, theme = _cpc.week_of(pos)
+    day_in_week = pos % 7 + 1
+    last = state["last_sent_date"]
+    last_str = last.strftime("%d.%m.%Y") if last else "— (hali yo'q)"
+
+    history = await database.get_channel_post_history(7)
+    tarix = "\n".join(
+        f"• {h['sent_at'].strftime('%d.%m')} — {_cpc.POSTS.get(h['slug'], ('?',))[0]}"
+        for h in history
+    ) or "—"
+
+    await message.answer(
+        f"📣 <b>Kanal postlari</b>\n\n"
+        f"Holat: {holat}\n"
+        f"Vaqt: har kuni <b>{channel_posts.SEND_HOUR:02d}:"
+        f"{channel_posts.SEND_MINUTE:02d}</b> (Toshkent)\n"
+        f"Oxirgi chiqqan kun: {last_str}\n\n"
+        f"Navbatdagi: <b>{title}</b>\n"
+        f"📅 {pos + 1}-kun / {len(_cpc.ORDER)} · {week}-hafta «{theme}» "
+        f"({day_in_week}-kuni)\n"
+        f"🔄 Aylanma: {state['cycle'] + 1}-doira\n\n"
+        f"<b>Oxirgi kunlar:</b>\n{tarix}",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(Command("kanal_on"))
+async def kanal_on(message: Message):
+    await database.set_channel_posts_enabled(True)
+    await message.answer(
+        f"🟢 Kanal postlari yoqildi — har kuni soat "
+        f"{channel_posts.SEND_HOUR:02d}:{channel_posts.SEND_MINUTE:02d} da chiqadi."
+    )
+
+
+@router.message(Command("kanal_off"))
+async def kanal_off(message: Message):
+    await database.set_channel_posts_enabled(False)
+    await message.answer("🔴 Kanal postlari to'xtatildi. Yoqish: /kanal_on")
+
+
+@router.message(Command("kanal_test"))
+async def kanal_test(message: Message):
+    """Preview: the exact post, sent only to the admin who asked."""
+    state = await database.get_channel_post_state()
+    slug = channel_posts.slug_at(state["position"])
+    week, theme = _cpc.week_of(state["position"])
+    await message.answer(
+        f"👀 Navbatdagi kanal posti — {state['position'] + 1}-kun, "
+        f"{week}-hafta «{theme}»:",
+        parse_mode=ParseMode.HTML,
+    )
+    await message.answer(
+        channel_posts.build_text(slug),
+        parse_mode=ParseMode.HTML,
+        reply_markup=channel_posts.keyboard(),
+        disable_web_page_preview=True,
+    )
+
+
+@router.message(Command("kanal_now"))
+async def kanal_now(message: Message):
+    """Send the queued post to the channel right now. The calendar day is
+    closed too, so the scheduler doesn't post a second one this evening."""
+    result = await channel_posts.send_today(message.bot)
+    if result is None:
+        await message.answer(
+            "⚠️ Kanalga yuborib bo'lmadi. Bot kanalda admin ekanini va "
+            "post qo'yish huquqi borligini tekshiring."
+        )
+        return
+    title = _cpc.POSTS[result["slug"]][0]
+    await message.answer(
+        f"📣 Kanalga chiqdi: <b>{title}</b>\n"
+        f"📅 {result['position'] + 1}-kun · {result['week']}-hafta "
+        f"«{result['theme']}»\n"
+        f"Bugungi post shu — ertaga navbatdagisi chiqadi.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(Command("kanal_otkaz"))
+async def kanal_otkaz(message: Message):
+    """Skip the queued post — it goes nowhere and the cursor moves on."""
+    skipped = await channel_posts.skip_next()
+    state = await database.get_channel_post_state()
+    nxt = channel_posts.slug_at(state["position"])
+    await message.answer(
+        f"⏭ <b>{_cpc.POSTS[skipped][0]}</b> o'tkazib yuborildi.\n"
+        f"Navbatdagi: <b>{_cpc.POSTS[nxt][0]}</b> ({state['position'] + 1}-kun)",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(Command("kanal_set"))
+async def kanal_set(message: Message, command: CommandObject):
+    """Jump the queue to a given day, 1-based — for restarting the course or
+    re-running a post that deserves a second outing."""
+    arg = (command.args or "").strip()
+    if not arg.isdigit() or not (1 <= int(arg) <= len(_cpc.ORDER)):
+        await message.answer(
+            f"Foydalanish: <code>/kanal_set N</code> — N 1 dan "
+            f"{len(_cpc.ORDER)} gacha.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    pos = int(arg) - 1
+    state = await database.get_channel_post_state()
+    await database.set_channel_post_position(pos, state["cycle"])
+    week, theme = _cpc.week_of(pos)
+    await message.answer(
+        f"✅ Navbat {pos + 1}-kunga qo'yildi: "
+        f"<b>{_cpc.POSTS[channel_posts.slug_at(pos)][0]}</b>\n"
+        f"{week}-hafta «{theme}»",
+        parse_mode=ParseMode.HTML,
+    )
