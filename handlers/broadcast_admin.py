@@ -18,7 +18,7 @@ from aiogram.enums import ParseMode
 import database
 from broadcast import send_next_tip, _format_tip, _SHOP_BUTTON
 from broadcast_tips import TIPS
-from config import ADMIN_IDS
+from config import ADMIN_IDS, WEBAPP_URL
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -244,6 +244,31 @@ async def keto_status(message: Message):
         f"Jami berilgan Keto: <b>{stats['total_awarded']:,}</b>".replace(",", " ") + "\n"
         f"Ochilgan yutuqlar: <b>{stats['achievements_unlocked']}</b>",
         parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(Command("sayt"))
+async def sayt(message: Message):
+    """The admin site's address as plain, copyable text.
+
+    The inline buttons open it, but a button cannot be copied — and the
+    address lives only in WEBAPP_URL on the server, so there is nowhere else
+    to read it from.
+    """
+    if not WEBAPP_URL:
+        await message.answer(
+            "⚠️ Sayt manzili sozlanmagan (WEBAPP_URL bo'sh). "
+            "Serverdagi sozlamaga qo'shilishi kerak.")
+        return
+    base = WEBAPP_URL.rstrip("/")
+    await message.answer(
+        "🌐 <b>Boshqaruv paneli</b>\n"
+        f"<code>{base}/admin</code>\n\n"
+        "🛒 <b>Do'kon (Mini App)</b>\n"
+        f"<code>{base}</code>\n\n"
+        "Manzilni bosib nusxalab olsangiz bo'ladi. Panelga kirish uchun parol so'raladi.",
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
     )
 
 

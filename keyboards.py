@@ -52,6 +52,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="kun_status", description="📦 Kun mahsuloti (kunlik e'lon)"),
     BotCommand(command="kanal_status", description="📣 Kanal postlari (kunlik kontent)"),
     BotCommand(command="keto_tushuntirish", description="🎁 Keto tushuntirish xabari (18.09 17:30)"),
+    BotCommand(command="sayt", description="🌐 Boshqaruv paneli manzili"),
     BotCommand(command="keto_status", description="🎁 Keto dasturi holati"),
     BotCommand(command="backup_now", description="💾 Bazadan nusxa olish"),
 ]
