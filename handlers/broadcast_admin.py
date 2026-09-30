@@ -570,3 +570,27 @@ async def yangilik_hammaga(message: Message):
     await message.answer(
         f"✅ {sent} ta mijozga yetkazildi, ⚠️ {failed} ta yetmadi.",
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Oylik hisobot — kanalga bir martalik e'lon (monthly_report.py).
+#   /hisobot_test  — faqat o'zingizga, kanal tugmasi bilan
+#   /hisobot_kanal — kanalga
+# ─────────────────────────────────────────────────────────────────────────────
+import monthly_report
+
+
+@router.message(Command("hisobot_test"))
+async def hisobot_test(message: Message):
+    await monthly_report.send_preview(message.bot, message.chat.id)
+    await message.answer("👆 Kanalga aynan shu ko'rinishda chiqadi.\nKanalga: /hisobot_kanal")
+
+
+@router.message(Command("hisobot_kanal"))
+async def hisobot_kanal(message: Message):
+    ok = await monthly_report.post_to_channel(message.bot)
+    await message.answer(
+        "📣 Hisobot kanalga qo'yildi. Yoqmasa — kanaldan o'chirib tashlang."
+        if ok else
+        "⚠️ Kanalga yuborib bo'lmadi. Bot kanalda admin ekanini tekshiring."
+    )
