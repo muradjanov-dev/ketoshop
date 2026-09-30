@@ -124,7 +124,7 @@ class FinanceDashboardPayloadTest(unittest.TestCase):
         self.assertEqual(payload["stats"]["delivered_revenue"], 420)
         self.assertEqual(payload["stats"]["orders_delivered"], 2)
 
-        dashboard = (Path(__file__).parents[1] / "webapp" / "admin.html").read_text()
+        dashboard = (Path(__file__).parents[1] / "webapp" / "admin.html").read_text(encoding="utf-8")
         self.assertIn("fmt(st.booked_value)", dashboard)
         self.assertIn("fmt(st.delivered_revenue)", dashboard)
         self.assertIn("st.orders_sold", dashboard)
