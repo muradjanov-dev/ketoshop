@@ -21,9 +21,11 @@ faqat qolganlarini joylaydi.
 """
 import argparse
 import asyncio
+import html
 import json
 import os
 import random
+import re
 import sys
 import tempfile
 from datetime import datetime
@@ -35,11 +37,21 @@ os.environ.setdefault("DATABASE_URL", "postgresql://unused/olx-local")  # config
 from playwright.async_api import async_playwright  # noqa: E402
 
 import olx_export  # noqa: E402
+from config import ADMIN_IDS  # noqa: E402
 
 PROFILE = Path(os.getenv("LOCALAPPDATA", ".")) / "ketoshop-olx-profile"
 POSTED = PROFILE / "posted.json"
 CDP = "http://127.0.0.1:9333"
-CATEGORY = "Кондитерские изделия"      # egasi tanlagan (Продукты питания / Напитки)
+FOOD = "Продукты питания"              # OLX: Дом и сад / Продукты питания / Напитки
+# Do'kon kategoriyasi → OLX bo'limlari (afzal tartibda). Bepul limit bo'lim
+# bo'yicha: 29.09 "Кондитерские изделия" 5 tadan keyin pul so'radi, shuning
+# uchun har mahsulot o'z joyiga tushadi va limit tugasa keyingisiga o'tadi.
+CATEGORY_MAP = {
+    "ready_made": ["Кондитерские изделия", "Другое"],
+    "honey": ["Мёд", "Бакалея", "Другое"],
+}
+DEFAULT_CATEGORIES = ["Бакалея", "Другое"]
+EXHAUSTED = PROFILE / "exhausted.json"   # limiti tugagan OLX bo'limlari
 CITY = "Ташкент"
 CONTACT_NAME = "Ketoshop"
 PHONE = olx_export._phones().split(",")[0].strip()   # Ketoshop raqami (SUPPORT_PHONES)
@@ -88,20 +100,43 @@ async def download_photos(ctx, site: str, p: dict, folder: Path) -> list[str]:
     return files
 
 
-async def pick_category(page) -> None:
+def load_exhausted() -> set:
+    try:
+        return set(json.loads(EXHAUSTED.read_text("utf-8")))
+    except Exception:
+        return set()
+
+
+def categories_for(p: dict, exhausted: set) -> list[str]:
+    return [c for c in CATEGORY_MAP.get(p.get("category"), DEFAULT_CATEGORIES) if c not in exhausted]
+
+
+async def pick_category(page, category: str) -> None:
     box = page.locator("[data-testid=category-field-container]")
     text = await box.inner_text()
-    if CATEGORY in text and "Наше предложение" not in text:
+    if category in text and "Наше предложение" not in text:
         return
     button = box.get_by_text("Изменить").or_(box.get_by_text("Выберите категорию")).first
     await button.click()
     search = page.get_by_placeholder("Поиск").last
-    await search.fill(CATEGORY)
-    await page.get_by_text(CATEGORY, exact=True).first.click()
+    await search.fill(FOOD)
+    await page.wait_for_timeout(2000)
+    # "Другое" OLX'da o'nlab bo'limda bor — faqat Продукты питания ichidagisini olamiz.
+    await page.evaluate("""([name, food]) => {
+        const el = [...document.querySelectorAll('*')].find(e =>
+            e.children.length === 0 && e.textContent.trim() === name &&
+            e.parentElement && e.parentElement.parentElement &&
+            e.parentElement.parentElement.innerText.includes(food));
+        if (!el) throw new Error('OLX bo\'limi topilmadi: ' + name);
+        el.click();
+    }""", [category, FOOD])
     await page.wait_for_timeout(1500)
+    text = await box.inner_text()
+    if category not in text or FOOD not in text:
+        raise RuntimeError(f"bo'lim tanlanmadi: {category}")
 
 
-async def fill_ad(page, p: dict, photos: list[str]) -> None:
+async def fill_ad(page, p: dict, photos: list[str], category: str) -> None:
     await page.goto("https://www.olx.uz/d/adding/", wait_until="domcontentloaded")
     # Tugallanmagan qoralama bo'lsa OLX "davom ettirasizmi?" deb so'raydi — har doim toza boshlaymiz.
     fresh = page.get_by_text("Нет, начать заново")
@@ -113,7 +148,7 @@ async def fill_ad(page, p: dict, photos: list[str]) -> None:
     await page.fill("#title", olx_export.olx_title(p))
     await page.keyboard.press("Tab")
     await page.wait_for_timeout(2500)          # OLX o'z kategoriya taklifini chiqarguncha
-    await pick_category(page)
+    await pick_category(page, category)
 
     if photos:
         await page.locator("input[data-testid=attach-photos-input]").first.set_input_files(photos)
@@ -144,10 +179,75 @@ async def fill_ad(page, p: dict, photos: list[str]) -> None:
         await phone.fill(PHONE)
 
 
-async def submit(page) -> str:
-    await page.locator("[data-testid=submit-btn]").click()
-    await page.wait_for_timeout(6000)
-    return page.url
+class PaidLimit(Exception):
+    """OLX bepul limit tugadi va pul so'rayapti — to'xtaymiz, egasi hal qiladi."""
+
+
+async def submit(page) -> int:
+    """E'lonni yuboradi, OLX bergan ad-id ni qaytaradi.
+    Muvaffaqiyat belgisi — /purchase/...?ad-id=N&activation-code=activated_from_free_limit.
+    Forma o'zgarmasa, xatolar matni bilan istisno."""
+    # Rasm hali yuklanayotgan bo'lsa tugma o'chiq turadi — yoqilguncha kutamiz.
+    btn = page.locator("[data-testid=submit-btn]")
+    for _ in range(90):
+        if await btn.is_enabled():
+            break
+        await page.wait_for_timeout(1000)
+    await btn.click()
+    try:
+        await page.wait_for_url(re.compile(r"ad-id=\d+"), timeout=30000)
+    except Exception:
+        errs = await page.eval_on_selector_all(
+            "[data-has-error=true]", "els => els.map(e => e.innerText.slice(0, 120))")
+        raise RuntimeError("OLX qabul qilmadi: " + ("; ".join(e.replace("\n", " ") for e in errs) or page.url))
+    ad_id = int(re.search(r"ad-id=(\d+)", page.url).group(1))
+    # Bepul limitdan ham, sotib olingan paketdan ham faollashgani "activated_from_…"
+    # bilan qaytadi; to'lov usulini tanlash sahifasi (/activate/method/) — pul so'ralyapti.
+    if "/activate/method" in page.url or "activated_from" not in page.url:
+        raise PaidLimit(f"ad-id={ad_id}: {page.url}")
+    return ad_id
+
+
+def ad_link(ad_id: int) -> str:
+    return f"https://www.olx.uz/d/{ad_id}/"
+
+
+def bot_token() -> str:
+    token = os.getenv("KETOSHOP_BOT_TOKEN", "").strip()
+    if not token and (PROFILE / "bot_token.txt").exists():
+        token = (PROFILE / "bot_token.txt").read_text("utf-8").strip()
+    return token
+
+
+async def notify_admins(ctx, posted: dict, total: int, force: bool = False, extra: str = "") -> None:
+    """Har 10 ta yangi e'londa adminlarga bot orqali havolalar ro'yxati.
+    Token hali qo'yilmagan bo'lsa ro'yxat navbatda qoladi va keyingi safar ketadi."""
+    pending = [(pid, a) for pid, a in posted.items() if a.get("ad_id") and not a.get("notified")]
+    if not pending or (len(pending) < 10 and not force):
+        return
+    token = bot_token()
+    if not token:
+        print(f"(bot token yo'q — {len(pending)} ta e'lon xabari navbatda)")
+        return
+    done = sum(1 for a in posted.values() if a.get("ad_id"))
+    lines = [f"🟢 <b>OLX: yana {len(pending)} ta mahsulot joylandi</b> ({done}/{total})", ""]
+    for i, (_, a) in enumerate(pending, 1):
+        lines.append(f'{i}. <a href="{ad_link(a["ad_id"])}">{html.escape(a["title"])}</a> — {a["price"]:,} so\'m'.replace(",", " "))
+    lines.append("\nE'lonlar OLX moderatsiyasidan o'tgach havola ochiladi (odatda bir necha daqiqa).")
+    if extra:
+        lines.append("\n" + extra)
+    text = "\n".join(lines)
+    ok = 0
+    for admin_id in ADMIN_IDS:
+        resp = await ctx.request.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data={"chat_id": admin_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True})
+        ok += resp.status == 200
+    if ok:
+        for pid, _ in pending:
+            posted[pid]["notified"] = True
+        save_posted(posted)
+    print(f"📨 adminlarga yuborildi: {ok}/{len(ADMIN_IDS)}")
 
 
 async def main():
@@ -169,31 +269,60 @@ async def main():
             todo = [p for p in products if p["id"] == args.only]
         if args.limit:
             todo = todo[:args.limit]
-        print(f"Faol mahsulot: {len(products)}, joylangan: {len(posted)}, bu safar: {len(todo)}")
+        print(f"Faol mahsulot: {len(products)}, joylangan: {len(posted)}, bu safar: {len(todo)}", flush=True)
 
         page = await ctx.new_page()
         tmp = Path(tempfile.mkdtemp(prefix="olx_"))
+        fails_in_row = 0
+        stop_note = ""
+        exhausted = load_exhausted()
         for n, p in enumerate(todo, 1):
             title = olx_export.olx_title(p)
+            cats = categories_for(p, exhausted)
+            if not cats:
+                print(f"[{n}/{len(todo)}] ⏭ #{p['id']} {title}: bepul bo'lim qolmadi", flush=True)
+                continue
+            category = cats[0]
             try:
                 photos = await download_photos(ctx, site, p, tmp)
-                await fill_ad(page, p, photos)
-                shot = tmp / f"{p['id']}.png"
-                await page.screenshot(path=str(shot), full_page=True)
+                await fill_ad(page, p, photos, category)
                 if args.dry:
-                    print(f"[{n}] DRY #{p['id']} {title} — {len(photos)} rasm, skrinshot: {shot}")
+                    shot = tmp / f"{p['id']}.png"
+                    await page.screenshot(path=str(shot), full_page=True)
+                    print(f"[{n}] DRY #{p['id']} {title} — {len(photos)} rasm, skrinshot: {shot}", flush=True)
                     continue
-                url = await submit(page)
-                posted[str(p["id"])] = {"title": title, "price": olx_export.price_of(p),
-                                        "after_submit_url": url, "at": datetime.now().isoformat(timespec="seconds")}
+                ad_id = await submit(page)
+                posted[str(p["id"])] = {"title": title, "price": olx_export.price_of(p), "ad_id": ad_id,
+                                        "category": category, "photos": len(photos),
+                                        "at": datetime.now().isoformat(timespec="seconds")}
                 save_posted(posted)
-                print(f"[{n}] ✅ #{p['id']} {title} → {url}")
+                fails_in_row = 0
+                print(f"[{n}/{len(todo)}] ✅ #{p['id']} {title} [{category}] → {ad_link(ad_id)}", flush=True)
+                await notify_admins(ctx, posted, len(products))
+            except PaidLimit as e:
+                # E'lon OLX'da "Неоплаченные"da qoladi (ko'rinmaydi, pul yechilmaydi).
+                # Mahsulotni belgilab qo'yamiz — keyingi ishga tushirishda qayta
+                # yaratilmasin; bo'limni tugagan deb, qolganlar boshqasiga o'tadi.
+                exhausted.add(category)
+                EXHAUSTED.write_text(json.dumps(sorted(exhausted), ensure_ascii=False), "utf-8")
+                posted[str(p["id"])] = {"title": title, "price": olx_export.price_of(p), "unpaid": str(e),
+                                        "category": category, "at": datetime.now().isoformat(timespec="seconds")}
+                save_posted(posted)
+                print(f"[{n}/{len(todo)}] 💰 #{p['id']} {title}: '{category}' limiti tugadi — "
+                      f"bu bo'lim o'tkazib yuboriladi", flush=True)
             except Exception as e:
+                fails_in_row += 1
                 await page.screenshot(path=str(tmp / f"{p['id']}_error.png"), full_page=True)
-                print(f"[{n}] ❌ #{p['id']} {title}: {e}")
+                print(f"[{n}/{len(todo)}] ❌ #{p['id']} {title}: {e}", flush=True)
+                if fails_in_row >= 3:
+                    stop_note = "⏸ Ketma-ket 3 ta xato — to'xtatildi, tekshirish kerak."
+                    print(stop_note, flush=True)
+                    break
             # Odamdek oraliq — OLX ketma-ket e'lonlarni spam deb bloklamasin.
             await asyncio.sleep(random.uniform(40, 90) if not args.dry else 1)
-        print("Skrinshotlar:", tmp)
+        if not args.dry:
+            await notify_admins(ctx, posted, len(products), force=True, extra=stop_note)
+        print("Skrinshotlar:", tmp, flush=True)
 
 
 if __name__ == "__main__":

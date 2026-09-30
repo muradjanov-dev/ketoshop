@@ -110,6 +110,9 @@ def _phones() -> str:
     return ", ".join(p.strip() for p in SUPPORT_PHONES.split(",") if p.strip())
 
 
+_EMOJI = re.compile("[\U0001F000-\U0001FFFF☀-➿️‍]")
+
+
 def olx_description(product: dict) -> str:
     uz, ru = _descriptions(product)
     unit = (product.get("unit") or "").strip()
@@ -118,9 +121,8 @@ def olx_description(product: dict) -> str:
         f"{product.get('name', '').strip()} — Ketoshop'dan, original qadoqda.",
         uz,
         price_line,
-        "🚚 Toshkent bo'ylab kuryer, viloyatlarga pochta orqali yetkazamiz. "
+        "Toshkent bo'ylab kuryer, viloyatlarga pochta orqali yetkazamiz. "
         f"{_money(FREE_DELIVERY_FROM)} so'mdan yuqori buyurtmaga Toshkentda yetkazish bepul.",
-        f"📞 {_phones()}",
         "— — —",
         ru,
         f"Цена: {_money(price_of(product))} сум. Доставка по Ташкенту курьером, по регионам — почтой.",
@@ -128,6 +130,10 @@ def olx_description(product: dict) -> str:
     text = "\n\n".join(p for p in parts if p)
     # OLX tavsifida HTML yo'q; bizning matnlarda <b> bo'lishi mumkin.
     text = re.sub(r"<[^>]+>", "", text)
+    # OLX telefon raqami yoki emoji bor tavsifni "недопустимые символы и/или
+    # цифры" deb rad etadi (2026-09-29 sinovda). Raqam kontakt maydonida turadi.
+    text = _EMOJI.sub("", text)
+    text = re.sub(r"[ \t]*\n[ \t]*", "\n", text)
     if len(text) < DESC_MIN:
         text += "\n\nKeto va past uglevodli ovqatlanish uchun sifatli mahsulot."
     return text[:DESC_MAX]
