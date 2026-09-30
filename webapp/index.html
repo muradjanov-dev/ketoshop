@@ -2730,7 +2730,9 @@ const L = {
     errorPhone: 'Telefon raqamni kiriting (masalan: +998901234567)',
     errorAddress: 'Joylashuvni yuboring',
     errorOutsideUzbekistan: 'Joylashuvingiz O\'zbekistondan tashqarida. Biz faqat O\'zbekiston bo\'ylab yetkazib beramiz. Iltimos, O\'zbekiston ichidagi joylashuvni kiriting.',
-    errorStockGone: 'Kechirasiz — kimdir bu mahsulotni siz oldin sotib oldi. Iltimos, savatingizni yangilang va qayta urinib ko\'ring.',
+    errorStockGone: '🏃‍♀️ Voy, ulgurmay qoldik! Savatingizdagi bir mahsulotni boshqa keto-ixlosmand sizdan bir qadam oldin olib ketdi. Savatingizni yangiladik — bir ko\'z tashlab, qayta urinib ko\'ring 🛒',
+    errorStockGoneOut: '🏃‍♀️ Voy! «{name}» shunchalik mashhurki, oxirgisini boshqa xaridor sizdan bir qadam oldin olib ketdi. Uni savatdan olib tashlang — qolgan mahsulotlaringiz sizni kutyapti 🛒',
+    errorStockGoneLow: '😅 «{name}» dan omborda atigi {available} ta qoldi, siz esa {requested} ta tanlagansiz. Sonini {available} taga tushiring va buyurtmani bemalol yakunlang ✨',
     errorKetoChanged: 'Keto balansingiz o\'zgardi — chegirma yangilandi, iltimos qayta urinib ko\'ring.',
     ordersTitle: '📦 Buyurtmalar tarixi',
     ordersEmpty: 'Sizda hali buyurtmalar yo\'q',
@@ -2886,7 +2888,9 @@ const L = {
     errorPhone: 'Введите номер телефона (например: +998901234567)',
     errorAddress: 'Отправьте местоположение',
     errorOutsideUzbekistan: 'Ваша локация за пределами Узбекистана. Мы доставляем только по Узбекистану. Пожалуйста, укажите локацию в пределах Узбекистана.',
-    errorStockGone: 'К сожалению, кто-то опередил вас и купил этот товар. Обновите корзину и попробуйте снова.',
+    errorStockGone: '🏃‍♀️ Ой, не успели! Один товар из вашей корзины только что забрал другой любитель кето. Мы обновили корзину — загляните в неё и попробуйте ещё раз 🛒',
+    errorStockGoneOut: '🏃‍♀️ Ой! «{name}» настолько популярен, что последний экземпляр только что забрал другой покупатель. Уберите его из корзины — остальные товары вас ждут 🛒',
+    errorStockGoneLow: '😅 «{name}» на складе осталось всего {available} шт., а у вас в корзине {requested}. Уменьшите количество до {available} — и спокойно оформляйте заказ ✨',
     errorKetoChanged: 'Ваш баланс Keto изменился — скидка обновлена, попробуйте ещё раз.',
     ordersTitle: '📦 История заказов',
     ordersEmpty: 'У вас пока нет заказов',
@@ -4919,7 +4923,7 @@ async function submitOrder() {
       const addrEl = document.getElementById('location-address');
       if (addrEl) addrEl.value = '';
     } else if (e && e.body && e.body.error === 'stock_gone') {
-      showToast(t.errorStockGone, true);
+      showToast(stockGoneMessage(e.body), true, 7000);
       // Refresh cart so the user sees the gap before retrying
       await loadCart();
       switchPage('cart');
@@ -5050,7 +5054,7 @@ async function submitCheque() {
         // Stock ran out between checkout submission and cheque upload —
         // bounce them back to the cart so they can adjust quantities. Reuse
         // the same toast as the regular cart-out-of-stock path.
-        showToast(t.errorStockGone || t.chequeUploadError, true);
+        showToast(stockGoneMessage(body), true, 7000);
         await loadCart();
         switchPage('cart');
       } else if (body && body.error === 'no_pending_checkout') {
@@ -5463,7 +5467,21 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
-function showToast(msg, isError = false) {
+// 409 stock_gone from checkout → name the product and what is left
+// (owner request 2026-09-30), falling back to the generic line for a
+// set component or an older server that sends no name.
+function stockGoneMessage(body) {
+  const fmt = (n) => { n = Number(n) || 0; return n % 1 === 0 ? String(n) : n.toFixed(1); };
+  if (!body || !body.name) return t.errorStockGone;
+  const avail = Number(body.available) || 0;
+  const tpl = avail > 0 ? t.errorStockGoneLow : t.errorStockGoneOut;
+  if (!tpl) return t.errorStockGone;
+  return tpl.split('{name}').join(body.name)
+            .split('{available}').join(fmt(avail))
+            .split('{requested}').join(fmt(body.requested));
+}
+
+function showToast(msg, isError = false, ms = 2500) {
   let toast = document.getElementById('app-toast');
   if (!toast) {
     toast = document.createElement('div');
@@ -5476,7 +5494,7 @@ function showToast(msg, isError = false) {
   toast.style.color = '#fff';
   toast.style.opacity = '1';
   clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+  toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, ms);
 }
 </script>
 </body>

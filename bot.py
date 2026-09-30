@@ -31,6 +31,7 @@ from handlers.reviews import router as reviews_router
 from handlers.nps import router as nps_router
 from handlers.delivery import router as delivery_router
 from handlers.admin import router as admin_router
+from handlers.order_edit import router as order_edit_router
 from handlers.broadcast_admin import router as broadcast_admin_router
 from handlers.support_relay import router as support_relay_router
 from link_guard import router as link_guard_router
@@ -46,6 +47,7 @@ from keto_explainer import router as keto_explainer_router
 from stock_alerts import router as stock_alerts_router
 from referral_stats import router as referral_stats_router
 from retention_stats import router as retention_stats_router
+from review_stats import router as review_stats_router
 
 from webapp_server import create_webapp
 
@@ -194,6 +196,9 @@ async def main():
     dp.include_router(webapp_data_router)
     dp.include_router(start_router)
     dp.include_router(broadcast_admin_router)
+    # State-filtered text steps (qty / product search) must beat the catalog
+    # search and support-relay catch-alls below.
+    dp.include_router(order_edit_router)
     # Meta lead inbox — admin-only /leads, /leads_test and the
     # "Bog'landim" callback. Registered high so its slash commands beat
     # any FSM state an admin happens to be stuck in, same reasoning as
@@ -206,6 +211,7 @@ async def main():
     dp.include_router(ad_sources_router)
     dp.include_router(referral_stats_router)
     dp.include_router(retention_stats_router)
+    dp.include_router(review_stats_router)
     dp.include_router(search_router)
     dp.include_router(catalog_router)
     dp.include_router(reviews_router)

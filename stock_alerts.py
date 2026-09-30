@@ -29,13 +29,14 @@ Checkouts still call notify_low_stock() → check_now(), so an order that emptie
 a shelf alerts within seconds rather than at the next sweep.
 """
 import asyncio
+import html
 import logging
 from datetime import datetime, timedelta
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import database
 from config import ADMIN_IDS, LOW_STOCK_THRESHOLD
@@ -204,8 +205,43 @@ async def scheduler_loop(bot: Bot) -> None:
         await asyncio.sleep(CHECK_EVERY)
 
 
+def _low_or_out(products: list[dict]) -> bool:
+    return any(level_for(p) != "ok" for p in products)
+
+
 @router.message(Command("ombor"), F.from_user.id.in_(ADMIN_IDS))
 async def cmd_stock(message: Message):
-    """Current low / out-of-stock list on demand."""
-    for part in _chunks(summary_text(await database.get_stock_snapshot())):
-        await message.answer(part, parse_mode=ParseMode.HTML)
+    """Current low / out-of-stock list on demand — with a button that sends
+    the same full list to every admin (owner request 2026-09-30)."""
+    products = await database.get_stock_snapshot()
+    parts = _chunks(summary_text(products))
+    kb = None
+    if _low_or_out(products):
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+            text="📤 Barcha adminlarga yuborish", callback_data="ombor:send_all")]])
+    for i, part in enumerate(parts):
+        await message.answer(part, parse_mode=ParseMode.HTML,
+                             reply_markup=kb if i == len(parts) - 1 else None)
+
+
+@router.callback_query(F.data == "ombor:send_all", F.from_user.id.in_(ADMIN_IDS))
+async def send_stock_to_all_admins(callback: CallbackQuery, bot: Bot):
+    """Fan the full low/out list (fresh snapshot, not the one on screen) to
+    every admin, tagged with who sent it."""
+    products = await database.get_stock_snapshot()
+    who = html.escape(callback.from_user.full_name or str(callback.from_user.id))
+    parts = _chunks(summary_text(products))
+    parts[0] = f"📤 Yuboruvchi: {who}\n\n" + parts[0]
+    sent = 0
+    for admin_id in ADMIN_IDS:
+        try:
+            for part in parts:
+                await bot.send_message(admin_id, part, parse_mode=ParseMode.HTML)
+            sent += 1
+        except Exception as exc:
+            logger.warning("Stock list to admin %s failed: %s", admin_id, exc)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.answer(f"✅ {sent}/{len(ADMIN_IDS)} ta adminga yuborildi", show_alert=True)

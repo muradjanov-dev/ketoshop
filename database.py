@@ -4240,6 +4240,119 @@ async def cancel_order(order_id: int) -> dict | None:
     return order
 
 
+# Admin order editing (2026-09-30): an order can have its lines changed until
+# it leaves for delivery. After "shipped" the box is packed and on the road.
+ORDER_EDITABLE_STATUSES = ("pending", "confirmed", "preparing", "ready")
+
+
+class OrderChangedError(Exception):
+    """The order was changed (edited, cancelled, shipped) by someone else
+    after the admin opened the editor — their draft is stale."""
+
+
+def order_line_key(item: dict) -> tuple | None:
+    """Identity of a PAID order line for stock accounting — ("set", id) or
+    ("p", product_id). Aksiya bonus / gift lines return None: the editor never
+    touches them, so they carry no stock delta."""
+    if item.get("is_bonus") or item.get("is_gift"):
+        return None
+    if item.get("is_set"):
+        sid = item.get("set_id") or item.get("product_id") or item.get("id")
+        return ("set", int(sid)) if sid else None
+    pid = item.get("product_id") or item.get("id")
+    return ("p", int(pid)) if pid else None
+
+
+def order_edit_deltas(old_items: list[dict], new_items: list[dict]) -> dict:
+    """{line key: new qty - old qty} for every paid line whose quantity changed.
+    Positive = more leaves the shelf, negative = goes back to stock."""
+    totals: dict = {}
+    for sign, items in ((-1, old_items), (1, new_items)):
+        for it in items or []:
+            key = order_line_key(it)
+            if key is None:
+                continue
+            totals[key] = totals.get(key, 0.0) + sign * float(it.get("quantity") or 0)
+    return {k: v for k, v in totals.items() if abs(v) > 1e-9}
+
+
+def order_goods_total(items: list[dict]) -> float:
+    return sum(float(it.get("price") or 0) * float(it.get("quantity") or 0) for it in items or [])
+
+
+async def admin_update_order_items(order_id: int, original_items: list[dict],
+                                   new_items: list[dict]) -> dict:
+    """Replace an order's lines with an admin-edited list — atomically.
+
+    * `original_items` is what the admin's editor started from; if the stored
+      lines differ now (another admin edited it), or the order left the
+      editable statuses, OrderChangedError is raised and nothing changes.
+    * Stock moves by the difference only: added/increased lines are taken
+      from the shelf (InsufficientStockError if there isn't enough, same rule
+      as checkout), removed/decreased lines go back.
+    * The total moves by the goods difference only, so the delivery fee and
+      any Keto the buyer spent stay exactly as they were charged.
+
+    Returns {"old_total", "new_total", "low_stock"}."""
+    if not any(order_line_key(it) for it in new_items):
+        raise ValueError("An order needs at least one paid line")
+    for it in new_items:
+        if float(it.get("quantity") or 0) <= 0:
+            raise ValueError("Quantities must be positive")
+
+    from config import LOW_STOCK_THRESHOLD
+    low_stock: list[dict] = []
+
+    async def _take(conn, pid: int, qty: float):
+        row = await conn.fetchrow(
+            """UPDATE products SET quantity = quantity - $1
+               WHERE id = $2 AND quantity >= $1
+               RETURNING quantity, name, low_stock_threshold""",
+            qty, pid,
+        )
+        if row is None:
+            available = await conn.fetchval("SELECT quantity FROM products WHERE id = $1", pid)
+            raise InsufficientStockError(pid, qty, available or 0)
+        new_qty = float(row["quantity"])
+        threshold = row["low_stock_threshold"] if row["low_stock_threshold"] is not None else LOW_STOCK_THRESHOLD
+        if new_qty + qty > threshold >= new_qty:
+            low_stock.append({"product_id": pid, "name": row["name"], "quantity": new_qty})
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow("SELECT * FROM orders WHERE id = $1 FOR UPDATE", order_id)
+            if row is None:
+                raise OrderChangedError("order not found")
+            stored = row["items"]
+            stored = json.loads(stored) if isinstance(stored, str) else (stored or [])
+            if row["status"] not in ORDER_EDITABLE_STATUSES or stored != original_items:
+                raise OrderChangedError("order changed since the editor opened")
+
+            for (kind, ref_id), delta in order_edit_deltas(stored, new_items).items():
+                if kind == "set":
+                    parts = await conn.fetch(
+                        "SELECT product_id, quantity FROM product_set_items WHERE set_id = $1", ref_id)
+                    moves = [(p["product_id"], float(p["quantity"]) * delta) for p in parts]
+                else:
+                    moves = [(ref_id, delta)]
+                for pid, qty in moves:
+                    if qty > 0:
+                        await _take(conn, pid, qty)
+                    elif qty < 0:
+                        await conn.execute(
+                            "UPDATE products SET quantity = quantity + $1 WHERE id = $2", -qty, pid)
+
+            old_total = float(row["total"] or 0)
+            new_total = old_total - order_goods_total(stored) + order_goods_total(new_items)
+            if new_total < 0:
+                raise ValueError("Total would go negative")
+            await conn.execute(
+                "UPDATE orders SET items = $1, total = $2 WHERE id = $3",
+                json.dumps(new_items, ensure_ascii=False), new_total, order_id,
+            )
+    return {"old_total": old_total, "new_total": new_total, "low_stock": low_stock}
+
+
 async def add_product_view(product_id: int, user_id: int | None = None):
     """Record one view of a product for analytics."""
     async with pool.acquire() as conn:
@@ -6651,3 +6764,146 @@ async def mark_ai_question_handled(item_id: int) -> None:
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE ai_knowledge SET handled = TRUE WHERE id = $1 AND kind = 'question'", item_id)
+
+
+# ===== SHARHLAR STATISTIKASI (2026-09-30) =====
+#
+# Sharhlar bazada 2026-07 dan beri yig'ilardi, lekin adminlar uchun hech
+# qayerda ko'rinmasdi: Statistika ekranida faqat umumiy SONI bor edi, yulduz
+# taqsimoti ham, matnlar ham, past baho olgan mahsulot ham hech qayerda
+# chiqmasdi. Ya'ni "bizni nima uchun yomon baholashdi" degan savolga javob
+# beradigan joy yo'q edi — eng arzon va eng foydali ma'lumot o'qilmay yotardi.
+#
+# Hamma joyda mijoz filtri bitta: admin va ichki do'kon akkauntlari
+# (_customer_filter_ids) hisobga olinmaydi — o'z sharhimiz o'rtacha bahoni
+# ko'tarib yubormasin.
+
+
+async def get_review_summary() -> dict:
+    """Umumiy manzara: nechta sharh, o'rtacha baho, yulduzlar taqsimoti va
+    sharh qoldirgan mijozlar soni."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*)                                 AS total,
+                      COALESCE(AVG(rating), 0)                 AS avg_rating,
+                      COUNT(DISTINCT user_id)                  AS reviewers,
+                      COUNT(DISTINCT product_id)               AS products_rated,
+                      COUNT(*) FILTER (WHERE rating = 5)       AS r5,
+                      COUNT(*) FILTER (WHERE rating = 4)       AS r4,
+                      COUNT(*) FILTER (WHERE rating = 3)       AS r3,
+                      COUNT(*) FILTER (WHERE rating = 2)       AS r2,
+                      COUNT(*) FILTER (WHERE rating = 1)       AS r1,
+                      COUNT(*) FILTER (WHERE COALESCE(TRIM(comment), '') <> '')
+                          AS with_text,
+                      MIN(created_at)                          AS first_at,
+                      MAX(created_at)                          AS last_at
+                 FROM reviews
+                WHERE user_id <> ALL($1::bigint[])""",
+            _customer_filter_ids(),
+        )
+        # Sharh qoldirish imkoni bo'lgan mijozlar: hech bo'lmaganda bitta
+        # yetkazilgan buyurtmasi borlar. "Necha foizi sharh yozdi" degan
+        # raqamning maxraji — reklama emas, xizmat sifatining o'lchovi.
+        buyers = await conn.fetchval(
+            f"""SELECT COUNT(DISTINCT o.user_id) FROM orders o
+                 WHERE o.status = 'delivered' AND {_REAL_ORDER}
+                   AND o.user_id <> ALL($1::bigint[])""",
+            _customer_filter_ids(),
+        )
+    out = dict(row or {})
+    out["buyers"] = int(buyers or 0)
+    return out
+
+
+async def get_product_ratings(limit: int = 10, worst: bool = False,
+                              min_reviews: int = 1) -> list[dict]:
+    """Mahsulotlar bahosi bo'yicha. worst=True bo'lsa eng pastdan boshlab —
+    aynan shu ro'yxat harakat talab qiladi."""
+    order = "avg_rating ASC, cnt DESC" if worst else "avg_rating DESC, cnt DESC"
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT p.id, p.name, p.is_active,
+                       COUNT(*)                   AS cnt,
+                       AVG(r.rating)              AS avg_rating,
+                       COUNT(*) FILTER (WHERE r.rating <= 2) AS low
+                  FROM reviews r
+                  JOIN products p ON p.id = r.product_id
+                 WHERE r.user_id <> ALL($1::bigint[])
+                 GROUP BY p.id, p.name, p.is_active
+                HAVING COUNT(*) >= $2
+                 ORDER BY {order}
+                 LIMIT $3""",
+            _customer_filter_ids(), int(min_reviews), int(limit),
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_recent_reviews(limit: int = 10, max_rating: int | None = None,
+                             with_text_only: bool = False) -> list[dict]:
+    """Oxirgi sharhlar, matni va muallifi bilan. max_rating berilsa faqat
+    o'shandan past bahollar — shikoyatlarni bir joyda ko'rish uchun."""
+    conds = ["r.user_id <> ALL($1::bigint[])"]
+    args: list = [_customer_filter_ids()]
+    if max_rating is not None:
+        args.append(int(max_rating))
+        conds.append(f"r.rating <= ${len(args)}")
+    if with_text_only:
+        conds.append("COALESCE(TRIM(r.comment), '') <> ''")
+    args.append(int(limit))
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT r.id, r.rating, r.comment, r.created_at, r.user_id,
+                       p.name AS product_name,
+                       u.full_name, u.username
+                  FROM reviews r
+                  JOIN products p ON p.id = r.product_id
+                  LEFT JOIN users u ON u.user_id = r.user_id
+                 WHERE {' AND '.join(conds)}
+                 ORDER BY r.created_at DESC, r.id DESC
+                 LIMIT ${len(args)}""",
+            *args,
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_unreviewed_products(limit: int = 10) -> list[dict]:
+    """Sotilgan, lekin hali bironta sharh olmagan mahsulotlar, ko'p
+    sotilganidan boshlab. Har biri — so'ralmagan sharh.
+
+    Buyurtma qatorlari JSON matn bo'lgani uchun sanash Python'da — SQL LIKE
+    bilan qidirsak "product_id": 1 naqshi 10 va 100 ga ham tushardi, ya'ni
+    ro'yxat jimgina noto'g'ri chiqardi. get_top_products ham shu sababdan
+    Python'da yig'adi.
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT o.items FROM orders o
+                 WHERE {sale_sql('o')} AND {_REAL_ORDER}"""
+        )
+        products = await conn.fetch(
+            """SELECT p.id, p.name FROM products p
+                WHERE p.is_active = 1
+                  AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.product_id = p.id)"""
+        )
+    wanted = {int(r["id"]): r["name"] for r in products}
+    if not wanted:
+        return []
+
+    counts: dict[int, int] = {}
+    for r in rows:
+        try:
+            items = json.loads(r["items"] or "[]")
+        except (ValueError, TypeError):
+            continue
+        seen = set()
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            pid = it.get("product_id")
+            if pid is None or int(pid) not in wanted or int(pid) in seen:
+                continue
+            seen.add(int(pid))                 # bitta buyurtma — bitta sanoq
+            counts[int(pid)] = counts.get(int(pid), 0) + 1
+
+    ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:int(limit)]
+    return [{"id": pid, "name": wanted[pid], "orders": n} for pid, n in ranked]

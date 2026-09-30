@@ -837,10 +837,7 @@ async def api_checkout(request: web.Request):
             keto_redeem=keto_redeem,
         )
     except InsufficientStockError as exc:
-        return _json(
-            {"error": "stock_gone", "product_id": exc.product_id, "available": exc.available},
-            status=409,
-        )
+        return await _stock_gone(exc, request)
     except InsufficientKetoError:
         return _json({"error": "keto_balance_changed"}, status=409)
 
@@ -863,9 +860,34 @@ async def api_checkout(request: web.Request):
         "delivery_method": delivery_method,
         "payment_method": payment_method,
     }, lang)
+    from handlers.cart import send_order_thanks
+    await send_order_thanks(bot, user_id, order_id, delivery_method)
 
     return _json({"ok": True, "order_id": order_id, "total": total, "keto_redeemed": keto_redeem})
 
+
+
+async def _stock_gone(exc: InsufficientStockError, request: web.Request):
+    """409 for a checkout that hit empty stock — names the product so the Mini
+    App can tell the buyer WHICH line to fix (owner request 2026-09-30), and
+    logs it so the admins can see what keeps running out."""
+    name, name_ru = None, None
+    try:
+        p = await get_product(exc.product_id)
+        if p:
+            name, name_ru = p.get("name"), p.get("name_ru")
+    except Exception:
+        pass
+    lang = request.get("user_lang", "uz")
+    logger.warning("Checkout stock_gone: user=%s product=%s (%s) requested=%s available=%s",
+                   request.get("user_id"), exc.product_id, name, exc.requested, exc.available)
+    return _json({
+        "error": "stock_gone",
+        "product_id": exc.product_id,
+        "name": localize_product_text(name, name_ru, lang) if name else None,
+        "requested": exc.requested,
+        "available": exc.available,
+    }, status=409)
 
 async def api_orders(request: web.Request):
     """Return the buyer's recent orders with full details for the Mini App
@@ -1057,10 +1079,7 @@ async def api_checkout_cheque(request: web.Request):
             keto_redeem=keto_redeem,
         )
     except InsufficientStockError as exc:
-        return _json(
-            {"error": "stock_gone", "product_id": exc.product_id, "available": exc.available},
-            status=409,
-        )
+        return await _stock_gone(exc, request)
     except InsufficientKetoError:
         # Balance dropped again in the instant between the re-clamp above and
         # the transaction (vanishingly rare) — retry once with no redemption
@@ -1084,10 +1103,7 @@ async def api_checkout_cheque(request: web.Request):
                 keto_redeem=0,
             )
         except InsufficientStockError as exc:
-            return _json(
-                {"error": "stock_gone", "product_id": exc.product_id, "available": exc.available},
-                status=409,
-            )
+            return await _stock_gone(exc, request)
 
     # Echo cheque back to buyer's chat to get a reusable Telegram file_id
     # (and so they have a copy in their history).
@@ -1140,6 +1156,8 @@ async def api_checkout_cheque(request: web.Request):
         "delivery_method": data.get("pending_delivery_method"),
         "payment_method": "online",
     }, lang)
+    from handlers.cart import send_order_thanks
+    await send_order_thanks(bot, user_id, order_id, data.get("pending_delivery_method"))
 
     await state.clear()
     return _json({"ok": True, "order_id": order_id, "total": total, "keto_redeemed": keto_redeem})

@@ -114,6 +114,59 @@ def delivery_fee_text(method: str | None, fee: int, lang: str) -> str:
     return ""
 
 
+def order_thanks_text(order_id: int, delivery_method: str | None, lang: str) -> str:
+    """Thank-you note sent to the buyer the moment an order is placed (owner
+    request 2026-09-30). Ketoshop's courier only serves Tashkent, so "self"
+    carries the 24-hour promise; Yandex orders get the admin's contacts,
+    since the delivery time depends on Yandex, not on us."""
+    text = get_text("order_thanks", lang, order_id=order_id)
+    if delivery_method == "self":
+        text += "\n\n" + get_text("order_thanks_self", lang)
+    elif delivery_method in ("yandex_taxi", "yandex_market"):
+        from config import SUPPORT_USERNAME, SUPPORT_PHONES
+        text += "\n\n" + get_text("order_thanks_yandex", lang,
+                                  support_username=SUPPORT_USERNAME,
+                                  support_phone=SUPPORT_PHONES)
+    return text
+
+
+async def send_order_thanks(bot: Bot, user_id: int, order_id: int,
+                            delivery_method: str | None) -> None:
+    """Best-effort: the order already exists, a blocked chat must not fail it."""
+    try:
+        lang = await get_user_language(user_id)
+        await bot.send_message(user_id, order_thanks_text(order_id, delivery_method, lang),
+                               parse_mode="HTML")
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Order #%s thank-you to buyer %s failed: %s", order_id, user_id, exc)
+
+
+async def stock_gone_text(exc: "InsufficientStockError", lang: str) -> str:
+    """Checkout hit empty stock: name the product and what is left (owner
+    request 2026-09-30). Generic line when the product can't be read, e.g.
+    a set component."""
+    import html
+    import logging
+    from locales import localize_product_text
+    try:
+        p = await get_product(exc.product_id)
+    except Exception:
+        p = None
+    logging.getLogger(__name__).warning(
+        "Checkout stock_gone: product=%s (%s) requested=%s available=%s",
+        exc.product_id, p and p.get("name"), exc.requested, exc.available)
+    if not p:
+        return get_text("checkout_stock_gone", lang)
+    name = html.escape(localize_product_text(p.get("name"), p.get("name_ru"), lang) or p["name"])
+    fmt = lambda v: str(int(v)) if float(v).is_integer() else f"{float(v):.1f}"
+    available = float(exc.available or 0)
+    if available <= 0:
+        return get_text("checkout_stock_gone_out", lang, name=name)
+    return get_text("checkout_stock_gone_low", lang, name=name,
+                    available=fmt(available), requested=fmt(exc.requested))
+
+
 def free_delivery_hint(subtotal: float, lang: str) -> str:
     """'Yana 120 000 so'm — Toshkent bo'ylab bepul yetkazib berish' when the
     cart is within reach of the threshold; '' otherwise."""
@@ -1803,10 +1856,10 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
                 secondary_phone=secondary_phone,
                 keto_redeem=keto_redeem,
             )
-        except InsufficientStockError:
+        except InsufficientStockError as exc:
             await state.clear()
             await callback.message.edit_text(
-                get_text("checkout_stock_gone", lang),
+                await stock_gone_text(exc, lang),
                 reply_markup=main_menu_keyboard(lang),
                 parse_mode="HTML",
             )
@@ -1847,6 +1900,7 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
             "delivery_method": delivery_method,
             "payment_method": "cash",
         }, lang)
+        await send_order_thanks(bot, callback.from_user.id, order_id, delivery_method)
 
     elif payment_method == "online":
         # Online → DON'T create the order yet. Stash everything we'll need in
@@ -1993,10 +2047,10 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
             secondary_phone=data.get("pending_secondary_phone"),
             keto_redeem=keto_redeem,
         )
-    except InsufficientStockError:
+    except InsufficientStockError as exc:
         await state.clear()
         await message.answer(
-            get_text("checkout_stock_gone", lang),
+            await stock_gone_text(exc, lang),
             reply_markup=main_menu_keyboard(lang),
             parse_mode="HTML",
         )
@@ -2025,10 +2079,10 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
                 secondary_phone=data.get("pending_secondary_phone"),
                 keto_redeem=0,
             )
-        except InsufficientStockError:
+        except InsufficientStockError as exc:
             await state.clear()
             await message.answer(
-                get_text("checkout_stock_gone", lang),
+                await stock_gone_text(exc, lang),
                 reply_markup=main_menu_keyboard(lang),
                 parse_mode="HTML",
             )
@@ -2062,6 +2116,8 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
         "delivery_method": data.get("pending_delivery_method"),
         "payment_method": "online",
     }, lang)
+    await send_order_thanks(bot, message.from_user.id, order_id,
+                            data.get("pending_delivery_method"))
 
 
 @router.message(CheckoutStates.waiting_cheque, F.photo)

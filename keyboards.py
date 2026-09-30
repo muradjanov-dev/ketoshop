@@ -33,6 +33,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="blogerlar", description="📢 Blogerlar (hamkorlar)"),
     BotCommand(command="referallar", description="📊 Referal statistikasi"),
     BotCommand(command="qayta_sotuv", description="🔁 Qayta sotuv statistikasi"),
+    BotCommand(command="sharhlar", description="⭐ Sharhlar va baholar"),
     BotCommand(command="savat_eslatma", description="🛒 Tashlab ketilgan savat eslatmalari"),
     BotCommand(command="qaytarish", description="🔁 Qayta sotuv xabarlari (tugash, sovg'a, sog'indik)"),
     BotCommand(command="sovga", description="🎁 Sovg'a kampaniyasi (Eritritol)"),
@@ -473,6 +474,11 @@ def seller_order_keyboard(lang: str, order_id: int, status: str,
     buttons.append([
         InlineKeyboardButton(text=get_text("btn_message_client", lang), callback_data=f"msgclient:{order_id}"),
     ])
+    # Admin-only line editor (handlers/order_edit.py) — until the box ships.
+    if is_admin and status in ("pending", "confirmed", "preparing", "ready"):
+        buttons.append([
+            InlineKeyboardButton(text=get_text("btn_edit_order", lang), callback_data=f"oedit:{order_id}"),
+        ])
     # Admin-only hard delete — for cleaning up orders created by mistake.
     # Regular sellers shouldn't see this; cancellation is the normal flow.
     if is_admin:

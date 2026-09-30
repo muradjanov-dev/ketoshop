@@ -173,8 +173,16 @@ TEXTS = {
         "ru": "❌ В наличии только <b>{available} {unit}</b>.\nПожалуйста, введите подходящее количество:",
     },
     "checkout_stock_gone": {
-        "uz": "❌ Kechirasiz — kimdir bu mahsulotni siz oldin sotib oldi. Iltimos, savatingizni yangilang va qayta urinib ko'ring.",
-        "ru": "❌ К сожалению, кто-то опередил вас и купил этот товар. Обновите корзину и попробуйте снова.",
+        "uz": "🏃‍♀️ Voy, ulgurmay qoldik! Savatingizdagi bir mahsulotni boshqa keto-ixlosmand sizdan bir qadam oldin olib ketdi. Savatingizga bir ko'z tashlab, qayta urinib ko'ring 🛒",
+        "ru": "🏃‍♀️ Ой, не успели! Один товар из вашей корзины только что забрал другой любитель кето. Загляните в корзину и попробуйте ещё раз 🛒",
+    },
+    "checkout_stock_gone_out": {
+        "uz": "🏃‍♀️ Voy! <b>«{name}»</b> shunchalik mashhurki, oxirgisini boshqa xaridor sizdan bir qadam oldin olib ketdi. Uni savatdan olib tashlang — qolgan mahsulotlaringiz sizni kutyapti 🛒",
+        "ru": "🏃‍♀️ Ой! <b>«{name}»</b> настолько популярен, что последний экземпляр только что забрал другой покупатель. Уберите его из корзины — остальные товары вас ждут 🛒",
+    },
+    "checkout_stock_gone_low": {
+        "uz": "😅 <b>«{name}»</b> dan omborda atigi <b>{available}</b> ta qoldi, siz esa {requested} ta tanlagansiz. Sonini {available} taga tushiring va buyurtmani bemalol yakunlang ✨",
+        "ru": "😅 <b>«{name}»</b> на складе осталось всего <b>{available}</b> шт., а у вас в корзине {requested}. Уменьшите количество до {available} — и спокойно оформляйте заказ ✨",
     },
     "btn_admin_bulk_discount": {"uz": "🔥 To'plam chegirma", "ru": "🔥 Массовая скидка"},
     "btn_admin_keto": {"uz": "🎁 Keto boshqaruvi", "ru": "🎁 Управление Keto"},
@@ -873,6 +881,89 @@ TEXTS = {
         "uz": "⚠️ Buyurtma #{order_id} bazadan butunlay o'chiriladi va mahsulot zaxirasi tiklanadi. Davom etamizmi?",
         "ru": "⚠️ Заказ #{order_id} будет полностью удалён из базы, остатки товара восстановятся. Продолжить?",
     },
+    # --- Admin order editor (handlers/order_edit.py) ---
+    "btn_edit_order": {
+        "uz": "✏️ Tarkibni o'zgartirish",
+        "ru": "✏️ Изменить состав",
+    },
+    "oe_title": {
+        "uz": "✏️ <b>Buyurtma #{order_id} — tarkibni o'zgartirish</b>\n\n"
+              "➖/➕ sonini o'zgartiradi, nomiga bossangiz aniq sonini yozasiz, 🗑 olib tashlaydi.\n"
+              "O'zgarishlar faqat «💾 Saqlash» bosilganda kuchga kiradi.",
+        "ru": "✏️ <b>Заказ #{order_id} — изменение состава</b>\n\n"
+              "➖/➕ меняют количество, нажмите на название, чтобы ввести точное число, 🗑 удаляет.\n"
+              "Изменения применяются только после «💾 Сохранить».",
+    },
+    "oe_bonus_note": {
+        "uz": "🎁 Bonus/sovg'a qatorlari o'zgarmaydi:",
+        "ru": "🎁 Бонусные/подарочные позиции не меняются:",
+    },
+    "oe_totals": {
+        "uz": "Mahsulotlar: <b>{goods}</b> so'm (avval {old_goods})\nJami to'lov: <b>{total}</b> so'm (avval {old_total})",
+        "ru": "Товары: <b>{goods}</b> сум (было {old_goods})\nИтого к оплате: <b>{total}</b> сум (было {old_total})",
+    },
+    "oe_btn_add": {"uz": "➕ Mahsulot qo'shish", "ru": "➕ Добавить товар"},
+    "oe_btn_save": {"uz": "💾 Saqlash", "ru": "💾 Сохранить"},
+    "oe_btn_cancel": {"uz": "✖️ Bekor qilish", "ru": "✖️ Отмена"},
+    "oe_not_editable": {
+        "uz": "Bu buyurtmani endi o'zgartirib bo'lmaydi (holati: {status}).",
+        "ru": "Этот заказ уже нельзя изменить (статус: {status}).",
+    },
+    "oe_session_lost": {
+        "uz": "Tahrirlash sessiyasi tugagan — buyurtmani qayta oching.",
+        "ru": "Сессия редактирования истекла — откройте заказ заново.",
+    },
+    "oe_last_line": {
+        "uz": "Oxirgi mahsulotni olib tashlab bo'lmaydi. Kerak bo'lsa buyurtmani bekor qiling.",
+        "ru": "Нельзя удалить последний товар. При необходимости отмените заказ.",
+    },
+    "oe_ask_qty": {
+        "uz": "«{name}» uchun yangi sonni yozing (butun son, 0 — olib tashlash). /cancel — orqaga.",
+        "ru": "Введите новое количество для «{name}» (целое число, 0 — удалить). /cancel — назад.",
+    },
+    "oe_bad_qty": {
+        "uz": "Butun son yozing, masalan 2.",
+        "ru": "Введите целое число, например 2.",
+    },
+    "oe_ask_search": {
+        "uz": "Qo'shiladigan mahsulot nomini yozing (uz yoki ru). /cancel — orqaga.",
+        "ru": "Введите название товара для добавления (uz или ru). /cancel — назад.",
+    },
+    "oe_no_results": {
+        "uz": "Hech narsa topilmadi. Boshqa nom yozing yoki /cancel.",
+        "ru": "Ничего не найдено. Введите другое название или /cancel.",
+    },
+    "oe_pick": {
+        "uz": "Mahsulotni tanlang (1 dona qo'shiladi, keyin sonini o'zgartirasiz):",
+        "ru": "Выберите товар (добавится 1 шт., количество можно изменить):",
+    },
+    "oe_out_of_stock": {
+        "uz": "⚠️ «{name}» omborda yetarli emas: kerak {need}, bor {available}.",
+        "ru": "⚠️ «{name}» недостаточно на складе: нужно {need}, есть {available}.",
+    },
+    "oe_changed": {
+        "uz": "Buyurtma siz tahrirlayotgan paytda o'zgargan (boshqa admin yoki holat o'zgardi). Qayta oching.",
+        "ru": "Заказ изменился, пока вы его редактировали (другой админ или статус). Откройте заново.",
+    },
+    "oe_no_changes": {"uz": "Hech narsa o'zgarmadi.", "ru": "Ничего не изменилось."},
+    "oe_saved": {
+        "uz": "✅ Buyurtma #{order_id} o'zgartirildi.\nJami: {old_total} → <b>{new_total}</b> so'm.{paid_note}",
+        "ru": "✅ Заказ #{order_id} изменён.\nИтого: {old_total} → <b>{new_total}</b> сум.{paid_note}",
+    },
+    "oe_paid_note": {
+        "uz": "\n⚠️ Bu buyurtma onlayn to'langan — farqni mijoz bilan alohida hal qiling.",
+        "ru": "\n⚠️ Заказ оплачен онлайн — разницу решите с клиентом отдельно.",
+    },
+    "oe_btn_notify": {"uz": "📨 Mijozga xabar berish", "ru": "📨 Уведомить клиента"},
+    "oe_btn_back_order": {"uz": "📦 Buyurtmaga qaytish", "ru": "📦 К заказу"},
+    "oe_notified": {"uz": "Mijozga yuborildi ✅", "ru": "Клиенту отправлено ✅"},
+    "oe_notify_failed": {"uz": "Mijozga yuborib bo'lmadi.", "ru": "Не удалось отправить клиенту."},
+    "buyer_order_edited": {
+        "uz": "✏️ <b>Buyurtmangiz #{order_id} yangilandi</b>\n\n{items}\n💰 Jami: <b>{total}</b> so'm\n\n"
+              "Savollar bo'lsa, shu yerga yozing.",
+        "ru": "✏️ <b>Ваш заказ #{order_id} обновлён</b>\n\n{items}\n💰 Итого: <b>{total}</b> сум\n\n"
+              "Если есть вопросы, напишите сюда.",
+    },
     "order_deleted": {
         "uz": "🗑 Buyurtma #{order_id} bazadan o'chirildi.",
         "ru": "🗑 Заказ #{order_id} удалён из базы.",
@@ -896,6 +987,24 @@ TEXTS = {
         "ru": "✅ Заказ #{order_id} создан!\n\n"
               "Мы свяжемся с вами в ближайшее время.\n"
               "Статус заказа: ⏳ Ожидает",
+    },
+    # Sent to the buyer right after the order is placed (handlers/cart.py
+    # send_order_thanks) — owner request 2026-09-30.
+    "order_thanks": {
+        "uz": "🙏 Xaridingiz uchun katta rahmat! Buyurtmangiz #{order_id} qabul qilindi.",
+        "ru": "🙏 Большое спасибо за покупку! Ваш заказ #{order_id} принят.",
+    },
+    "order_thanks_self": {
+        "uz": "🚚 Buyurtmangiz Toshkent bo'ylab Ketoshop kuryeri orqali <b>24 soat ichida</b> yetkazib beriladi.",
+        "ru": "🚚 Ваш заказ будет доставлен курьером Ketoshop по Ташкенту <b>в течение 24 часов</b>.",
+    },
+    "order_thanks_yandex": {
+        "uz": "🚖 Buyurtmangiz Yandex orqali yuboriladi. Yetkazib berish vaqti yoki boshqa savollar "
+              "bo'yicha adminimiz bilan bemalol bog'lanishingiz mumkin:\n"
+              "💬 @{support_username}\n📞 {support_phone}\n\nSizga yordam berishdan doim xursandmiz! 😊",
+        "ru": "🚖 Ваш заказ будет отправлен через Яндекс. По вопросам времени доставки или любым другим "
+              "вопросам вы можете связаться с нашим администратором:\n"
+              "💬 @{support_username}\n📞 {support_phone}\n\nМы всегда рады вам помочь! 😊",
     },
     "order_cancelled": {
         "uz": "❌ Buyurtma bekor qilindi",
