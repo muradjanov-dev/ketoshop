@@ -19,6 +19,7 @@ from activity import ActivityMiddleware
 from subscription_gate import SubscriptionGateMiddleware
 from state_guard import StateResetOnCommandMiddleware
 import tg_safety
+import admin_mood
 
 # Handlers
 from handlers.webapp_data import router as webapp_data_router
@@ -130,8 +131,11 @@ async def main():
     # Guarantees a message still arrives when a name/address/note interpolated
     # into an HTML template contains a bare "<" or "&" — see tg_safety.py.
     tg_safety.install(bot)
+    # A mood-lifting line under every admin notification — see admin_mood.py.
+    bot.session.middleware(admin_mood.AdminCheerMiddleware(ADMIN_IDS))
     storage = PostgresStorage()
     dp = Dispatcher(storage=storage)
+    dp.update.outer_middleware(admin_mood.CurrentUserMiddleware())
 
     # Channel-subscription gate — must run before activity logging so a
     # blocked (not-yet-subscribed) attempt never counts as real engagement.
@@ -199,6 +203,7 @@ async def main():
     # State-filtered text steps (qty / product search) must beat the catalog
     # search and support-relay catch-alls below.
     dp.include_router(order_edit_router)
+    dp.include_router(admin_mood.router)
     # Meta lead inbox — admin-only /leads, /leads_test and the
     # "Bog'landim" callback. Registered high so its slash commands beat
     # any FSM state an admin happens to be stuck in, same reasoning as
