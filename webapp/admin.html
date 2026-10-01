@@ -83,6 +83,14 @@
   .tbl-wrap{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow-x:auto}
   table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:760px}
   th{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+  /* Sticky column names (2026-10-01): a table in .tbl-wrap scrolls inside its
+     own box (capped at the screen height), so the header row stays on top
+     until the last row has gone by. It has to be the wrapper that scrolls —
+     overflow-x:auto (needed for phones) stops sticky from following the page.
+     The bottom line is a shadow because border-collapse drops a sticky
+     cell's border once it starts sticking. */
+  .tbl-wrap{max-height:calc(100dvh - 96px);overflow:auto}
+  .tbl-wrap thead th{position:sticky;top:0;z-index:2;background:var(--panel);box-shadow:inset 0 -1px 0 var(--line)}
   td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
   tr:last-child td{border-bottom:none}
   tr:hover td{background:var(--surface-2)}
