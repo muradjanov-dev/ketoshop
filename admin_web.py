@@ -1565,7 +1565,49 @@ async def api_retention_customer(request: web.Request):
 
 # ───────────────────────────── courier board ─────────────────────────────────
 
-@require_auth
+def require_courier_auth(handler):
+    """Courier-board endpoints only: the admin password session OR a Telegram
+    Mini App login (Authorization: tma <initData>) from an admin or a
+    registered courier (owner request 2026-10-01 — the board opens as its own
+    window from the bot, so couriers never get the admin password and never
+    see the dashboard). Everything else in this file keeps require_auth.
+
+    Sets request["courier_actor"] to the Telegram user id for a Mini App login,
+    None for a password session."""
+    async def wrapped(request: web.Request):
+        if _authed(request):
+            request["courier_actor"] = None
+            return await handler(request)
+        header = request.headers.get("Authorization", "")
+        if header.startswith("tma "):
+            from webapp_server import _validate_init_data
+            parsed = _validate_init_data(header[4:], BOT_TOKEN)
+            user = (parsed or {}).get("user")
+            uid = user.get("id") if isinstance(user, dict) else None
+            if isinstance(uid, int) and not isinstance(uid, bool):
+                if uid in ADMIN_IDS or uid in await database.get_courier_ids():
+                    request["courier_actor"] = uid
+                    return await handler(request)
+                return _json({"error": "forbidden"}, status=403)
+        return _json({"error": "unauthorized"}, status=401)
+    return wrapped
+
+
+async def kuryer_page(request: web.Request):
+    """/kuryer — the same admin.html, booted in courier mode: only the Kanban
+    board, no tabs, no dashboard, Telegram login instead of the password."""
+    html_path = Path(__file__).parent / "webapp" / "admin.html"
+    html = html_path.read_text(encoding="utf-8")
+    inject = ('<script src="https://telegram.org/js/telegram-web-app.js"></script>\n'
+              '<script>window.KURYER_MODE=true;</script>\n</head>')
+    html = html.replace("</head>", inject, 1)
+    return web.Response(
+        text=html, content_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
+@require_courier_auth
 async def api_courier_board(request: web.Request):
     """Whole Kanban board in one payload — see courier_board.board_snapshot.
     The tab polls this every few seconds so two admins watching the same board
@@ -1580,7 +1622,7 @@ async def api_courier_board(request: web.Request):
     return _json(snapshot)
 
 
-@require_auth
+@require_courier_auth
 async def api_courier_move(request: web.Request):
     """Move a card. Body: {status, from?, notify?}.
 
@@ -1607,7 +1649,7 @@ async def api_courier_move(request: web.Request):
     return _json(result)
 
 
-@require_auth
+@require_courier_auth
 async def api_courier_assign(request: web.Request):
     """Claim or release a card for a courier. Body: {courier_id} (null clears)."""
     order_id = int(request.match_info["id"])
@@ -1627,12 +1669,12 @@ async def api_courier_assign(request: web.Request):
     return _json({"ok": True, "order": courier_board._card(order) if order else None})
 
 
-@require_auth
+@require_courier_auth
 async def api_courier_couriers(request: web.Request):
     return _json({"couriers": await courier_board.courier_options()})
 
 
-@require_auth
+@require_courier_auth
 async def api_courier_location(request: web.Request):
     """Send the buyer's Telegram pin for this order to the admins' chats, so
     it opens in a navigation app instead of only as a maps link in a browser."""
@@ -1640,12 +1682,17 @@ async def api_courier_location(request: web.Request):
     bot = request.app.get("bot")
     if bot is None:
         return _json({"error": "bot ulanmagan"}, status=503)
-    result = await courier_board.send_pin_to_telegram(order_id, bot)
+    # A courier in the Telegram window gets the pin in their own chat; the
+    # password panel can't tell which admin pressed it, so all admins get it.
+    actor = request.get("courier_actor")
+    result = await courier_board.send_pin_to_telegram(
+        order_id, bot, chat_ids=[actor] if actor else None)
     return _json(result, status=200 if result.get("ok") else 400)
 
 
 def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin", admin_page)
+    app.router.add_get("/kuryer", kuryer_page)
     app.router.add_post("/admin/api/login", api_login)
     app.router.add_post("/admin/api/logout", api_logout)
     app.router.add_get("/admin/api/session", api_session)

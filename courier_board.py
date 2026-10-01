@@ -415,7 +415,7 @@ async def move_order(order_id: int, target: str, *, expected_from: str | None = 
             "notified": bool(notify and bot is not None and forward and BUYER_MESSAGE.get(target))}
 
 
-async def send_pin_to_telegram(order_id: int, bot) -> dict:
+async def send_pin_to_telegram(order_id: int, bot, chat_ids: list[int] | None = None) -> dict:
     """Push the buyer's map pin to the admins' Telegram as a real location
     message.
 
@@ -438,7 +438,8 @@ async def send_pin_to_telegram(order_id: int, bot) -> dict:
                f"👤 {order.get('customer_name') or '—'}\n"
                f"📱 {order.get('phone') or '—'}")
     sent = 0
-    for admin_id in ADMIN_IDS:
+    # chat_ids: the courier who pressed it in the Telegram window (2026-10-01).
+    for admin_id in (chat_ids or ADMIN_IDS):
         try:
             await bot.send_message(admin_id, caption, parse_mode="HTML")
             await bot.send_location(admin_id, latitude=lat, longitude=lng)
