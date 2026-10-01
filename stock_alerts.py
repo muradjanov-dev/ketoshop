@@ -38,6 +38,7 @@ from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+import admin_mood
 import database
 from config import ADMIN_IDS, LOW_STOCK_THRESHOLD
 
@@ -82,27 +83,66 @@ def _unit(product: dict, lang: str) -> str:
         return ""
 
 
+# Owner request 2026-09-30: say it with a smile. Each alert picks one opener
+# at random; the facts (name, what's left, the limit, what it means for
+# buyers) stay in fixed lines underneath so nothing gets lost in the joke.
+# Templates are Latin Uzbek / Russian; uz_cyr is transliterated before the
+# product name goes in, so the name keeps the spelling the admins typed.
+_OUT_OPENERS = {
+    "uz": [
+        "🏆 <b>Sotuv chempioni!</b> «{name}» javondan oxirgi donasigacha uchib ketdi.",
+        "🎉 <b>Tabriklaymiz — to'liq sotildi!</b> «{name}» xaridorlarga shunchalik yoqdiki, bittasi ham qolmadi.",
+        "🏁 <b>Marra!</b> «{name}» hammadan oldin tugab, g'olib bo'ldi.",
+        "🕳 <b>Javonda bo'sh joy paydo bo'ldi</b> — «{name}» o'rni yangi partiyani kutyapti.",
+        "😴 <b>«{name}» ta'tilga chiqdi</b> — omborni to'ldirsak, darhol ishga qaytadi.",
+    ],
+    "ru": [
+        "🏆 <b>Чемпион продаж!</b> «{name}» разлетелся до последней штуки.",
+        "🎉 <b>Поздравляем — продано всё!</b> «{name}» так понравился покупателям, что не осталось ни одного.",
+        "🏁 <b>Финиш!</b> «{name}» закончился раньше всех и победил.",
+        "🕳 <b>На полке освободилось место</b> — «{name}» ждёт новую партию.",
+        "😴 <b>«{name}» ушёл в отпуск</b> — пополним склад, и он сразу вернётся к работе.",
+    ],
+}
+_LOW_OPENERS = {
+    "uz": [
+        "🔥 <b>«{name}» qizg'in sotilyapti!</b> Javonda uzoq turolmayapti.",
+        "⏳ <b>Qum soat ishga tushdi:</b> «{name}» tugab borayapti.",
+        "🐿 <b>Olmaxon ham qishga g'amlaydi</b> — «{name}» uchun ham g'amlash vaqti keldi.",
+        "📉 <b>Yaxshi xabar:</b> «{name}» zaxirasi kamaydi — demak, sotuv ketyapti! 🚀",
+        "🍪 <b>Diqqat, «{name}» sevimlilar ro'yxatida!</b> Xaridorlarni xafa qilmaylik.",
+    ],
+    "ru": [
+        "🔥 <b>«{name}» продаётся на ура!</b> На полке не задерживается.",
+        "⏳ <b>Песочные часы запущены:</b> «{name}» заканчивается.",
+        "🐿 <b>Даже белка делает запасы</b> — пора запастись и «{name}».",
+        "📉 <b>Хорошая новость:</b> запас «{name}» тает — значит, продажи идут! 🚀",
+        "🍪 <b>Внимание, «{name}» в списке любимчиков!</b> Не будем расстраивать покупателей.",
+    ],
+}
+
+
 def _alert_text(product: dict, level: str, lang: str) -> str:
-    name = product["name"]
+    import random
+    name = html.escape(product["name"])
     limit = _qty(limit_for(product))
-    if lang == "ru":
-        if level == "out":
-            return (f"🚫 <b>Товар закончился!</b>\n\n📦 {name}\n\n"
-                    "Пока склад не пополнен, покупатели не смогут его заказать.")
-        return (f"⚠️ <b>Заканчивается товар!</b>\n\n📦 {name}\n"
-                f"🔢 Осталось: <b>{_qty(product['quantity'])} {_unit(product, lang)}</b> "
-                f"(порог: {limit})\n\nПожалуйста, пополните склад.")
+    base = "ru" if lang == "ru" else "uz"
+    opener = random.choice((_OUT_OPENERS if level == "out" else _LOW_OPENERS)[base])
     if level == "out":
-        text = (f"🚫 <b>Mahsulot tugadi!</b>\n\n📦 {name}\n\n"
-                "Omborni to'ldirmaguncha xaridorlar uni buyurtma qila olmaydi.")
+        tail = ("🚫 Omborda qolmadi — to'ldirmaguncha xaridorlar uni buyurtma qila olmaydi."
+                if base == "uz" else
+                "🚫 На складе ноль — пока не пополним, покупатели не смогут его заказать.")
     else:
-        text = (f"⚠️ <b>Mahsulot kam qoldi!</b>\n\n📦 {name}\n"
-                f"🔢 Qolgan: <b>{_qty(product['quantity'])} {_unit(product, lang)}</b> "
-                f"(chegara: {limit})\n\nIltimos, omborni to'ldiring.")
+        left = f"{_qty(product['quantity'])} {_unit(product, lang)}"
+        tail = (f"🔢 Qolgan: <b>{left}</b> (chegara: {limit})\n📝 Yangi partiyani hozirdan rejalashtirsak bo'ladi."
+                if base == "uz" else
+                f"🔢 Осталось: <b>{left}</b> (порог: {limit})\n📝 Самое время запланировать новую партию.")
+    # "{name}" would be transliterated with the rest — park it on a NUL.
+    template = f"{opener}\n\n{tail}".replace("{name}", "\x00")
     if lang == "uz_cyr":
         from translit import lat_to_cyr
-        text = lat_to_cyr(text)
-    return text
+        template = lat_to_cyr(template)
+    return template.replace("\x00", name)
 
 
 def summary_text(products: list[dict]) -> str:
@@ -132,7 +172,9 @@ async def _send_all(bot: Bot, build) -> None:
         except Exception:
             lang = "uz"
         try:
-            await bot.send_message(admin_id, build(lang), parse_mode=ParseMode.HTML)
+            # Already written in the cheerful tone — no extra admin_mood line.
+            with admin_mood.quiet():
+                await bot.send_message(admin_id, build(lang), parse_mode=ParseMode.HTML)
         except Exception as exc:
             logger.warning("Stock alert to admin %s failed: %s", admin_id, exc)
 
