@@ -3072,6 +3072,13 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
     orders_delivered = int(delivered_row["delivered"])
     product_cost_total = int(product_cost_total)
     profit = revenue - expenses_total - product_cost_total
+    # Margins (owner request 2026-10-01), both on delivered revenue:
+    #   gross — before Chiqimlar: what the goods themselves earn;
+    #   net   — after Chiqimlar: the same `profit` as above, as a share.
+    gross_profit = revenue - product_cost_total
+
+    def _pct(part: int) -> float | None:
+        return round(part * 100.0 / revenue, 1) if revenue else None
 
     return {
         "period": period if isinstance(period, str) else "custom",
@@ -3106,6 +3113,9 @@ async def get_admin_stats(period: str | dict = "all") -> dict:
         "expenses": expenses_total,
         "product_cost": product_cost_total,
         "profit": profit,
+        "gross_profit": gross_profit,
+        "gross_margin_pct": _pct(gross_profit),
+        "net_margin_pct": _pct(profit),
         # Products sold in the window with no cost_price — their cost counts
         # as 0, so profit is overstated by exactly what they really cost.
         "missing_cost_products": sorted(missing_cost),

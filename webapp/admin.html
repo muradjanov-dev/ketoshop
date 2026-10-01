@@ -1333,6 +1333,9 @@ function renderDashKpiCard(lab,val,sub){
   return `<div class="kpi-card"><div class="lab">${esc(lab)}</div><div class="val tnum">${esc(val)}</div><div class="sub">${esc(sub)}</div></div>`;
 }
 
+/* " · 23.4%" after a sum — empty when there is no delivered revenue to divide by. */
+function pctTail(p){return (p===null||p===undefined)?'':' · '+String(p).replace('.',',')+'%';}
+
 function renderKpis(st){
   const cards=[
     renderDashKpiCard('Buyurtma qiymati', fmt(st.booked_value),
@@ -1346,7 +1349,11 @@ function renderKpis(st){
     // Keto chegirmasi tushumdan allaqachon ayrilgan, shuning uchun Chiqimlarga
     // kirmaydi — bo'lmasa bir xil pul ikki marta ayrilgan bo'lardi.
     renderDashKpiCard('Keto chegirmasi', fmt(st.keto_discount || 0), 'Tushumdan ayrilgan'),
-    renderDashKpiCard('Sof foyda', fmt(st.profit), 'Yetkazilgan tushum − tannarx − davr xarajatlari'),
+    // Marja (2026-10-01): so'mda va yetkazilgan tushumga nisbatan foizda.
+    renderDashKpiCard('Yalpi marja', fmt(st.gross_profit ?? (st.delivered_revenue - st.product_cost)) + pctTail(st.gross_margin_pct),
+      'Yetkazilgan tushum − mahsulot tannarxi · xarajatlar hali ayrilmagan'),
+    renderDashKpiCard('Sof foyda', fmt(st.profit) + pctTail(st.net_margin_pct),
+      'Yetkazilgan tushum − tannarx − davr xarajatlari · xarajatlar ayrilgan'),
     renderDashKpiCard('Tannarxi topilmagan mahsulotlar',
       `${(st.missing_cost_products||[]).length} ta`,
       (st.missing_cost_products||[]).slice(0,3).join(', ')

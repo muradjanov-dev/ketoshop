@@ -171,6 +171,14 @@ class SaleBasisTest(unittest.TestCase):
         self.assertEqual(stats["profit"], 171_050)
         self.assertEqual(stats["aov"], 1_568_000 // 5)
 
+    def test_margins_in_som_and_percent(self):
+        """Gross margin is before Chiqimlar, net margin is the profit after
+        them — both as a share of delivered revenue."""
+        stats, _ = self._stats()
+        self.assertEqual(stats["gross_profit"], 561_000 - 354_950)
+        self.assertEqual(stats["gross_margin_pct"], 36.7)   # 206 050 / 561 000
+        self.assertEqual(stats["net_margin_pct"], 30.5)     # 171 050 / 561 000
+
     def test_all_financial_reads_share_a_repeatable_read_only_snapshot(self):
         conn = _FakeConn()
         with patch.object(database, "pool", _FakePool(conn)):
