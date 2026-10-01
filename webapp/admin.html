@@ -101,6 +101,8 @@
   .b2b-cell .save{color:var(--green);font-weight:700}
   .b2b-cell .dear{color:var(--red);font-weight:700}
   #prodKind{margin-bottom:0}
+  .prod-search{min-width:min(100%,360px);font-size:14px}
+  mark.hit{background:var(--amber-wash);color:inherit;border-radius:3px;padding:0 1px}
   .row-actions{display:flex;gap:6px;justify-content:flex-end}
 
   /* ===== sets ===== */
@@ -626,7 +628,9 @@
 
   <section class="view" id="view-products">
     <div class="toolbar">
-      <input type="search" id="prodSearch" placeholder="🔍 Mahsulot qidirish…">
+      <input type="search" id="prodSearch" class="prod-search" autocomplete="off"
+             placeholder="🔍 Nomi, ruscha nomi yoki #raqam — lotin/kirill farqi yo‘q  ( / )"
+             title="Masalan: bodom · бодом · uni bodom · #42 · 200gr">
       <div class="period-switch" id="prodKind" title="Qayerda sotiladi">
         <button class="active" data-kind="all">Hammasi</button>
         <button data-kind="retail">🛒 Faqat chakana</button>
@@ -1525,8 +1529,8 @@ async function loadProducts(){
   const d=await api('/admin/api/products');PRODUCTS=d.products||[];renderProducts();
 }
 function renderProducts(){
-  const q=($('#prodSearch').value||'').toLowerCase();
-  const byName=PRODUCTS.filter(p=>!q||(p.name||'').toLowerCase().includes(q)||(p.name_ru||'').toLowerCase().includes(q));
+  const q=($('#prodSearch').value||'').trim();
+  const byName=q?PRODUCTS.filter(p=>prodMatches(p,q)):PRODUCTS;
   // counts per kind on the filter buttons, for whatever the search left
   const kc={all:byName.length,retail:0,both:0,b2b_only:0};
   byName.forEach(p=>{kc[prodKind(p)]++;});
@@ -1545,7 +1549,7 @@ function renderProducts(){
     const disc=p.discount_percent>0?`<span class="pill disc">−${p.discount_percent}%</span>`:'—';
     const st=p.is_active?`<span class="pill on">Faol</span>`:`<span class="pill off">Arxiv</span>`;
     return `<tr>
-      <td><div class="pname"><div class="pthumb">${img}</div><div>${esc(p.name)}<div style="font-size:11.5px;color:var(--ink-3)">#${p.id}</div></div></div></td>
+      <td><div class="pname"><div class="pthumb">${img}</div><div>${hl(p.name,q)}<div style="font-size:11.5px;color:var(--ink-3)">#${p.id}${p.name_ru?' · '+hl(p.name_ru,q):''}</div></div></div></td>
       <td>${catLabel(p.category)}</td>
       <td>${kindPill(p)}</td>
       <td class="tnum" style="text-align:right;font-weight:700">${prodKind(p)==='b2b_only'?'<span style="color:var(--ink-3);font-weight:500">do‘konda yo‘q</span>':fmt(p.price)}</td>
@@ -1598,6 +1602,52 @@ function costCell(p){
 }
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 $('#prodSearch').addEventListener('input',renderProducts);
+/* "/" jumps to the search box from anywhere on the Mahsulotlar tab. */
+document.addEventListener('keydown',e=>{
+  if(e.key!=='/'||e.ctrlKey||e.metaKey||e.altKey)return;
+  const t=e.target, typing=t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable);
+  if(typing||!$('#view-products').classList.contains('active'))return;
+  e.preventDefault();$('#prodSearch').focus();$('#prodSearch').select();
+});
+
+/* ===== product search (2026-10-01) =====
+   Both the query and the product text are folded to one Latin skeleton, so
+   "бодом", "Bodom" and "BODOM" all meet, o'/o‘/oʻ/ў are the same letter, and
+   word order doesn't matter ("uni bodom"). "#42" (or a bare 42 that is a
+   product id) finds by id. Every word of the query has to match. */
+const CYR2LAT={'а':'a','б':'b','в':'v','г':'g','ғ':'g','д':'d','е':'e','ё':'yo','ж':'j','з':'z','и':'i',
+  'й':'y','к':'k','қ':'q','л':'l','м':'m','н':'n','о':'o','ў':'o','п':'p','р':'r','с':'s','т':'t','у':'u',
+  'ф':'f','х':'h','ҳ':'h','ц':'ts','ч':'ch','ш':'sh','щ':'sh','ъ':'','ы':'i','ь':'','э':'e','ю':'yu','я':'ya'};
+function searchFold(str){
+  let out='';
+  for(const ch of String(str||'').toLowerCase()){
+    out+=(ch in CYR2LAT)?CYR2LAT[ch]:ch;
+  }
+  return out
+    .replace(/['‘’ʻʼ`´]/g,'')       // o' g' and their typographic cousins
+    .replace(/x/g,'h')               // xandon / хандон / handon
+    .replace(/[^a-z0-9#]+/g,' ')
+    .trim();
+}
+function prodMatches(p,q){
+  const words=searchFold(q).split(' ').filter(Boolean);
+  if(!words.length)return true;
+  const hay=' '+searchFold([p.name,p.name_ru,catLabel(p.category)].join(' '))+' ';
+  return words.every(w=>{
+    const id=w.replace(/^#/,'');
+    if(/^\d+$/.test(id)&&String(p.id)===id)return true;
+    if(w.startsWith('#'))return false;      // "#42" means the id, nothing else
+    return hay.includes(w);
+  });
+}
+/* Highlight the query words where they appear literally (same script). */
+function hl(text,q){
+  const safe=esc(text);
+  const words=String(q||'').toLowerCase().split(/\s+/).filter(w=>w.length>1&&!w.startsWith('#'));
+  if(!words.length)return safe;
+  const re=new RegExp('('+words.map(w=>esc(w).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')','gi');
+  return safe.replace(re,'<mark class="hit">$1</mark>');
+}
 
 window.openProdModal=function(id){
   editingProdId=id||null;
