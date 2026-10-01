@@ -228,8 +228,11 @@ async def api_categories_create(request: web.Request):
 
 @require_auth
 async def api_products_list(request: web.Request):
+    import b2b_pricing
     products = await database.admin_list_products(include_inactive=True)
     for p in products:
+        # Retail vs wholesale, per kg — see b2b_pricing.compare.
+        p["pricing"] = b2b_pricing.compare(p)
         # datetime → isoformat for JSON
         if p.get("created_at"):
             p["created_at"] = p["created_at"].isoformat()
