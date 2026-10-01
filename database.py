@@ -750,6 +750,20 @@ async def init_db():
             )
         """)
 
+        # Owner, 2026-10-02: "Keto muzqaymoqlarini eng pastga tushurib qo'y".
+        # The category had sort_order -1, so it led every list (shop home,
+        # catalogue tabs, the bot's category keyboard). There is no reorder
+        # screen, so it is moved to the end ONCE — claimed by key, so a later
+        # manual reorder in the database is never undone by a restart.
+        claimed = await conn.fetchval(
+            "INSERT INTO release_notes_sent (key) VALUES ('category-icecream-last-2026-10-02') "
+            "ON CONFLICT (key) DO NOTHING RETURNING key")
+        if claimed:
+            await conn.execute(
+                """UPDATE categories
+                      SET sort_order = (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories)
+                    WHERE key = 'keto_muzqaymoqlari'""")
+
         # ===== Ombor ogohlantirishlari (stock_alerts.py, 2026-09-17) =====
         # Last level each product was alerted at (ok / low / out). An alert fires
         # only when a product gets worse than this; restocking resets it.
