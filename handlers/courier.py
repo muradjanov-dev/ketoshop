@@ -115,6 +115,26 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
         kb.append([InlineKeyboardButton(text="🔙 Asosiy menyu", callback_data="courier:menu")])
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
+    async def show_list(action_type: str, idx: int, empty_text: str):
+        """Redraw an orders list in place after a status change. When it has
+        run dry, open the other list instead of dropping the courier on the
+        menu (owner request 2026-10-01): after a pickup that's their own
+        deliveries, after a delivery it's the next orders to take."""
+        title = {"new": "Yangi buyurtma", "my": "Mening buyurtmam"}
+        for kind in (action_type, "my" if action_type == "new" else "new"):
+            orders = await get_new_orders() if kind == "new" else await get_my_orders()
+            if orders:
+                i = min(idx, len(orders) - 1) if kind == action_type else 0
+                await callback.message.edit_text(
+                    build_text(orders[i], len(orders), i, title[kind]),
+                    reply_markup=build_nav_kb(kind, i, len(orders), orders[i]['id']),
+                    parse_mode="HTML")
+                return
+        await callback.message.edit_text(empty_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📦 Yangi buyurtmalar", callback_data="courier:new_orders")],
+            [InlineKeyboardButton(text="🚚 Mening buyurtmalarim", callback_data="courier:my_orders")],
+        ]))
+
     # Main Menu
     if action == "menu":
         await callback.message.edit_text(
@@ -182,15 +202,7 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
                     pass
         
         # Refresh the new orders list, staying at the same index (which now points to the next order)
-        orders = await get_new_orders()
-        if not orders:
-            await callback.message.edit_text("Yangi buyurtmalar qolmadi.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Asosiy menyu", callback_data="courier:menu")]]))
-            return
-            
-        idx = min(idx, len(orders) - 1)
-        text = build_text(orders[idx], len(orders), idx, "Yangi buyurtma")
-        kb = build_nav_kb("new", idx, len(orders), orders[idx]['id'])
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        await show_list("new", idx, "Yangi buyurtmalar qolmadi.")
         return
 
     # Actions: delivered / cancel
@@ -242,14 +254,6 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
 
         
         # Refresh my orders list
-        orders = await get_my_orders()
-        if not orders:
-            await callback.message.edit_text("Sizda boshqa yetkazilayotgan buyurtmalar qolmadi.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Asosiy menyu", callback_data="courier:menu")]]))
-            return
-            
-        idx = min(idx, len(orders) - 1)
-        text = build_text(orders[idx], len(orders), idx, "Mening buyurtmam")
-        kb = build_nav_kb("my", idx, len(orders), orders[idx]['id'])
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        await show_list("my", idx, "Sizda boshqa yetkazilayotgan buyurtmalar qolmadi.")
         return
 

@@ -1334,6 +1334,13 @@ async def do_delete_product(callback: CallbackQuery):
 async def show_seller_orders(callback: CallbackQuery):
     """Show orders for this seller"""
     lang = await get_user_language(callback.from_user.id)
+    await render_seller_orders(callback, lang)
+    await callback.answer()
+
+
+async def render_seller_orders(callback: CallbackQuery, lang: str):
+    """The orders page (what the order card's ⬅️ button opens), drawn in place.
+    Caller answers the callback — order_act passes its result as a toast."""
     is_admin = callback.from_user.id in ADMIN_IDS
     orders = await get_seller_orders(callback.from_user.id, all_orders=is_admin)
 
@@ -1343,7 +1350,6 @@ async def show_seller_orders(callback: CallbackQuery):
             reply_markup=seller_panel_keyboard(lang),
             parse_mode="HTML"
         )
-        await callback.answer()
         return
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -1385,7 +1391,6 @@ async def show_seller_orders(callback: CallbackQuery):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         parse_mode="HTML"
     )
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("seller_order:"))
@@ -1668,12 +1673,23 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
         await callback.answer(get_text(msg_key, lang))
         return
 
-    await callback.message.edit_text(
-        get_text(msg_key, lang),
-        reply_markup=seller_panel_keyboard(lang),
-        parse_mode="HTML"
-    )
-    await callback.answer()
+    # Came from an order card → back to the orders page (the card's own ⬅️
+    # target) with the result as a toast, not to the panel menu: whoever is
+    # working through deliveries goes straight to the next order (owner
+    # request 2026-10-01). A card can sit under a photo/cheque in the chat;
+    # if it can't be edited, the page arrives as a new message instead.
+    try:
+        await render_seller_orders(callback, lang)
+    except Exception:
+        logging.getLogger(__name__).warning("Orders page refresh after order_act failed", exc_info=True)
+        await callback.message.answer(
+            get_text(msg_key, lang),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+                text="📦 " + ("Buyurtmalar" if lang == "uz" else "Заказы"),
+                callback_data="seller:orders")]]),
+            parse_mode="HTML",
+        )
+    await callback.answer(get_text(msg_key, lang))
 
 
 # ===== SELLER STATS =====
