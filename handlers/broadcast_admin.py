@@ -758,3 +758,33 @@ async def kanal_set(message: Message, command: CommandObject):
         f"{week}-hafta «{theme}»",
         parse_mode=ParseMode.HTML,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sovg'a eslatmasi (gift_campaign.send_reminder) — 2026-10-03 09:00 da o'zi
+# ketadi. Bu buyruq faqat ko'rinishini so'ragan adminga ko'rsatadi.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.message(Command("sovga_eslatma_test"))
+async def sovga_eslatma_test(message: Message):
+    import gift_campaign
+    from datetime import timedelta
+    row = await gift_campaign._state(force=True)
+    if not row or not row.get("ends_at"):
+        await message.answer("Sovg'a kampaniyasi faol emas — eslatma ketmaydi.")
+        return
+    until = row["ends_at"] + gift_campaign.TZ_OFFSET
+    lang = await database.get_user_language(message.from_user.id)
+    photo = await gift_campaign._product_photo(await gift_campaign.gift_product(force=True))
+    for segment, label in (("new", "🆕 Hali sovg'a olmaganlarga"), ("again", "🔁 Sovg'a olganlarga")):
+        await message.answer(f"👁 <b>{label}</b> (faqat sizga):", parse_mode=ParseMode.HTML)
+        await gift_campaign._send_photo(message.bot, message.from_user.id, photo,
+                                        gift_campaign.reminder_text(segment, lang, until),
+                                        gift_campaign.reminder_keyboard(lang))
+    since = row.get("announced_at")
+    got = len(await gift_campaign.gift_receivers(since)) if since else 0
+    total = len(await database.get_all_user_ids())
+    await message.answer(
+        f"📅 Avtomatik: {gift_campaign.REMINDER_FROM:%d.%m.%Y} soat "
+        f"{gift_campaign.REMINDER_WINDOW[0]:02d}:00 dan, bir marta.\n"
+        f"👥 Jami {total} ta foydalanuvchi: {got} tasiga «yana sovg'a», qolganiga «xabaringiz bormi».")
