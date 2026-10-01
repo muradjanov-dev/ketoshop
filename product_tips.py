@@ -723,11 +723,13 @@ async def buyer_history(user_id: int) -> list[dict]:
     if hit and time.monotonic() - hit[0] < _HISTORY_TTL:
         return hit[1]
     import database
+    # Orders an admin typed in (manual, B2B) are filed under the admin's own
+    # user_id but belong to somebody else — never the admin's own purchases.
     async with database.pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT items, created_at, status FROM orders
-                WHERE user_id = $1 AND status <> 'cancelled'
-                ORDER BY created_at DESC LIMIT 40""", user_id)
+            f"""SELECT o.items, o.created_at, o.status FROM orders o
+                 WHERE o.user_id = $1 AND o.status <> 'cancelled' AND {database._REAL_ORDER}
+                 ORDER BY o.created_at DESC LIMIT 40""", user_id)
     hist = history_from_orders([dict(r) for r in rows])
     if len(_history_cache) > 20000:
         _history_cache.clear()
