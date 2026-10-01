@@ -316,6 +316,12 @@ async def api_product_detail(request: web.Request):
         }
         for m in media
     ]
+    # Personal advice from this buyer's past orders (product_tips) — shown
+    # under the name, above the description. None for an anonymous viewer.
+    data["tip"] = None
+    if request.get("user_id"):
+        import product_tips
+        data["tip"] = await product_tips.tip_for(request["user_id"], p, lang)
     return _json(data)
 
 

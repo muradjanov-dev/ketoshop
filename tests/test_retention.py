@@ -101,7 +101,12 @@ class OneMessageRuleTest(unittest.TestCase):
     def test_same_reason_is_never_sent_twice(self):
         orders = [order(1, 52, KOKOS), order(2, 26, KOKOS)]
         self.assertEqual(retention.plan_for_user(1, orders, NOW, ctx())["ref"], "replenish:p10:2")
-        self.assertIsNone(retention.plan_for_user(1, orders, NOW, ctx(sent_refs={"replenish:p10:2"})))
+        # The same reminder never comes back; a different reason (the 💡 tip,
+        # added 2026-10-02) may — the 7-day gap still keeps it apart.
+        again = retention.plan_for_user(1, orders, NOW, ctx(sent_refs={"replenish:p10:2"}))
+        self.assertTrue(again is None or again["ref"] != "replenish:p10:2")
+        self.assertIsNone(retention.plan_for_user(1, orders, NOW, ctx(
+            sent_refs={"replenish:p10:2"}, last_message_at=NOW - timedelta(days=1))))
 
     def test_second_order_checkin_window(self):
         plan = retention.plan_for_user(1, [order(1, 4, KOKOS)], NOW, ctx())

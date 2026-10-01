@@ -2157,6 +2157,19 @@
     line-height: 1.4; background: rgba(76,175,80,0.12); color: #3E9B4F;
   }
   .detail-perks span:first-child { background: rgba(232,114,44,0.14); color: #C4571B; }
+  /* ── Personal advice on the product card (product_tips) ───────────────
+     First thing under the name: soft green, calm, never a banner. */
+  .detail-tip {
+    margin: 0 0 12px; padding: 10px 12px; border-radius: 12px;
+    background: color-mix(in srgb, var(--leaf) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--leaf) 35%, transparent);
+    font-size: 14px; line-height: 1.45; color: var(--text);
+  }
+  .detail-tip-label {
+    display: block; margin-bottom: 4px; font-size: 12px; font-weight: 700;
+    letter-spacing: .02em; color: var(--leaf-deep);
+  }
+  :root[data-site-theme="night"] .detail-tip-label { color: var(--leaf); }
 </style>
 </head>
 <body>
@@ -2393,6 +2406,7 @@
     </div>
     <div id="detail-photo-container"></div>
     <div class="detail-body">
+      <div class="detail-tip" id="detail-tip" style="display:none"></div>
       <div><span class="detail-price" id="detail-price"></span> <span class="detail-unit" id="detail-unit"></span></div>
       <div class="detail-saving" id="detail-saving" style="display:none"></div>
       <div class="detail-discount-until" id="detail-discount-until" style="margin-top:6px;font-size:12px;color:var(--berry);font-weight:600"></div>
@@ -2650,6 +2664,7 @@ const L = {
     checkout: 'Buyurtma berish',
     currency: "so'm",
     perUnit: '/{unit}',
+    tipLabel: 'Siz uchun maslahat',
     rating: '{rating}/5 ({count} ta sharh)',
     seller: 'Sotuvchi: {name}',
     reviewsTitle: '💬 Sharhlar',
@@ -2808,6 +2823,7 @@ const L = {
     checkout: 'Оформить заказ',
     currency: 'сум',
     perUnit: '/{unit}',
+    tipLabel: 'Совет для вас',
     rating: '{rating}/5 ({count} отзывов)',
     seller: 'Продавец: {name}',
     reviewsTitle: '💬 Отзывы',
@@ -3849,6 +3865,16 @@ async function openDetail(productId, isSet = false) {
     qty = 1;
 
     document.getElementById('detail-name').textContent = p.name;
+    // Personal advice (product_tips) — first thing under the name.
+    const tipEl = document.getElementById('detail-tip');
+    if (p.tip) {
+      tipEl.innerHTML = '<span class="detail-tip-label">💡 ' + escapeHtml(t.tipLabel || 'Siz uchun maslahat') +
+                        '</span>' + escapeHtml(p.tip);
+      tipEl.style.display = 'block';
+    } else {
+      tipEl.style.display = 'none';
+      tipEl.textContent = '';
+    }
     document.getElementById('detail-price').innerHTML = priceHtml(p) + ketoBadgeHtml(p.price);
 
     const savingEl = document.getElementById('detail-saving');
