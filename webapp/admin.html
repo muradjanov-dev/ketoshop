@@ -102,6 +102,9 @@
   .b2b-cell .dear{color:var(--red);font-weight:700}
   #prodKind{margin-bottom:0}
   .prod-search{min-width:min(100%,360px);font-size:14px}
+  .nocost-btn{border:none;cursor:pointer;font:inherit;font-weight:700;border-radius:20px;padding:2px 10px;
+    background:var(--red-wash);color:var(--red)}
+  .nocost-btn.on{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
   mark.hit{background:var(--amber-wash);color:inherit;border-radius:3px;padding:0 1px}
   .row-actions{display:flex;gap:6px;justify-content:flex-end}
 
@@ -1539,10 +1542,19 @@ function renderProducts(){
     b.textContent=base+' · '+kc[b.dataset.kind];
     b.classList.toggle('active',b.dataset.kind===PROD_KIND);
   });
-  const list=PROD_KIND==='all'?byName:byName.filter(p=>prodKind(p)===PROD_KIND);
-  const noCost=list.filter(p=>!(+p.cost_price>0)).length;
-  $('#prodCount').textContent=list.length+' ta mahsulot'
-    +(noCost?` · ⚠️ ${noCost} tasida tannarx yo'q`:'');
+  const kindList=PROD_KIND==='all'?byName:byName.filter(p=>prodKind(p)===PROD_KIND);
+  // "⚠️ N tasida tannarx yo'q" is a button (2026-10-01): it narrows the table
+  // to exactly those products, archived ones included — they are counted too.
+  const noCostList=kindList.filter(p=>!(+p.cost_price>0));
+  if(!noCostList.length)PROD_NOCOST=false;      // all fixed → back to the full list
+  const nArch=noCostList.filter(p=>!p.is_active).length;
+  const list=PROD_NOCOST?noCostList:kindList;
+  $('#prodCount').innerHTML=esc(kindList.length+' ta mahsulot')+(noCostList.length
+    ? ` · <button type="button" class="nocost-btn${PROD_NOCOST?' on':''}" id="noCostBtn"
+         title="Tannarx (cost_price) 0 yoki bo‘sh — foyda shu mahsulotlarda oshirib ko‘rsatiladi">${
+         PROD_NOCOST?'✕ Hammasini ko‘rsatish'
+           :`⚠️ ${noCostList.length} tasida tannarx yo‘q`+(nArch?` (${nArch} tasi arxivda)`:'')+' — ko‘rish'}</button>`
+    : '');
   $('#prodEmpty').style.display=list.length?'none':'block';
   $('#prodRows').innerHTML=list.map(p=>{
     const img=p.image_url?`<img src="${p.image_url}" alt="">`:'📦';
@@ -1565,7 +1577,11 @@ function renderProducts(){
   }).join('');
 }
 /* ===== retail vs wholesale (2026-10-01) — see b2b_pricing.py ===== */
-let PROD_KIND='all';
+let PROD_KIND='all', PROD_NOCOST=false;
+$('#prodCount').addEventListener('click',e=>{
+  if(!e.target.closest('#noCostBtn'))return;
+  PROD_NOCOST=!PROD_NOCOST;renderProducts();
+});
 function prodKind(p){
   if(p.pricing&&p.pricing.kind)return p.pricing.kind;
   if(p.b2b_only)return 'b2b_only';
