@@ -94,8 +94,19 @@ WINBACK_WINDOW = 7
 OFFER_KINDS = {"second_checkin", "winback_60", "winback_90"}
 
 OPEN_STATUSES = ("pending", "confirmed", "shipped", "delivering")
-PRIORITY = ["second_lastcall", "second_checkin", "replenish",
-            "winback_90", "winback_60", "winback_30"]
+PRIORITY = ["second_lastcall", "second_checkin", "review_ask", "replenish",
+            "winback_90", "winback_60", "winback_30", "tavsiya"]
+
+# ⭐ Review ask (owner, 2026-10-02): "yetkazilgandan 3 kun keyin o'sha mahsulot
+# haqida sharh so'rasin — sifatini qanday baholaysiz, mazali taomlar pishirib
+# ko'rdingizmi?" One message per delivered order, products as buttons.
+REVIEW_ASK_DAYS = (3, 7)
+REVIEW_BUTTONS = 4
+# 💡 Personal advice push (owner, 2026-10-02): the product_tips line for a
+# product that pairs with something they bought, with a button to its card.
+# The quietest kind — only while nothing else is due, between their last
+# order and the 30-day win-back.
+TAVSIYA_DAYS = (10, 28)
 
 KIND_LABELS = {
     "replenish": "🔁 Tugash eslatmasi",
@@ -104,6 +115,8 @@ KIND_LABELS = {
     "winback_30": "👋 30 kun: sog'indik",
     "winback_60": "🎁 60 kun: sovg'a bilan",
     "winback_90": "🎁 90 kun: oxirgi taklif",
+    "review_ask": "⭐ 3 kun: fikr so'rash",
+    "tavsiya": "💡 Shaxsiy tavsiya",
 }
 
 _state_cache: dict | None = None
@@ -507,6 +520,53 @@ async def also_bought_for_order(user_id: int, items: list[dict], lang: str
         return "", []
 
 
+def review_picks(items: list[dict], delivered: list[dict], order_id: int,
+                 reviewed: set) -> list[dict]:
+    """Which products of a delivered order to ask about, best first.
+
+    A big order is never one long questionnaire: at most REVIEW_BUTTONS
+    buttons plus «Boshqa mahsulot» for the full list. First-time purchases
+    come first (that opinion is the most useful), then the biggest lines.
+    Gifts, aksiya bonuses and anything already reviewed are left out."""
+    before = {int(it["product_id"]) for o in delivered if o["id"] != order_id
+              for it in o["items"] if it.get("product_id")}
+    seen: set[int] = set()
+    rows = []
+    for it in items:
+        pid = it.get("product_id")
+        if not pid or it.get("is_bonus") or it.get("is_gift"):
+            continue
+        pid = int(pid)
+        if pid in seen or pid in reviewed:
+            continue
+        seen.add(pid)
+        value = float(it.get("price") or 0) * float(it.get("quantity") or 1)
+        rows.append((pid in before, -value, {"id": pid, "name": it.get("name") or "",
+                                              "name_ru": it.get("name_ru")}))
+    rows.sort(key=lambda r: (r[0], r[1]))
+    return [r[2] for r in rows]
+
+
+def tavsiya_pick(live: list[dict], available: dict, sent: set) -> dict | None:
+    """An in-stock product that pairs with something this buyer bought and
+    that they don't buy already — their most recent purchase leads."""
+    import product_tips
+    history = product_tips.history_from_orders(live)
+    owned = {h["key"] for h in history if h["key"]}
+    if not owned:
+        return None
+    for h in history:
+        if not h["key"]:
+            continue
+        for key, prod in available.items():
+            if key[0] != "p" or f"tavsiya:{prod['id']}" in sent:
+                continue
+            tkey = product_tips.tip_key(prod.get("name") or "")
+            if tkey and tkey not in owned and (tkey, h["key"]) in product_tips.PAIRS:
+                return {"product": prod, "history": history}
+    return None
+
+
 def plan_for_user(uid: int, orders: list[dict], now: datetime, ctx: dict) -> dict | None:
     """The single message this buyer should get today, or None.
 
@@ -572,6 +632,25 @@ def plan_for_user(uid: int, orders: list[dict], now: datetime, ctx: dict) -> dic
             candidates.append({"kind": kind, "ref": ref, "order_id": last_delivered["id"],
                                "days": days_since_order})
             break
+
+    # ⭐ Review ask — the newest delivered order 3-7 days after delivery.
+    reviewed = ctx.get("reviewed") or set()
+    for o in sorted(delivered, key=_when, reverse=True):
+        d = (now - _when(o)).days
+        ref = f"review_ask:{o['id']}"
+        if REVIEW_ASK_DAYS[0] <= d <= REVIEW_ASK_DAYS[1] and ref not in sent:
+            picks = review_picks(o["items"], delivered, o["id"], reviewed)
+            if picks:
+                candidates.append({"kind": "review_ask", "ref": ref, "order_id": o["id"],
+                                   "days": d, "review_items": picks})
+            break
+
+    # 💡 Personal advice — only between orders, never twice for one product.
+    if TAVSIYA_DAYS[0] <= days_since_order < TAVSIYA_DAYS[1]:
+        pick = tavsiya_pick(live, ctx["available"], sent)
+        if pick:
+            candidates.append({"kind": "tavsiya", "ref": f"tavsiya:{pick['product']['id']}",
+                               "target": pick["product"], "history": pick["history"]})
 
     if not candidates:
         return None
@@ -646,6 +725,8 @@ async def _load_context(user_ids: list[int]) -> dict:
         optout = await conn.fetch(
             "SELECT user_id FROM retention_optout WHERE user_id = ANY($1::bigint[])", user_ids)
         banned = await conn.fetch("SELECT user_id FROM banned_users")
+        reviews = await conn.fetch(
+            "SELECT user_id, product_id FROM reviews WHERE user_id = ANY($1::bigint[])", user_ids)
         users = await conn.fetch(
             "SELECT user_id, full_name, language FROM users WHERE user_id = ANY($1::bigint[])", user_ids)
     ctx: dict = {"sent": {}, "last": {}, "offers": {}, "cart": {}, "reminded": {},
@@ -660,6 +741,9 @@ async def _load_context(user_ids: list[int]) -> dict:
         ctx["offers"][r["user_id"]] = dict(r)
     ctx["cart"] = {r["user_id"]: r["at"] for r in carts if r["at"]}
     ctx["reminded"] = {r["user_id"]: r["at"] for r in reminders if r["at"]}
+    ctx["reviewed"] = {}
+    for r in reviews:
+        ctx["reviewed"].setdefault(r["user_id"], set()).add(r["product_id"])
     return ctx
 
 
@@ -686,6 +770,7 @@ async def build_plans(only_user: int | None = None, ignore_limits: bool = False)
             "cart_touched_at": None if ignore_limits else c["cart"].get(uid),
             "cart_reminded_at": None if ignore_limits else c["reminded"].get(uid),
             "opted_out": (not ignore_limits) and uid in c["optout"],
+            "reviewed": c["reviewed"].get(uid, set()),
         }
         plan = plan_for_user(uid, orders_by_user[uid], now, ctx)
         if plan:
@@ -785,6 +870,36 @@ def build_text(plan: dict, lang: str, *, gift: dict | None, offer: dict | None,
         parts.append(_t("Oldingi buyurtmangizni bir tugmada takrorlash mumkin 👇",
                         "Прошлый заказ можно повторить одной кнопкой 👇", lang))
 
+    elif kind == "review_ask":
+        title = f"{hi}buyurtmangiz yetib borganiga {plan['days']} kun bo'ldi"
+        title_ru = f"{hi}ваш заказ доставлен {plan['days']} дн. назад"
+        parts.append(_t(f"⭐ <b>{title[:1].upper() + title[1:]}</b>",
+                        f"⭐ <b>{title_ru[:1].upper() + title_ru[1:]}</b>", lang))
+        parts.append(_t("Mahsulotlarimiz sifatini qanday baholaysiz? "
+                        "Ulardan mazali taomlar pishirib ko'rdingizmi? 😊",
+                        "Как вы оцениваете качество наших продуктов? "
+                        "Уже успели приготовить что-нибудь вкусное? 😊", lang))
+        parts.append(_t("Fikringiz biz uchun juda muhim — u boshqa xaridorlarga ham to'g'ri "
+                        "tanlov qilishga yordam beradi. Qaysi mahsulot haqida yozasiz? 👇",
+                        "Ваше мнение для нас очень важно — оно помогает и другим покупателям "
+                        "сделать правильный выбор. О каком продукте напишете? 👇", lang))
+
+    elif kind == "tavsiya":
+        import random
+        import product_tips
+        title = f"{hi}bir g'oya bor"
+        title_ru = f"{hi}есть идея"
+        parts.append(_t(f"💡 <b>{title[:1].upper() + title[1:]}</b>",
+                        f"💡 <b>{title_ru[:1].upper() + title_ru[1:]}</b>", lang))
+        # Already in the reader's script (product_tips handles uz_cyr itself,
+        # keeping "GHEE" Latin), so it does not go through _t again.
+        tip = product_tips.choose(plan.get("history") or [], plan["target"], lang,
+                                  turn=random.randrange(3))
+        if tip:
+            parts.append(_esc(tip))
+        name = _pname(plan["target"], lang)
+        parts.append(_t(f"<b>{name}</b> haqida batafsil 👇", f"Подробнее о <b>{name}</b> 👇", lang))
+
     else:  # win-back
         days = plan["days"]
         if kind == "winback_90":
@@ -811,7 +926,30 @@ def build_text(plan: dict, lang: str, *, gift: dict | None, offer: dict | None,
     return "\n\n".join(parts)
 
 
+def _optout_row(lang: str) -> list[InlineKeyboardButton]:
+    return [InlineKeyboardButton(text=_t("🔕 Bunday eslatma kerak emas", "🔕 Не присылать такие напоминания", lang),
+                                 callback_data="rt_off")]
+
+
 def build_keyboard(plan: dict, lang: str, message_id: int, also_products: list[dict] | None) -> InlineKeyboardMarkup:
+    if plan["kind"] == "review_ask":
+        items = plan.get("review_items") or []
+        rows = [[InlineKeyboardButton(text=_t(f"⭐ {html.unescape(_pname(p, lang))}",
+                                              f"⭐ {html.unescape(_pname(p, lang))}", lang)[:60],
+                                      callback_data=f"write_review:{p['id']}")]
+                for p in items[:REVIEW_BUTTONS]]
+        if len(items) > REVIEW_BUTTONS:
+            rows.append([InlineKeyboardButton(text=_t("📋 Boshqa mahsulot", "📋 Другой продукт", lang),
+                                              callback_data=f"review_order:{plan['order_id']}")])
+        rows.append(_optout_row(lang))
+        return InlineKeyboardMarkup(inline_keyboard=rows)
+    if plan["kind"] == "tavsiya":
+        p = plan["target"]
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=_t(f"👀 {html.unescape(_pname(p, lang))}",
+                                          f"👀 {html.unescape(_pname(p, lang))}", lang)[:60],
+                                  callback_data=f"product:{p['id']}")],
+            _optout_row(lang)])
     if plan["kind"] == "replenish":
         main = _t("🔁 Xuddi shuni qayta buyurtma qilish", "🔁 Заказать то же самое", lang)
     else:

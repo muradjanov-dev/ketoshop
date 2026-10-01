@@ -107,7 +107,11 @@ async def _render_product_detail(callback: CallbackQuery, product_id: int,
 
     import gamification
     rate = await gamification.buyer_rate(callback.from_user.id)
-    text = await build_caption(product, lang, rate)
+    # Personal advice from this buyer's past orders; a fresh open shows the
+    # next variant, a +/- repaint keeps the one already on screen.
+    import product_tips
+    tip = await product_tips.tip_for(callback.from_user.id, product, lang, advance=track_view)
+    text = await build_caption(product, lang, rate, tip=tip)
     out_of_stock = product["quantity"] <= 0
 
     keyboard = await _detail_keyboard(callback.from_user.id, product_id, back_category, back_page, lang, out_of_stock)

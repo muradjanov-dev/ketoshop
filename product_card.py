@@ -28,7 +28,7 @@ DESC_IN_CARD_MAX = 650
 
 
 async def build_caption(product: dict, lang: str, rate: float | None,
-                        extra: str | None = None) -> str:
+                        extra: str | None = None, tip: str | None = None) -> str:
     """The card's text. `rate` is the Keto cashback to advertise (None = don't
     show that line at all); callers pass gamification.buyer_rate(user) for a
     buyer, or the base rate for an audience with no single reader.
@@ -37,6 +37,11 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     make with this today" (product_ideas). It is budgeted against the same
     1024-character caption limit, so a long idea shortens the description
     rather than pushing the price off the card.
+
+    `tip` is the buyer's personal advice line (product_tips). It goes right
+    under the name, above the description — the first thing they read
+    (owner, 2026-10-02) — and is budgeted the same way: a long tip trims the
+    description, never the other way round.
     """
     import gamification
     import gift_campaign
@@ -60,7 +65,8 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     # Trim here, not in tg_safety's net: that would save the message by
     # dropping the price lines below instead of the tail of the description.
     desc_budget = DESC_IN_CARD_MAX - (len(extra) + 2 if extra else 0) \
-                                   - (len(gift) + 2 if gift else 0)
+                                   - (len(gift) + 2 if gift else 0) \
+                                   - (len(tip) + 6 if tip else 0)
     if len(desc) > desc_budget:
         desc = desc[: max(40, desc_budget - 1)].rstrip() + "…"
 
@@ -76,6 +82,11 @@ async def build_caption(product: dict, lang: str, rate: float | None,
         available=product["quantity"],
         seller=seller_name,
     )
+    if tip:
+        import html as _html
+        # The card template opens with the name, then a blank line — the tip
+        # goes into that gap, ahead of the description.
+        text = text.replace("\n\n", f"\n\n💡 <i>{_html.escape(tip, quote=False)}</i>\n\n", 1)
 
     if discount > 0:
         text += "\n" + get_text("product_discount_line", lang,
