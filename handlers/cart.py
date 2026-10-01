@@ -1331,7 +1331,12 @@ async def process_payment(message: Message):
     lang = await get_user_language(message.from_user.id)
 
     from database import update_order_status
+    before = await get_order(order_id)
     await update_order_status(order_id, "confirmed")
+
+    import order_admin_feed
+    order_admin_feed.status_changed(message.bot, order_id, (before or {}).get("status"),
+                                    "confirmed", "Mijoz — Telegram orqali to'lov")
 
     await message.answer(
         get_text("payment_success", lang, order_id=order_id),
@@ -1497,28 +1502,11 @@ async def buyer_cancel_do(callback: CallbackQuery, bot: Bot):
     )
     await callback.answer()
 
-    # Notify admins so they don't prep an order that's already cancelled
-    import asyncio
-    import logging
-    logger = logging.getLogger(__name__)
-    customer_name = callback.from_user.full_name or "—"
-
-    async def _notify_admin(admin_id: int) -> None:
-        admin_lang = await get_user_language(admin_id)
-        try:
-            await bot.send_message(
-                chat_id=admin_id,
-                text=get_text("buyer_cancelled_by_user_admin", admin_lang,
-                    order_id=order_id,
-                    name=customer_name,
-                    phone=order.get("phone", "—"),
-                ),
-                parse_mode="HTML",
-            )
-        except Exception as exc:
-            logger.warning("Buyer-cancel notice to admin %s failed: %s", admin_id, exc)
-
-    await asyncio.gather(*(_notify_admin(aid) for aid in ADMIN_IDS), return_exceptions=True)
+    # Notify admins so they don't prep an order that's already cancelled —
+    # the shared order card (items, customer, who) replaces the old one-liner.
+    import order_admin_feed
+    order_admin_feed.status_changed(bot, order_id, order["status"], "cancelled",
+                                    f"Mijozning o'zi (bot) — {order_admin_feed.actor(callback.from_user)}")
 
 
 # ===== HELPERS =====

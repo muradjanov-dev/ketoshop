@@ -3120,6 +3120,8 @@ async def manual_save(callback: CallbackQuery, state: FSMContext):
         delivery_method=data["delivery"],
         status=data["status"],
     )
+    import order_admin_feed
+    order_admin_feed.manual_created(callback.bot, order_id, callback.from_user)
     await state.clear()
     await callback.message.edit_text(
         get_text("manual_saved", lang, order_id=order_id),
@@ -3152,6 +3154,8 @@ async def b2b_save(callback: CallbackQuery, state: FSMContext):
         items_data=items,
         total=_items_total(items),
     )
+    import order_admin_feed
+    order_admin_feed.manual_created(callback.bot, order_id, callback.from_user, b2b=True)
     await state.clear()
     await callback.message.edit_text(
         get_text("b2b_saved", lang, order_id=order_id),
