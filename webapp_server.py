@@ -946,26 +946,10 @@ async def api_order_cancel(request: web.Request):
     if cancelled is None:
         return _json({"error": "not_found"}, status=404)
 
-    # Notify admins in parallel (same pattern as the bot path)
-    bot: Bot = request.app["bot"]
-    customer_name = order.get("customer_name") or "—"
-    phone = order.get("phone") or "—"
-
-    async def _notify(admin_id: int) -> None:
-        admin_lang = await get_user_language(admin_id)
-        try:
-            await bot.send_message(
-                chat_id=admin_id,
-                text=get_text("buyer_cancelled_by_user_admin", admin_lang,
-                              order_id=order_id, name=customer_name, phone=phone),
-                parse_mode="HTML",
-            )
-        except Exception as exc:
-            logger.warning("Buyer-cancel notice (Mini App) to admin %s failed: %s",
-                           admin_id, exc)
-
-    import asyncio
-    await asyncio.gather(*(_notify(aid) for aid in ADMIN_IDS), return_exceptions=True)
+    # Notify admins with the shared order card (same as the bot path)
+    import order_admin_feed
+    order_admin_feed.status_changed(request.app["bot"], order_id, order["status"], "cancelled",
+                                    "Mijozning o'zi (Mini App)")
 
     return _json({"ok": True, "order_id": order_id})
 

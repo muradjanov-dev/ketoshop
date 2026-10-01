@@ -374,7 +374,8 @@
 
   /* ── card ── */
   .kb-card{background:var(--kb-card-bg);border:1px solid var(--kb-card-line);border-radius:13px;padding:11px 12px 10px;
-           box-shadow:0 1px 2px rgba(0,0,0,.16),0 6px 16px -12px rgba(0,0,0,.5);position:relative;cursor:grab;touch-action:pan-y;
+           box-shadow:0 1px 2px rgba(0,0,0,.16),0 6px 16px -12px rgba(0,0,0,.5);position:relative;cursor:grab;touch-action:pan-x pan-y;
+           -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;
            transition:transform .18s cubic-bezier(.4,0,.2,1),box-shadow .18s,border-color .18s,opacity .18s;
            animation:kbIn .32s cubic-bezier(.22,1,.36,1) backwards;animation-delay:calc(var(--i,0)*28ms)}
   @keyframes kbIn{from{opacity:0;transform:translateY(9px) scale(.985)}to{opacity:1;transform:none}}
@@ -2916,6 +2917,18 @@ function kbCardHtml(c,col,i){
 }
 
 /* ── moving ── */
+// Moves that a stray finger must never make on its own (owner, 2026-10-01:
+// a courier swiping the board could flip an order without noticing). A drop
+// from drag & drop always asks; delivered/cancelled ask from any button too,
+// because they message the buyer and book stock/expenses at once.
+const KB_CONFIRM_ALWAYS=new Set(['delivered','cancelled']);
+function kbConfirmMove(id,from,target,fromDrag){
+  if(!fromDrag&&!KB_CONFIRM_ALWAYS.has(target))return true;
+  const notify=$('#kbNotify')&&$('#kbNotify').checked;
+  return confirm(`#${id}: «${KB_LABEL[from]||from}» → «${KB_LABEL[target]||target}»\n\n`+
+    `Rostdan o’tkazilsinmi?`+(notify?'\n(Mijozga xabar ketadi)':''));
+}
+
 async function kbMove(id,target,opts){
   const card=kbCard(id);
   if(!card||KB_BUSY.has(id))return;
@@ -2924,6 +2937,7 @@ async function kbMove(id,target,opts){
     toast(`⚠️ «${KB_LABEL[from]}» dan «${KB_LABEL[target]}» ga o’tkazib bo’lmaydi`);
     return;
   }
+  if(!kbConfirmMove(id,from,target,!!(opts&&opts.fromDrag)))return;
   KB_BUSY.add(id);
   const el=document.querySelector(`.kb-card[data-id="${id}"]`);
   if(el)el.classList.add('busy');
@@ -3017,7 +3031,7 @@ function kbDragEnd(e){
   if(d.col){
     const ok=d.ok,target=d.target;
     d.col.classList.remove('over','deny');
-    if(ok&&target)kbMove(d.id,target);
+    if(ok&&target)kbMove(d.id,target,{fromDrag:true});
     else if(target&&target!==d.status&&!d.col.querySelector(`.kb-card[data-id="${d.id}"]`))
       toast(`⚠️ «${KB_LABEL[d.status]}» dan «${KB_LABEL[target]}» ga o’tkazib bo’lmaydi`);
   }
@@ -3028,19 +3042,32 @@ $('#kanban').addEventListener('pointerdown',e=>{
   const cardEl=e.target.closest('.kb-card');
   if(!cardEl||e.target.closest('button'))return;
   if(KB_BUSY.has(+cardEl.dataset.id))return;
-  const sx=e.clientX,sy=e.clientY;let armed=false;
+  const sx=e.clientX,sy=e.clientY;let armed=false,timer=null;
+  const touch=e.pointerType!=='mouse';
+  // Finger: a card is picked up only after a deliberate long-press. Any swipe
+  // before that is the board scrolling, so a courier flicking through columns
+  // can no longer drag an order by accident. Mouse keeps the quick drag.
+  const blockScroll=ev=>{if(armed)ev.preventDefault();};
+  if(touch){
+    timer=setTimeout(()=>{
+      timer=null;armed=true;
+      if(navigator.vibrate)navigator.vibrate(30);
+      document.addEventListener('touchmove',blockScroll,{passive:false});
+      kbDragStart({clientX:sx,clientY:sy},cardEl);
+    },KB_LONG_PRESS_MS);
+  }
   const move=ev=>{
     if(!armed){
-      // a small threshold so a tap/click still reads as a click, and a
-      // vertical flick still scrolls the column on a phone
-      if(Math.abs(ev.clientX-sx)<6&&Math.abs(ev.clientY-sy)<6)return;
-      if(ev.pointerType!=='mouse'&&Math.abs(ev.clientY-sy)>Math.abs(ev.clientX-sx)*1.4){cleanup();return;}
-      armed=true;kbDragStart(ev,cardEl);
+      if(Math.abs(ev.clientX-sx)<8&&Math.abs(ev.clientY-sy)<8)return;
+      if(touch){cleanup();return;}          // moved before the hold — it's a scroll
+      armed=true;kbDragStart(ev,cardEl);    // mouse: small threshold keeps clicks as clicks
     }
     ev.preventDefault();kbDragMove(ev);
   };
-  const up=ev=>{cleanup();if(armed)kbDragEnd(ev);};
+  const up=ev=>{const was=armed;cleanup();if(was)kbDragEnd(ev);};
   const cleanup=()=>{
+    if(timer){clearTimeout(timer);timer=null;}
+    document.removeEventListener('touchmove',blockScroll);
     window.removeEventListener('pointermove',move);
     window.removeEventListener('pointerup',up);
     window.removeEventListener('pointercancel',up);
@@ -3049,6 +3076,9 @@ $('#kanban').addEventListener('pointerdown',e=>{
   window.addEventListener('pointerup',up);
   window.addEventListener('pointercancel',up);
 });
+const KB_LONG_PRESS_MS=450;
+// a long-press must not open the phone's "copy / share" menu over the card
+$('#kanban').addEventListener('contextmenu',e=>{if(e.target.closest('.kb-card'))e.preventDefault();});
 
 /* ── card buttons ── */
 $('#kanban').addEventListener('click',e=>{

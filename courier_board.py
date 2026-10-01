@@ -395,6 +395,11 @@ async def move_order(order_id: int, target: str, *, expected_from: str | None = 
 
     fresh = await database.get_order(order_id) or order
 
+    # Admins hear about EVERY move, backward ones included — the panel logs in
+    # with a shared password, so it can only say the change came from the site.
+    import order_admin_feed
+    order_admin_feed.status_changed(bot, order_id, current, target, "Sayt — Kuryer doskasi")
+
     # Only a forward move is worth a buyer's notification; dragging a card
     # back is an admin fixing the board, not news for the customer.
     forward = _RANK.get(target, -1) > _RANK.get(current, -1) or target == "cancelled"

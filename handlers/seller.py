@@ -1543,6 +1543,7 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
         "delivered": "delivered",
     }
     new_status = status_map.get(action, "pending")
+    old_status = order.get("status")
 
     if new_status == "cancelled":
         # Atomic: flips status + restores stock in one transaction (idempotent)
@@ -1568,6 +1569,9 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
             return
 
     order = await get_order(order_id)
+
+    import order_admin_feed
+    order_admin_feed.status_changed(bot, order_id, old_status, new_status, callback.from_user)
 
     # Notify buyer with a status-specific message
     if order:
