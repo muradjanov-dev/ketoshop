@@ -2167,6 +2167,9 @@
 
 <!-- ===== PAGE: HOME ===== -->
 <div class="page active" id="page-home">
+  <!-- Every product, auto-scrolling, at the very top (owner, 2026-10-02:
+       "barcha mahsulotlarni saytda eng tepada"). Filled by renderHomePage. -->
+  <div id="home-top-carousel"></div>
   <div class="home-hero">
     <div class="home-hero-eyebrow" id="home-hero-eyebrow"></div>
     <div class="home-hero-title" id="home-hero-title"></div>
@@ -3364,8 +3367,10 @@ function ketoBadgeHtml(amount) {
 // ===== HOME PAGE =====
 async function renderHomePage() {
   const container = document.getElementById('home-sections');
+  const topSlot = document.getElementById('home-top-carousel');
   const loading = document.getElementById('home-loading');
   container.innerHTML = '';
+  topSlot.innerHTML = '';
   loading.style.display = 'block';
   loading.textContent = t.loading;
 
@@ -3379,16 +3384,18 @@ async function renderHomePage() {
     const [topProducts, results, allProductsResp, topCustomers] = await Promise.all([
       api('/api/top').catch(() => []),
       Promise.all(promises),
-      api('/api/products?page=0&per_page=40').catch(() => ({ products: [] })),
+      // Every product — the API caps a page at 200, well above the catalogue.
+      api('/api/products?page=0&per_page=200').catch(() => ({ products: [] })),
       api('/api/leaderboard').catch(() => []),
     ]);
     const allProducts = allProductsResp.products || [];
 
     loading.style.display = 'none';
 
-    // All-products carousel — auto-rotating, at the very top of the home page.
+    // All-products carousel — auto-rotating, above the banners: the first
+    // thing on the page is the whole catalogue moving by.
     if (Array.isArray(allProducts) && allProducts.length) {
-      container.appendChild(buildAutoCarousel(allProducts));
+      topSlot.appendChild(buildAutoCarousel(allProducts));
     }
 
     // Top-3 most-ordered products — podium just below the all-products carousel.
