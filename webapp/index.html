@@ -2170,6 +2170,29 @@
     letter-spacing: .02em; color: var(--leaf-deep);
   }
   :root[data-site-theme="night"] .detail-tip-label { color: var(--leaf); }
+
+  /* ── Product detail: full screen, nothing cropped (owner, 2026-10-02:
+     "biror mahsulotni bosganda butun oyna ochilsin, rasm va tavsif maksimal
+     to'liq ko'rinsin, kesilib qolmasin"). Scoped to #detail-modal so the
+     cart and other sheets keep their bottom-sheet look. The photo is shown
+     whole (contain) on a soft ground instead of cover-cropped to 280px;
+     the description already renders in full and now has the whole screen. */
+  #detail-modal { align-items: stretch; }
+  #detail-modal .modal,
+  .modal-overlay#detail-modal .modal {
+    height: 100vh; height: 100dvh; max-height: none;
+    border-radius: 0; display: flex; flex-direction: column;
+  }
+  #detail-modal .modal-header { flex-shrink: 0; padding-top: calc(12px + env(safe-area-inset-top, 0px)); }
+  #detail-modal .modal img.detail-img,
+  #detail-modal .modal video.detail-video,
+  #detail-modal .detail-media-carousel .media-slide img,
+  #detail-modal .detail-media-carousel .media-slide video {
+    width: 100%; height: auto; max-height: 62vh; max-height: 62dvh;
+    object-fit: contain; display: block; background: var(--secondary-bg);
+  }
+  #detail-modal .detail-body { flex: 1 0 auto; }
+  #detail-modal .detail-desc { opacity: 0.9; overflow: visible; max-height: none; }
 </style>
 </head>
 <body>
@@ -3865,6 +3888,9 @@ document.getElementById('catalog-search').addEventListener('input', function(e) 
 
 // ===== PRODUCT DETAIL =====
 async function openDetail(productId, isSet = false) {
+  // The product opens over the whole window — make sure the Mini App
+  // itself is expanded too, even if the buyer had collapsed it.
+  try { tg.expand(); } catch (_) {}
   try {
     const url = isSet ? '/api/set/' + productId : '/api/product/' + productId;
     const p = await api(url);
