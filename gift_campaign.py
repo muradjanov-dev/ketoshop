@@ -477,6 +477,117 @@ async def announce_upgrade(bot: Bot) -> tuple[int, int]:
     return sent, failed
 
 
+# ──────────────── mid-campaign reminder (owner, 2026-10-02) ───────────────────
+# "Ertaga ertalab hammaga: bot orqali istalgan buyurtmaga 100 gr Eritritol
+# sovg'a — xabaringiz bormi? Sovg'a olganlarga esa: yana olishni istaysizmi?
+# Manipulyatsiya bo'lmasin." So: two plain, true texts — no "only today", no
+# countdown pressure beyond the real end date — sent once, from 09:00 Tashkent
+# on REMINDER_FROM, with the gift's photo and the shop button.
+
+REMINDER_KEY = "gift-reminder-2026-10-03"
+REMINDER_FROM = datetime(2026, 10, 3).date()
+REMINDER_WINDOW = (9, 12)
+
+_REMIND = {
+    "new": {
+        "uz": (
+            "🎁 <b>Xabaringiz bormi?</b>\n\n"
+            "Ketoshop botida berilgan <b>istalgan buyurtmaga</b> — summasidan qat'i nazar — "
+            "<b>100 gr Eritritol</b> (shakar o'rnini bosuvchi) sovg'a qilinyapti.\n\n"
+            "Hech qanday kod kerak emas: sovg'a buyurtmangizga o'zi qo'shiladi.\n"
+            "🍬 Eritritol — choy, qahva va pishiriqlar uchun shakarsiz shirinlik.\n\n"
+            "⏳ Aksiya <b>{until}</b> gacha davom etadi.\n\n"
+            "Kerakli mahsulotlaringiz bo'lsa, do'kon shu yerda 👇"
+        ),
+        "ru": (
+            "🎁 <b>Вы уже знаете?</b>\n\n"
+            "К <b>любому заказу</b> в боте Ketoshop — на любую сумму — мы дарим "
+            "<b>100 г эритрита</b> (заменитель сахара).\n\n"
+            "Никаких промокодов: подарок добавится к заказу сам.\n"
+            "🍬 Эритрит — сладость без сахара для чая, кофе и выпечки.\n\n"
+            "⏳ Акция действует до <b>{until}</b>.\n\n"
+            "Если что-то нужно — магазин здесь 👇"
+        ),
+    },
+    "again": {
+        "uz": (
+            "🎁 <b>Yana sovg'a olishni istaysizmi?</b>\n\n"
+            "Sovg'a qilingan Eritritol sizga yoqdi degan umiddamiz 😊\n\n"
+            "Aksiya davom etyapti: botdagi <b>har bir yangi buyurtmaga</b> yana "
+            "<b>100 gr Eritritol</b> bepul qo'shiladi — summasidan qat'i nazar.\n\n"
+            "⏳ Aksiya <b>{until}</b> gacha davom etadi.\n\n"
+            "Keyingi xaridingiz kerak bo'lganda, do'kon shu yerda 👇"
+        ),
+        "ru": (
+            "🎁 <b>Хотите ещё один подарок?</b>\n\n"
+            "Надеемся, подаренный эритрит вам понравился 😊\n\n"
+            "Акция продолжается: к <b>каждому новому заказу</b> в боте снова добавится "
+            "<b>100 г эритрита</b> бесплатно — на любую сумму.\n\n"
+            "⏳ Акция действует до <b>{until}</b>.\n\n"
+            "Когда понадобится следующая покупка — магазин здесь 👇"
+        ),
+    },
+}
+
+
+def reminder_text(segment: str, lang: str, until: datetime) -> str:
+    entry = _REMIND[segment]
+    text = (entry["ru"] if lang == "ru" else entry["uz"]).replace("{until}", until.strftime("%d.%m.%Y"))
+    if lang == "uz_cyr":
+        from translit import lat_to_cyr
+        text = lat_to_cyr(text)
+    return text
+
+
+def reminder_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """The shop first (owner: "do'kon inline buttoni bilan"); the bot's own
+    catalogue as the fallback when the Mini App URL isn't configured."""
+    from locales import get_text
+    if WEBAPP_URL:
+        row = [InlineKeyboardButton(text=get_text("btn_store", lang), web_app=WebAppInfo(url=WEBAPP_URL))]
+    else:
+        row = [InlineKeyboardButton(text=get_text("btn_catalog", lang), callback_data="catalog")]
+    return InlineKeyboardMarkup(inline_keyboard=[row])
+
+
+def has_gift_line(raw_items) -> bool:
+    import json
+    try:
+        items = json.loads(raw_items) if isinstance(raw_items, str) else (raw_items or [])
+    except (TypeError, ValueError):
+        return False
+    return any(isinstance(it, dict) and it.get("is_gift") for it in items)
+
+
+async def gift_receivers(since: datetime) -> set[int]:
+    """Buyers with at least one non-cancelled order carrying the gift since
+    the campaign was announced."""
+    async with database.pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT user_id, items FROM orders
+                WHERE created_at >= $1 AND status <> 'cancelled' AND user_id IS NOT NULL""", since)
+    return {r["user_id"] for r in rows if has_gift_line(r["items"])}
+
+
+async def send_reminder(bot: Bot) -> dict:
+    row = await _state(force=True)
+    until = (row["ends_at"] + TZ_OFFSET) if row and row.get("ends_at") else _now_tk() + timedelta(days=DURATION_DAYS)
+    got_gift = await gift_receivers(row["announced_at"]) if row and row.get("announced_at") else set()
+    photo = await _product_photo(await gift_product(force=True))
+    user_ids = await database.get_all_user_ids()
+    langs = await database.get_user_languages(user_ids)
+    stats = {"new": 0, "again": 0, "failed": 0}
+    for uid in user_ids:
+        lang = langs.get(uid, "uz")
+        segment = "again" if uid in got_gift else "new"
+        if await _send_photo(bot, uid, photo, reminder_text(segment, lang, until), reminder_keyboard(lang)):
+            stats[segment] += 1
+        else:
+            stats["failed"] += 1
+        await asyncio.sleep(SEND_DELAY)
+    return stats
+
+
 async def announce(bot: Bot) -> tuple[int, int]:
     # Stamp FIRST: a crash or redeploy halfway through the broadcast must not
     # re-announce to the people who already got it on the next boot.
@@ -588,6 +699,19 @@ async def _tick(bot: Bot) -> None:
             f"📣 ✅ {sent} ta yetkazildi, ⚠️ {failed} ta yetmadi.\n"
             f"📦 Ombordagi qoldiq: {fmt_sum(float((prod or {}).get('quantity') or 0))} — "
             "endi har buyurtmaga ketadi, zaxirani kuzatib boring."))
+
+    # 1c. The 2026-10-03 reminder: once, from 09:00, only while the campaign
+    # is still on and the gift is in the catalogue (claimed before sending).
+    if (_active_row(row) and now_tk.date() >= REMINDER_FROM
+            and REMINDER_WINDOW[0] <= now_tk.hour < REMINDER_WINDOW[1]
+            and await gift_product() is not None
+            and await database.claim_release_notes(REMINDER_KEY)):
+        stats = await send_reminder(bot)
+        await _notify_admins(bot, (
+            "🎁 <b>Sovg'a eslatmasi yuborildi</b>\n"
+            f"🆕 «Xabaringiz bormi?» — {stats['new']} ta\n"
+            f"🔁 «Yana sovg'a olishni istaysizmi?» — {stats['again']} ta\n"
+            f"⚠️ Yetmadi: {stats['failed']} ta"))
 
     # 2. Book every delivered gift into Chiqimlar.
     try:
