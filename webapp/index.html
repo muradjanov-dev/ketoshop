@@ -12,16 +12,19 @@
 <script src="/static/leaflet.js"></script>
 <style>
   /* ═══════════════════════════════════════════════════════════════════════
-     KETOSHOP — "AVOKADO" DESIGN SYSTEM (2026-10-02)
-     Owner brief: "kreativ va yangicha, lekin estetik — hozirgi holatdan
-     boshqacha sayt". A full visual redesign that keeps every class name and
-     id the script below relies on, so all behaviour is unchanged.
+     KETOSHOP — "QUYOSH" DESIGN SYSTEM (2026-10-02)
+     Owner brief, round 1: "kreativ va yangicha, lekin estetik". Round 2:
+     "zerikarli bo'lib qolipti — yanada estetik, yorqinroq ranglar bilan,
+     biznesning stiliga moslab". Every class name and id the script relies
+     on is unchanged, so all behaviour is unchanged.
 
-     The idea: an editorial grocery poster. A wide display face (Unbounded)
-     for headings and money, a calm grotesk (Onest) for everything else, one
-     loud accent — avocado lime — and a dark "dock" for navigation in every
-     theme. Night (default) puts the lime hero on near-black; day is warm
-     paper with an ink hero; "organic" is sage with a sunflower accent.
+     The look: a sunny grocery poster in Ketoshop's own colours — honey
+     yellow, orange, fresh leaf green and berry — on warm cream. Unbounded
+     for headings and money, Onest for text. Product tiles, category chips
+     and section numbers each pick up one of the fruit colours below, so the
+     page reads colourful without one loud block. Day is the default theme
+     (owner, 2026-10-02); night (warm cocoa) and organic (garden green) stay
+     in the profile switch.
 
      Fonts are self-hosted under /static/fonts/ for the same reason Leaflet
      is (third-party CDNs are unreliable from Uzbekistan). The cyrillic-ext
@@ -54,44 +57,60 @@
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 
   /* ── Tokens ────────────────────────────────────────────────────────────
-     Day ("qog'oz") is the :root default; night is the site default via
-     data-site-theme="night" (set by applySiteTheme() below). Tints are
-     plain rgba tokens rather than color-mix(), so older iOS webviews get
+     Day ("quyosh") is the :root default and the site default. Tints are
+     plain rgba/hex tokens rather than color-mix(), so older iOS webviews get
      the same look. The legacy names (--btn, --berry, --leaf, --link,
      --surface, --hairline, --muted) stay because inline styles in the
-     script still read them. */
+     script still read them. --c-* are the fruit colours (strong, white text
+     reads on all but sun); --t-* are their soft tints. */
   :root {
-    --bg: #F1EDE3;
-    --bg-glow: rgba(200,238,98,.55);
-    --secondary-bg: #E6E1D4;
-    --surface: #FFFDF7;
-    --surface-hi: #ECE7DA;
-    --text: #15201A;
-    --hint: #6C756A;
-    --muted: #8D958A;
-    --hairline: rgba(21,32,26,.10);
-    --pop: #C8EE62;
-    --on-pop: #15201A;
-    --pop-soft: rgba(200,238,98,.34);
-    --btn: #15201A;
-    --btn-text: #F3F7E6;
-    --link: #2D6A34;
-    --berry: #E0502F;
-    --berry-soft: rgba(224,80,47,.12);
-    --gold: #F2B32E;
-    --leaf: #5E9F3B;
-    --leaf-deep: #3F7D27;
-    --leaf-soft: rgba(94,159,59,.14);
-    --hero-bg: #15201A;
-    --hero-text: #F3F7E6;
-    --hero-accent: #C8EE62;
-    --dock-bg: rgba(21,32,26,.94);
-    --dock-fg: rgba(243,247,230,.62);
-    --glass: rgba(255,253,247,.78);
-    --scrim: rgba(21,32,26,.42);
-    --shadow-1: 0 1px 2px rgba(21,32,26,.05), 0 6px 16px -8px rgba(21,32,26,.16);
-    --shadow-2: 0 2px 6px rgba(21,32,26,.06), 0 22px 44px -18px rgba(21,32,26,.32);
-    --shadow-pop: 0 10px 24px -12px rgba(110,150,20,.65);
+    --c-sun: #FFC531;    --t-sun: #FFF3C8;
+    --c-orange: #FF7A1A; --t-orange: #FFE9D8;
+    --c-leaf: #2FA35A;   --t-leaf: #E2F5E7;
+    --c-berry: #EC2F55;  --t-berry: #FFE4EA;
+    --c-mint: #13AE96;   --t-mint: #DAF5EF;
+    --c-lilac: #8B6CF0;  --t-lilac: #EDE7FF;
+    --c-sky: #2E96E0;    --t-sky: #DFF0FC;
+
+    --bg: #FFF8EB;
+    --secondary-bg: #FCEBCB;
+    --surface: #FFFFFF;
+    --surface-hi: #FFF1D9;
+    --text: #2B1D0E;
+    --hint: #8A7457;
+    --muted: #A8957A;
+    --hairline: rgba(120,80,20,.13);
+    --pop: #FFC531;
+    --on-pop: #2B1D0E;
+    --pop-soft: rgba(255,197,49,.26);
+    --btn: #FF6A1F;
+    --btn-grad: linear-gradient(135deg, #FFA02E 0%, #FF6A1F 55%, #FF4B4B 100%);
+    --btn-text: #FFFFFF;
+    --link: #E05A0C;
+    --berry: #EC2F55;
+    --berry-soft: rgba(236,47,85,.11);
+    --gold: #FFB300;
+    --leaf: #2FA35A;
+    --leaf-deep: #1D8446;
+    --leaf-soft: rgba(47,163,90,.13);
+    --hero-bg: linear-gradient(140deg, #FFE660 0%, #FFC531 45%, #FF9A2E 100%);
+    --hero-text: #2B1D0E;
+    --hero-accent: #EC2F55;
+    --hero-on-accent: #FFFFFF;
+    --hero-cta-bg: #2B1D0E;
+    --hero-cta-fg: #FFE660;
+    --dock-bg: rgba(255,255,255,.92);
+    --dock-fg: #9C8667;
+    --dock-line: rgba(120,80,20,.12);
+    --glass: rgba(255,250,240,.86);
+    --scrim: rgba(43,29,14,.42);
+    --glow-1: rgba(255,206,72,.55);
+    --glow-2: rgba(255,138,92,.26);
+    --glow-3: rgba(60,200,140,.20);
+    --shadow-1: 0 1px 2px rgba(120,70,10,.06), 0 8px 18px -10px rgba(120,70,10,.24);
+    --shadow-2: 0 2px 6px rgba(120,70,10,.07), 0 24px 46px -20px rgba(120,70,10,.36);
+    --shadow-pop: 0 12px 26px -12px rgba(255,106,31,.75);
+    --dock-shadow: 0 18px 40px -18px rgba(120,60,10,.5), inset 0 1px 0 rgba(255,255,255,.6);
 
     --font-display: 'Unbounded', 'Onest', system-ui, sans-serif;
     --font-body: 'Onest', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -102,6 +121,16 @@
     --r-md: 18px;
     --r-lg: 24px;
     --r-xl: 32px;
+    /* Imperfect "blob" shapes — the owner's favourite detail (2026-10-02:
+       "shunday nomukammal shakllardan foydalan, bular estetik"). Full blobs
+       for decorative shapes; the "soft" ones are only slightly uneven, so a
+       product photo inside one never loses its edges. */
+    --blob-a: 42% 58% 55% 45% / 48% 42% 58% 52%;
+    --blob-b: 58% 42% 45% 55% / 42% 58% 42% 58%;
+    --blob-c: 63% 37% 54% 46% / 55% 48% 52% 45%;
+    --blob-d: 38% 62% 41% 59% / 53% 39% 61% 47%;
+    --soft-a: 26px 34px 22px 36px / 30px 24px 34px 26px;
+    --soft-b: 34px 24px 36px 26px / 24px 32px 26px 34px;
     --dock-h: 64px;
     --dock-gap: 10px;
     --tab-bar-h: 64px;
@@ -110,80 +139,87 @@
   }
 
   :root[data-site-theme="night"] {
-    --bg: #0C110E;
-    --bg-glow: rgba(200,241,105,.11);
-    --secondary-bg: #18201B;
-    --surface: #131A16;
-    --surface-hi: #1F2923;
-    --text: #EEF3E6;
-    --hint: #8F9A91;
-    --muted: #6F7A71;
-    --hairline: rgba(238,243,230,.085);
-    --pop: #C8F169;
-    --on-pop: #0C110E;
-    --pop-soft: rgba(200,241,105,.13);
-    --btn: #C8F169;
-    --btn-text: #0C110E;
-    --link: #C8F169;
-    --berry: #FF7A59;
-    --berry-soft: rgba(255,122,89,.14);
+    /* Warm cocoa instead of a cold black, so the fruit colours glow. */
+    --c-leaf: #3CC170; --c-berry: #FF4D6D; --c-lilac: #9F86FF; --c-sky: #43A9F2; --c-mint: #22C3A6;
+    --t-sun: rgba(255,197,49,.13);  --t-orange: rgba(255,122,26,.14); --t-leaf: rgba(60,193,112,.15);
+    --t-berry: rgba(255,77,109,.15); --t-mint: rgba(34,195,166,.15); --t-lilac: rgba(159,134,255,.17);
+    --t-sky: rgba(67,169,242,.15);
+    --bg: #17110C;
+    --secondary-bg: #241B14;
+    --surface: #211912;
+    --surface-hi: #2F251C;
+    --text: #FFF3E2;
+    --hint: #BAA587;
+    --muted: #8E7C64;
+    --hairline: rgba(255,236,210,.09);
+    --pop: #FFC531;
+    --on-pop: #2B1D0E;
+    --pop-soft: rgba(255,197,49,.15);
+    --btn: #FF7A1A;
+    --link: #FFB547;
+    --berry: #FF5B78;
+    --berry-soft: rgba(255,91,120,.15);
     --gold: #FFD166;
-    --leaf: #9FDB6E;
-    --leaf-deep: #9FDB6E;
-    --leaf-soft: rgba(159,219,110,.12);
-    --hero-bg: #C8F169;
-    --hero-text: #0C110E;
-    --hero-accent: #0C110E;
-    --dock-bg: rgba(27,35,30,.9);
-    --dock-fg: rgba(238,243,230,.55);
-    --glass: rgba(19,26,22,.8);
-    --scrim: rgba(3,6,4,.62);
-    --shadow-1: inset 0 1px 0 rgba(255,255,255,.035), 0 8px 20px -12px rgba(0,0,0,.8);
+    --leaf: #4ED37F;
+    --leaf-deep: #4ED37F;
+    --leaf-soft: rgba(78,211,127,.14);
+    --dock-bg: rgba(42,32,23,.92);
+    --dock-fg: rgba(255,243,226,.55);
+    --dock-line: rgba(255,255,255,.08);
+    --glass: rgba(33,25,18,.86);
+    --scrim: rgba(5,3,2,.62);
+    --glow-1: rgba(255,170,40,.17);
+    --glow-2: rgba(255,80,100,.10);
+    --glow-3: rgba(40,190,120,.08);
+    --shadow-1: inset 0 1px 0 rgba(255,255,255,.04), 0 8px 20px -12px rgba(0,0,0,.8);
     --shadow-2: inset 0 1px 0 rgba(255,255,255,.05), 0 26px 50px -20px rgba(0,0,0,.9);
-    --shadow-pop: 0 12px 30px -12px rgba(200,241,105,.5);
+    --shadow-pop: 0 12px 28px -12px rgba(255,122,26,.6);
+    --dock-shadow: 0 18px 40px -16px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.06);
     color-scheme: dark;
   }
 
   :root[data-site-theme="organic"] {
-    --bg: #E2E9D9;
-    --bg-glow: rgba(245,201,74,.42);
-    --secondary-bg: #D3DDC8;
-    --surface: #F5F8F0;
-    --surface-hi: #DDE6D3;
-    --text: #1B2B1E;
-    --hint: #627461;
-    --muted: #7F8F7D;
-    --hairline: rgba(27,43,30,.11);
-    --pop: #F5C94A;
-    --on-pop: #1B2B1E;
-    --pop-soft: rgba(245,201,74,.3);
-    --btn: #2F5E34;
-    --btn-text: #F5F8F0;
-    --link: #2F5E34;
-    --berry: #D44A35;
-    --berry-soft: rgba(212,74,53,.12);
-    --gold: #E3A92A;
-    --leaf: #4E8C3A;
-    --leaf-deep: #3B7229;
-    --leaf-soft: rgba(78,140,58,.14);
-    --hero-bg: #2F5E34;
-    --hero-text: #F5F8F0;
-    --hero-accent: #F5C94A;
-    --dock-bg: rgba(31,58,35,.94);
-    --dock-fg: rgba(245,248,240,.62);
-    --glass: rgba(245,248,240,.8);
+    --bg: #EFF8E7;
+    --secondary-bg: #DCEFD0;
+    --surface: #FFFFFF;
+    --surface-hi: #E6F3DB;
+    --text: #183020;
+    --hint: #5D7B61;
+    --muted: #86A088;
+    --hairline: rgba(24,60,30,.12);
+    --on-pop: #183020;
+    --pop-soft: rgba(255,197,49,.28);
+    --btn: #22A055;
+    --btn-grad: linear-gradient(135deg, #6AD06A 0%, #22A055 55%, #12887A 100%);
+    --link: #1E8A45;
+    --berry: #E3304C;
+    --leaf: #2FA35A;
+    --leaf-deep: #1D7E3E;
+    --hero-bg: linear-gradient(140deg, #8BE070 0%, #2FA35A 55%, #12887A 100%);
+    --hero-text: #FFFFFF;
+    --hero-accent: #FFC531;
+    --hero-on-accent: #183020;
+    --hero-cta-bg: #FFFFFF;
+    --hero-cta-fg: #1D7E3E;
+    --dock-fg: #6E8C72;
+    --dock-line: rgba(24,60,30,.12);
+    --glass: rgba(247,252,242,.86);
     --scrim: rgba(20,35,22,.42);
-    --shadow-1: 0 1px 2px rgba(27,60,30,.06), 0 6px 16px -8px rgba(27,60,30,.18);
-    --shadow-2: 0 2px 6px rgba(27,60,30,.07), 0 22px 44px -18px rgba(27,60,30,.34);
-    --shadow-pop: 0 10px 24px -12px rgba(200,150,20,.6);
+    --glow-1: rgba(255,214,90,.42);
+    --glow-2: rgba(120,220,120,.34);
+    --glow-3: rgba(40,190,170,.22);
+    --shadow-1: 0 1px 2px rgba(27,60,30,.06), 0 8px 18px -10px rgba(27,60,30,.22);
+    --shadow-2: 0 2px 6px rgba(27,60,30,.07), 0 24px 46px -20px rgba(27,60,30,.34);
+    --shadow-pop: 0 12px 26px -12px rgba(34,160,85,.65);
+    --dock-shadow: 0 18px 40px -18px rgba(27,60,30,.45), inset 0 1px 0 rgba(255,255,255,.6);
     color-scheme: light;
   }
 
   /* ── Base ──────────────────────────────────────────────────────────────
      The page background lives on <body> only: it propagates to the canvas,
      which is what keeps the z-index:-1 leaf layer visible above it. A soft
-     accent glow at the top and a faint paper grain give the flat colour
-     some material. */
+     fruit-coloured glows and a faint paper grain give the flat colour some
+     material. */
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
@@ -192,12 +228,14 @@
     line-height: 1.4;
     color: var(--text);
     background:
-      radial-gradient(120% 55% at 92% -8%, var(--bg-glow), transparent 62%),
+      radial-gradient(75% 38% at 100% 0%, var(--glow-1), transparent 70%),
+      radial-gradient(65% 32% at 0% 38%, var(--glow-2), transparent 70%),
+      radial-gradient(75% 36% at 100% 78%, var(--glow-3), transparent 70%),
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .085 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
       var(--bg);
     /* The canvas background tiles over the root's box; on a short page the
        glow would repeat at the bottom of the screen without this. */
-    background-repeat: no-repeat, repeat;
+    background-repeat: no-repeat, no-repeat, no-repeat, repeat;
     -webkit-font-smoothing: antialiased;
     -webkit-user-select: none;
     user-select: none;
@@ -210,7 +248,7 @@
 
   /* Headings and money speak in the display face. */
   .section-title, .cart-page-header, .checkout-header, .cheque-title,
-  .orders-header, .fav-header, .profile-name, .modal-header h2,
+  .orders-header, .fav-header, .games-header, .profile-name, .modal-header h2,
   .map-modal-header h2, .detail-price, .cheque-total, .order-id,
   .home-hero-title, #cart-total-value, .qty-value {
     font-family: var(--font-display);
@@ -224,7 +262,7 @@
   /* ── Ambient leaves ────────────────────────────────────────────────────
      Same particles and magnet physics as before (initOrganicLeaves /
      initLeafMagnetPhysics), drawn as small accent-coloured leaf shapes
-     instead of emoji so they belong to the new palette. The glyph is still
+     instead of emoji, in the four fruit colours. The glyph is still
      in the DOM; font-size:0 just hides it. JS drives transform + opacity. */
   .organic-leaves {
     position: fixed;
@@ -242,10 +280,13 @@
     width: calc(var(--size, 20px) * .5);
     height: calc(var(--size, 20px) * .5);
     border-radius: 0 100% 0 100%;
-    background: var(--pop);
+    background: var(--c-leaf);
     opacity: 0;
     will-change: transform, opacity;
   }
+  .organic-leaves .leaf:nth-child(4n+2) { background: var(--c-sun); }
+  .organic-leaves .leaf:nth-child(4n+3) { background: var(--c-orange); }
+  .organic-leaves .leaf:nth-child(4n)   { background: var(--c-berry); }
 
   /* ── Page system ───────────────────────────────────────────────────── */
   .page { display: none; min-height: calc(100dvh - 120px); }
@@ -256,8 +297,8 @@
   }
 
   /* ── Dock (bottom tab bar) ─────────────────────────────────────────────
-     A floating dark capsule in every theme. Inactive tabs are icon-only;
-     the active one grows into an accent pill that shows its label. Labels
+     A floating capsule. Inactive tabs are icon-only; the active one grows
+     into an orange pill that shows its label. Labels
      are collapsed with max-width (not display:none) so screen readers
      still read them. */
   .tab-bar {
@@ -276,8 +317,8 @@
     background: var(--dock-bg);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
     backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid rgba(255,255,255,.07);
-    box-shadow: 0 18px 40px -16px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+    border: 1px solid var(--dock-line);
+    box-shadow: var(--dock-shadow);
   }
   .tab-item {
     flex: 1 1 0;
@@ -295,8 +336,8 @@
   }
   .tab-item.active {
     flex-grow: 2.7;
-    background: var(--pop);
-    color: var(--on-pop);
+    background: var(--btn-grad);
+    color: var(--btn-text);
     box-shadow: var(--shadow-pop);
   }
   .tab-item svg {
@@ -334,11 +375,11 @@
     display: none;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 0 0 2px var(--dock-bg);
+    box-shadow: 0 0 0 2px var(--surface);
   }
   .tab-badge.visible { display: flex; }
   /* In the open pill the count sits after the label: "Savat (3)". */
-  .tab-item.active .tab-badge { position: static; order: 3; box-shadow: none; background: var(--on-pop); color: var(--pop); }
+  .tab-item.active .tab-badge { position: static; order: 3; box-shadow: none; background: #fff; color: var(--btn); }
 
   /* ── Search ────────────────────────────────────────────────────────── */
   .catalog-search-bar { padding: 14px 14px 2px; }
@@ -370,31 +411,47 @@
   .catalog-search-bar input:focus { border-color: var(--link); box-shadow: 0 0 0 4px var(--pop-soft); }
 
   /* ── Hero ──────────────────────────────────────────────────────────────
-     A poster block: display headline, a rotating "KETOSHOP" stamp that the
-     headline wraps around (float + shape-outside), and faint topographic
-     rings in the corner. */
+     A sunny poster: display headline, a rotating "KETOSHOP" stamp that the
+     headline wraps around (float + shape-outside), slow sun rays behind the
+     stamp, and a scalloped bottom edge like a torn paper bag (the owner's
+     July reference had a torn-paper edge). */
   .home-hero {
     position: relative;
     isolation: isolate;
     overflow: hidden;
     margin: 4px 14px 16px;
-    padding: 20px 20px 22px;
-    border-radius: var(--r-xl);
+    padding: 20px 20px 34px;
+    border-radius: var(--r-xl) var(--r-xl) 18px 18px;
     background: var(--hero-bg);
     color: var(--hero-text);
-    box-shadow: var(--shadow-2);
+    -webkit-mask: radial-gradient(circle 9px at 50% 100%, #0000 96%, #000) 50% 100% / 24px 100% repeat-x;
+    mask: radial-gradient(circle 9px at 50% 100%, #0000 96%, #000) 50% 100% / 24px 100% repeat-x;
+  }
+  .home-hero::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    top: -170px;
+    right: -170px;
+    width: 440px;
+    height: 440px;
+    border-radius: 50%;
+    background: repeating-conic-gradient(rgba(255,255,255,.36) 0 7deg, transparent 7deg 18deg);
+    -webkit-mask: radial-gradient(circle, #000 18%, transparent 68%);
+    mask: radial-gradient(circle, #000 18%, transparent 68%);
+    animation: stampSpin 70s linear infinite;
+    pointer-events: none;
   }
   .home-hero::after {
     content: '';
     position: absolute;
     z-index: -1;
-    right: -150px;
-    bottom: -170px;
-    width: 340px;
-    height: 340px;
-    border-radius: 50%;
-    background: repeating-radial-gradient(circle, transparent 0 17px, currentColor 17px 18px);
-    opacity: .1;
+    right: 20px;
+    bottom: 30px;
+    width: 96px;
+    height: 60px;
+    background: radial-gradient(currentColor 1.5px, transparent 1.8px) 0 0 / 12px 12px;
+    opacity: .2;
     pointer-events: none;
   }
   .hero-stamp {
@@ -426,8 +483,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--hero-accent);
-    box-shadow: 0 6px 16px -6px rgba(0,0,0,.45);
+    background: #FFFFFF;
+    box-shadow: 0 8px 18px -8px rgba(80,40,0,.55);
   }
   .hero-stamp-core svg { width: 60%; height: 60%; display: block; }
   @keyframes stampSpin { to { transform: rotate(360deg); } }
@@ -436,33 +493,35 @@
     max-width: calc(100% - 104px);
     padding: 6px 11px;
     border-radius: 999px;
-    border: 1px solid currentColor;
+    background: rgba(255,255,255,.4);
     font: 700 9.5px/1.2 var(--font-display);
     letter-spacing: .12em;
     text-transform: uppercase;
-    opacity: .85;
   }
+  :root[data-site-theme="organic"] .home-hero-eyebrow { background: rgba(255,255,255,.2); }
   .home-hero-title {
     font-size: 24px;
     font-weight: 800;
-    line-height: 1.14;
+    line-height: 1.16;
     letter-spacing: -.025em;
     margin: 14px 0 10px;
   }
   .home-hero-title em {
+    display: inline-block;
     font-style: normal;
-    padding: 0 .2em;
-    border-radius: .26em;
+    margin-top: 4px;
+    padding: 1px .24em 3px;
+    border-radius: .3em;
     background: var(--hero-accent);
-    color: var(--hero-bg);
-    -webkit-box-decoration-break: clone;
-    box-decoration-break: clone;
+    color: var(--hero-on-accent);
+    transform: rotate(-2.5deg);
+    box-shadow: 0 8px 18px -10px rgba(120,0,30,.7);
   }
   .home-hero-sub {
     clear: right;
     font-size: 13.5px;
     line-height: 1.5;
-    opacity: .78;
+    opacity: .82;
     margin-bottom: 18px;
     max-width: 34em;
   }
@@ -474,11 +533,11 @@
     padding: 0 22px;
     border: 0;
     border-radius: 999px;
-    background: var(--hero-text);
-    color: var(--hero-bg);
+    background: var(--hero-cta-bg);
+    color: var(--hero-cta-fg);
     font: 700 14.5px var(--font-body);
     cursor: pointer;
-    box-shadow: 0 10px 22px -12px rgba(0,0,0,.6);
+    box-shadow: 0 12px 24px -12px rgba(60,30,0,.7);
   }
 
   @media (max-width: 359px) {
@@ -504,11 +563,16 @@
     flex-shrink: 0;
     padding: 4px 8px;
     border-radius: 999px;
-    background: var(--pop);
-    color: var(--on-pop);
+    background: var(--c-orange);
+    color: #fff;
     font: 700 10.5px/1 var(--font-display);
     letter-spacing: .04em;
   }
+  .home-section:nth-child(6n+2) .section-header::before { background: var(--c-leaf); }
+  .home-section:nth-child(6n+3) .section-header::before { background: var(--c-berry); }
+  .home-section:nth-child(6n+4) .section-header::before { background: var(--c-lilac); }
+  .home-section:nth-child(6n+5) .section-header::before { background: var(--c-mint); }
+  .home-section:nth-child(6n)   .section-header::before { background: var(--c-sky); }
   .section-header::after {
     content: '';
     flex: 1;
@@ -542,12 +606,19 @@
     flex-direction: column;
     padding: 6px 6px 12px;
     border-radius: var(--r-lg);
-    background: var(--surface);
+    --tint: var(--t-sun);
+    --tone: var(--c-orange);
+    background: linear-gradient(var(--tint), var(--tint)), var(--surface);
     border: 1px solid var(--hairline);
     box-shadow: var(--shadow-1);
     cursor: pointer;
     transition: transform .35s var(--ease-spring);
   }
+  .carousel-card:nth-child(6n+2), .product-card:nth-child(6n+2) { --tint: var(--t-leaf);  --tone: var(--c-leaf); }
+  .carousel-card:nth-child(6n+3), .product-card:nth-child(6n+3) { --tint: var(--t-berry); --tone: var(--c-berry); }
+  .carousel-card:nth-child(6n+4), .product-card:nth-child(6n+4) { --tint: var(--t-mint);  --tone: var(--c-mint); }
+  .carousel-card:nth-child(6n+5), .product-card:nth-child(6n+5) { --tint: var(--t-lilac); --tone: var(--c-lilac); }
+  .carousel-card:nth-child(6n),   .product-card:nth-child(6n)   { --tint: var(--t-sky);   --tone: var(--c-sky); }
   .carousel-card { flex-shrink: 0; width: 158px; scroll-snap-align: start; }
   .carousel-card:active, .product-card:active { transform: scale(.965); transition-duration: .1s; }
   .carousel-card > :not(.card-img-wrap),
@@ -559,7 +630,7 @@
     aspect-ratio: 1;
     border-radius: 19px;
     overflow: hidden;
-    background: var(--surface-hi);
+    background: var(--surface);
   }
   .card-img-wrap img, .carousel-card .card-img {
     width: 100%;
@@ -587,8 +658,8 @@
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: var(--pop) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2315201A' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 17L17 7M9 7h8v8'/%3E%3C/svg%3E") center / 15px no-repeat;
-    box-shadow: 0 6px 14px -6px rgba(0,0,0,.5);
+    background: var(--tone) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFFFFF' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 17L17 7M9 7h8v8'/%3E%3C/svg%3E") center / 15px no-repeat;
+    box-shadow: 0 6px 14px -6px var(--tone);
     z-index: 1;
   }
   .card-name {
@@ -796,6 +867,8 @@
     color: var(--on-pop);
     box-shadow: var(--shadow-pop);
   }
+  .podium-item.rank-2::after { background: var(--t-sky); border-color: transparent; color: var(--c-sky); }
+  .podium-item.rank-3::after { background: var(--t-orange); border-color: transparent; color: var(--c-orange); }
   .customer-podium .podium-item { cursor: default; }
   .customer-podium .podium-item.rank-1::after { content: '1'; height: 60px; font-size: 24px; }
   .customer-podium .podium-item.rank-2::after { content: '2'; height: 42px; }
@@ -846,8 +919,8 @@
     padding: 14px 18px;
     border: 0;
     border-radius: 20px;
-    background: linear-gradient(115deg, #FF8A5B 0%, #FFB547 100%);
-    color: #2A1406;
+    background: linear-gradient(115deg, #F2386A 0%, #FF6B3D 55%, #FFA73A 100%);
+    color: #FFFFFF;
     text-align: left;
     font: inherit;
     cursor: pointer;
@@ -865,7 +938,7 @@
     width: 42px;
     height: 42px;
     border-radius: 50%;
-    background: rgba(255,255,255,.5);
+    background: rgba(255,255,255,.26);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -880,11 +953,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .promo-banner .pb-sub { display: block; margin-top: 3px; font-size: 12px; font-weight: 600; opacity: .8; }
+  .promo-banner .pb-sub { display: block; margin-top: 3px; font-size: 12px; font-weight: 600; opacity: .92; }
   .promo-banner .pb-arrow {
     flex-shrink: 0;
     padding-left: 12px;
-    border-left: 2px dashed rgba(42,20,6,.3);
+    border-left: 2px dashed rgba(255,255,255,.55);
     font-size: 22px;
     font-weight: 700;
   }
@@ -916,15 +989,14 @@
     flex: 1 1 150px;
     padding: 10px 12px 10px 13px;
     border-radius: 16px;
-    background: var(--surface);
-    border: 1px solid var(--hairline);
-    box-shadow: inset 3px 0 0 var(--leaf);
+    background: var(--t-leaf);
+    border: 0;
     color: var(--text);
     font-size: 12px;
     font-weight: 600;
     line-height: 1.4;
   }
-  .perk-strip span:first-child, .detail-perks span:first-child { box-shadow: inset 3px 0 0 var(--berry); }
+  .perk-strip span:first-child, .detail-perks span:first-child { background: var(--t-berry); }
   .detail-perks { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
   .detail-perks span { flex: none; }
 
@@ -945,6 +1017,10 @@
   }
   .categories::-webkit-scrollbar { display: none; }
   .cat-tab {
+    --cc: var(--c-orange);
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
     flex-shrink: 0;
     height: 38px;
     padding: 0 16px;
@@ -958,13 +1034,27 @@
     transition: transform .3s var(--ease-spring), background-color .25s var(--ease), color .25s var(--ease);
   }
   .cat-tab:active { transform: scale(.93); }
-  .cat-tab.active {
-    background: var(--pop);
-    border-color: transparent;
-    color: var(--on-pop);
-    font-weight: 700;
-    box-shadow: var(--shadow-pop);
+  .cat-tab::before {
+    content: '';
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--cc);
   }
+  .cat-tab.active {
+    background: var(--cc);
+    border-color: transparent;
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 10px 22px -12px var(--cc);
+  }
+  .cat-tab.active::before { background: rgba(255,255,255,.9); }
+  .cat-tab[data-cat="discounts"], .cat-tab[data-cat="vinegar"], .cat-tab[data-cat="sweeteners"] { --cc: var(--c-berry); }
+  .cat-tab[data-cat="coconut"], .cat-tab[data-cat="ready_made"], .cat-tab[data-cat="diet_rice"] { --cc: var(--c-mint); }
+  .cat-tab[data-cat="pp_flour"], .cat-tab[data-cat="seeds"] { --cc: var(--c-leaf); }
+  .cat-tab[data-cat="supplements"], .cat-tab[data-cat="sourdough"], .cat-tab[data-cat="sets"] { --cc: var(--c-lilac); }
+  .cat-tab[data-cat="oils"], .cat-tab[data-cat="salt"], .cat-tab[data-cat="fish"] { --cc: var(--c-sky); }
   .product-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -974,7 +1064,7 @@
 
   /* ── Page headers ──────────────────────────────────────────────────────
      Big display titles that end in an accent full stop. */
-  .cart-page-header, .fav-header, .orders-header, .checkout-header {
+  .cart-page-header, .fav-header, .orders-header, .checkout-header, .games-header {
     font-size: 25px;
     font-weight: 800;
     line-height: 1.1;
@@ -982,7 +1072,7 @@
     padding: 22px 16px 14px;
   }
   .checkout-header { padding: 22px 2px 14px; }
-  .cart-page-header::after, .fav-header::after, .orders-header::after, .checkout-header::after {
+  .cart-page-header::after, .fav-header::after, .orders-header::after, .checkout-header::after, .games-header::after {
     content: '';
     display: inline-block;
     width: 8px;
@@ -1616,7 +1706,7 @@
     justify-content: center;
     font-size: 40px;
     color: var(--hint);
-    background: conic-gradient(from 0deg, var(--pop), var(--gold), var(--berry), var(--leaf), var(--pop));
+    background: conic-gradient(from 0deg, var(--c-sun), var(--c-orange), var(--c-berry), var(--c-lilac), var(--c-sky), var(--c-leaf), var(--c-sun));
   }
   .profile-avatar::before {
     content: '';
@@ -2152,6 +2242,446 @@
     box-shadow: 0 12px 30px -12px rgba(0,0,0,.6);
   }
 
+  .btn-checkout, .checkout-submit-btn, .add-to-cart-btn, .review-submit-btn { background: var(--btn-grad); color: var(--btn-text); }
+
+
+  /* ── Blob motif ────────────────────────────────────────────────────────
+     Uneven, hand-made corners on the things that carry the brand; plain
+     pills stay on the controls people tap, so they still read as buttons.
+     A few shapes slowly "breathe" (blobMorph, defined with the empty
+     states); prefers-reduced-motion stops them. */
+  .carousel-card, .product-card { border-radius: var(--soft-a); }
+  .carousel-card:nth-child(even), .product-card:nth-child(even) { border-radius: var(--soft-b); }
+  .card-img-wrap { border-radius: 22px 30px 20px 32px / 28px 22px 30px 24px; }
+  .carousel-card:nth-child(even) .card-img-wrap, .product-card:nth-child(even) .card-img-wrap { border-radius: 30px 22px 32px 20px / 22px 30px 24px 30px; }
+  .card-img-wrap::after { border-radius: var(--blob-a); }
+  .card-img-wrap .discount-corner { border-radius: var(--blob-c); padding: 6px 10px; }
+  .section-header::before { border-radius: var(--blob-b); padding: 5px 9px; }
+  .cart-page-header::after, .fav-header::after, .orders-header::after,
+  .checkout-header::after, .games-header::after { width: 10px; height: 9px; border-radius: var(--blob-a); }
+  .podium-img, .podium-nophoto { border-radius: var(--blob-a); }
+  .podium-item.rank-1 .podium-img, .podium-item.rank-1 .podium-nophoto { border-radius: var(--blob-b); }
+  .customer-podium .podium-nophoto { border-radius: var(--blob-c); }
+  .cart-item { border-radius: var(--soft-a); }
+  .cart-item > img, .cart-item > .no-photo-sm { border-radius: var(--blob-d); }
+  .perk-strip span, .detail-perks span { border-radius: 18px 24px 16px 26px / 22px 16px 24px 18px; }
+  .promo-banner .pb-icon { border-radius: var(--blob-a); animation: blobMorph 9s ease-in-out infinite, giftBreathe 4s var(--ease) infinite; }
+  #detail-photo-container { border-radius: 30px 40px 26px 44px / 38px 28px 42px 30px; }
+  .order-card { border-radius: var(--soft-b); }
+  .cheque-total { border-radius: 28px 40px 24px 44px / 36px 26px 40px 28px; }
+  .detail-tip, .review-item { border-radius: 20px 26px 18px 28px / 24px 18px 26px 20px; }
+  .profile-avatar, .profile-avatar::before, .profile-avatar img { border-radius: var(--blob-a) !important; }
+  .profile-avatar { animation: blobMorph 11s ease-in-out infinite; }
+  .profile-avatar::before { animation: blobMorph 11s ease-in-out infinite; }
+  .profile-menu-item svg { border-radius: var(--blob-d); }
+  /* Two soft blobs float inside the hero. */
+  .hero-blob {
+    position: absolute;
+    z-index: -1;
+    border-radius: var(--blob-a);
+    background: rgba(255,255,255,.28);
+    animation: blobMorph 12s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .hero-blob.one { width: 120px; height: 110px; left: -38px; top: 46%; }
+  .hero-blob.two { width: 70px; height: 64px; right: 34%; bottom: -22px; animation-duration: 9s; animation-direction: reverse; }
+
+  /* ── Bilim o'yinlari (knowledge games) ─────────────────────────────── */
+  .games-rail {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 2px 14px 30px;
+    margin-bottom: -10px;
+    scrollbar-width: none;
+    scroll-snap-type: x mandatory;
+    scroll-padding: 0 14px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .games-rail::-webkit-scrollbar { display: none; }
+  .game-tile {
+    --g1: #2FA35A;
+    --g2: #13AE96;
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    flex-shrink: 0;
+    width: 196px;
+    min-height: 168px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 5px;
+    padding: 16px;
+    border: 0;
+    border-radius: 28px 36px 24px 38px / 32px 26px 36px 28px;
+    background: linear-gradient(140deg, var(--g1), var(--g2));
+    color: #fff;
+    text-align: left;
+    font-family: var(--font-body);
+    cursor: pointer;
+    scroll-snap-align: start;
+    box-shadow: 0 16px 30px -18px var(--g1);
+    transition: transform .35s var(--ease-spring);
+  }
+  .game-tile:nth-child(even) { border-radius: 36px 26px 38px 24px / 26px 34px 28px 36px; }
+  .game-tile:active { transform: scale(.96) rotate(-1deg); }
+  .game-tile[data-game="duel"]   { --g1: #FF6A1F; --g2: #FFB21E; }
+  .game-tile[data-game="quiz"]   { --g1: #EC2F55; --g2: #FF7A3D; }
+  .game-tile[data-game="memory"] { --g1: #7C5CF0; --g2: #2E96E0; }
+  .game-tile::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    right: -36px;
+    bottom: -48px;
+    width: 140px;
+    height: 128px;
+    border-radius: var(--blob-a);
+    background: rgba(255,255,255,.16);
+    animation: blobMorph 10s ease-in-out infinite;
+  }
+  .game-tile-icon {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 52px;
+    height: 50px;
+    border-radius: var(--blob-b);
+    background: rgba(255,255,255,.24);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .game-tile-icon svg { width: 27px; height: 27px; }
+  .game-tile-title { margin-top: 54px; font: 800 15px/1.18 var(--font-display); letter-spacing: -.01em; }
+  .game-tile-sub { font-size: 12px; line-height: 1.35; opacity: .92; }
+  .game-tile-best {
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.26);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .games-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 14px 6px; }
+  .games-grid .game-tile { width: auto; min-height: 184px; }
+  .games-intro { padding: 0 16px 14px; color: var(--hint); font-size: 13.5px; line-height: 1.5; }
+  .games-note { margin: 12px 16px 18px; color: var(--hint); font-size: 11.5px; line-height: 1.5; }
+  #page-games.playing .games-header { display: none; }
+
+  .game-shell { padding: 14px 14px 20px; }
+  .game-top { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .game-back {
+    flex-shrink: 0;
+    height: 38px;
+    padding: 0 14px 0 10px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .game-title { flex: 1; min-width: 0; font: 800 15px/1.2 var(--font-display); letter-spacing: -.015em; }
+  .game-score {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-radius: var(--blob-b);
+    background: var(--pop);
+    color: var(--on-pop);
+    font: 800 13px var(--font-display);
+    white-space: nowrap;
+  }
+  .game-progress { display: flex; gap: 4px; margin-bottom: 14px; }
+  .game-progress i { flex: 1; height: 6px; border-radius: 3px; background: var(--surface-hi); }
+  .game-progress i.ok { background: var(--leaf); }
+  .game-progress i.bad { background: var(--berry); }
+  .game-progress i.now { background: var(--pop); }
+
+  .food-card {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 26px 18px;
+    border-radius: 34px 44px 30px 48px / 42px 32px 46px 34px;
+    background: linear-gradient(var(--tint), var(--tint)), var(--surface);
+    border: 1px solid var(--hairline);
+    text-align: center;
+    color: var(--text);
+    animation: popIn .45s var(--ease-spring);
+  }
+  .food-card::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    width: 190px;
+    height: 176px;
+    border-radius: var(--blob-a);
+    background: var(--tone);
+    opacity: .16;
+    animation: blobMorph 9s ease-in-out infinite;
+  }
+  .food-mono {
+    width: 76px;
+    height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--blob-c);
+    background: var(--tone);
+    color: #fff;
+    font: 800 30px var(--font-display);
+    box-shadow: 0 14px 26px -14px var(--tone);
+    transform: rotate(-6deg);
+    animation: blobMorph 7s ease-in-out infinite;
+  }
+  .food-name { font: 800 23px/1.15 var(--font-display); letter-spacing: -.02em; text-wrap: balance; }
+  .food-sub { font-size: 12.5px; font-weight: 600; color: var(--hint); }
+  .game-answers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .game-btn {
+    height: 60px;
+    border: 0;
+    border-radius: 22px 26px 20px 28px / 26px 20px 28px 22px;
+    color: #fff;
+    font: 800 15.5px var(--font-body);
+    cursor: pointer;
+    transition: transform .3s var(--ease-spring), opacity .2s;
+  }
+  .game-btn.yes { background: linear-gradient(135deg, #46C774, #1D8446); box-shadow: 0 12px 24px -14px #1D8446; }
+  .game-btn.no { background: linear-gradient(135deg, #FF5B78, #D9203F); box-shadow: 0 12px 24px -14px #D9203F; }
+  .game-btn:active { transform: scale(.95); }
+  .game-btn:disabled { opacity: .4; box-shadow: none; transform: none; }
+  .game-reveal {
+    margin-top: 14px;
+    padding: 16px;
+    border-radius: 24px 30px 22px 32px / 28px 22px 30px 24px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-1);
+    animation: popIn .4s var(--ease-spring);
+  }
+  .game-verdict {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border-radius: var(--blob-d);
+    font-size: 12.5px;
+    font-weight: 800;
+  }
+  .game-verdict.ok { background: var(--leaf-soft); color: var(--leaf-deep); }
+  .game-verdict.bad { background: var(--berry-soft); color: var(--berry); }
+  .game-carbs { margin-top: 8px; font: 800 28px var(--font-display); letter-spacing: -.03em; }
+  .game-carbs small { font: 600 12.5px var(--font-body); letter-spacing: 0; color: var(--hint); }
+  .game-fact { margin-top: 8px; font-size: 14px; line-height: 1.55; }
+  .game-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .game-next {
+    flex: 1 1 140px;
+    height: 50px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--btn-grad);
+    color: var(--btn-text);
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: var(--shadow-pop);
+  }
+  .game-shop {
+    flex: 1 1 140px;
+    height: 50px;
+    padding: 0 16px;
+    border-radius: 999px;
+    border: 1.5px solid var(--leaf);
+    background: var(--leaf-soft);
+    color: var(--leaf-deep);
+    font-size: 13.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .game-shop-wide { display: block; width: 100%; margin-top: 12px; }
+  .game-next:active, .game-shop:active, .game-back:active { transform: scale(.96); }
+
+  .duel-q { margin: 2px 4px 14px; text-align: center; font: 700 15px/1.3 var(--font-display); }
+  .duel { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .duel-card { min-height: 210px; padding: 20px 10px; cursor: pointer; border-width: 2.5px; font: inherit; transition: transform .3s var(--ease-spring), border-color .2s; }
+  .duel-card:nth-child(2) { border-radius: 44px 32px 48px 30px / 32px 44px 34px 46px; }
+  .duel-card .food-name { font-size: 16px; }
+  .duel-card .food-mono { width: 62px; height: 58px; font-size: 25px; }
+  .duel-card:active { transform: scale(.96); }
+  .duel-card:disabled { cursor: default; }
+  .duel-card.win { border-color: var(--leaf); }
+  .duel-card.lose { border-color: var(--berry); opacity: .82; }
+  .duel-card.picked { transform: scale(1.02); }
+  .duel-carbs { min-height: 1.2em; font: 800 19px var(--font-display); color: var(--text); }
+  .duel-vs {
+    position: absolute;
+    z-index: 2;
+    left: 50%;
+    top: 50%;
+    width: 50px;
+    height: 46px;
+    margin: -23px 0 0 -25px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--blob-a);
+    background: var(--text);
+    color: var(--bg);
+    font: 800 13px var(--font-display);
+    box-shadow: 0 0 0 4px var(--bg);
+    pointer-events: none;
+  }
+
+  .quiz-q { margin: 2px 2px 16px; font: 800 18px/1.3 var(--font-display); letter-spacing: -.015em; text-wrap: balance; }
+  .quiz-opts { display: grid; gap: 8px; }
+  .quiz-opt {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+    padding: 10px 14px;
+    border-radius: 18px 22px 16px 24px / 22px 16px 24px 18px;
+    border: 1.5px solid var(--hairline);
+    background: var(--surface);
+    color: var(--text);
+    text-align: left;
+    font: 600 14.5px/1.35 var(--font-body);
+    cursor: pointer;
+    transition: transform .3s var(--ease-spring), border-color .2s, background-color .2s;
+  }
+  .quiz-opt:active { transform: scale(.98); }
+  .quiz-opt:disabled { cursor: default; }
+  .quiz-opt b {
+    flex-shrink: 0;
+    width: 32px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--blob-c);
+    background: var(--surface-hi);
+    font: 800 13px var(--font-display);
+  }
+  .quiz-opt.right { border-color: var(--leaf); background: var(--leaf-soft); }
+  .quiz-opt.right b { background: var(--leaf); color: #fff; }
+  .quiz-opt.wrong { border-color: var(--berry); background: var(--berry-soft); animation: gameShake .4s; }
+  .quiz-opt.wrong b { background: var(--berry); color: #fff; }
+
+  .mem-hint { padding: 0 2px 12px; }
+  .mem-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; perspective: 900px; }
+  .mem-card {
+    position: relative;
+    aspect-ratio: 1 / 1.08;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    transform-style: preserve-3d;
+    transition: transform .5s var(--ease);
+  }
+  .mem-card.open, .mem-card.done { transform: rotateY(180deg); }
+  .mem-face {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    text-align: center;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+  .mem-back {
+    border-radius: 24px 30px 22px 32px / 28px 22px 30px 24px;
+    background: linear-gradient(140deg, #8B6CF0, #2E96E0);
+    color: #fff;
+    font: 800 26px var(--font-display);
+    box-shadow: 0 12px 22px -14px #5A4BD0;
+  }
+  .mem-card:nth-child(3n+2) .mem-back { background: linear-gradient(140deg, #FF6A1F, #FFB21E); box-shadow: 0 12px 22px -14px #E05A0C; border-radius: 30px 24px 32px 22px / 22px 30px 24px 30px; }
+  .mem-card:nth-child(3n) .mem-back { background: linear-gradient(140deg, #2FA35A, #13AE96); box-shadow: 0 12px 22px -14px #1D8446; }
+  .mem-front {
+    transform: rotateY(180deg);
+    border-radius: 26px 22px 30px 24px / 24px 30px 22px 28px;
+    background: var(--surface);
+    border: 2px solid var(--hairline);
+    color: var(--text);
+    font: 700 12.5px/1.25 var(--font-body);
+  }
+  .mem-front.kind-product { background: var(--t-sun); font: 800 12px/1.2 var(--font-display); }
+  .mem-card.done .mem-front { border-color: var(--leaf); background: var(--leaf-soft); }
+  .mem-card.miss .mem-front { border-color: var(--berry); background: var(--berry-soft); }
+
+  .game-result {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    padding: 30px 18px 22px;
+    border-radius: 36px 46px 32px 50px / 44px 34px 48px 36px;
+    background: var(--hero-bg);
+    color: var(--hero-text);
+    text-align: center;
+    animation: popIn .5s var(--ease-spring);
+  }
+  .game-result::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    left: 50%;
+    top: 14px;
+    width: 150px;
+    height: 136px;
+    margin-left: -75px;
+    border-radius: var(--blob-a);
+    background: rgba(255,255,255,.3);
+    animation: blobMorph 8s ease-in-out infinite;
+  }
+  .game-result-big { padding-top: 22px; font: 800 52px/1 var(--font-display); letter-spacing: -.04em; }
+  .game-result-msg { margin-top: 26px; font: 800 16px/1.3 var(--font-display); }
+  .game-result-sub { margin-top: 6px; font-size: 13px; font-weight: 600; opacity: .85; }
+  .game-result .game-actions { justify-content: center; }
+  .game-again {
+    height: 48px;
+    padding: 0 20px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--hero-cta-bg);
+    color: var(--hero-cta-fg);
+    font-size: 14.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .game-other {
+    height: 48px;
+    padding: 0 20px;
+    border-radius: 999px;
+    border: 1.5px solid currentColor;
+    background: transparent;
+    color: inherit;
+    font-size: 14.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(.94) translateY(8px); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes gameShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+
   /* ── Wider screens (Telegram Desktop) ───────────────────────────────
      Keep reading widths sane instead of stretching edge to edge. */
   @media (min-width: 700px) {
@@ -2202,6 +2732,8 @@
         </svg>
       </span>
     </div>
+    <span class="hero-blob one" aria-hidden="true"></span>
+    <span class="hero-blob two" aria-hidden="true"></span>
     <div class="home-hero-eyebrow" id="home-hero-eyebrow"></div>
     <div class="home-hero-title" id="home-hero-title"></div>
     <div class="home-hero-sub" id="home-hero-sub"></div>
@@ -2216,6 +2748,8 @@
     <span class="pb-arrow">›</span>
   </button>
   <div class="perk-strip" id="home-perks" style="display:none"></div>
+  <!-- Knowledge games teaser, filled by renderGamesTeaser(). -->
+  <div class="home-section" id="home-games"></div>
   <div id="home-sections"></div>
   <div class="loading" id="home-loading" style="display:none"></div>
 </div>
@@ -2387,6 +2921,12 @@
   </div>
 </div>
 
+<!-- ===== PAGE: GAMES (bilim o'yinlari) ===== -->
+<div class="page" id="page-games">
+  <div class="games-header" id="games-title"></div>
+  <div id="games-body"></div>
+</div>
+
 <!-- ===== PAGE: ORDERS ===== -->
 <div class="page" id="page-orders">
   <div class="orders-header" id="orders-title"></div>
@@ -2507,11 +3047,11 @@ tg.ready();
 tg.expand();
 
 // ===== SITE THEME =====
-// Defaults to night for every buyer (owner's request, 2026-07-13) —
-// no longer tied to Telegram's own light/dark setting. Buyers can switch
-// to day mode manually from the Profile page; the choice persists via
-// localStorage the same way the language preference does.
-let siteTheme = localStorage.getItem('ketoshop_theme') || 'night';
+// Defaults to the bright day theme (owner, 2026-10-02 — it was night since
+// 2026-07-13). Not tied to Telegram's own light/dark setting. Buyers can
+// switch from the Profile page; a buyer who already picked a theme keeps it,
+// since the choice persists via localStorage like the language does.
+let siteTheme = localStorage.getItem('ketoshop_theme') || 'day';
 
 // Populates the drifting leaf particles once — runs on every theme
 // (night/day/organic), owner's request 2026-07-20. Idempotent, so
@@ -3086,6 +3626,7 @@ function applyLanguage() {
   if (heroSubEl) heroSubEl.textContent = t.heroSub;
   const heroCtaEl = document.getElementById('home-hero-cta');
   if (heroCtaEl) heroCtaEl.textContent = t.heroCta;
+  try { renderGamesTeaser(); } catch (e) { console.error('Games teaser error:', e); }
 }
 
 async function switchLanguage(newLang) {
@@ -3110,6 +3651,7 @@ async function switchLanguage(newLang) {
     if (activePage === 'profile') renderProfilePage();
     if (activePage === 'fav') renderFavPage();
     if (activePage === 'orders') loadOrdersPage();
+    if (activePage === 'games') renderGamesPage();
   } finally {
     btns.forEach(b => b.disabled = false);
   }
@@ -3166,6 +3708,7 @@ function switchPage(page) {
   if (page === 'fav') renderFavPage();
   if (page === 'profile') renderProfilePage();
   if (page === 'orders') loadOrdersPage();
+  if (page === 'games') renderGamesPage();
 
   updateBackButton();
 }
@@ -3184,6 +3727,8 @@ function onBackPressed() {
   // Highest-priority overlays win.
   if (_isModalOpen('map-modal')) { closeMapPicker(); return; }
   if (_isModalOpen('detail-modal')) { closeDetail(); return; }
+  // Inside a game, back returns to the games menu first.
+  if (activePage === 'games' && gameState) { renderGamesPage(); return; }
   // Then page-level: anywhere except home → go home. (Home itself has
   // BackButton hidden, so Telegram handles back natively → app closes.)
   if (activePage && activePage !== 'home') {
@@ -3209,6 +3754,538 @@ if (tg.BackButton) {
 document.querySelectorAll('.tab-item').forEach(tab => {
   tab.addEventListener('click', () => switchPage(tab.dataset.page));
 });
+
+// ===== BILIM O'YINLARI (knowledge games) =====
+// Four short games about keto food (owner, 2026-10-02: "o'yinlarni ham
+// qo'sh, bilimni oshiradigan qilib"). Entirely client-side: no Keto coins or
+// other rewards — those are money and need the owner's sign-off — and the
+// only thing saved is each game's best result, in this phone's localStorage.
+// Carb figures are net carbs (total minus fibre) per 100 g, rounded from
+// USDA FoodData Central; they vary by variety and cooking, which the games
+// page says. Declared before the INIT block below because applyLanguage()
+// (called there synchronously) renders the home teaser from these consts.
+
+function gx(uz, ru) {
+  if (lang === 'ru') return ru;
+  return lang === 'uz_cyr' ? latToCyr(uz) : uz;
+}
+
+// [uz name, ru name, net carbs g / 100 g, fits keto?, shop category | null, uz note, ru note]
+const GAME_FOODS = [
+  ['Avokado', 'Авокадо', 2, true, null, "Yog' va tolaga boy, sof uglevodi juda kam.", 'Богат жирами и клетчаткой, чистых углеводов очень мало.'],
+  ['Tuxum', 'Яйцо', 1, true, null, "Deyarli uglevodsiz: oqsil va yog' manbai.", 'Почти без углеводов: источник белка и жира.'],
+  ["Chedder pishlog'i", 'Сыр чеддер', 1, true, null, "Qattiq pishloqlarda uglevod deyarli yo'q.", 'В твёрдых сырах углеводов почти нет.'],
+  ['Losos', 'Лосось', 0, true, null, "Baliqda uglevod yo'q, omega-3 esa ko'p.", 'В рыбе нет углеводов, зато много омега-3.'],
+  ["Tovuq go'shti", 'Курица', 0, true, null, "Go'shtda uglevod yo'q.", 'В мясе нет углеводов.'],
+  ['Brokkoli', 'Брокколи', 4, true, null, "Yashil sabzavotlar keto ratsionining asosi.", 'Зелёные овощи — основа кето-рациона.'],
+  ['Ismaloq', 'Шпинат', 1, true, null, "Barg sabzavotlarida sof uglevod juda kam.", 'В листовых овощах очень мало чистых углеводов.'],
+  ['Bodring', 'Огурец', 3, true, null, "Asosan suvdan iborat, uglevodi kam.", 'В основном вода, углеводов мало.'],
+  ['Bodom uni', 'Миндальная мука', 10, true, 'keto_flour', "Bug'doy unidan taxminan 7 baravar kam sof uglevod.", 'Примерно в 7 раз меньше чистых углеводов, чем в пшеничной муке.'],
+  ["Kokos yog'i", 'Кокосовое масло', 0, true, 'oils', "Toza yog': uglevod yo'q, MCT ga boy.", 'Чистый жир: углеводов нет, много MCT.'],
+  ["Zaytun yog'i", 'Оливковое масло', 0, true, 'oils', "Salat va taomlar uchun uglevodsiz yog'.", 'Масло без углеводов для салатов и блюд.'],
+  ["Chia urug'i", 'Семена чиа', 8, true, 'seeds', "100 g da ~34 g tola bor, shuning uchun sof uglevodi kam.", 'В 100 г ~34 г клетчатки, поэтому чистых углеводов мало.'],
+  ["Zig'ir urug'i", 'Семена льна', 2, true, 'seeds', "Deyarli butunlay tola va yog'dan iborat.", 'Почти целиком состоит из клетчатки и жира.'],
+  ["Qovoq urug'i", 'Тыквенные семечки', 5, true, 'seeds', "Magniy va ruxga boy, uglevodi kam.", 'Богаты магнием и цинком, углеводов мало.'],
+  ['Eritritol', 'Эритритол', 0, true, 'sweeteners', "Qondagi shakarni deyarli oshirmaydi, shakar o'rnini bosadi.", 'Почти не повышает сахар в крови и заменяет сахар.'],
+  ["Grek yong'og'i", 'Грецкий орех', 7, true, null, "Keto uchun eng mos yong'oqlardan biri.", 'Один из самых подходящих для кето орехов.'],
+  ['Qulupnay', 'Клубника', 6, true, null, "Rezavorlar kam miqdorda keto ga sig'adi.", 'Ягоды в небольшом количестве вписываются в кето.'],
+  ["Sariyog'", 'Сливочное масло', 0, true, null, "Deyarli toza yog'.", 'Почти чистый жир.'],
+  ['Banan', 'Банан', 20, false, null, "Bitta banan kunlik keto chegarasining katta qismini egallaydi.", 'Один банан съедает большую часть дневной кето-нормы.'],
+  ['Olma', 'Яблоко', 11, false, null, "Shirin mevalarda fruktoza ko'p.", 'В сладких фруктах много фруктозы.'],
+  ['Guruch (pishgan)', 'Рис (варёный)', 28, false, null, "Kraxmalga boy, keto uchun mos emas.", 'Богат крахмалом, для кето не подходит.'],
+  ['Kartoshka (qaynatilgan)', 'Картофель (варёный)', 18, false, null, "Kraxmal tezda shakarga aylanadi.", 'Крахмал быстро превращается в сахар.'],
+  ['Oq non', 'Белый хлеб', 46, false, 'keto_flour', "O'rniga bodom yoki zig'ir unidan non yopish mumkin.", 'Вместо него можно испечь хлеб из миндальной или льняной муки.'],
+  ["Bug'doy uni", 'Пшеничная мука', 73, false, 'keto_flour', "Keto pishiriqlarida uning o'rniga bodom uni ishlatiladi.", 'В кето-выпечке её заменяют миндальной мукой.'],
+  ['Shakar', 'Сахар', 100, false, 'sweeteners', "Toza uglevod. O'rniga eritritol yoki steviya.", 'Чистые углеводы. Замена — эритритол или стевия.'],
+  ['Xurmo', 'Финики', 67, false, null, "Quritilgan mevalarda shakar juda ko'p.", 'В сухофруктах очень много сахара.'],
+  ['Makaron (pishgan)', 'Макароны (варёные)', 29, false, null, "Bug'doy xamiri, uglevodga boy.", 'Пшеничное тесто, много углеводов.'],
+  ['Keshyu', 'Кешью', 27, false, null, "Yong'oqlar ichida uglevodi eng ko'plaridan biri.", 'Один из самых углеводных орехов.'],
+  ['Uzum', 'Виноград', 17, false, null, "Keto uchun juda shirin rezavor.", 'Слишком сладкая для кето ягода.'],
+];
+
+// Each answer list starts with the right one; options are shuffled on screen.
+const GAME_QUIZ = [
+  { q: ["Ketoz holatida organizm asosiy energiyani nimadan oladi?", 'Откуда организм берёт основную энергию в кетозе?'],
+    a: [["Yog' va keton tanachalaridan", 'Из жиров и кетоновых тел'], ['Shakardan', 'Из сахара'], ['Faqat oqsildan', 'Только из белка'], ['Suvdan', 'Из воды']],
+    e: ["Uglevod kam bo'lsa, jigar yog'dan keton tanachalari ishlab chiqaradi va ular asosiy yoqilg'iga aylanadi.",
+        'Когда углеводов мало, печень делает из жира кетоновые тела — они и становятся основным топливом.'] },
+  { q: ["Klassik keto dietada kuniga odatda qancha sof uglevod iste'mol qilinadi?", 'Сколько чистых углеводов в день обычно на классической кето-диете?'],
+    a: [['20–50 g', '20–50 г'], ['100–150 g', '100–150 г'], ['200–300 g', '200–300 г'], ["Cheklov yo'q", 'Ограничений нет']],
+    e: ["Ko'pchilik uchun ketozga kirish chegarasi kuniga taxminan 20–50 g sof uglevod.",
+        'Для большинства порог входа в кетоз — примерно 20–50 г чистых углеводов в день.'] },
+  { q: ['Sof uglevod qanday hisoblanadi?', 'Как считают чистые углеводы?'],
+    a: [['Umumiy uglevod − tola', 'Все углеводы − клетчатка'], ['Umumiy uglevod + shakar', 'Все углеводы + сахар'], ["Yog' − oqsil", 'Жиры − белки'], ['Kaloriya ÷ 4', 'Калории ÷ 4']],
+    e: ["Tola qondagi shakarni oshirmaydi, shuning uchun u umumiy uglevoddan ayiriladi.",
+        'Клетчатка не повышает сахар в крови, поэтому её вычитают из общих углеводов.'] },
+  { q: ['Eritritol qondagi shakarga qanday ta\'sir qiladi?', 'Как эритритол влияет на сахар в крови?'],
+    a: [["Deyarli ta'sir qilmaydi", 'Почти не влияет'], ['Shakar kabi oshiradi', 'Повышает, как сахар'], ['Ikki baravar oshiradi', 'Повышает вдвое сильнее'], ['Kuchli tushiradi', 'Сильно снижает']],
+    e: ["Eritritolning glikemik indeksi nolga yaqin, shuning uchun u keto pishiriqlarida shakar o'rnini bosadi.",
+        'Гликемический индекс эритритола близок к нулю, поэтому им заменяют сахар в кето-выпечке.'] },
+  { q: ["100 g bodom unida bug'doy uniga nisbatan sof uglevod qancha?", 'Сколько чистых углеводов в 100 г миндальной муки по сравнению с пшеничной?'],
+    a: [['Taxminan 7 baravar kam', 'Примерно в 7 раз меньше'], ['Bir xil', 'Столько же'], ["2 baravar ko'p", 'В 2 раза больше'], ["Umuman yo'q", 'Совсем нет']],
+    e: ["Bodom unida ~10 g, bug'doy unida ~73 g sof uglevod bor (100 g da).",
+        'В миндальной муке ~10 г, в пшеничной ~73 г чистых углеводов (на 100 г).'] },
+  { q: ["Qaysi yog' MCT (o'rta zanjirli triglitseridlar)ga eng boy?", 'Какое масло богаче всего MCT (среднецепочечными триглицеридами)?'],
+    a: [["Kokos yog'i", 'Кокосовое'], ["Kungaboqar yog'i", 'Подсолнечное'], ["Zaytun yog'i", 'Оливковое'], ["Makkajo'xori yog'i", 'Кукурузное']],
+    e: ["Kokos yog'ining yarmidan ko'pi MCT: ular tez energiyaga aylanadi.",
+        'Больше половины кокосового масла — MCT: они быстро превращаются в энергию.'] },
+  { q: ['Keto pishiriqlariga psillium nima uchun qo\'shiladi?', 'Зачем в кето-выпечку добавляют псиллиум?'],
+    a: [['Xamirni bog\'laydi va tola beradi', 'Связывает тесто и даёт клетчатку'], ['Shirinlik beradi', 'Даёт сладость'], ['Rang beradi', 'Даёт цвет'], ["Yog'ni almashtiradi", 'Заменяет жир']],
+    e: ["Psillium suvni shimib, glyuten o'rnida xamirni elastik qiladi.",
+        'Псиллиум впитывает воду и вместо глютена делает тесто эластичным.'] },
+  { q: ["Keto boshidagi holsizlikni ('keto gripp') nima yengillatadi?", 'Что облегчает слабость в начале кето («кето-грипп»)?'],
+    a: [['Suv va elektrolitlar: tuz, kaliy, magniy', 'Вода и электролиты: соль, калий, магний'], ["Ko'proq shakar", 'Больше сахара'], ["Ko'proq qahva", 'Больше кофе'], ["Ovqatni butunlay to'xtatish", 'Полный отказ от еды']],
+    e: ["Keto boshida organizm suv va tuzni ko'proq chiqaradi; ularni to'ldirish holsizlikni kamaytiradi.",
+        'В начале кето организм теряет больше воды и соли; их восполнение уменьшает слабость.'] },
+  { q: ["100 g chia urug'ida taxminan qancha tola bor?", 'Сколько примерно клетчатки в 100 г семян чиа?'],
+    a: [['~34 g', '~34 г'], ['~3 g', '~3 г'], ['~10 g', '~10 г'], ['~80 g', '~80 г']],
+    e: ["Chia tolaga eng boy urug'lardan biri, shuning uchun uning sof uglevodi ~8 g.",
+        'Чиа — одни из самых богатых клетчаткой семян, поэтому чистых углеводов в них ~8 г.'] },
+  { q: ['Qaysi mahsulot keto uchun mos emas?', 'Какой продукт не подходит для кето?'],
+    a: [['Guruch', 'Рис'], ['Avokado', 'Авокадо'], ['Tuxum', 'Яйцо'], ['Losos', 'Лосось']],
+    e: ["100 g pishgan guruchda ~28 g sof uglevod bor: bu kunlik keto chegarasining deyarli hammasi.",
+        'В 100 г варёного риса ~28 г чистых углеводов — почти вся дневная кето-норма.'] },
+];
+
+// Product ↔ what it is good for.
+const GAME_PAIRS = [
+  [["Chia", 'Чиа'], ['Tolaga boy', 'Много клетчатки']],
+  [['Eritritol', 'Эритритол'], ['Shakarsiz shirinlik', 'Сладость без сахара']],
+  [['Bodom uni', 'Миндальная мука'], ['Glyutensiz un', 'Мука без глютена']],
+  [["Kokos yog'i", 'Кокосовое масло'], ['MCT manbai', 'Источник MCT']],
+  [['Psillium', 'Псиллиум'], ["Xamirni bog'laydi", 'Связывает тесто']],
+  [["Zig'ir urug'i", 'Семена льна'], ['Omega-3 manbai', 'Источник омега-3']],
+];
+
+const GAME_TONES = ['sun', 'leaf', 'berry', 'mint', 'lilac', 'sky', 'orange'];
+const GAME_ICONS = {
+  keto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.6"/></svg>',
+  duel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M7 21h10M4 7h16"/><path d="M7 7l-3 6a3 3 0 006 0zM17 7l-3 6a3 3 0 006 0z"/></svg>',
+  quiz: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.3 9.2a2.8 2.8 0 015.4 1c0 1.9-2.7 2.5-2.7 4"/><path d="M12 17.4h.01"/></svg>',
+  memory: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="10" height="14" rx="2"/><path d="M15 7.5l4.2 1.1a2 2 0 011.4 2.4l-2.4 9a2 2 0 01-2.4 1.4L13 20.6"/></svg>',
+};
+const GAMES = [
+  { id: 'keto', title: ['Keto mi, emas mi?', 'Кето или нет?'], sub: ['10 ta mahsulot, tez javob bering', '10 продуктов, отвечайте быстро'] },
+  { id: 'duel', title: ['Qaysi birida uglevod kam?', 'Где меньше углеводов?'], sub: ['Ikkitadan birini tanlang, seriyani uzmang', 'Выбирайте из двух, не прерывайте серию'] },
+  { id: 'quiz', title: ['Keto viktorina', 'Кето-викторина'], sub: ['10 ta savol va qisqa izohlar', '10 вопросов с пояснениями'] },
+  { id: 'memory', title: ['Juftini top', 'Найди пару'], sub: ['Mahsulotni foydasi bilan juftlang', 'Соедините продукт с его пользой'] },
+];
+
+let gameState = null;  // the running game, or null while the menu shows
+
+function gameShuffle(list) {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function gamesBest() {
+  try { return JSON.parse(localStorage.getItem('ketoshop_games') || '{}') || {}; } catch (_) { return {}; }
+}
+
+function saveGameBest(id, value) {
+  const best = gamesBest();
+  const lowerWins = id === 'memory';
+  const prev = best[id];
+  const better = prev === undefined || (lowerWins ? value < prev : value > prev);
+  if (better) {
+    best[id] = value;
+    try { localStorage.setItem('ketoshop_games', JSON.stringify(best)); } catch (_) { /* quota — ignore */ }
+  }
+  return better;
+}
+
+function gameBestLabel(id) {
+  const b = gamesBest()[id];
+  if (b === undefined) return '';
+  if (id === 'keto' || id === 'quiz') return gx('Rekord: ' + b + '/10', 'Рекорд: ' + b + '/10');
+  if (id === 'duel') return gx('Rekord: ' + b + ' ketma-ket', 'Рекорд: ' + b + ' подряд');
+  return gx('Rekord: ' + b + ' urinish', 'Рекорд: ' + b + ' попыток');
+}
+
+function gameHaptic(ok) {
+  try { if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred(ok ? 'success' : 'error'); } catch (_) {}
+}
+
+function gameTileHtml(g) {
+  const best = gameBestLabel(g.id);
+  return '<button type="button" class="game-tile" data-game="' + g.id + '" onclick="openGame(\'' + g.id + '\')">' +
+    '<span class="game-tile-icon" aria-hidden="true">' + GAME_ICONS[g.id] + '</span>' +
+    '<span class="game-tile-title">' + escapeHtml(gx(g.title[0], g.title[1])) + '</span>' +
+    '<span class="game-tile-sub">' + escapeHtml(gx(g.sub[0], g.sub[1])) + '</span>' +
+    (best ? '<span class="game-tile-best">' + escapeHtml(best) + '</span>' : '') +
+  '</button>';
+}
+
+// Home-page teaser: a rail of the four game tiles.
+function renderGamesTeaser() {
+  const box = document.getElementById('home-games');
+  if (!box) return;
+  box.innerHTML =
+    '<div class="section-header"><div class="section-title">🎮 ' + escapeHtml(gx("Bilim o'yinlari", 'Игры знаний')) + '</div></div>' +
+    '<div class="games-rail">' + GAMES.map(gameTileHtml).join('') + '</div>';
+}
+
+function renderGamesPage() {
+  gameState = null;
+  const page = document.getElementById('page-games');
+  page.classList.remove('playing');
+  document.getElementById('games-title').textContent = gx("Bilim o'yinlari", 'Игры знаний');
+  document.getElementById('games-body').innerHTML =
+    '<p class="games-intro">' + escapeHtml(gx(
+      "Keto haqida o'ynab o'rganing: qaysi mahsulot mos, qayerda uglevod kam, nima uchun.",
+      'Узнавайте о кето играя: что подходит, где меньше углеводов и почему.')) + '</p>' +
+    '<div class="games-grid">' + GAMES.map(gameTileHtml).join('') + '</div>' +
+    '<p class="games-note">' + escapeHtml(gx(
+      "Uglevod qiymatlari 100 g uchun taxminiy (USDA ma'lumotlari), navi va pishirilishiga qarab farq qiladi. Bu tibbiy maslahat emas. Natijalaringiz faqat shu telefonda saqlanadi.",
+      'Углеводы указаны примерно на 100 г (данные USDA) и зависят от сорта и приготовления. Это не медицинская рекомендация. Результаты хранятся только на этом телефоне.')) + '</p>';
+  renderGamesTeaser();
+}
+
+function openGame(id) {
+  if (activePage !== 'games') switchPage('games');
+  document.getElementById('page-games').classList.add('playing');
+  ({ keto: startKetoGame, duel: startDuelGame, quiz: startQuizGame, memory: startMemoryGame })[id]();
+  window.scrollTo(0, 0);
+}
+
+function gameToShop(cat) {
+  switchPage('catalog');
+  selectCategory(cat);
+  window.scrollTo(0, 0);
+}
+
+function gameTitle(id) {
+  const g = GAMES.find(x => x.id === id);
+  return gx(g.title[0], g.title[1]);
+}
+
+function setGameScreen(id, score, inner) {
+  document.getElementById('games-body').innerHTML =
+    '<div class="game-shell">' +
+      '<div class="game-top">' +
+        '<button type="button" class="game-back" onclick="renderGamesPage()">‹ ' + escapeHtml(gx("O'yinlar", 'Игры')) + '</button>' +
+        '<div class="game-title">' + escapeHtml(gameTitle(id)) + '</div>' +
+        (score !== '' ? '<div class="game-score" id="game-score">' + score + '</div>' : '') +
+      '</div>' + inner +
+    '</div>';
+}
+
+function gameProgressHtml(marks, total) {
+  let html = '<div class="game-progress" aria-hidden="true">';
+  for (let i = 0; i < total; i++) {
+    const cls = i < marks.length ? (marks[i] ? 'ok' : 'bad') : (i === marks.length ? 'now' : '');
+    html += '<i class="' + cls + '"></i>';
+  }
+  return html + '</div>';
+}
+
+function gameToneStyle(i) {
+  const t = GAME_TONES[i % GAME_TONES.length];
+  return 'style="--tint: var(--t-' + t + '); --tone: var(--c-' + t + ')"';
+}
+
+function foodName(f) { return gx(f[0], f[1]); }
+function foodCarbs(f) { return gx('~' + f[2] + ' g', '~' + f[2] + ' г'); }
+
+function foodCardHtml(f, i, tag) {
+  const name = foodName(f);
+  const inner =
+    '<span class="food-mono" aria-hidden="true">' + escapeHtml(name.charAt(0)) + '</span>' +
+    '<span class="food-name">' + escapeHtml(name) + '</span>' +
+    '<span class="food-sub">100 ' + gx('g', 'г') + '</span>';
+  return tag === 'button'
+    ? '<button type="button" class="food-card duel-card" ' + gameToneStyle(i) + ' onclick="answerDuel(' + i + ')">' + inner + '<span class="duel-carbs"></span></button>'
+    : '<div class="food-card" ' + gameToneStyle(i) + '>' + inner + '</div>';
+}
+
+function gameRevealHtml(ok, verdictText, bodyHtml, shopCat, nextLabel, nextFn) {
+  return '<div class="game-reveal">' +
+    '<span class="game-verdict ' + (ok ? 'ok' : 'bad') + '">' + (ok ? '✓ ' : '✗ ') + escapeHtml(verdictText) + '</span>' +
+    bodyHtml +
+    '<div class="game-actions">' +
+      (shopCat ? '<button type="button" class="game-shop" onclick="gameToShop(\'' + shopCat + '\')">' + escapeHtml(gx("Do'konda ko'rish", 'Смотреть в магазине')) + ' →</button>' : '') +
+      '<button type="button" class="game-next" onclick="' + nextFn + '">' + escapeHtml(nextLabel) + '</button>' +
+    '</div></div>';
+}
+
+function showGameReveal(html) {
+  const slot = document.getElementById('game-reveal-slot');
+  slot.innerHTML = html;
+  const box = slot.firstElementChild;
+  if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function gameNextLabel(isLast) {
+  return isLast ? gx('Natijani ko\'rish', 'Посмотреть результат') : gx('Keyingisi', 'Дальше');
+}
+
+// ── 1. Keto mi, emas mi? ─────────────────────────────────────────────
+function startKetoGame() {
+  const yes = gameShuffle(GAME_FOODS.filter(f => f[3])).slice(0, 5);
+  const no = gameShuffle(GAME_FOODS.filter(f => !f[3])).slice(0, 5);
+  gameState = { id: 'keto', items: gameShuffle(yes.concat(no)), i: 0, score: 0, marks: [], answered: false };
+  renderKetoRound();
+}
+
+function renderKetoRound() {
+  const s = gameState;
+  const f = s.items[s.i];
+  setGameScreen('keto', s.score + '/' + s.items.length,
+    gameProgressHtml(s.marks, s.items.length) +
+    foodCardHtml(f, s.i) +
+    '<div class="game-answers" id="keto-answers">' +
+      '<button type="button" class="game-btn yes" onclick="answerKeto(true)">✓ ' + escapeHtml(gx('Keto', 'Кето')) + '</button>' +
+      '<button type="button" class="game-btn no" onclick="answerKeto(false)">✗ ' + escapeHtml(gx('Keto emas', 'Не кето')) + '</button>' +
+    '</div>' +
+    '<div id="game-reveal-slot"></div>');
+}
+
+function answerKeto(saysKeto) {
+  const s = gameState;
+  if (!s || s.id !== 'keto' || s.answered) return;
+  s.answered = true;
+  const f = s.items[s.i];
+  const ok = saysKeto === f[3];
+  if (ok) s.score++;
+  s.marks.push(ok);
+  gameHaptic(ok);
+  document.querySelectorAll('#keto-answers .game-btn').forEach(b => { b.disabled = true; });
+  document.getElementById('game-score').textContent = s.score + '/' + s.items.length;
+  const verdict = ok ? gx("To'g'ri!", 'Верно!') : gx("Noto'g'ri", 'Неверно');
+  const body =
+    '<div class="game-carbs">' + foodCarbs(f) + ' <small>' + escapeHtml(gx('sof uglevod 100 g da', 'чистых углеводов на 100 г')) + '</small></div>' +
+    '<div class="game-fact"><b>' + escapeHtml(f[3] ? gx('Keto uchun mos.', 'Подходит для кето.') : gx('Keto uchun mos emas.', 'Не подходит для кето.')) + '</b> ' +
+      escapeHtml(gx(f[5], f[6])) + '</div>';
+  showGameReveal(gameRevealHtml(ok, verdict, body, f[4], gameNextLabel(s.i === s.items.length - 1), 'nextKetoRound()'));
+}
+
+function nextKetoRound() {
+  const s = gameState;
+  if (!s || s.id !== 'keto') return;
+  s.i++;
+  s.answered = false;
+  if (s.i >= s.items.length) { finishGame('keto', s.score, s.items.length); return; }
+  renderKetoRound();
+  window.scrollTo(0, 0);
+}
+
+// ── 2. Qaysi birida uglevod kam? ─────────────────────────────────────
+const DUEL_MAX = 12;
+
+function startDuelGame() {
+  gameState = { id: 'duel', streak: 0, used: new Set(), pair: null, answered: false };
+  renderDuelRound();
+}
+
+function pickDuelPair() {
+  const s = gameState;
+  for (let tries = 0; tries < 300; tries++) {
+    const a = GAME_FOODS[Math.floor(Math.random() * GAME_FOODS.length)];
+    const b = GAME_FOODS[Math.floor(Math.random() * GAME_FOODS.length)];
+    // Ties and near-ties are not fair questions with rounded figures.
+    if (a === b || Math.abs(a[2] - b[2]) < 3) continue;
+    const key = [a[0], b[0]].sort().join('|');
+    if (s.used.has(key)) continue;
+    s.used.add(key);
+    return [a, b];
+  }
+  return [GAME_FOODS[0], GAME_FOODS[18]];
+}
+
+function renderDuelRound() {
+  const s = gameState;
+  s.pair = pickDuelPair();
+  s.answered = false;
+  setGameScreen('duel', '🔥 ' + s.streak,
+    '<div class="duel-q">' + escapeHtml(gx('Qaysi birida sof uglevod kamroq?', 'В чём меньше чистых углеводов?')) + '</div>' +
+    '<div class="duel" id="duel">' + foodCardHtml(s.pair[0], 0, 'button') + foodCardHtml(s.pair[1], 1, 'button') +
+      '<div class="duel-vs" aria-hidden="true">VS</div></div>' +
+    '<div id="game-reveal-slot"></div>');
+}
+
+function answerDuel(k) {
+  const s = gameState;
+  if (!s || s.id !== 'duel' || s.answered) return;
+  s.answered = true;
+  const pick = s.pair[k];
+  const other = s.pair[1 - k];
+  const ok = pick[2] < other[2];
+  const cards = document.querySelectorAll('#duel .duel-card');
+  cards.forEach((c, i) => {
+    c.disabled = true;
+    c.querySelector('.duel-carbs').textContent = foodCarbs(s.pair[i]);
+    c.classList.add(s.pair[i][2] < s.pair[1 - i][2] ? 'win' : 'lose');
+  });
+  cards[k].classList.add('picked');
+  gameHaptic(ok);
+  const low = ok ? pick : other;
+  const high = ok ? other : pick;
+  const fact = '<div class="game-fact">' + escapeHtml(gx(
+    foodName(low) + ': ' + foodCarbs(low) + ', ' + foodName(high) + ': ' + foodCarbs(high) + '. ' + low[5],
+    foodName(low) + ': ' + foodCarbs(low) + ', ' + foodName(high) + ': ' + foodCarbs(high) + '. ' + low[6])) + '</div>';
+  if (ok) {
+    s.streak++;
+    document.getElementById('game-score').textContent = '🔥 ' + s.streak;
+    const done = s.streak >= DUEL_MAX;
+    showGameReveal(gameRevealHtml(true, gx("To'g'ri! Seriya: ", 'Верно! Серия: ') + s.streak, fact, low[4],
+      gameNextLabel(done), done ? 'finishGame(\'duel\', ' + s.streak + ', ' + DUEL_MAX + ')' : 'renderDuelRound()'));
+  } else {
+    showGameReveal(gameRevealHtml(false, gx('Seriya tugadi', 'Серия прервалась'), fact, low[4],
+      gameNextLabel(true), 'finishGame(\'duel\', ' + s.streak + ', ' + DUEL_MAX + ')'));
+  }
+}
+
+// ── 3. Keto viktorina ────────────────────────────────────────────────
+function startQuizGame() {
+  const items = gameShuffle(GAME_QUIZ).map(item => ({
+    item,
+    order: gameShuffle([0, 1, 2, 3]),  // shown position → answer index (0 is right)
+  }));
+  gameState = { id: 'quiz', items, i: 0, score: 0, marks: [], answered: false };
+  renderQuizRound();
+}
+
+function renderQuizRound() {
+  const s = gameState;
+  const { item, order } = s.items[s.i];
+  setGameScreen('quiz', s.score + '/' + s.items.length,
+    gameProgressHtml(s.marks, s.items.length) +
+    '<div class="quiz-q">' + escapeHtml(gx(item.q[0], item.q[1])) + '</div>' +
+    '<div class="quiz-opts" id="quiz-opts">' + order.map((ai, pos) =>
+      '<button type="button" class="quiz-opt" data-pos="' + pos + '" onclick="answerQuiz(' + pos + ')">' +
+        '<b>' + 'ABCD'[pos] + '</b><span>' + escapeHtml(gx(item.a[ai][0], item.a[ai][1])) + '</span></button>'
+    ).join('') + '</div>' +
+    '<div id="game-reveal-slot"></div>');
+}
+
+function answerQuiz(pos) {
+  const s = gameState;
+  if (!s || s.id !== 'quiz' || s.answered) return;
+  s.answered = true;
+  const { item, order } = s.items[s.i];
+  const ok = order[pos] === 0;
+  if (ok) s.score++;
+  s.marks.push(ok);
+  gameHaptic(ok);
+  document.querySelectorAll('#quiz-opts .quiz-opt').forEach(b => {
+    b.disabled = true;
+    const p = +b.dataset.pos;
+    if (order[p] === 0) b.classList.add('right');
+    else if (p === pos) b.classList.add('wrong');
+  });
+  document.getElementById('game-score').textContent = s.score + '/' + s.items.length;
+  const body = '<div class="game-fact">' + escapeHtml(gx(item.e[0], item.e[1])) + '</div>';
+  showGameReveal(gameRevealHtml(ok, ok ? gx("To'g'ri!", 'Верно!') : gx("Noto'g'ri", 'Неверно'), body, null,
+    gameNextLabel(s.i === s.items.length - 1), 'nextQuizRound()'));
+}
+
+function nextQuizRound() {
+  const s = gameState;
+  if (!s || s.id !== 'quiz') return;
+  s.i++;
+  s.answered = false;
+  if (s.i >= s.items.length) { finishGame('quiz', s.score, s.items.length); return; }
+  renderQuizRound();
+  window.scrollTo(0, 0);
+}
+
+// ── 4. Juftini top ───────────────────────────────────────────────────
+function startMemoryGame() {
+  const cards = [];
+  GAME_PAIRS.forEach((pair, i) => {
+    cards.push({ pair: i, kind: 'product', text: pair[0] });
+    cards.push({ pair: i, kind: 'benefit', text: pair[1] });
+  });
+  gameState = { id: 'memory', cards: gameShuffle(cards), open: [], found: 0, moves: 0, lock: false };
+  const s = gameState;
+  setGameScreen('memory', memoryScoreText(0),
+    '<p class="games-intro mem-hint">' + escapeHtml(gx(
+      "Kartani oching va mahsulotni uning foydasi bilan juftlang.",
+      'Открывайте карточки и соединяйте продукт с его пользой.')) + '</p>' +
+    '<div class="mem-grid" id="mem-grid">' + s.cards.map((c, k) =>
+      '<button type="button" class="mem-card" data-k="' + k + '" onclick="flipMemory(' + k + ')" aria-label="' + escapeHtml(gx('Karta', 'Карточка')) + ' ' + (k + 1) + '">' +
+        '<span class="mem-face mem-back" aria-hidden="true">?</span>' +
+        '<span class="mem-face mem-front kind-' + c.kind + '">' + escapeHtml(gx(c.text[0], c.text[1])) + '</span>' +
+      '</button>').join('') + '</div>');
+}
+
+function memoryScoreText(moves) {
+  return gx(moves + ' urinish', moves + ' попыт.');
+}
+
+function flipMemory(k) {
+  const s = gameState;
+  if (!s || s.id !== 'memory' || s.lock) return;
+  const el = document.querySelector('.mem-card[data-k="' + k + '"]');
+  if (!el || el.classList.contains('open') || el.classList.contains('done')) return;
+  el.classList.add('open');
+  s.open.push(k);
+  if (s.open.length < 2) return;
+
+  s.moves++;
+  document.getElementById('game-score').textContent = memoryScoreText(s.moves);
+  const [a, b] = s.open;
+  const els = s.open.map(i => document.querySelector('.mem-card[data-k="' + i + '"]'));
+  s.open = [];
+  if (s.cards[a].pair === s.cards[b].pair) {
+    s.found++;
+    gameHaptic(true);
+    els.forEach(e => { e.classList.add('done'); e.disabled = true; });
+    if (s.found === GAME_PAIRS.length) setTimeout(() => finishGame('memory', s.moves, GAME_PAIRS.length), 700);
+  } else {
+    s.lock = true;
+    gameHaptic(false);
+    els.forEach(e => e.classList.add('miss'));
+    setTimeout(() => {
+      els.forEach(e => e.classList.remove('open', 'miss'));
+      s.lock = false;
+    }, 950);
+  }
+}
+
+// ── Result screen ────────────────────────────────────────────────────
+function finishGame(id, value, total) {
+  if (!gameState || gameState.id !== id) return;
+  gameState.finished = true;
+  const record = saveGameBest(id, value);
+  let big, msg, great;
+  if (id === 'memory') {
+    big = String(value);
+    great = value <= total + 3;
+    msg = gx(value + ' urinishda hammasini topdingiz', 'Всё найдено за ' + value + ' попыток');
+  } else if (id === 'duel') {
+    big = String(value);
+    great = value >= 6;
+    msg = value >= total ? gx('Barcha savollar to\'g\'ri — zo\'r!', 'Все ответы верные — отлично!')
+                         : gx(value + ' ta ketma-ket to\'g\'ri javob', value + ' верных ответов подряд');
+  } else {
+    big = value + '/' + total;
+    great = value >= total * 0.8;
+    msg = great ? gx('Ajoyib! Siz keto bilimdonisiz', 'Отлично! Вы знаток кето')
+        : value >= total * 0.5 ? gx('Yaxshi natija!', 'Хороший результат!')
+        : gx('Yana bir bor urinib ko\'ring', 'Попробуйте ещё раз');
+  }
+  const sub = record ? gx('Yangi rekord! 🎉', 'Новый рекорд! 🎉') : gameBestLabel(id);
+  setGameScreen(id, '',
+    '<div class="game-result" id="game-result">' +
+      '<div class="game-result-big">' + escapeHtml(big) + '</div>' +
+      '<div class="game-result-msg">' + escapeHtml(msg) + '</div>' +
+      '<div class="game-result-sub">' + escapeHtml(sub) + '</div>' +
+      '<div class="game-actions">' +
+        '<button type="button" class="game-again" onclick="openGame(\'' + id + '\')">' + escapeHtml(gx("Qayta o'ynash", 'Сыграть ещё')) + '</button>' +
+        '<button type="button" class="game-other" onclick="renderGamesPage()">' + escapeHtml(gx("Boshqa o'yin", 'Другая игра')) + '</button>' +
+      '</div>' +
+    '</div>' +
+    '<button type="button" class="game-shop game-shop-wide" onclick="gameToShop(\'keto_flour\')">' +
+      escapeHtml(gx("Keto mahsulotlarini ko'rish", 'Смотреть кето-продукты')) + ' →</button>');
+  if (great || record) launchConfetti(document.getElementById('game-result'));
+  gameHaptic(true);
+  renderGamesTeaser();
+}
 
 // ===== INIT =====
 (async function init() {
@@ -3272,7 +4349,8 @@ document.querySelectorAll('.tab-item').forEach(tab => {
             + '.home-hero-cta,.promo-banner,.cart-nudge-add,.review-submit-btn';
   const LIGHT = '.cat-tab,.qty-btn,.qty-step,.btn-clear,.tab-item,.card-fav-btn,'
               + '.detail-fav-btn,.modal-close,.promo-strip,.checkout-back-btn,'
-              + '.location-btn,.cheque-pay-later-btn,.lang-btn,.remove-btn';
+              + '.location-btn,.cheque-pay-later-btn,.lang-btn,.remove-btn,'
+              + '.game-tile,.game-next,.game-back,.game-shop,.mem-card';
 
   document.addEventListener('pointerdown', (e) => {
     try {
@@ -5196,6 +6274,10 @@ function renderProfilePage() {
     '<div class="profile-menu-item" onclick="switchPage(\'fav\')">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z"/></svg>' +
       t.tabFav +
+    '</div>' +
+    '<div class="profile-menu-item" onclick="switchPage(\'games\')">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M7 10.5v4M5 12.5h4"/><circle cx="15.5" cy="11.5" r=".6" fill="currentColor"/><circle cx="17.5" cy="13.8" r=".6" fill="currentColor"/></svg>' +
+      gx("Bilim o'yinlari", 'Игры знаний') +
     '</div>' +
     '<div class="profile-menu-item" onclick="contactAdmin()">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' +
