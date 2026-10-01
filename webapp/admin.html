@@ -93,6 +93,19 @@
   .pill.on{background:var(--green-wash);color:var(--green)}
   .pill.off{background:var(--chip-bg);color:var(--ink-3)}
   .pill.disc{background:var(--red-wash);color:var(--red)}
+  /* retail / wholesale kind (2026-10-01) */
+  .pill.kind-retail{background:var(--chip-bg);color:var(--ink-2)}
+  .pill.kind-both{background:var(--green-wash);color:var(--green)}
+  .pill.kind-b2b{background:var(--amber-wash);color:var(--amber)}
+  .b2b-cell .sub{display:block;font-size:11.5px;font-weight:500;color:var(--ink-3);white-space:nowrap;margin-top:2px}
+  .b2b-cell .save{color:var(--green);font-weight:700}
+  .b2b-cell .dear{color:var(--red);font-weight:700}
+  #prodKind{margin-bottom:0}
+  .prod-search{min-width:min(100%,360px);font-size:14px}
+  .nocost-btn{border:none;cursor:pointer;font:inherit;font-weight:700;border-radius:20px;padding:2px 10px;
+    background:var(--red-wash);color:var(--red)}
+  .nocost-btn.on{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+  mark.hit{background:var(--amber-wash);color:inherit;border-radius:3px;padding:0 1px}
   .row-actions{display:flex;gap:6px;justify-content:flex-end}
 
   /* ===== sets ===== */
@@ -626,7 +639,15 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
 
   <section class="view" id="view-products">
     <div class="toolbar">
-      <input type="search" id="prodSearch" placeholder="🔍 Mahsulot qidirish…">
+      <input type="search" id="prodSearch" class="prod-search" autocomplete="off"
+             placeholder="🔍 Nomi, ruscha nomi yoki #raqam — lotin/kirill farqi yo‘q  ( / )"
+             title="Masalan: bodom · бодом · uni bodom · #42 · 200gr">
+      <div class="period-switch" id="prodKind" title="Qayerda sotiladi">
+        <button class="active" data-kind="all">Hammasi</button>
+        <button data-kind="retail">🛒 Faqat chakana</button>
+        <button data-kind="both">🛒+🏢 Chakana + B2B</button>
+        <button data-kind="b2b_only">🏢 Faqat B2B</button>
+      </div>
       <span class="count-pill" id="prodCount"></span>
       <div class="spacer" style="margin-left:auto"></div>
       <button class="btn btn-o" id="descFillBtn" type="button"
@@ -641,7 +662,9 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
     <div class="tbl-wrap">
       <table>
         <thead><tr>
-          <th>Mahsulot</th><th>Kategoriya</th><th style="text-align:right">Narx</th>
+          <th>Mahsulot</th><th>Kategoriya</th><th>Turi</th>
+          <th style="text-align:right" title="Chakana — bitta qadoq narxi">Chakana narx</th>
+          <th style="text-align:right" title="Optom narx 1 kg uchun; ostida chakana narx 1 kg ga keltirilgan va farq">Optom narx (1 kg) · farq</th>
           <th style="text-align:right">Tannarx</th>
           <th style="text-align:right">Qoldiq</th><th>Chegirma</th><th>Holat</th><th></th>
         </tr></thead>
@@ -1530,20 +1553,40 @@ async function loadProducts(){
   const d=await api('/admin/api/products');PRODUCTS=d.products||[];renderProducts();
 }
 function renderProducts(){
-  const q=($('#prodSearch').value||'').toLowerCase();
-  const list=PRODUCTS.filter(p=>!q||(p.name||'').toLowerCase().includes(q)||(p.name_ru||'').toLowerCase().includes(q));
-  const noCost=list.filter(p=>!(+p.cost_price>0)).length;
-  $('#prodCount').textContent=list.length+' ta mahsulot'
-    +(noCost?` · ⚠️ ${noCost} tasida tannarx yo'q`:'');
+  const q=($('#prodSearch').value||'').trim();
+  const byName=q?PRODUCTS.filter(p=>prodMatches(p,q)):PRODUCTS;
+  // counts per kind on the filter buttons, for whatever the search left
+  const kc={all:byName.length,retail:0,both:0,b2b_only:0};
+  byName.forEach(p=>{kc[prodKind(p)]++;});
+  $$('#prodKind button').forEach(b=>{
+    const base={all:'Hammasi',retail:'🛒 Faqat chakana',both:'🛒+🏢 Chakana + B2B',b2b_only:'🏢 Faqat B2B'}[b.dataset.kind];
+    b.textContent=base+' · '+kc[b.dataset.kind];
+    b.classList.toggle('active',b.dataset.kind===PROD_KIND);
+  });
+  const kindList=PROD_KIND==='all'?byName:byName.filter(p=>prodKind(p)===PROD_KIND);
+  // "⚠️ N tasida tannarx yo'q" is a button (2026-10-01): it narrows the table
+  // to exactly those products, archived ones included — they are counted too.
+  const noCostList=kindList.filter(p=>!(+p.cost_price>0));
+  if(!noCostList.length)PROD_NOCOST=false;      // all fixed → back to the full list
+  const nArch=noCostList.filter(p=>!p.is_active).length;
+  const list=PROD_NOCOST?noCostList:kindList;
+  $('#prodCount').innerHTML=esc(kindList.length+' ta mahsulot')+(noCostList.length
+    ? ` · <button type="button" class="nocost-btn${PROD_NOCOST?' on':''}" id="noCostBtn"
+         title="Tannarx (cost_price) 0 yoki bo‘sh — foyda shu mahsulotlarda oshirib ko‘rsatiladi">${
+         PROD_NOCOST?'✕ Hammasini ko‘rsatish'
+           :`⚠️ ${noCostList.length} tasida tannarx yo‘q`+(nArch?` (${nArch} tasi arxivda)`:'')+' — ko‘rish'}</button>`
+    : '');
   $('#prodEmpty').style.display=list.length?'none':'block';
   $('#prodRows').innerHTML=list.map(p=>{
     const img=p.image_url?`<img src="${p.image_url}" alt="">`:'📦';
     const disc=p.discount_percent>0?`<span class="pill disc">−${p.discount_percent}%</span>`:'—';
     const st=p.is_active?`<span class="pill on">Faol</span>`:`<span class="pill off">Arxiv</span>`;
     return `<tr>
-      <td><div class="pname"><div class="pthumb">${img}</div><div>${esc(p.name)}<div style="font-size:11.5px;color:var(--ink-3)">#${p.id}</div></div></div></td>
+      <td><div class="pname"><div class="pthumb">${img}</div><div>${hl(p.name,q)}<div style="font-size:11.5px;color:var(--ink-3)">#${p.id}${p.name_ru?' · '+hl(p.name_ru,q):''}</div></div></div></td>
       <td>${catLabel(p.category)}</td>
-      <td class="tnum" style="text-align:right;font-weight:700">${fmt(p.price)}</td>
+      <td>${kindPill(p)}</td>
+      <td class="tnum" style="text-align:right;font-weight:700">${prodKind(p)==='b2b_only'?'<span style="color:var(--ink-3);font-weight:500">do‘konda yo‘q</span>':fmt(p.price)}</td>
+      <td class="tnum b2b-cell" style="text-align:right">${b2bCell(p)}</td>
       <td class="tnum" style="text-align:right">${costCell(p)}</td>
       <td class="tnum" style="text-align:right">${(+p.quantity).toLocaleString()}</td>
       <td>${disc}</td><td>${st}</td>
@@ -1554,6 +1597,41 @@ function renderProducts(){
       </div></td></tr>`;
   }).join('');
 }
+/* ===== retail vs wholesale (2026-10-01) — see b2b_pricing.py ===== */
+let PROD_KIND='all', PROD_NOCOST=false;
+$('#prodCount').addEventListener('click',e=>{
+  if(!e.target.closest('#noCostBtn'))return;
+  PROD_NOCOST=!PROD_NOCOST;renderProducts();
+});
+function prodKind(p){
+  if(p.pricing&&p.pricing.kind)return p.pricing.kind;
+  if(p.b2b_only)return 'b2b_only';
+  return (+p.b2b_price>0)?'both':'retail';
+}
+function kindPill(p){
+  return {retail:'<span class="pill kind-retail">🛒 Chakana</span>',
+          both:'<span class="pill kind-both">🛒+🏢 Ikkalasi</span>',
+          b2b_only:'<span class="pill kind-b2b">🏢 Faqat B2B</span>'}[prodKind(p)];
+}
+function b2bCell(p){
+  const b2b=+p.b2b_price||0, pr=p.pricing||{}, unit=pr.base==='l'?'1 l':'1 kg';
+  if(!b2b)return '<span style="color:var(--ink-3)">—</span>';
+  let html=`<b>${fmt(b2b)}</b>`;
+  if(pr.retail_per_base){
+    const d=pr.diff_som, pct=String(pr.diff_pct).replace('.',',');
+    const diff=d>=0
+      ? `<span class="save">optom ${fmt(d)} arzon (−${pct}%)</span>`
+      : `<span class="dear">optom ${fmt(-d)} qimmat (+${String(-pr.diff_pct).replace('.',',')}%)</span>`;
+    html+=`<span class="sub">chakana ${unit}: ${fmt(pr.retail_per_base)} (${esc(pr.pack)} qadoqdan)</span><span class="sub">${diff}</span>`;
+  }else if(prodKind(p)!=='b2b_only'){
+    html+=`<span class="sub" title="Nomida qadoq og‘irligi (masalan 200gr, 1kg) yo‘q">farqni hisoblab bo‘lmadi — nomda og‘irlik yo‘q</span>`;
+  }
+  return html;
+}
+$('#prodKind').addEventListener('click',e=>{
+  const b=e.target.closest('[data-kind]');if(!b)return;
+  PROD_KIND=b.dataset.kind;renderProducts();
+});
 function costCell(p){
   const c=+p.cost_price||0;
   if(c>0)return `<span style="color:var(--ink-2)">${fmt(c)}</span>`;
@@ -1561,6 +1639,52 @@ function costCell(p){
 }
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 $('#prodSearch').addEventListener('input',renderProducts);
+/* "/" jumps to the search box from anywhere on the Mahsulotlar tab. */
+document.addEventListener('keydown',e=>{
+  if(e.key!=='/'||e.ctrlKey||e.metaKey||e.altKey)return;
+  const t=e.target, typing=t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable);
+  if(typing||!$('#view-products').classList.contains('active'))return;
+  e.preventDefault();$('#prodSearch').focus();$('#prodSearch').select();
+});
+
+/* ===== product search (2026-10-01) =====
+   Both the query and the product text are folded to one Latin skeleton, so
+   "бодом", "Bodom" and "BODOM" all meet, o'/o‘/oʻ/ў are the same letter, and
+   word order doesn't matter ("uni bodom"). "#42" (or a bare 42 that is a
+   product id) finds by id. Every word of the query has to match. */
+const CYR2LAT={'а':'a','б':'b','в':'v','г':'g','ғ':'g','д':'d','е':'e','ё':'yo','ж':'j','з':'z','и':'i',
+  'й':'y','к':'k','қ':'q','л':'l','м':'m','н':'n','о':'o','ў':'o','п':'p','р':'r','с':'s','т':'t','у':'u',
+  'ф':'f','х':'h','ҳ':'h','ц':'ts','ч':'ch','ш':'sh','щ':'sh','ъ':'','ы':'i','ь':'','э':'e','ю':'yu','я':'ya'};
+function searchFold(str){
+  let out='';
+  for(const ch of String(str||'').toLowerCase()){
+    out+=(ch in CYR2LAT)?CYR2LAT[ch]:ch;
+  }
+  return out
+    .replace(/['‘’ʻʼ`´]/g,'')       // o' g' and their typographic cousins
+    .replace(/x/g,'h')               // xandon / хандон / handon
+    .replace(/[^a-z0-9#]+/g,' ')
+    .trim();
+}
+function prodMatches(p,q){
+  const words=searchFold(q).split(' ').filter(Boolean);
+  if(!words.length)return true;
+  const hay=' '+searchFold([p.name,p.name_ru,catLabel(p.category)].join(' '))+' ';
+  return words.every(w=>{
+    const id=w.replace(/^#/,'');
+    if(/^\d+$/.test(id)&&String(p.id)===id)return true;
+    if(w.startsWith('#'))return false;      // "#42" means the id, nothing else
+    return hay.includes(w);
+  });
+}
+/* Highlight the query words where they appear literally (same script). */
+function hl(text,q){
+  const safe=esc(text);
+  const words=String(q||'').toLowerCase().split(/\s+/).filter(w=>w.length>1&&!w.startsWith('#'));
+  if(!words.length)return safe;
+  const re=new RegExp('('+words.map(w=>esc(w).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')','gi');
+  return safe.replace(re,'<mark class="hit">$1</mark>');
+}
 
 window.openProdModal=function(id){
   editingProdId=id||null;
