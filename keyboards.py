@@ -703,6 +703,19 @@ def admin_marketing_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
 
 
 
+def courier_panel_url() -> str | None:
+    """The courier Kanban as its own Telegram window (admin_web.kuryer_page)."""
+    return WEBAPP_URL.rstrip("/") + "/kuryer" if WEBAPP_URL else None
+
+
+def courier_panel_button(lang: str = "uz") -> InlineKeyboardButton | None:
+    url = courier_panel_url()
+    if not url:
+        return None
+    text = "🚚 Kuryer paneli" if lang != "ru" else "🚚 Панель курьера"
+    return InlineKeyboardButton(text=text, web_app=WebAppInfo(url=url))
+
+
 def admin_order_filter_keyboard(lang: str, counts: dict | None = None) -> InlineKeyboardMarkup:
     """Order filter menu. If `counts` (a {status: int} dict, including
     "all") is provided, append the count to each label so the admin sees
@@ -714,7 +727,9 @@ def admin_order_filter_keyboard(lang: str, counts: dict | None = None) -> Inline
         return f"{base} · {n}" if n is not None else base
 
     all_label = _label("all", "📋 Hammasi" if lang == "uz" else "📋 Все")
-    return InlineKeyboardMarkup(inline_keyboard=[
+    # Courier board in its own window — the way in from "Buyurtmalar" (2026-10-01).
+    courier_row = [[b] for b in [courier_panel_button(lang)] if b]
+    return InlineKeyboardMarkup(inline_keyboard=courier_row + [
         [InlineKeyboardButton(text=all_label, callback_data="admin:orders:all")],
         [
             InlineKeyboardButton(text=_label("pending", get_text("order_status_pending", lang)), callback_data="admin:orders:pending"),

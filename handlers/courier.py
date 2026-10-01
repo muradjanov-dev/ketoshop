@@ -15,7 +15,9 @@ async def is_courier(user_id: int) -> bool:
     return user_id in couriers or user_id in ADMIN_IDS
 
 def get_courier_keyboard(lang: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    from keyboards import courier_panel_button
+    board = courier_panel_button(lang)
+    return InlineKeyboardMarkup(inline_keyboard=([[board]] if board else []) + [
         [InlineKeyboardButton(text="📦 Yangi buyurtmalar", callback_data="courier:new_orders")],
         [InlineKeyboardButton(text="🚚 Mening buyurtmalarim", callback_data="courier:my_orders")]
     ])

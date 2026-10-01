@@ -471,6 +471,14 @@
     .kb-card,.kb-count,.kb-ghost,.kb-skel::after,.kb-live.on .dot{animation:none!important}
     .kb-card,.kb-col,.kb-mini{transition:none!important}
   }
+/* ===== KURYER MODE (/kuryer, 2026-10-01) — the board opened from the bot as
+   its own Telegram window: no tabs, no dashboard, no password screen. ===== */
+body.kuryer-mode #loginView,
+body.kuryer-mode .tabs,
+body.kuryer-mode #logoutBtn,
+body.kuryer-mode .view:not(#view-courier){display:none!important}
+.kuryer-denied{min-height:100dvh;display:grid;place-items:center;padding:24px;text-align:center;
+  font-size:16px;line-height:1.5;color:var(--ink-2)}
 </style>
 </head>
 <body>
@@ -1195,7 +1203,13 @@ $('#prodCat').addEventListener('change',async()=>{
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
 
 async function api(path,opts={}){
-  const r=await fetch(path,{headers:{'Content-Type':'application/json'},credentials:'same-origin',...opts});
+  const headers={'Content-Type':'application/json'};
+  if(window.KURYER_MODE){
+    const tg=window.Telegram&&window.Telegram.WebApp;
+    if(tg&&tg.initData)headers['Authorization']='tma '+tg.initData;
+  }
+  const r=await fetch(path,{headers,credentials:'same-origin',...opts});
+  if(window.KURYER_MODE&&(r.status===401||r.status===403)){showKuryerDenied();throw new Error('unauthorized');}
   if(r.status===401){showLogin();throw new Error('unauthorized');}
   const data=await r.json().catch(()=>({}));
   if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
@@ -1426,7 +1440,7 @@ $('#dashCustomDateBtn').addEventListener('click', () => {
 const VIEWS=['dashboard','order-costs','courier','products','sets','promos','keto','bloggers','reklama','retention','expenses'];
 function switchView(v){
   if(!VIEWS.includes(v))v='dashboard';
-  localStorage.setItem('ketoshop_admin_view',v);
+  if(!window.KURYER_MODE)localStorage.setItem('ketoshop_admin_view',v);
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
   document.querySelectorAll('.view').forEach(s=>s.classList.toggle('active',s.id==='view-'+v));
   // the Kanban needs the full width; every other tab keeps the 1200px column
@@ -3081,7 +3095,25 @@ try{
 }catch(e){}
 
 /* ===== start ===== */
-(async()=>{try{await boot();}catch(e){showLogin();}})();
+function showKuryerDenied(msg){
+  try{kbPollOff();}catch(e){}
+  $('#shell').style.display='none';
+  let box=$('#kuryerDenied');
+  if(!box){box=document.createElement('div');box.id='kuryerDenied';box.className='kuryer-denied';document.body.appendChild(box);}
+  box.textContent='🔒 '+(msg||"Kuryer paneliga ruxsat yo'q. Admin sizni /addcourier buyrug'i bilan kuryer qilib qo'shishi kerak.");
+}
+function bootKuryer(){
+  document.body.classList.add('kuryer-mode');
+  document.title='Ketoshop — Kuryer paneli';
+  const h=$('header.top h1');if(h)h.textContent='Ketoshop — Kuryer paneli';
+  const sub=$('header.top .sub');if(sub)sub.textContent='Buyurtmalar doskasi';
+  const tg=window.Telegram&&window.Telegram.WebApp;
+  if(tg){try{tg.ready();tg.expand();}catch(e){}}
+  if(!tg||!tg.initData){showKuryerDenied("Bu sahifa botdagi «🚚 Kuryer paneli» tugmasi orqali ochiladi.");return;}
+  showShell();switchView('courier');
+}
+if(window.KURYER_MODE){bootKuryer();}
+else{(async()=>{try{await boot();}catch(e){showLogin();}})();}
 </script>
 </body>
 </html>
