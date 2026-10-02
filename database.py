@@ -586,6 +586,24 @@ async def init_db():
             )
         """)
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_user_id)")
+        # "Bepul xarid" referal keshbegi (2026-10-02, referral_program.py):
+        # taklif qilingan odamning birinchi yetkazilgan xaridining 3% i
+        # taklif qiluvchiga. cashback_order_id to'lgach qayta to'lanmaydi.
+        await conn.execute("ALTER TABLE referrals ADD COLUMN IF NOT EXISTS cashback_order_id INTEGER")
+        await conn.execute("ALTER TABLE referrals ADD COLUMN IF NOT EXISTS cashback_amount INTEGER")
+        await conn.execute("ALTER TABLE referrals ADD COLUMN IF NOT EXISTS cashback_at TIMESTAMP")
+        # Faqat shu dastur ishga tushgandan keyingi takliflar keshbek beradi:
+        # ustun qo'shilganda mavjud (eski musobaqa) qatorlar FALSE oladi,
+        # keyin default TRUE — yangi qatorlar avtomatik loyiq bo'ladi.
+        await conn.execute(
+            "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS cashback_eligible BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+        await conn.execute("ALTER TABLE referrals ALTER COLUMN cashback_eligible SET DEFAULT TRUE")
+        # Har bir yangi foydalanuvchiga bir martalik 10 Keto start bonusi.
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_keto_ledger_welcome_once "
+            "ON keto_ledger(user_id) WHERE kind = 'welcome'"
+        )
 
         # Single-row contest state, same pattern as gamification_state/
         # broadcast_state. image_url points at a web_images row uploaded
@@ -5397,6 +5415,145 @@ async def record_referral(referred_user_id: int, referrer_user_id: int) -> bool:
             return True
         except asyncpg.UniqueViolationError:
             return False
+
+
+# ===== "BEPUL XARID" REFERAL KESHBEGI (2026-10-02, referral_program.py) =====
+
+async def credit_welcome_keto(user_id: int, amount: int) -> bool:
+    """Yangi foydalanuvchiga bir martalik start bonusi. Referal havola orqali
+    kelib, award_referral'dan allaqachon Keto olgan bo'lsa — berilmaydi.
+    True — shu chaqiruv bonus berdi."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            already = await conn.fetchval(
+                "SELECT 1 FROM keto_ledger WHERE user_id = $1 AND kind IN ('welcome', 'referral') LIMIT 1",
+                user_id,
+            )
+            if already:
+                return False
+            try:
+                await conn.execute(
+                    "INSERT INTO keto_ledger (user_id, order_id, amount, kind, note) "
+                    "VALUES ($1, NULL, $2, 'welcome', 'Start bonusi')",
+                    user_id, amount,
+                )
+            except asyncpg.UniqueViolationError:
+                return False
+            await conn.execute(
+                "UPDATE users SET keto_balance = keto_balance + $1, keto_lifetime = keto_lifetime + $1 "
+                "WHERE user_id = $2",
+                amount, user_id,
+            )
+    return True
+
+
+async def claim_referral_cashback(referred_user_id: int, order_id: int, amount: int) -> int | None:
+    """Taklif qilingan odamning birinchi xaridi uchun keshbekni taklif
+    qiluvchiga yozadi — referrals qatorini band qilish va Keto berish bitta
+    tranzaksiyada. Taklif qiluvchi ID sini qaytaradi; referal bo'lmasa yoki
+    keshbek avval to'langan bo'lsa — None."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            referrer_id = await conn.fetchval(
+                "UPDATE referrals SET cashback_order_id = $2, cashback_amount = $3, "
+                "cashback_at = CURRENT_TIMESTAMP "
+                "WHERE referred_user_id = $1 AND cashback_order_id IS NULL AND cashback_eligible "
+                "RETURNING referrer_user_id",
+                referred_user_id, order_id, amount,
+            )
+            if referrer_id is None:
+                return None
+            await conn.execute(
+                "INSERT INTO keto_ledger (user_id, order_id, amount, kind, note) "
+                "VALUES ($1, $2, $3, 'referral_order', $4)",
+                referrer_id, order_id, amount,
+                f"Referal keshbek: user {referred_user_id}, buyurtma #{order_id}",
+            )
+            await conn.execute(
+                "UPDATE users SET keto_balance = keto_balance + $1, keto_lifetime = keto_lifetime + $1 "
+                "WHERE user_id = $2",
+                amount, referrer_id,
+            )
+    return referrer_id
+
+
+async def get_user_referral_summary(user_id: int) -> dict:
+    """Mijozning "Bepul xarid" ekrani uchun: nechta taklif, nechtasi xarid
+    qildi, referaldan jami qancha Keto ishladi."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) AS invited,
+                      COUNT(cashback_order_id) AS bought,
+                      COALESCE(SUM(cashback_amount), 0) AS cashback
+                 FROM referrals WHERE referrer_user_id = $1""",
+            user_id,
+        )
+    return {k: int(row[k] or 0) for k in ("invited", "bought", "cashback")}
+
+
+async def get_referral_program_stats(since: datetime | None = None) -> dict:
+    """Admin hisoboti uchun: taklif → xarid konversiyasi va berilgan Keto."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) AS invited,
+                      COUNT(cashback_order_id) AS bought,
+                      COALESCE(SUM(cashback_amount), 0) AS cashback
+                 FROM referrals
+                WHERE ($1::timestamp IS NULL OR created_at >= $1)""",
+            since,
+        )
+        bonus = await conn.fetchrow(
+            """SELECT COALESCE(SUM(amount) FILTER (WHERE kind = 'referral'), 0) AS referral_bonus,
+                      COALESCE(SUM(amount) FILTER (WHERE kind = 'welcome'), 0)  AS welcome_bonus
+                 FROM keto_ledger
+                WHERE kind IN ('referral', 'welcome')
+                  AND ($1::timestamp IS NULL OR created_at >= $1)""",
+            since,
+        )
+    return {
+        "invited": int(row["invited"] or 0),
+        "bought": int(row["bought"] or 0),
+        "cashback": int(row["cashback"] or 0),
+        "referral_bonus": int(bonus["referral_bonus"] or 0),
+        "welcome_bonus": int(bonus["welcome_bonus"] or 0),
+    }
+
+
+async def get_top_referral_earners(since: datetime | None = None, limit: int = 5) -> list[dict]:
+    """Referal keshbekidan eng ko'p Keto ishlaganlar."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT r.referrer_user_id AS user_id, u.username, u.full_name,
+                      COUNT(*) AS invites,
+                      COUNT(r.cashback_order_id) AS bought,
+                      COALESCE(SUM(r.cashback_amount), 0) AS cashback
+                 FROM referrals r
+                 JOIN users u ON u.user_id = r.referrer_user_id
+                WHERE ($1::timestamp IS NULL OR r.created_at >= $1)
+                GROUP BY r.referrer_user_id, u.username, u.full_name
+               HAVING COUNT(r.cashback_order_id) > 0
+                ORDER BY cashback DESC
+                LIMIT $2""",
+            since, limit,
+        )
+    return [dict(r) for r in rows]
+
+
+async def get_recent_referrals(limit: int = 30) -> list[dict]:
+    """Admin uchun: kim kimni taklif qildi, xarid qildimi, qancha keshbek."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT r.created_at, r.cashback_order_id, r.cashback_amount,
+                      r.referrer_user_id, ru.username AS referrer_username, ru.full_name AS referrer_name,
+                      r.referred_user_id, du.username AS referred_username, du.full_name AS referred_name
+                 FROM referrals r
+                 JOIN users ru ON ru.user_id = r.referrer_user_id
+                 JOIN users du ON du.user_id = r.referred_user_id
+                ORDER BY r.created_at DESC
+                LIMIT $1""",
+            limit,
+        )
+    return [dict(r) for r in rows]
 
 
 async def get_referral_contest_state() -> dict:

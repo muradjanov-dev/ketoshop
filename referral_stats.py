@@ -109,6 +109,20 @@ async def build_report(period: str = "30") -> str:
             lines.append(f"{i}. {_name(r)} — {_fmt(r['invites'])} ta")
         lines.append("")
 
+    # "Bepul xarid" referal dasturi (referral_program.py)
+    prog = await database.get_referral_program_stats(since)
+    lines.append("🎁 <b>Bepul xarid — referal keshbek</b>")
+    lines.append(f"👥 Taklif qilingan: {_fmt(prog['invited'])} ta · "
+                 f"🛒 xarid qilgan: {_fmt(prog['bought'])} ({_pct(prog['bought'], prog['invited'])})")
+    lines.append(f"💰 3% keshbek berildi: {_fmt(prog['cashback'])} Keto")
+    lines.append(f"🎁 Start bonuslari: {_fmt(prog['referral_bonus'] + prog['welcome_bonus'])} Keto "
+                 f"(referal: {_fmt(prog['referral_bonus'])}, oddiy: {_fmt(prog['welcome_bonus'])})")
+    earners = await database.get_top_referral_earners(since, limit=5)
+    for i, r in enumerate(earners, 1):
+        lines.append(f"{i}. {_name(r)} — {_fmt(r['bought'])}/{_fmt(r['invites'])} xarid · "
+                     f"{_fmt(r['cashback'])} Keto")
+    lines.append("")
+
     sources = await database.get_ad_source_stats(since)
     if sources:
         lines.append("📣 <b>Reklama manbalari</b>")
@@ -130,6 +144,7 @@ def _keyboard(active: str) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(inline_keyboard=[
         periods,
+        [InlineKeyboardButton(text="👥 Kim kimni taklif qildi", callback_data="refstat_list")],
         [InlineKeyboardButton(text="📢 Blogerlar", callback_data="admin:bloger"),
          InlineKeyboardButton(text="🔁 Qayta sotuv", callback_data="admin:retention")],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_menu:marketing")],
@@ -156,6 +171,33 @@ async def switch_period(callback: CallbackQuery):
         return
     await callback.answer()
     await _render(callback, await build_report(period), _keyboard(period))
+
+
+@router.callback_query(F.data == "refstat_list")
+async def show_referral_list(callback: CallbackQuery):
+    """"Bepul xarid" referallari: kim kimni taklif qildi va keshbek holati."""
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("Faqat adminlar uchun", show_alert=True)
+        return
+    await callback.answer()
+    rows = await database.get_recent_referrals(limit=30)
+    lines = ["👥 <b>Kim kimni taklif qildi</b> (oxirgi 30 ta)", ""]
+    if not rows:
+        lines.append("Hozircha referal yo'q.")
+    for r in rows:
+        referrer = _name({"user_id": r["referrer_user_id"], "username": r["referrer_username"],
+                          "full_name": r["referrer_name"]}, 20)
+        referred = _name({"user_id": r["referred_user_id"], "username": r["referred_username"],
+                          "full_name": r["referred_name"]}, 20)
+        if r["cashback_order_id"]:
+            status = f"✅ #{r['cashback_order_id']} · +{_fmt(r['cashback_amount'])} Keto"
+        else:
+            status = "⏳ xarid kutilmoqda"
+        lines.append(f"{r['created_at']:%d.%m} {referrer} → {referred}\n   {status}")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Orqaga", callback_data="refstat:30")],
+    ])
+    await _render(callback, "\n".join(lines), keyboard)
 
 
 @router.message(Command("referallar"))
