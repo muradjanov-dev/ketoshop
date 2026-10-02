@@ -47,6 +47,7 @@ from retention import router as retention_router
 from keto_explainer import router as keto_explainer_router
 from stock_alerts import router as stock_alerts_router
 from referral_stats import router as referral_stats_router
+from referral_program import router as referral_program_router
 from retention_stats import router as retention_stats_router
 from review_stats import router as review_stats_router
 
@@ -215,6 +216,7 @@ async def main():
     dp.include_router(meta_ads_router)
     dp.include_router(ad_sources_router)
     dp.include_router(referral_stats_router)
+    dp.include_router(referral_program_router)
     dp.include_router(retention_stats_router)
     dp.include_router(review_stats_router)
     dp.include_router(search_router)

@@ -129,6 +129,8 @@ def main_menu_keyboard(lang: str, is_admin: bool = False) -> InlineKeyboardMarku
             # Keto balance/level — one place for everything personal.
             InlineKeyboardButton(text=get_text("btn_kabinetim", lang), callback_data="kabinetim"),
         ],
+        # Mijozdan mijozga referal (referral_program.py)
+        [InlineKeyboardButton(text=get_text("btn_free_buy", lang), callback_data="free_buy")],
         [InlineKeyboardButton(text=get_text("btn_delivery", lang), callback_data="delivery_zones")],
         # Language switch now lives inside the Qo'llanma (Help) screen, so the
         # main menu shows a single full-width Help entry here.

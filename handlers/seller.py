@@ -1660,6 +1660,11 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
             import bloggers
             await bloggers.award_for_order(order, bot)
 
+            # Referal keshbegi — taklif qilingan mijozning birinchi xaridi
+            # uchun taklif qiluvchiga 3% (referral_program.py). Idempotent.
+            import referral_program
+            await referral_program.award_order_cashback(order, bot)
+
     msg_key = {
         "confirm": "order_accepted",
         "ship": "order_marked_shipped",

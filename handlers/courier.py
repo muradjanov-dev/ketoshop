@@ -253,6 +253,11 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
                 await bloggers.award_for_order(delivered_order, bot)
             except Exception:
                 logger.exception("Blogger payout failed for courier-delivered order %s", order_id)
+            try:
+                import referral_program
+                await referral_program.award_order_cashback(delivered_order, bot)
+            except Exception:
+                logger.exception("Referral cashback failed for courier-delivered order %s", order_id)
 
         
         # Refresh my orders list

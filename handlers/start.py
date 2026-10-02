@@ -253,6 +253,11 @@ async def _process_new_user(bot, tg_user, referrer_id: int | None,
         except Exception:
             pass
 
+    # Har bir yangi foydalanuvchiga 10 Keto start bonusi — referal orqali
+    # kelib, uni yuqorida olgan bo'lsa, qayta berilmaydi.
+    import referral_program
+    await referral_program.grant_welcome_bonus(bot, tg_user.id)
+
 
 async def _resend_menu_keyboard(bot, user_id: int, lang: str) -> None:
     """Same as ensure_menu_keyboard but unconditional — used after a language

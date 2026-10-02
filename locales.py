@@ -2043,6 +2043,56 @@ TEXTS = {
     "buyer_timeline_ready":     {"uz": "✨ Tayyor bo'ldi: {date}",    "ru": "✨ Готов: {date}"},
     "buyer_timeline_shipped":   {"uz": "🚚 Yo'lda: {date}",           "ru": "🚚 В пути: {date}"},
     "buyer_timeline_delivered": {"uz": "📦 Yetkazildi: {date}",       "ru": "📦 Доставлен: {date}"},
+
+    # ===== BEPUL XARID — REFERAL (referral_program.py) =====
+    "btn_free_buy": {"uz": "🎁 Bepul xarid qilish", "ru": "🎁 Бесплатные покупки"},
+    "btn_free_buy_share": {"uz": "📤 Do'stlarga ulashish", "ru": "📤 Поделиться с друзьями"},
+    "free_buy_screen": {
+        "uz": "🎁 <b>Bepul xarid qilish</b>\n\n"
+              "Do'stlaringizni Ketoshopga taklif qiling!\n\n"
+              "Siz taklif qilgan har bir inson <b>birinchi marta</b> xarid qilganda, "
+              "o'sha xariddan <b>{percent}%</b> sizning hamyoningizga Keto tanga bo'lib tushadi.\n"
+              "💡 1 Keto tanga = 1 so'm. Masalan, 10 000 Keto = 10 000 so'm.\n\n"
+              "🛒 Yig'ilgan tangalar bilan Ketoshopdan xarid qilasiz.\n\n"
+              "🔗 Sizning havolangiz:\n{link}\n\n"
+              "👥 Taklif qilganlaringiz: <b>{invited}</b> ta (xarid qilgan: {bought} ta)\n"
+              "💰 Referaldan ishlaganingiz: <b>{earned} Keto</b>\n"
+              "💳 Keto balansingiz: <b>{balance} Keto</b>",
+        "ru": "🎁 <b>Бесплатные покупки</b>\n\n"
+              "Приглашайте друзей в Ketoshop!\n\n"
+              "Когда приглашённый вами человек совершит <b>первую</b> покупку, "
+              "<b>{percent}%</b> от неё поступит в ваш кошелёк монетами Keto.\n"
+              "💡 1 монета Keto = 1 сум. Например, 10 000 Keto = 10 000 сум.\n\n"
+              "🛒 Накопленными монетами можно оплачивать покупки в Ketoshop.\n\n"
+              "🔗 Ваша ссылка:\n{link}\n\n"
+              "👥 Приглашено: <b>{invited}</b> (совершили покупку: {bought})\n"
+              "💰 Заработано на рефералах: <b>{earned} Keto</b>\n"
+              "💳 Ваш баланс Keto: <b>{balance} Keto</b>",
+    },
+    "free_buy_share_text": {
+        "uz": "🌿 Ketoshop — keto va dietik mahsulotlar bir joyda! "
+              "Mening havolam orqali qo'shiling va sovg'a sifatida Keto tanga oling 🎁",
+        "ru": "🌿 Ketoshop — кето и диетические продукты в одном месте! "
+              "Присоединяйтесь по моей ссылке и получите монеты Keto в подарок 🎁",
+    },
+    "referral_cashback_earned": {
+        "uz": "🎉 <b>Taklif qilgan do'stingiz xarid qildi!</b>\n\n"
+              "👤 {name} birinchi xaridini amalga oshirdi.\n"
+              "💰 Sizga <b>+{amount} Keto</b> ({percent}% keshbek) tushdi.\n"
+              "💳 Balansingiz: <b>{balance} Keto</b>\n\n"
+              "Yana do'stlaringizni taklif qiling va bepul xarid qiling! 🛒",
+        "ru": "🎉 <b>Приглашённый вами друг совершил покупку!</b>\n\n"
+              "👤 {name} оформил(а) первую покупку.\n"
+              "💰 Вам начислено <b>+{amount} Keto</b> ({percent}% кешбэк).\n"
+              "💳 Ваш баланс: <b>{balance} Keto</b>\n\n"
+              "Приглашайте ещё друзей и покупайте бесплатно! 🛒",
+    },
+    "welcome_keto_bonus": {
+        "uz": "🎁 <b>Xush kelibsiz!</b> Sovg'a sifatida sizga <b>+{amount} Keto tanga</b> berildi.\n"
+              "💡 1 Keto = 1 so'm — Ketoshopdan xarid qilishda ishlatishingiz mumkin.",
+        "ru": "🎁 <b>Добро пожаловать!</b> В подарок вам начислено <b>+{amount} монет Keto</b>.\n"
+              "💡 1 Keto = 1 сум — их можно использовать при покупках в Ketoshop.",
+    },
 }
 
 

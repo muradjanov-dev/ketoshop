@@ -356,6 +356,12 @@ async def _after_delivered(bot, order: dict) -> None:
     except Exception:
         logger.exception("courier board: keto award failed")
 
+    try:
+        import referral_program
+        await referral_program.award_order_cashback(order, bot)
+    except Exception:
+        logger.exception("courier board: referral cashback failed")
+
 
 async def move_order(order_id: int, target: str, *, expected_from: str | None = None,
                      notify: bool = True, bot=None) -> dict:
