@@ -115,15 +115,14 @@ async def build_reminder(user_id: int, stage: int, lang: str) -> tuple[str, Inli
                   "🛒 <b>Ваша корзина ждёт вас!</b>", lang)
         intro = _t("Tanlagan mahsulotlaringizni savatda saqlab qo'ydik:",
                    "Мы сохранили выбранные вами товары:", lang)
-        push = _t("Buyurtmani 1 daqiqada rasmiylashtiring 👇",
-                  "Оформите заказ за 1 минуту 👇", lang)
+        push = _t("Buyurtma 1 daqiqada rasmiylashtiriladi 👇",
+                  "Заказ оформляется за 1 минуту 👇", lang)
     else:
-        head = _t("⏳ <b>Mahsulotlaringiz hali ham Siz uchun saqlanmoqda</b>",
-                  "⏳ <b>Ваши товары всё ещё отложены для вас</b>", lang)
-        intro = _t("Sog'lom tanlovingizni yarim yo'lda qoldirmang 🤍 Savatingizda:",
-                   "Не оставляйте здоровый выбор на полпути 🤍 В корзине:", lang)
-        push = _t("Mahsulotlar tugab qolmasidan buyurtma bering 👇",
-                  "Оформите заказ, пока товары есть в наличии 👇", lang)
+        head = _t("🛒 <b>Savatingizdagi mahsulotlar shu yerda turibdi</b>",
+                  "🛒 <b>Товары по-прежнему в вашей корзине</b>", lang)
+        intro = _t("Savatingizda:", "В корзине:", lang)
+        push = _t("Kerak bo'lsa, buyurtmani bir necha bosishda rasmiylashtirish mumkin 👇",
+                  "Если нужно — заказ оформляется в пару нажатий 👇", lang)
 
     parts = [head, "", intro, *shown, "",
              _t(f"💰 Jami: <b>{fmt_sum(total)} so'm</b>", f"💰 Итого: <b>{fmt_sum(total)} сум</b>", lang)]
