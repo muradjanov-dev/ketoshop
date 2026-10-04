@@ -358,6 +358,11 @@ async def main():
     from release_notes import scheduler_loop as release_notes_loop
     release_notes_task = asyncio.create_task(release_notes_loop(bot))
 
+    # One-off channel post: the all-time top 20 (owner, 2026-10-04), sent
+    # once right after this deploy — see top20_post.py.
+    from top20_post import scheduler_loop as top20_loop
+    top20_task = asyncio.create_task(top20_loop(bot))
+
     # Start polling
     logger.info("Bot started! Press Ctrl+C to stop.")
     try:
