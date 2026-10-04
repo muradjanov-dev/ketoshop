@@ -2193,6 +2193,22 @@
   }
   #detail-modal .detail-body { flex: 1 0 auto; }
   #detail-modal .detail-desc { opacity: 0.9; overflow: visible; max-height: none; }
+
+  /* ── Big "← Orqaga" on the product screen (owner, 2026-10-04: "maxsulotga
+     kirgach ortga qaytadigan katta tugma"). Replaces the small × there; the
+     product name drops to its own line under the button row. */
+  #detail-modal .modal-header { flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+  #detail-modal .modal-header h2 { order: 3; flex: 1 1 100%; margin: 0; }
+  #detail-modal .modal-close { display: none; }
+  .detail-back-btn {
+    order: 1; margin-right: auto; min-height: 44px; padding: 0 18px;
+    border-radius: 999px; border: 2px solid var(--btn); background: transparent;
+    color: var(--btn); font: inherit; font-size: 16px; font-weight: 700;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .detail-back-btn:active { background: var(--btn); color: var(--bg); }
+  .detail-back-btn:focus-visible { outline: 2px solid var(--btn); outline-offset: 2px; }
+  #detail-modal .detail-fav-btn { order: 2; }
 </style>
 </head>
 <body>
@@ -2426,6 +2442,7 @@
 <div class="modal-overlay" id="detail-modal">
   <div class="modal">
     <div class="modal-header">
+      <button class="detail-back-btn" id="detail-back-btn" type="button" onclick="closeDetail()">← Orqaga</button>
       <h2 id="detail-name"></h2>
       <button class="detail-fav-btn" id="detail-fav-btn" onclick="toggleFavFromDetail()">♡</button>
       <button class="modal-close" onclick="closeDetail()">&times;</button>
@@ -2691,6 +2708,7 @@ const L = {
     currency: "so'm",
     perUnit: '/{unit}',
     tipLabel: 'Siz uchun maslahat',
+    backBtn: 'Orqaga',
     rating: '{rating}/5 ({count} ta sharh)',
     seller: 'Sotuvchi: {name}',
     reviewsTitle: '💬 Sharhlar',
@@ -2850,6 +2868,7 @@ const L = {
     currency: 'сум',
     perUnit: '/{unit}',
     tipLabel: 'Совет для вас',
+    backBtn: 'Назад',
     rating: '{rating}/5 ({count} отзывов)',
     seller: 'Продавец: {name}',
     reviewsTitle: '💬 Отзывы',
@@ -3898,6 +3917,7 @@ async function openDetail(productId, isSet = false) {
     qty = 1;
 
     document.getElementById('detail-name').textContent = p.name;
+    document.getElementById('detail-back-btn').textContent = '← ' + (t.backBtn || 'Orqaga');
     // Personal advice (product_tips) — first thing under the name.
     const tipEl = document.getElementById('detail-tip');
     if (p.tip) {
