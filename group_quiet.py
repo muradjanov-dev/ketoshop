@@ -7,9 +7,13 @@ The shop lives in the bot's private chat. In a group the bot keeps only its
 group jobs (link guard, the AI seller's text replies, order notifications in
 the admins' own group) and stops being a menu:
 
-  * a slash command typed in a group by an ordinary member gets no reply —
-    the command message is deleted instead (the bot is admin there), so no
-    menu with buttons lands in front of the whole group;
+  * a slash command typed in a group gets no reply — the command message is
+    deleted instead (the bot is admin there), so no menu with buttons lands
+    in front of the whole group. This holds for EVERYONE, admins and the
+    group's anonymous admin included (owner, 2026-10-04, after an anonymous
+    "/start" put the language buttons in KETOSHOP chat). The only exception:
+    a bot admin's own admin command (ADMIN_COMMANDS, e.g. /ombor) — those
+    print reports, not shop menus;
   * a button under a bot message in a group answers only admins (bot admins
     and the group's own admins); members' taps are acknowledged silently;
   * the "/" menu is published for private chats only (see bot.py
@@ -35,6 +39,25 @@ def _is_command(message: Message) -> bool:
     return text.startswith("/")
 
 
+def _command_name(message: Message) -> str:
+    text = (message.text or message.caption or "").strip()
+    return text.split()[0][1:].split("@")[0].lower() if text.startswith("/") else ""
+
+
+def _admin_command_names() -> set[str]:
+    from keyboards import ADMIN_COMMANDS
+    return {c.command.lower() for c in ADMIN_COMMANDS}
+
+
+def _command_allowed_in_group(message: Message) -> bool:
+    """Only a bot admin (a real account, not the group's anonymous identity)
+    running one of the admin report commands."""
+    user = message.from_user
+    if message.sender_chat is not None or user is None or user.id not in ADMIN_IDS:
+        return False
+    return _command_name(message) in _admin_command_names()
+
+
 async def _is_group_admin(bot, chat_id: int, user_id: int | None) -> bool:
     if not user_id:
         return False
@@ -54,8 +77,7 @@ class GroupQuietMiddleware(BaseMiddleware):
         bot = data.get("bot")
         try:
             if isinstance(event, Message) and event.chat.type in GROUP_TYPES and _is_command(event):
-                if event.sender_chat is None and not await _is_group_admin(
-                        bot, event.chat.id, event.from_user.id if event.from_user else None):
+                if not _command_allowed_in_group(event):
                     try:
                         await event.delete()
                     except Exception:
