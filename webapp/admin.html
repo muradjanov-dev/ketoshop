@@ -493,6 +493,37 @@
     .kb-card,.kb-count,.kb-ghost,.kb-skel::after,.kb-live.on .dot{animation:none!important}
     .kb-card,.kb-col,.kb-mini{transition:none!important}
   }
+/* ===== Board navigation (2026-10-04) — the board scrolls inside itself at
+   every width, columns snap one at a time on phones, and tabs + arrows move
+   between columns so nobody has to swipe precisely. ===== */
+.kanban{overflow-x:auto;overscroll-behavior-x:contain;position:relative;padding-bottom:10px;
+        scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+.kanban.panning{cursor:grabbing;user-select:none}
+.kb-board-wrap{position:relative}
+.kb-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:5;width:46px;height:46px;border-radius:50%;
+  border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:28px;line-height:1;
+  display:grid;place-items:center;cursor:pointer;box-shadow:var(--shadow);opacity:.94}
+.kb-arrow:hover{opacity:1}
+.kb-arrow:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.kb-arrow.prev{left:4px}
+.kb-arrow.next{right:4px}
+.kb-nav{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 10px}
+.kb-nav::-webkit-scrollbar{display:none}
+.kb-nav[hidden]{display:none}
+.kb-nav button{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 14px;
+  border-radius:999px;border:1px solid var(--line);background:var(--chip-bg);color:var(--ink-2);
+  font:inherit;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap}
+.kb-nav button .n{font-variant-numeric:tabular-nums;color:var(--ink-3)}
+.kb-nav button.on{border-color:var(--accent);color:var(--ink);background:var(--panel)}
+.kb-nav button.on .n{color:var(--accent)}
+@media (max-width:1080px){
+  .kanban{scroll-snap-type:x mandatory}
+}
+@media (max-width:640px){
+  .kb-col{flex:0 0 calc(100vw - 64px)}
+}
+@media (hover:none){ .kb-arrow{opacity:.85} }
+
 /* ===== KURYER MODE (/kuryer, 2026-10-01) — the board opened from the bot as
    its own Telegram window: no tabs, no dashboard, no password screen. ===== */
 body.kuryer-mode #loginView,
@@ -643,7 +674,14 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
       <button class="kb-live on" id="kbAutoBtn" type="button"><span class="dot"></span><span id="kbAutoLab">Jonli</span></button>
       <button class="btn btn-o btn-sm" id="kbRefreshBtn" type="button">↻ Yangilash</button>
     </div>
-    <div class="kanban" id="kanban"></div>
+    <!-- Moving between columns without swiping (owner, 2026-10-04: "swipe
+         qilishga qiynalyapman") — tap a column tab or an arrow. -->
+    <nav class="kb-nav" id="kbNav" aria-label="Ustunlar"></nav>
+    <div class="kb-board-wrap">
+      <button class="kb-arrow prev" id="kbPrev" type="button" aria-label="Oldingi ustun" hidden>‹</button>
+      <div class="kanban" id="kanban"></div>
+      <button class="kb-arrow next" id="kbNext" type="button" aria-label="Keyingi ustun" hidden>›</button>
+    </div>
   </section>
 
   <section class="view" id="view-products">
@@ -2857,6 +2895,61 @@ function renderKanban(){
     }
     KB_COUNTS[col.key]=n;
   });
+  kbNavRender();
+}
+
+/* ── column tabs + arrows ── */
+function kbColEls(){return [...document.querySelectorAll('#kanban .kb-col')];}
+function kbCurrentCol(){
+  const k=$('#kanban'),cols=kbColEls();
+  let best=0,dist=Infinity;
+  cols.forEach((c,i)=>{const d=Math.abs(c.offsetLeft-k.scrollLeft);if(d<dist){dist=d;best=i;}});
+  return best;
+}
+function kbScrollToCol(i){
+  const k=$('#kanban'),cols=kbColEls();
+  if(!cols.length)return;
+  i=Math.max(0,Math.min(cols.length-1,i));
+  k.scrollTo({left:cols[i].offsetLeft-(i?6:0),behavior:'smooth'});
+}
+function kbNavRender(){
+  const nav=$('#kbNav');
+  if(!KB_BOARD||!nav)return;
+  nav.innerHTML=KB_BOARD.columns.map((col,i)=>
+    `<button type="button" data-i="${i}"><span>${col.icon}</span><span>${esc(col.title)}</span>`+
+    `<span class="n">${KB_COUNTS[col.key]??col.cards.length}</span></button>`).join('');
+  kbNavSync();
+}
+function kbNavSync(){
+  const k=$('#kanban'),nav=$('#kbNav');
+  if(!k||!nav)return;
+  const overflow=k.scrollWidth>k.clientWidth+4;
+  nav.hidden=!overflow;
+  $('#kbPrev').hidden=!overflow||k.scrollLeft<=4;
+  $('#kbNext').hidden=!overflow||k.scrollLeft+k.clientWidth>=k.scrollWidth-4;
+  const cur=kbCurrentCol();
+  nav.querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.i===cur));
+  const on=nav.querySelector('button.on');
+  if(on&&overflow)on.scrollIntoView({block:'nearest',inline:'nearest'});
+}
+$('#kbNav').addEventListener('click',e=>{const b=e.target.closest('button[data-i]');if(b)kbScrollToCol(+b.dataset.i);});
+$('#kbPrev').addEventListener('click',()=>kbScrollToCol(kbCurrentCol()-1));
+$('#kbNext').addEventListener('click',()=>kbScrollToCol(kbCurrentCol()+1));
+{
+  let raf=0;
+  $('#kanban').addEventListener('scroll',()=>{cancelAnimationFrame(raf);raf=requestAnimationFrame(kbNavSync);},{passive:true});
+  window.addEventListener('resize',()=>{cancelAnimationFrame(raf);raf=requestAnimationFrame(kbNavSync);});
+}
+// Mouse: grab the empty board (not a card, not a control) and pull it sideways.
+{
+  const k=$('#kanban');let pan=null;
+  k.addEventListener('pointerdown',e=>{
+    if(e.pointerType!=='mouse'||e.button!==0)return;
+    if(e.target.closest('.kb-card,button,input,select,textarea,a,label'))return;
+    pan={x:e.clientX,left:k.scrollLeft};k.classList.add('panning');
+  });
+  window.addEventListener('pointermove',e=>{if(pan)k.scrollLeft=pan.left-(e.clientX-pan.x);});
+  window.addEventListener('pointerup',()=>{if(pan){pan=null;k.classList.remove('panning');}});
 }
 
 /* A courier card answers four questions and nothing else: who, where, how
@@ -3019,8 +3112,9 @@ function kbDragMove(e){
   }
   // auto-scroll the column list when dragging near the viewport edge
   const edge=70;
-  if(e.clientX<edge)window.scrollBy({left:-18,behavior:'instant'});
-  else if(e.clientX>window.innerWidth-edge)window.scrollBy({left:18,behavior:'instant'});
+  const kb=$('#kanban');
+  if(e.clientX<edge)kb.scrollBy({left:-18,behavior:'instant'});
+  else if(e.clientX>window.innerWidth-edge)kb.scrollBy({left:18,behavior:'instant'});
 }
 function kbDragEnd(e){
   const d=KB_DRAG;if(!d)return;
@@ -3277,7 +3371,7 @@ function bootKuryer(){
   const h=$('header.top h1');if(h)h.textContent='Ketoshop — Kuryer paneli';
   const sub=$('header.top .sub');if(sub)sub.textContent='Buyurtmalar doskasi';
   const tg=window.Telegram&&window.Telegram.WebApp;
-  if(tg){try{tg.ready();tg.expand();}catch(e){}}
+  if(tg){try{tg.ready();tg.expand();if(tg.disableVerticalSwipes)tg.disableVerticalSwipes();}catch(e){}}
   if(!tg||!tg.initData){showKuryerDenied("Bu sahifa botdagi «🚚 Kuryer paneli» tugmasi orqali ochiladi.");return;}
   showShell();switchView('courier');
 }
