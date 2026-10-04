@@ -59,12 +59,20 @@ async def _register_commands(bot: Bot, logger) -> None:
     has never seen (an admin who never messaged it, a blogger who hasn't
     started it yet) makes Telegram reject that one scope, which must not stop
     the others — the default list is what matters most."""
-    from aiogram.types import BotCommandScopeDefault, BotCommandScopeChat
+    from aiogram.types import (BotCommandScopeAllChatAdministrators, BotCommandScopeAllGroupChats,
+                               BotCommandScopeAllPrivateChats, BotCommandScopeChat,
+                               BotCommandScopeDefault)
     from keyboards import BUYER_COMMANDS, ADMIN_COMMANDS, BLOGGER_COMMAND
 
+    # Private chats only (owner, 2026-10-04): a "/" menu in a group put the
+    # shop's buttons in front of every member. The default scope is emptied
+    # too, because groups fall back to it when they have no list of their own.
     try:
-        await bot.set_my_commands(BUYER_COMMANDS, scope=BotCommandScopeDefault())
-        logger.info("Bot commands registered (%d for everyone)", len(BUYER_COMMANDS))
+        await bot.set_my_commands(BUYER_COMMANDS, scope=BotCommandScopeAllPrivateChats())
+        for scope in (BotCommandScopeDefault(), BotCommandScopeAllGroupChats(),
+                      BotCommandScopeAllChatAdministrators()):
+            await bot.delete_my_commands(scope=scope)
+        logger.info("Bot commands registered (%d for private chats, none in groups)", len(BUYER_COMMANDS))
     except Exception:
         logger.exception("Failed to set default bot commands")
 
@@ -137,6 +145,13 @@ async def main():
     storage = PostgresStorage()
     dp = Dispatcher(storage=storage)
     dp.update.outer_middleware(admin_mood.CurrentUserMiddleware())
+
+    # In groups the bot is not a menu: members' commands get no reply and
+    # its buttons answer only admins (owner, 2026-10-04) — see group_quiet.py.
+    from group_quiet import GroupQuietMiddleware
+    quiet_mw = GroupQuietMiddleware()
+    dp.message.outer_middleware(quiet_mw)
+    dp.callback_query.outer_middleware(quiet_mw)
 
     # Channel-subscription gate — must run before activity logging so a
     # blocked (not-yet-subscribed) attempt never counts as real engagement.
