@@ -798,8 +798,9 @@ def _qty(q: float) -> str:
 
 
 def _hello(plan: dict, lang: str) -> str:
-    name = _esc(plan.get("first_name"))
-    return (_t(f"{name}, ", f"{name}, ", lang) if name else "")
+    """No personal name in reminders (owner, 2026-10-04: "ismlarini aytish
+    biroz noqulay, ism ishlatma") — every title reads complete on its own."""
+    return ""
 
 
 def _offer_block(prod: dict, offer: dict, lang: str, second: bool) -> str:
@@ -828,8 +829,8 @@ def build_text(plan: dict, lang: str, *, gift: dict | None, offer: dict | None,
         names = [_pname(d, lang) for d in items]
         joined = _t(" va ", " и ", lang).join(names)
         days = items[0]["days"]
-        parts.append(_t(f"🔁 <b>{hi}{joined} tugab qolmadimi?</b>",
-                        f"🔁 <b>{hi}{joined} — ещё не закончилось?</b>", lang))
+        parts.append(_t(f"🔁 <b>{joined} tugab qolmadimi?</b>",
+                        f"🔁 <b>{joined} — ещё не закончилось?</b>", lang))
         why = _t(f"{joined}ni <b>{days} kun oldin</b> olgan edingiz.",
                  f"Вы брали {joined} <b>{days} дн. назад</b>.", lang)
         if items[0]["source"] == "user":
@@ -847,8 +848,8 @@ def build_text(plan: dict, lang: str, *, gift: dict | None, offer: dict | None,
                         + (" — адрес и оплата останутся прежними ⚡" if quick_ready else " 👇"), lang))
 
     elif kind == "second_checkin":
-        parts.append(_t(f"🤍 <b>{hi}Ketoshopni tanlaganingiz uchun rahmat!</b>",
-                        f"🤍 <b>{hi}спасибо, что выбрали Ketoshop!</b>", lang))
+        parts.append(_t("🤍 <b>Ketoshopni tanlaganingiz uchun rahmat!</b>",
+                        "🤍 <b>Спасибо, что выбрали Ketoshop!</b>", lang))
         parts.append(_t(f"Birinchi buyurtmangiz yetib borganiga {plan['days']} kun bo'ldi. "
                         "Mahsulotlar yoqdi degan umiddamiz.",
                         f"Ваш первый заказ доставлен {plan['days']} дн. назад. "
@@ -861,8 +862,8 @@ def build_text(plan: dict, lang: str, *, gift: dict | None, offer: dict | None,
     elif kind == "second_lastcall":
         left = plan["days_left"]
         gift_name = _pname(gift, lang) if gift else ""
-        parts.append(_t(f"⏳ <b>{hi}sovg'angiz {left} kundan keyin tugaydi</b>",
-                        f"⏳ <b>{hi}ваш подарок сгорит через {left} дн.</b>", lang))
+        parts.append(_t(f"⏳ <b>Sovg'a taklifi yana {left} kun amal qiladi</b>",
+                        f"⏳ <b>Предложение с подарком действует ещё {left} дн.</b>", lang))
         parts.append(_t(f"Ikkinchi buyurtmangizga <b>{gift_name}</b> bepul qo'shiladi — summadan "
                         f"qat'i nazar, {offer_until_text(offer, lang)} gacha.",
                         f"Ко второму заказу бесплатно добавится <b>{gift_name}</b> — на любую сумму, "
@@ -903,9 +904,9 @@ def build_text(plan: dict, lang: str, *, gift: dict | None, offer: dict | None,
     else:  # win-back
         days = plan["days"]
         if kind == "winback_90":
-            parts.append(_t(f"🤍 <b>{hi}Sizni kutib qolamiz</b>", f"🤍 <b>{hi}мы вас ждём</b>", lang))
+            parts.append(_t("🤍 <b>Sizni kutib qolamiz</b>", "🤍 <b>Мы вас ждём</b>", lang))
         else:
-            parts.append(_t(f"👋 <b>{hi}Sizni sog'indik!</b>", f"👋 <b>{hi}мы соскучились!</b>", lang))
+            parts.append(_t("👋 <b>Sizni sog'indik!</b>", "👋 <b>Мы соскучились!</b>", lang))
         parts.append(_t(f"Oxirgi buyurtmangizga {days} kun bo'ldi.",
                         f"С вашего последнего заказа прошло {days} дн.", lang))
         if new_products:
