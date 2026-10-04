@@ -17,8 +17,8 @@ MEMBER, GROUP_ADMIN = 555, 777
 GROUP = -100123
 
 
-def msg(text, chat_type="supergroup", user=MEMBER):
-    m = Message.model_construct(text=text, caption=None, sender_chat=None,
+def msg(text, chat_type="supergroup", user=MEMBER, sender_chat=None):
+    m = Message.model_construct(text=text, caption=None, sender_chat=sender_chat,
                                 chat=NS(id=GROUP if chat_type != "private" else user, type=chat_type),
                                 from_user=NS(id=user))
     object.__setattr__(m, "delete", AsyncMock())
@@ -47,10 +47,21 @@ class GroupQuietTest(unittest.TestCase):
         handler.assert_not_called()
         m.delete.assert_awaited()
 
-    def test_group_admin_and_bot_admin_keep_commands(self):
-        for user in (GROUP_ADMIN, next(iter(ADMIN_IDS))):
-            out, handler = run(msg("/menu", user=user))
-            self.assertEqual(out, "handled")
+    def test_no_shop_menu_in_group_for_anyone(self):
+        # Owner, 2026-10-04: an anonymous "/start" from the group itself put
+        # the language buttons in KETOSHOP chat. Nobody gets a menu there.
+        bot_admin = next(iter(ADMIN_IDS))
+        cases = [msg("/menu", user=GROUP_ADMIN), msg("/start", user=bot_admin),
+                 msg("/start", user=1087968824, sender_chat=NS(id=GROUP))]
+        for m in cases:
+            out, handler = run(m)
+            self.assertIsNone(out)
+            handler.assert_not_called()
+            m.delete.assert_awaited()
+
+    def test_bot_admin_report_command_still_works(self):
+        out, _ = run(msg("/ombor@ketoshopbot", user=next(iter(ADMIN_IDS))))
+        self.assertEqual(out, "handled")
 
     def test_private_chat_untouched(self):
         out, _ = run(msg("/start", chat_type="private"))
