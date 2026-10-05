@@ -11,6 +11,7 @@ os.environ.setdefault("BOT_TOKEN", "1:test")
 from aiogram.types import CallbackQuery, Message
 
 import group_quiet
+from handlers import start as start_handlers
 from config import ADMIN_IDS
 
 MEMBER, GROUP_ADMIN = 555, 777
@@ -66,6 +67,43 @@ class GroupQuietTest(unittest.TestCase):
     def test_private_chat_untouched(self):
         out, _ = run(msg("/start", chat_type="private"))
         self.assertEqual(out, "handled")
+
+    def test_start_handler_does_not_show_language_keyboard_in_group(self):
+        m = msg("/start")
+        object.__setattr__(m, "answer", AsyncMock())
+        with patch.object(start_handlers, "is_user_banned", AsyncMock(return_value=False)) as banned:
+            asyncio.run(start_handlers._handle_start(m, None))
+        m.answer.assert_not_awaited()
+        banned.assert_not_awaited()
+
+    def test_menu_and_persistent_button_handlers_ignore_group(self):
+        m = msg("/menu")
+        object.__setattr__(m, "answer", AsyncMock())
+        state = NS(clear=AsyncMock())
+        asyncio.run(start_handlers.cmd_menu(m, state))
+        m.answer.assert_not_awaited()
+        state.clear.assert_not_awaited()
+
+        m = msg("🏠 Bosh menyu")
+        state = NS(clear=AsyncMock())
+        asyncio.run(start_handlers.menu_button_pressed(m, state))
+        state.clear.assert_not_awaited()
+
+        m = msg("🛒 Savat")
+        state = NS(clear=AsyncMock())
+        asyncio.run(start_handlers.cart_button_pressed(m, state))
+        state.clear.assert_not_awaited()
+
+    def test_private_menu_button_still_opens_the_shop(self):
+        m = msg("🏠 Bosh menyu", chat_type="private")
+        object.__setattr__(m, "answer", AsyncMock())
+        state = NS(clear=AsyncMock())
+        with patch.object(start_handlers, "get_user_language", AsyncMock(return_value="uz")), \
+                patch.object(start_handlers, "get_text", return_value="welcome"), \
+                patch.object(start_handlers, "main_menu_keyboard", return_value="shop keyboard"):
+            asyncio.run(start_handlers.menu_button_pressed(m, state))
+        state.clear.assert_awaited_once()
+        m.answer.assert_awaited_once()
 
     def test_plain_group_message_still_reaches_link_guard(self):
         out, _ = run(msg("salom, t.me/spam"))
