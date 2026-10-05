@@ -33,6 +33,10 @@ _MENU_BTN_TEXTS = {get_text("btn_kb_menu", lg) for lg in ("uz", "uz_cyr", "ru")}
 _CART_BTN_TEXTS = {get_text("btn_kb_cart", lg) for lg in ("uz", "uz_cyr", "ru")}
 
 
+def _is_private_chat(message: Message) -> bool:
+    return message.chat.type == "private"
+
+
 async def ensure_menu_keyboard(bot, user_id: int, lang: str) -> None:
     """Put the persistent 🏠/🛒 keyboard under this user's input box, once.
 
@@ -58,6 +62,8 @@ async def menu_button_pressed(message: Message, state: FSMContext):
     """🏠 Bosh menyu — the way home from anywhere, including out of a stuck
     "waiting for X" flow (same escape-hatch behaviour as the inline
     main_menu button, which is why this clears the FSM too)."""
+    if not _is_private_chat(message):
+        return
     await state.clear()
     lang = await get_user_language(message.from_user.id)
     await message.answer(
@@ -70,6 +76,8 @@ async def menu_button_pressed(message: Message, state: FSMContext):
 @router.message(F.text.in_(_CART_BTN_TEXTS))
 async def cart_button_pressed(message: Message, state: FSMContext):
     """🛒 Savat — jumps straight to the cart from any screen."""
+    if not _is_private_chat(message):
+        return
     await state.clear()
     from handlers.cart import render_cart_message
     lang = await get_user_language(message.from_user.id)
@@ -80,6 +88,8 @@ async def cart_button_pressed(message: Message, state: FSMContext):
 async def cmd_menu(message: Message, state: FSMContext):
     """/menu — the same landing spot as /start, minus the language prompt.
     Registered in the bot's command list so typing "/" offers it."""
+    if not _is_private_chat(message):
+        return
     await state.clear()
     lang = await get_user_language(message.from_user.id)
     await ensure_menu_keyboard(message.bot, message.from_user.id, lang)
@@ -148,6 +158,9 @@ async def _handle_start(message: Message, referrer_id: int | None,
                         blogger_code: str | None = None,
                         ad_source: str | None = None,
                         product_id: int | None = None):
+    if not _is_private_chat(message):
+        return
+
     # Check if user is banned
     if await is_user_banned(message.from_user.id):
         lang = await get_user_language(message.from_user.id)
