@@ -2,6 +2,7 @@
 Shopping cart, checkout flow, and order handlers
 """
 import json
+import html
 import re
 from aiogram import Router, F, Bot
 from aiogram.types import (
@@ -297,6 +298,11 @@ async def get_location_address_text(lat: float, lng: float) -> str | None:
 
 def _escape_html(s: str) -> str:
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _escape_html_attr(s: str) -> str:
+    """Escape values inserted into quoted HTML attributes such as href."""
+    return html.escape(s or "", quote=True)
 
 
 def payment_status_block(payment_method: str | None, status: str | None, lang: str) -> str:
@@ -1081,8 +1087,8 @@ async def _phone_accepted(message: Message, state: FSMContext, lang: str, phone:
             latitude=None, longitude=None, pickup_map_url=cfg["map_url"], address_note=None,
             secondary_phone=None, online_only=False, in_tashkent=False)
         await state.set_state(CheckoutStates.waiting_payment_method)
-        info = get_text("pickup_instructions", lang, address=cfg["address"],
-                        map_url=cfg["map_url"])
+        info = get_text("pickup_instructions", lang, address=_escape_html(cfg["address"]),
+                        map_url=_escape_html_attr(cfg["map_url"]))
         await message.answer(info + "\n\n" + get_text("choose_payment", lang),
             reply_markup=payment_method_keyboard(lang, online_only=False), parse_mode="HTML")
         return
@@ -1719,7 +1725,7 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     if delivery_method == "pickup":
         pickup_block = "\n" + get_text("pickup_instructions", lang,
             address=_escape_html(data.get("address") or ""),
-            map_url=_escape_html(data.get("pickup_map_url") or ""))
+            map_url=_escape_html_attr(data.get("pickup_map_url") or ""))
     text = get_text("order_summary", lang,
         phone=_escape_html(data["phone"]),
         secondary_block=secondary_block,
@@ -2372,7 +2378,7 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
             if data.get("delivery_method") == "pickup":
                 text += "\n" + get_text("pickup_instructions", admin_lang,
                     address=_escape_html(data.get("address") or ""),
-                    map_url=_escape_html(data.get("pickup_map_url") or ""))
+                    map_url=_escape_html_attr(data.get("pickup_map_url") or ""))
             # The total above is already net of any Keto the buyer spent, so
             # without saying so the payment reads as short. Taken from the
             # order row rather than the caller's dict: three different flows

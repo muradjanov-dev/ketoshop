@@ -57,6 +57,9 @@ class PickupCheckoutApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         payload = json.loads(response.text)
         self.assertEqual(payload["order_id"], 42)
+        self.assertEqual(payload["delivery_method"], "pickup")
+        self.assertEqual(payload["pickup_address"], self.config["address"])
+        self.assertEqual(payload["pickup_map_url"], self.config["map_url"])
         kwargs = created.await_args.kwargs
         self.assertEqual(kwargs["address"], "Real shop address")
         self.assertIsNone(kwargs["latitude"])
@@ -100,6 +103,38 @@ class PickupCheckoutApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(data["pending_latitude"])
         self.assertIsNone(data["pending_longitude"])
         self.assertEqual(data["pending_total"], 200)
+
+    async def test_cheque_success_returns_deferred_pickup_snapshot_not_current_settings(self):
+        from aiogram.fsm.storage.base import StorageKey
+        from aiogram.fsm.storage.memory import MemoryStorage
+        storage = MemoryStorage()
+        key = StorageKey(bot_id=1, chat_id=123, user_id=123)
+        old_snapshot = {
+            "pending_items": [{"name": "Tea", "quantity": 2, "price": 100}],
+            "pending_total": 200, "pending_phone": "+998901234567",
+            "pending_address": "Old configured shop", "pending_delivery_method": "pickup",
+            "pending_pickup_map_url": "https://maps.example/old-shop",
+            "pending_latitude": None, "pending_longitude": None,
+        }
+        await storage.set_data(key, old_snapshot)
+        bot = SimpleNamespace(id=1, send_photo=AsyncMock(return_value=SimpleNamespace(photo=[SimpleNamespace(file_id="tg-file")])) )
+        request = Request({}, storage=storage)
+        created = AsyncMock(return_value=(74, []))
+        with patch.object(webapp_server, "_read_cheque_upload", AsyncMock(return_value=(b"safe", "image/jpeg", "proof.jpg"))), \
+             patch.object(webapp_server, "create_order", created), \
+             patch("database.set_order_cheque", AsyncMock()), \
+             patch("handlers.cart._forward_cheque_to_admins", AsyncMock()), \
+             patch("handlers.cart._notify_sellers", AsyncMock()), \
+             patch("handlers.cart.send_order_thanks", AsyncMock()), \
+             patch.object(webapp_server, "get_pickup_settings", AsyncMock(side_effect=AssertionError("must use deferred snapshot"))):
+            request.app["bot"] = bot
+            response = await webapp_server.api_checkout_cheque(request)
+        payload = json.loads(response.text)
+        self.assertEqual(payload["delivery_method"], "pickup")
+        self.assertEqual(payload["pickup_address"], "Old configured shop")
+        self.assertEqual(payload["pickup_map_url"], "https://maps.example/old-shop")
+        self.assertEqual(created.await_args.kwargs["address"], "Old configured shop")
+        self.assertEqual(created.await_args.kwargs["pickup_map_url"], "https://maps.example/old-shop")
 
     async def test_bot_online_deferral_freezes_pickup_instructions(self):
         class State:
@@ -201,12 +236,18 @@ class PickupCheckoutApiTests(unittest.IsolatedAsyncioTestCase):
             async def set_state(self, state): self.state = state
         message = SimpleNamespace(from_user=SimpleNamespace(id=123), answer=AsyncMock())
         state = State()
-        with patch.object(cart, "get_pickup_settings", AsyncMock(return_value=self.config)), \
+        special = {"enabled": True, "address": 'A&B <Shop> "Front"',
+                   "map_url": 'https://maps.example/shop?q="a"&x=1'}
+        with patch.object(cart, "get_pickup_settings", AsyncMock(return_value=special)), \
              patch.object(cart, "update_user_info", AsyncMock()) as update:
             await cart._phone_accepted(message, state, "uz", "+998901234567")
         update.assert_awaited_once_with(123, phone="+998901234567")
-        self.assertEqual(state.data["address"], self.config["address"])
+        self.assertEqual(state.data["address"], special["address"])
         self.assertIsNone(state.data["latitude"])
+        prompt = message.answer.await_args.args[0]
+        self.assertIn('A&amp;B &lt;Shop&gt; "Front"', prompt)
+        self.assertIn('href="https://maps.example/shop?q=&quot;a&quot;&amp;x=1"', prompt)
+        self.assertNotIn('href="https://maps.example/shop?q="a"&x=1"', prompt)
 
 
 class PickupCourierBoardTests(unittest.IsolatedAsyncioTestCase):

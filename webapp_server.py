@@ -880,7 +880,11 @@ async def api_checkout(request: web.Request):
     from handlers.cart import send_order_thanks
     await send_order_thanks(bot, user_id, order_id, delivery_method)
 
-    return _json({"ok": True, "order_id": order_id, "total": total, "keto_redeemed": keto_redeem})
+    response = {"ok": True, "order_id": order_id, "total": total, "keto_redeemed": keto_redeem}
+    if delivery_method == "pickup":
+        response.update(delivery_method="pickup", pickup_address=address,
+                        pickup_map_url=pickup_snapshot["pickup_map_url"])
+    return _json(response)
 
 
 
@@ -1165,7 +1169,11 @@ async def api_checkout_cheque(request: web.Request):
     await send_order_thanks(bot, user_id, order_id, data.get("pending_delivery_method"))
 
     await state.clear()
-    return _json({"ok": True, "order_id": order_id, "total": total, "keto_redeemed": keto_redeem})
+    response = {"ok": True, "order_id": order_id, "total": total, "keto_redeemed": keto_redeem}
+    if data.get("pending_delivery_method") == "pickup":
+        response.update(delivery_method="pickup", pickup_address=data["pending_address"],
+                        pickup_map_url=data.get("pending_pickup_map_url"))
+    return _json(response)
 
 
 async def api_order_cheque(request: web.Request):

@@ -2358,6 +2358,7 @@
     <div class="emoji">✅</div>
     <div id="order-success-text" style="font-size:16px;font-weight:600;color:var(--text)"></div>
     <div id="order-success-detail" style="margin-top:8px"></div>
+    <div id="order-success-pickup" style="margin-top:12px;display:none"></div>
     <div id="order-success-keto" style="margin-top:14px;font-size:14px;font-weight:600;display:none"></div>
     <button class="checkout-submit-btn" style="margin-top:24px;width:80%" onclick="switchPage('home')" id="btn-continue-shopping"></button>
   </div>
@@ -4902,6 +4903,29 @@ function confirmMapPick() {
   closeMapPicker();
 }
 
+function resetPickupSelection() {
+  pickupMode = false;
+  document.querySelectorAll('#checkout-mode-options [data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode==='delivery'));
+  const instructions = document.getElementById('pickup-instructions');
+  if (instructions) instructions.style.display = 'none';
+}
+
+function showCheckoutSuccess(result) {
+  document.getElementById('order-success-text').textContent = t.orderSuccess;
+  document.getElementById('order-success-detail').textContent =
+    t.orderSuccessDetail.replace('{id}', result.order_id);
+  document.getElementById('order-success-detail').style.whiteSpace = 'pre-line';
+  window.renderPickupSuccessDetails(document, result);
+  const ketoEl = document.getElementById('order-success-keto');
+  if (result.expected_keto > 0) {
+    ketoEl.innerHTML = t.orderSuccessKeto.replace('{amount}', formatPrice(result.expected_keto));
+    ketoEl.style.display = 'block';
+  } else {
+    ketoEl.style.display = 'none';
+  }
+  switchPage('order-success');
+}
+
 async function submitOrder() {
   const phone = document.getElementById('inp-phone').value.trim();
   const lat = document.getElementById('inp-lat').value;
@@ -4976,28 +5000,14 @@ async function submitOrder() {
     if (addrEl) addrEl.value = '';
     document.getElementById('delivery-group').style.display = 'none';
     document.getElementById('delivery-options').innerHTML = '';
-    pickupMode = false;
-    document.querySelectorAll('#checkout-mode-options [data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode==='delivery'));
-    document.getElementById('pickup-instructions').style.display = 'none';
-
     if (result.awaiting_cheque) {
       // Online payment — go to cheque-upload page directly inside the
       // Mini App instead of bouncing the buyer back to the bot chat.
       openChequePage(result);
     } else {
-      // Cash flow — show the standard success screen.
-      document.getElementById('order-success-text').textContent = t.orderSuccess;
-      document.getElementById('order-success-detail').textContent =
-        t.orderSuccessDetail.replace('{id}', result.order_id);
-      document.getElementById('order-success-detail').style.whiteSpace = 'pre-line';
-      const ketoEl = document.getElementById('order-success-keto');
-      if (result.expected_keto > 0) {
-        ketoEl.innerHTML = t.orderSuccessKeto.replace('{amount}', formatPrice(result.expected_keto));
-        ketoEl.style.display = 'block';
-      } else {
-        ketoEl.style.display = 'none';
-      }
-      switchPage('order-success');
+      // Cash flow — server returns the address/map snapshot used by the order.
+      showCheckoutSuccess(result);
+      resetPickupSelection();
     }
 
     if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
@@ -5167,10 +5177,18 @@ async function submitCheque() {
       submit.textContent = t.chequeSubmitBtn;
       return;
     }
+    const result = await res.json();
     showToast(t.chequeReceivedToast);
     if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-    // Land them on My Orders so they can see the new pending order.
-    switchPage('orders');
+    if (result.delivery_method === 'pickup') {
+      // Use the stored server-side deferred snapshot; the shop config may
+      // have changed since the buyer opened the cheque page.
+      showCheckoutSuccess(result);
+      resetPickupSelection();
+    } else {
+      // Land them on My Orders so they can see the new pending order.
+      switchPage('orders');
+    }
   } catch (e) {
     console.error('Cheque upload error:', e);
     showToast(t.chequeUploadError, true);

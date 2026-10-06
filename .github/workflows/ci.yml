@@ -56,5 +56,11 @@ jobs:
               print("ok", m)
           PY
 
+      - name: Mini App JavaScript checks
+        run: |
+          node tests/check_inline_scripts.js
+          node tests/test_pickup_checkout.js
+          node --check webapp/pickup_checkout.js
+
       - name: Promotion regression tests
         run: python -m unittest discover -s tests -v
