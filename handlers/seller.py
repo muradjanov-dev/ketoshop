@@ -1357,7 +1357,9 @@ async def render_seller_orders(callback: CallbackQuery, lang: str):
     text = "📦 <b>" + ("Buyurtmalar" if lang == "uz" else "Заказы") + ":</b>\n\n"
     buttons = []
     for order in orders[:10]:
-        status = get_order_status(order["status"], lang)
+        status = (get_text("order_status_pickup_collected", lang)
+                  if order.get("delivery_method") == "pickup" and order.get("status") == "delivered"
+                  else get_order_status(order["status"], lang))
         total_str = f"{int(order['total']):,}".replace(",", " ")
         delivery_label = get_delivery_method_name(order.get("delivery_method"), lang)
 
@@ -1593,6 +1595,8 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
                     reply_markup = order_cancelled_keyboard(buyer_lang)
 
                 when, timeline = _build_buyer_status_block(order, new_status, buyer_lang)
+                if order.get("delivery_method") == "pickup" and new_status == "delivered":
+                    buyer_key = "buyer_pickup_collected"
                 buyer_text = get_text(buyer_key, buyer_lang,
                                       order_id=order_id, when=when, timeline=timeline)
                 # On delivery, close with one idea for what to make from what

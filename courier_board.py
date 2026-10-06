@@ -29,6 +29,7 @@ same message builder as the bot's seller panel so the buyer sees one
 consistent timeline no matter which surface moved the order.
 """
 import asyncio
+import html
 import json
 import logging
 import re
@@ -308,7 +309,14 @@ async def _notify_buyer(bot, order: dict, new_status: str) -> None:
         reply_markup = order_cancelled_keyboard(lang)
 
     when, timeline = _build_buyer_status_block(order, new_status, lang)
-    text = get_text(key, lang, order_id=order["id"], when=when, timeline=timeline)
+    if order.get("delivery_method") == "pickup" and new_status == "ready":
+        text = get_text("buyer_pickup_ready", lang, order_id=order["id"],
+                        address=html.escape(order.get("address") or ""),
+                        map_url=html.escape(order.get("pickup_map_url") or ""))
+    elif order.get("delivery_method") == "pickup" and new_status == "delivered":
+        text = get_text("buyer_pickup_collected", lang, order_id=order["id"])
+    else:
+        text = get_text(key, lang, order_id=order["id"], when=when, timeline=timeline)
 
     # On delivery, close with one idea for what to make from what just
     # arrived. It rides inside this message on purpose — the buyer has the
@@ -380,6 +388,8 @@ async def move_order(order_id: int, target: str, *, expected_from: str | None = 
         return {"ok": False, "error": "buyurtma topilmadi"}
 
     current = order.get("status")
+    if order.get("delivery_method") == "pickup" and target == "shipped":
+        return {"ok": False, "error": "Olib ketish buyurtmasi kuryerga berilmaydi"}
     if current == target:
         return {"ok": True, "order": _card(order), "unchanged": True}
     if expected_from and expected_from != current:
@@ -466,8 +476,10 @@ async def assign_courier(order_id: int, courier_id: int | None) -> bool:
     """Attach (or clear) the courier shown on a card. Kept separate from the
     status move so claiming an order doesn't message the buyer."""
     async with database.pool.acquire() as conn:
-        await conn.execute("UPDATE orders SET courier_id = $1 WHERE id = $2",
-                           courier_id, order_id)
+        result = await conn.execute(
+            "UPDATE orders SET courier_id = $1 WHERE id = $2 AND delivery_method IS DISTINCT FROM 'pickup'",
+            courier_id, order_id)
+    return result.endswith("1")
     return True
 
 

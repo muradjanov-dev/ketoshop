@@ -2299,10 +2299,16 @@
 
     <div class="checkout-form">
       <div class="form-group">
+        <label>Buyurtmani olish usuli</label>
+        <div class="delivery-options-list" id="checkout-mode-options">
+          <button type="button" class="del-opt active" data-mode="delivery">🚚 Yetkazib berish</button>
+        </div>
+      </div>
+      <div class="form-group">
         <label id="lbl-phone"></label>
         <input type="tel" id="inp-phone" placeholder="+998901234567" autocomplete="tel">
       </div>
-      <div class="form-group">
+      <div class="form-group" id="customer-location-group">
         <label id="lbl-location"></label>
         <button class="location-btn" id="btn-get-location" onclick="getLocation()">
           <span id="location-icon">📍</span>
@@ -2319,6 +2325,7 @@
         <input type="hidden" id="inp-lat" value="">
         <input type="hidden" id="inp-lng" value="">
       </div>
+      <div class="form-group" id="pickup-instructions" style="display:none"></div>
       <div class="form-group" id="delivery-group" style="display:none">
         <label id="lbl-delivery"></label>
         <div class="delivery-options-list" id="delivery-options"></div>
@@ -2351,6 +2358,7 @@
     <div class="emoji">✅</div>
     <div id="order-success-text" style="font-size:16px;font-weight:600;color:var(--text)"></div>
     <div id="order-success-detail" style="margin-top:8px"></div>
+    <div id="order-success-pickup" style="margin-top:12px;display:none"></div>
     <div id="order-success-keto" style="margin-top:14px;font-size:14px;font-weight:600;display:none"></div>
     <button class="checkout-submit-btn" style="margin-top:24px;width:80%" onclick="switchPage('home')" id="btn-continue-shopping"></button>
   </div>
@@ -2523,6 +2531,7 @@
   </div>
 </nav>
 
+<script src="/static/pickup_checkout.js"></script>
 <script>
 const tg = window.Telegram.WebApp;
 tg.ready();
@@ -3157,6 +3166,9 @@ let totalPages = 1;
 let currentProduct = null;
 let qty = 1;
 let cartData = { items: [], total: 0 };
+let pickupConfig = {enabled:false,address:'',map_url:'',fee:0};
+let pickupMode = false;
+let pickupConfigLoaded = false;
 // Keto-as-discount at checkout — off by default (owner's admin-panel toggle).
 // keto.enabled/balance come from /api/keto/status; keto.redeem is what the
 // buyer chose to apply (0 unless they opt in via the checkout UI).
@@ -4544,13 +4556,14 @@ function renderCheckoutPage() {
   document.getElementById('lbl-payment').textContent = t.lblPayment;
   document.getElementById('pay-cash').textContent = t.payCash;
   document.getElementById('pay-online').textContent = t.payOnline;
+  loadPickupConfig();
   // Re-render delivery options if a selection has been shown for this checkout
   const deliveryGroup = document.getElementById('delivery-group');
   if (deliveryGroup && deliveryGroup.style.display !== 'none') {
     const lat = parseFloat(document.getElementById('inp-lat').value);
     const lng = parseFloat(document.getElementById('inp-lng').value);
     if (!isNaN(lat) && !isNaN(lng)) {
-      const prev = document.querySelector('.del-opt.active')?.dataset.method;
+      const prev = document.querySelector('.del-opt[data-method].active')?.dataset.method;
       renderDeliveryOptions(isInTashkent(lat, lng));
       if (prev) {
         const restored = document.querySelector('.del-opt[data-method="' + prev + '"]');
@@ -4641,7 +4654,7 @@ async function initKetoRedeemUI() {
   toggle.disabled = false;
 
   function currentCap() {
-    const method = document.querySelector('.del-opt.active')?.dataset.method;
+    const method = pickupMode ? 'pickup' : document.querySelector('.del-opt[data-method].active')?.dataset.method;
     const fee = deliveryFee(method);
     return Math.min(keto.balance, Math.round(cartData.total + fee));
   }
@@ -4890,10 +4903,35 @@ function confirmMapPick() {
   closeMapPicker();
 }
 
+function resetPickupSelection() {
+  pickupMode = false;
+  document.querySelectorAll('#checkout-mode-options [data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode==='delivery'));
+  const instructions = document.getElementById('pickup-instructions');
+  if (instructions) instructions.style.display = 'none';
+}
+
+function showCheckoutSuccess(result) {
+  document.getElementById('order-success-text').textContent = t.orderSuccess;
+  document.getElementById('order-success-detail').textContent =
+    t.orderSuccessDetail.replace('{id}', result.order_id);
+  document.getElementById('order-success-detail').style.whiteSpace = 'pre-line';
+  window.renderPickupSuccessDetails(document, result);
+  const ketoEl = document.getElementById('order-success-keto');
+  if (result.expected_keto > 0) {
+    ketoEl.innerHTML = t.orderSuccessKeto.replace('{amount}', formatPrice(result.expected_keto));
+    ketoEl.style.display = 'block';
+  } else {
+    ketoEl.style.display = 'none';
+  }
+  switchPage('order-success');
+}
+
 async function submitOrder() {
   const phone = document.getElementById('inp-phone').value.trim();
   const lat = document.getElementById('inp-lat').value;
   const lng = document.getElementById('inp-lng').value;
+  const modeState = window.ketoshopPickupState(pickupConfig.enabled, pickupMode, Boolean(lat && lng));
+  const isPickup = modeState.pickupSelected;
   const payMethod = document.querySelector('.pay-opt.active')?.dataset.method || 'cash';
 
   // Remove old errors
@@ -4908,7 +4946,7 @@ async function submitOrder() {
     document.getElementById('inp-phone').after(err);
     return;
   }
-  if (!lat || !lng) {
+  if (modeState.locationRequired && (!lat || !lng)) {
     const err = document.createElement('div');
     err.className = 'checkout-error';
     err.textContent = t.errorAddress;
@@ -4916,13 +4954,13 @@ async function submitOrder() {
     return;
   }
 
-  const deliveryMethod = document.querySelector('.del-opt.active')?.dataset.method;
-  if (!deliveryMethod) {
+  const deliveryMethod = modeState.deliveryMethod || document.querySelector('.del-opt[data-method].active')?.dataset.method;
+  if (!isPickup && !deliveryMethod) {
     showToast(t.errorDelivery, true);
     return;
   }
 
-  const address = '📍 ' + parseFloat(lat).toFixed(6) + ', ' + parseFloat(lng).toFixed(6);
+  const address = isPickup ? '' : ('📍 ' + parseFloat(lat).toFixed(6) + ', ' + parseFloat(lng).toFixed(6));
   // Optional human-readable address the buyer reviewed/corrected. Sent as
   // address_note so it renders as 📝 next to the coords for the courier.
   const addressNote = (document.getElementById('location-address')?.value || '').trim();
@@ -4936,9 +4974,9 @@ async function submitOrder() {
       body: JSON.stringify({
         phone,
         address,
-        address_note: addressNote || null,
-        latitude: parseFloat(lat),
-        longitude: parseFloat(lng),
+        address_note: isPickup ? null : (addressNote || null),
+        latitude: isPickup ? null : parseFloat(lat),
+        longitude: isPickup ? null : parseFloat(lng),
         payment_method: payMethod,
         delivery_method: deliveryMethod,
         keto_redeem: keto.enabled ? (keto.redeem || 0) : 0,
@@ -4962,25 +5000,14 @@ async function submitOrder() {
     if (addrEl) addrEl.value = '';
     document.getElementById('delivery-group').style.display = 'none';
     document.getElementById('delivery-options').innerHTML = '';
-
     if (result.awaiting_cheque) {
       // Online payment — go to cheque-upload page directly inside the
       // Mini App instead of bouncing the buyer back to the bot chat.
       openChequePage(result);
     } else {
-      // Cash flow — show the standard success screen.
-      document.getElementById('order-success-text').textContent = t.orderSuccess;
-      document.getElementById('order-success-detail').textContent =
-        t.orderSuccessDetail.replace('{id}', result.order_id);
-      document.getElementById('order-success-detail').style.whiteSpace = 'pre-line';
-      const ketoEl = document.getElementById('order-success-keto');
-      if (result.expected_keto > 0) {
-        ketoEl.innerHTML = t.orderSuccessKeto.replace('{amount}', formatPrice(result.expected_keto));
-        ketoEl.style.display = 'block';
-      } else {
-        ketoEl.style.display = 'none';
-      }
-      switchPage('order-success');
+      // Cash flow — server returns the address/map snapshot used by the order.
+      showCheckoutSuccess(result);
+      resetPickupSelection();
     }
 
     if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
@@ -5150,10 +5177,18 @@ async function submitCheque() {
       submit.textContent = t.chequeSubmitBtn;
       return;
     }
+    const result = await res.json();
     showToast(t.chequeReceivedToast);
     if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-    // Land them on My Orders so they can see the new pending order.
-    switchPage('orders');
+    if (result.delivery_method === 'pickup') {
+      // Use the stored server-side deferred snapshot; the shop config may
+      // have changed since the buyer opened the cheque page.
+      showCheckoutSuccess(result);
+      resetPickupSelection();
+    } else {
+      // Land them on My Orders so they can see the new pending order.
+      switchPage('orders');
+    }
   } catch (e) {
     console.error('Cheque upload error:', e);
     showToast(t.chequeUploadError, true);
@@ -5240,6 +5275,7 @@ function contactAdmin() {
 // ===== ORDERS PAGE =====
 function deliveryLabel(method) {
   const map = {
+    pickup: '🏪 Olib ketish',
     self: t.delSelfLabel,
     yandex_taxi: t.delYandexTaxiLabel,
     yandex_market: t.delYandexMarketLabel,
@@ -5255,7 +5291,8 @@ function paymentLabel(method) {
   return '—';
 }
 
-function statusLabel(status) {
+function statusLabel(status, deliveryMethod) {
+  if (deliveryMethod === 'pickup' && status === 'delivered') return '✅ Olib ketildi';
   const map = {
     pending: t.orderStatusPending,
     confirmed: t.orderStatusConfirmed,
@@ -5330,11 +5367,13 @@ async function loadOrdersPage() {
     card.innerHTML =
       '<div class="order-card-head">' +
         '<div><span class="order-id">#' + o.id + '</span>' +
-          '<span class="order-status ' + o.status + '">' + statusLabel(o.status) + '</span></div>' +
+          '<span class="order-status ' + o.status + '">' + statusLabel(o.status,o.delivery_method) + '</span></div>' +
         '<div class="order-total">' + formatPrice(o.total) + ' UZS</div>' +
       '</div>' +
       '<div class="order-meta">' + t.orderDelivery + ': ' + deliveryLabel(o.delivery_method) +
         ' &nbsp;·&nbsp; ' + t.orderPayment + ': ' + paymentLabel(o.payment_method) + '</div>' +
+      (o.delivery_method==='pickup' ? '<div class="order-meta">🏪 '+escapeHtml(o.address||'')+
+        (o.pickup_map_url?' · <a href="'+escapeHtml(o.pickup_map_url)+'" target="_blank" rel="noopener">Xaritada ochish</a>':'')+'</div>' : '') +
       '<div class="order-items">' + itemsHtml + moreItems + '</div>' +
       (timeline.length ? '<div class="order-timeline">' + timeline.join('') + '</div>' : '') +
       cancelBtn;
@@ -5445,6 +5484,7 @@ const SELF_DELIVERY_FEE = 25000;
 // Free across Tashkent from this products total — handlers/cart.py FREE_DELIVERY_FROM.
 const FREE_DELIVERY_FROM = 800000;
 function deliveryFee(method) {
+  if (method === 'pickup') return 0;
   if (method !== 'self') return 0;
   return cartData.total >= FREE_DELIVERY_FROM ? 0 : SELF_DELIVERY_FEE;
 }
@@ -5477,12 +5517,42 @@ function renderDeliveryOptions(inTashkent) {
   refreshCheckoutTotal();
 }
 
+async function loadPickupConfig() {
+  if (!pickupConfigLoaded) {
+    pickupConfigLoaded = true;
+    try { pickupConfig = await api('/api/pickup-config'); }
+    catch (_) { pickupConfig = {enabled:false,address:'',map_url:'',fee:0}; }
+  }
+  const modes = document.getElementById('checkout-mode-options');
+  if (!modes) return;
+  const pickupState = window.ketoshopPickupState(pickupConfig.enabled, pickupMode,
+    Boolean(document.getElementById('inp-lat').value && document.getElementById('inp-lng').value));
+  if (pickupState.offerPickup && !modes.querySelector('[data-mode="pickup"]')) {
+    modes.insertAdjacentHTML('beforeend','<button type="button" class="del-opt" data-mode="pickup">🏪 Olib ketish</button>');
+  }
+  modes.querySelectorAll('[data-mode]').forEach(btn => btn.onclick = () => {
+    pickupMode = btn.dataset.mode === 'pickup';
+    modes.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b===btn));
+    const view = window.ketoshopPickupState(pickupConfig.enabled, pickupMode,
+      Boolean(document.getElementById('inp-lat').value && document.getElementById('inp-lng').value));
+    document.getElementById('customer-location-group').style.display = view.showCustomerLocation ? '' : 'none';
+    document.getElementById('delivery-group').style.display = view.showDeliveryOptions ? '' : 'none';
+    const instructions = document.getElementById('pickup-instructions');
+    instructions.style.display = view.showPickupInstructions ? '' : 'none';
+    instructions.innerHTML = view.showPickupInstructions ? '<b>🏪 Olib ketish manzili</b><br>' + escapeHtml(pickupConfig.address) +
+      '<br><a href="' + escapeHtml(pickupConfig.map_url) + '" target="_blank" rel="noopener">Xaritada ochish</a>' : '';
+    applyPaymentRestrictions();refreshCheckoutTotal();
+  });
+  // If pickup settings arrive while checkout is already on screen, keep the
+  // current delivery choice and only expose the newly available option.
+}
+
 // Recompute + display the checkout total. The self-courier fee is broken out
 // as its own line — shown to the buyer, but kept out of the "Jami" grand
 // total, which stays the products subtotal (owner's request, 2026-07-28:
 // the grand total was confusingly folding delivery in).
 function refreshCheckoutTotal() {
-  const method = document.querySelector('.del-opt.active')?.dataset.method;
+  const method = pickupMode ? 'pickup' : document.querySelector('.del-opt[data-method].active')?.dataset.method;
   const fee = deliveryFee(method);
   // Keto-as-discount (off unless the owner has enabled it) — a genuine
   // discount, unlike the delivery fee above, so it does reduce "Jami".
@@ -5515,11 +5585,11 @@ function refreshCheckoutTotal() {
 // method (Yandex Taxi, Yandex Market, BTS, EMU) is a third party that won't
 // take cash on our behalf, so cash is disabled and payment forced to online.
 function applyPaymentRestrictions() {
-  const method = document.querySelector('.del-opt.active')?.dataset.method;
+  const method = pickupMode ? 'pickup' : document.querySelector('.del-opt[data-method].active')?.dataset.method;
   const cashBtn = document.getElementById('pay-cash');
   const onlineBtn = document.getElementById('pay-online');
   if (!cashBtn || !onlineBtn) return;
-  const cashForbidden = method !== 'self';
+  const cashForbidden = !pickupMode && method !== 'self';
   cashBtn.disabled = cashForbidden;
   cashBtn.style.opacity = cashForbidden ? '0.4' : '';
   cashBtn.style.cursor = cashForbidden ? 'not-allowed' : '';
