@@ -207,6 +207,34 @@ async def api_session(request: web.Request):
 
 
 @require_auth
+async def api_pickup_settings(request: web.Request):
+    import pickup
+    values = await database.get_pickup_settings()
+    return _json({**values, "effective_enabled": pickup.public_config(values)["enabled"]})
+
+
+@require_auth
+async def api_pickup_settings_update(request: web.Request):
+    import pickup
+    try:
+        body = await request.json()
+    except Exception:
+        return _json({"error": "JSON format noto'g'ri"}, status=400)
+    values = {"enabled": bool(body.get("enabled")),
+              "address": str(body.get("address") or "").strip(),
+              "map_url": str(body.get("map_url") or "").strip(),
+              "working_hours": str(body.get("working_hours") or "").strip()}
+    invalid = pickup.validate_settings(values)
+    if invalid:
+        labels = {"address": "Manzil", "map_url": "HTTPS xarita havolasi",
+                  "working_hours": "Ish vaqti"}
+        return _json({"error": f"{labels[invalid]}ni to'g'ri kiriting."}, status=400)
+    saved = await database.save_pickup_settings(values)
+    return _json({"ok": True, **saved,
+                  "effective_enabled": pickup.public_config(saved)["enabled"]})
+
+
+@require_auth
 async def api_categories_create(request: web.Request):
     """Admin-added category (2026-07-30) — used to be a fixed list. Slugs a
     `key` from name_uz automatically; see database.create_category."""
@@ -1667,7 +1695,9 @@ async def api_courier_assign(request: web.Request):
             courier_id = int(raw)
         except (TypeError, ValueError):
             return _json({"error": "noto'g'ri kuryer"}, status=400)
-    await courier_board.assign_courier(order_id, courier_id)
+    assigned = await courier_board.assign_courier(order_id, courier_id)
+    if not assigned:
+        return _json({"error": "Olib ketish buyurtmasiga kuryer tayinlab bo'lmaydi"}, status=409)
     order = await database.get_order(order_id)
     return _json({"ok": True, "order": courier_board._card(order) if order else None})
 
@@ -1699,6 +1729,8 @@ def setup_admin_routes(app: web.Application):
     app.router.add_post("/admin/api/login", api_login)
     app.router.add_post("/admin/api/logout", api_logout)
     app.router.add_get("/admin/api/session", api_session)
+    app.router.add_get("/admin/api/pickup", api_pickup_settings)
+    app.router.add_post("/admin/api/pickup", api_pickup_settings_update)
     app.router.add_post("/admin/api/categories", api_categories_create)
     app.router.add_get("/admin/api/products", api_products_list)
     app.router.add_post("/admin/api/translit", api_translit)

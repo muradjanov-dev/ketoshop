@@ -104,3 +104,22 @@ Amaldagi production deploy yo‘li: GitHub Actions → GHCR → netcup.
 ## 📝 License
 
 MIT — use freely for your marketplace!
+
+## Olib ketish (pickup)
+
+Pickup is disabled on a fresh database. An authenticated admin can configure it
+in **Admin → Olib ketish** by entering the shop's real address, an HTTPS map
+link, and working hours, then enabling it. Leave it disabled until all three
+values are correct. Settings are kept in one database row; changing them does
+not rewrite instructions already attached to existing orders.
+
+When enabled, bot and Mini App customers can choose delivery or pickup. Pickup
+uses the customer's primary phone, skips their home location and courier-only
+fields, and supports cash at collection or the existing online cheque flow.
+The shop address and instructions come from server settings, and pickup adds no
+customer delivery fee or courier expense.
+
+When a pickup order is ready, the customer receives the saved collection
+address, map link, and hours. After the customer has collected it, an admin can
+mark it **Olib ketildi** from the ready card in the Admin courier board. That
+moves the order to delivered and triggers the existing delivery rewards.

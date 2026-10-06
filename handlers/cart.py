@@ -17,6 +17,7 @@ from database import (
     get_user_language, get_product, add_to_cart, get_cart,
     clear_cart, remove_from_cart, get_cart_total, get_cart_badge,
     get_cart_item, set_cart_quantity, get_last_order_prefs,
+    get_pickup_settings,
     set_order_cheque,
     create_order, get_user_orders, get_order, get_user,
     update_user_info, effective_price, active_discount,
@@ -42,6 +43,7 @@ class CartStates(StatesGroup):
 
 
 class CheckoutStates(StatesGroup):
+    waiting_fulfillment = State()
     waiting_phone = State()
     waiting_location = State()
     confirming_location = State()
@@ -556,6 +558,11 @@ async def _quick_order_prefs(user_id: int) -> dict | None:
     last = await get_last_order_prefs(user_id)
     if not last or not last.get("delivery_method") or not last.get("payment_method"):
         return None
+    # Pickup is deliberately not replayed by the saved-location shortcut: its
+    # availability/instructions can change, and the buyer's home pin remains
+    # the only saved location. Fall back to the normal fulfillment chooser.
+    if last["delivery_method"] == "pickup":
+        return None
 
     online_only = not _is_tashkent(lat, lng) or last["delivery_method"] == "yandex_taxi"
     payment_method = "online" if online_only else last["payment_method"]
@@ -893,10 +900,28 @@ async def start_checkout(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
 
-    await state.update_data(lang=lang)
+    await state.set_data({"lang": lang})
 
+    import pickup
+    pickup_cfg = pickup.public_config(await get_pickup_settings())
+    if pickup_cfg["enabled"]:
+        await state.set_state(CheckoutStates.waiting_fulfillment)
+        await callback.message.edit_text(
+            get_text("choose_fulfillment", lang),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=get_text("fulfillment_delivery", lang), callback_data="fulfillment:delivery")],
+                [InlineKeyboardButton(text=get_text("fulfillment_pickup", lang), callback_data="fulfillment:pickup")],
+            ]), parse_mode="HTML")
+        await callback.answer()
+        return
+    await _start_delivery_checkout(callback.message, state, lang, callback.from_user.id)
+    await callback.answer()
+
+
+async def _start_delivery_checkout(message, state: FSMContext, lang: str, user_id: int):
+    """Existing address-based checkout entry, shared after fulfillment choice."""
     # Check if user has saved phone & address
-    user = await get_user(callback.from_user.id)
+    user = await get_user(user_id)
     if user and user.get("phone") and user.get("address"):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
@@ -909,7 +934,7 @@ async def start_checkout(callback: CallbackQuery, state: FSMContext):
             )],
         ])
         await state.set_state(CheckoutStates.waiting_phone)
-        await callback.message.edit_text(
+        await message.edit_text(
             get_text("saved_info_prompt", lang,
                 phone=user["phone"],
                 address=user["address"],
@@ -919,7 +944,39 @@ async def start_checkout(callback: CallbackQuery, state: FSMContext):
         )
     else:
         await state.set_state(CheckoutStates.waiting_phone)
-        await _ask_phone(callback.message, lang)
+        await _ask_phone(message, lang)
+
+
+@router.callback_query(F.data.startswith("fulfillment:"))
+async def choose_fulfillment(callback: CallbackQuery, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state != CheckoutStates.waiting_fulfillment.state:
+        stale_data = await state.get_data()
+        await callback.answer(get_text("checkout_step_expired", stale_data.get("lang", "uz")),
+                              show_alert=True)
+        return
+    lang = (await state.get_data()).get("lang", "uz")
+    choice = callback.data.split(":", 1)[1]
+    if choice == "delivery":
+        await _start_delivery_checkout(callback.message, state, lang, callback.from_user.id)
+    elif choice == "pickup":
+        import pickup
+        config = pickup.public_config(await get_pickup_settings())
+        if not config["enabled"]:
+            await callback.answer(get_text("pickup_unavailable", lang), show_alert=True)
+            await state.clear()
+            return
+        # Freeze shop instructions into FSM immediately. Never put the shop
+        # address into the buyer's saved profile.
+        await state.update_data(pickup=True, delivery_method="pickup",
+            address=config["address"], latitude=None, longitude=None,
+            pickup_map_url=config["map_url"], pickup_working_hours=config["working_hours"],
+            address_note=None, secondary_phone=None, online_only=False, in_tashkent=False)
+        await state.set_state(CheckoutStates.waiting_phone)
+        await callback.message.edit_text(get_text("pickup_enter_phone", lang), parse_mode="HTML")
+    else:
+        await callback.answer()
+        return
     await callback.answer()
 
 
@@ -1012,6 +1069,24 @@ async def _phone_accepted(message: Message, state: FSMContext, lang: str, phone:
     and the shared-contact entry points."""
     await state.update_data(phone=phone)
     await update_user_info(message.from_user.id, phone=phone)
+    data = await state.get_data()
+    if data.get("pickup"):
+        import pickup
+        cfg = pickup.public_config(await get_pickup_settings())
+        if not cfg["enabled"]:
+            await state.clear()
+            await message.answer(get_text("pickup_unavailable", lang))
+            return
+        await state.update_data(delivery_method="pickup", address=cfg["address"],
+            latitude=None, longitude=None, pickup_map_url=cfg["map_url"],
+            pickup_working_hours=cfg["working_hours"], address_note=None,
+            secondary_phone=None, online_only=False, in_tashkent=False)
+        await state.set_state(CheckoutStates.waiting_payment_method)
+        info = get_text("pickup_instructions", lang, address=cfg["address"],
+                        map_url=cfg["map_url"], working_hours=cfg["working_hours"])
+        await message.answer(info + "\n\n" + get_text("choose_payment", lang),
+            reply_markup=payment_method_keyboard(lang, online_only=False), parse_mode="HTML")
+        return
     await state.set_state(CheckoutStates.waiting_location)
 
     location_kb = ReplyKeyboardMarkup(
@@ -1385,9 +1460,13 @@ async def build_my_orders_view(user_id: int, lang: str):
         text += get_text("order_item", lang,
             id=order["id"],
             date=format_local_dt(order["created_at"], "%d.%m.%Y"),
-            status=get_order_status(order["status"], lang),
+            status=(get_text("order_status_pickup_collected", lang)
+                    if order.get("delivery_method") == "pickup" and order.get("status") == "delivered"
+                    else get_order_status(order["status"], lang)),
             total=f"{int(order['total']):,}".replace(",", " "),
         )
+        if order.get("delivery_method") == "pickup":
+            text += "   " + get_delivery_method_name("pickup", lang) + "\n"
     # 🔁 one tap puts a past order back into the cart (retention.py).
     import retention
     rows = await retention.repeat_order_rows(user_id, lang)
@@ -1637,10 +1716,17 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
 
     # The buyer's own address is echoed back to them inside an HTML template:
     # an unescaped "&" broke the checkout screen for the person ordering.
+    pickup_block = ""
+    if delivery_method == "pickup":
+        pickup_block = "\n" + get_text("pickup_instructions", lang,
+            address=_escape_html(data.get("address") or ""),
+            map_url=_escape_html(data.get("pickup_map_url") or ""),
+            working_hours=_escape_html(data.get("pickup_working_hours") or ""))
     text = get_text("order_summary", lang,
         phone=_escape_html(data["phone"]),
         secondary_block=secondary_block,
         address=_escape_html(data["address"]),
+        pickup_block=pickup_block,
         note_block=note_block,
         payment=payment_label,
         delivery=delivery_label,
@@ -1766,6 +1852,14 @@ async def keto_redeem_clear(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "order_confirm:yes", CheckoutStates.confirming)
 async def order_confirm_yes(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    if data.get("delivery_method") == "pickup":
+        import pickup
+        if not pickup.public_config(await get_pickup_settings())["enabled"]:
+            await state.clear()
+            await callback.message.edit_text(get_text("pickup_unavailable", data.get("lang", "uz")))
+            await callback.answer(get_text("pickup_unavailable", data.get("lang", "uz")), show_alert=True)
+            return
     await _create_and_process_order(callback, state, bot)
 
 
@@ -1843,6 +1937,8 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
                 address_note=address_note,
                 secondary_phone=secondary_phone,
                 keto_redeem=keto_redeem,
+                pickup_map_url=data.get("pickup_map_url"),
+                pickup_working_hours=data.get("pickup_working_hours"),
             )
         except InsufficientStockError as exc:
             await state.clear()
@@ -1887,6 +1983,8 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
             "username": callback.from_user.username,
             "delivery_method": delivery_method,
             "payment_method": "cash",
+            "pickup_map_url": data.get("pickup_map_url"),
+            "pickup_working_hours": data.get("pickup_working_hours"),
         }, lang)
         await send_order_thanks(bot, callback.from_user.id, order_id, delivery_method)
 
@@ -1908,6 +2006,8 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
             pending_longitude=data.get("longitude"),
             pending_summary_text=text,
             pending_keto_redeem=keto_redeem,
+            pending_pickup_map_url=data.get("pickup_map_url"),
+            pending_pickup_working_hours=data.get("pickup_working_hours"),
         )
 
         cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -2034,6 +2134,8 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
             address_note=data.get("pending_address_note"),
             secondary_phone=data.get("pending_secondary_phone"),
             keto_redeem=keto_redeem,
+            pickup_map_url=data.get("pending_pickup_map_url"),
+            pickup_working_hours=data.get("pending_pickup_working_hours"),
         )
     except InsufficientStockError as exc:
         await state.clear()
@@ -2066,6 +2168,8 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
                 address_note=data.get("pending_address_note"),
                 secondary_phone=data.get("pending_secondary_phone"),
                 keto_redeem=0,
+                pickup_map_url=data.get("pending_pickup_map_url"),
+                pickup_working_hours=data.get("pending_pickup_working_hours"),
             )
         except InsufficientStockError as exc:
             await state.clear()
@@ -2103,6 +2207,8 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
         "username": message.from_user.username,
         "delivery_method": data.get("pending_delivery_method"),
         "payment_method": "online",
+        "pickup_map_url": data.get("pending_pickup_map_url"),
+        "pickup_working_hours": data.get("pending_pickup_working_hours"),
     }, lang)
     await send_order_thanks(bot, message.from_user.id, order_id,
                             data.get("pending_delivery_method"))
@@ -2271,6 +2377,11 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
             note = mystery_gift.admin_note(goods_subtotal(items), admin_lang)
             if note:
                 text += "\n" + note
+            if data.get("delivery_method") == "pickup":
+                text += "\n" + get_text("pickup_instructions", admin_lang,
+                    address=_escape_html(data.get("address") or ""),
+                    map_url=_escape_html(data.get("pickup_map_url") or ""),
+                    working_hours=_escape_html(data.get("pickup_working_hours") or ""))
             # The total above is already net of any Keto the buyer spent, so
             # without saying so the payment reads as short. Taken from the
             # order row rather than the caller's dict: three different flows

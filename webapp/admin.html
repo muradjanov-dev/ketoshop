@@ -573,6 +573,7 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
     <button class="tab" data-view="reklama">📣 Reklama</button>
     <button class="tab" data-view="retention">🔁 Qayta sotuv</button>
     <button class="tab" data-view="expenses">📉 Chiqimlar</button>
+    <button class="tab" data-view="pickup">🏪 Olib ketish</button>
   </div>
 
   <!-- ===== DASHBOARD VIEW ===== -->
@@ -682,6 +683,19 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
       <div class="kanban" id="kanban"></div>
       <button class="kb-arrow next" id="kbNext" type="button" aria-label="Keyingi ustun" hidden>›</button>
     </div>
+  </section>
+
+  <section class="view" id="view-pickup">
+    <div class="toolbar"><h2>🏪 Olib ketish sozlamalari</h2></div>
+    <p class="hint">Xaridorlar bu manzildan buyurtmani o'zlari olib ketadi. Yoqishdan oldin haqiqiy manzil, HTTPS xarita havolasi va ish vaqtini kiriting.</p>
+    <form id="pickupForm" style="max-width:640px;display:grid;gap:12px">
+      <label>Do'kon manzili<textarea id="pickupAddress" rows="3"></textarea></label>
+      <label>Xarita havolasi (HTTPS)<input id="pickupMap" type="text" inputmode="url" placeholder="https://maps.google.com/…"></label>
+      <label>Ish vaqti<input id="pickupHours" type="text"></label>
+      <label style="display:flex;gap:8px;align-items:center"><input id="pickupEnabled" type="checkbox"> Xaridorlar uchun olib ketishni yoqish</label>
+      <button class="btn btn-p" type="submit">Saqlash</button>
+      <div id="pickupFeedback" role="status"></div>
+    </form>
   </section>
 
   <section class="view" id="view-products">
@@ -1316,8 +1330,23 @@ async function boot(){
   CAT_MAP={};CATEGORIES.forEach(c=>CAT_MAP[c.key]=c.name_uz);
   renderCatOptions();
   lastCatValue=CATEGORIES[0]?.key||null;
-  showShell();await Promise.all([loadDashboard(),loadProducts(),loadSets(),loadPromos(),loadKeto(),loadBloggers()]);
+  showShell();await Promise.all([loadDashboard(),loadProducts(),loadSets(),loadPromos(),loadKeto(),loadBloggers(),loadPickup()]);
 }
+
+async function loadPickup(){
+  const d=await api('/admin/api/pickup');
+  $('#pickupAddress').value=d.address||'';$('#pickupMap').value=d.map_url||'';
+  $('#pickupHours').value=d.working_hours||'';$('#pickupEnabled').checked=!!d.enabled;
+  $('#pickupFeedback').textContent=d.effective_enabled?'Faol':'O\'chiq yoki sozlamalar to\'liq emas';
+}
+$('#pickupForm').addEventListener('submit',async e=>{
+  e.preventDefault();const box=$('#pickupFeedback');box.textContent='Saqlanmoqda…';
+  try{const d=await api('/admin/api/pickup',{method:'POST',body:JSON.stringify({
+    address:$('#pickupAddress').value,map_url:$('#pickupMap').value,
+    working_hours:$('#pickupHours').value,enabled:$('#pickupEnabled').checked})});
+    box.textContent=d.effective_enabled?'Olib ketish yoqildi':'Sozlamalar saqlandi, olib ketish o\'chiq';
+  }catch(err){box.textContent=err.message;}
+});
 
 /* ===== dashboard ===== */
 let DASH_PERIOD='30d';
@@ -1514,7 +1543,7 @@ $('#dashCustomDateBtn').addEventListener('click', () => {
 });
 
 /* ===== tabs ===== */
-const VIEWS=['dashboard','order-costs','courier','products','sets','promos','keto','bloggers','reklama','retention','expenses'];
+const VIEWS=['dashboard','order-costs','courier','products','sets','promos','keto','bloggers','reklama','retention','expenses','pickup'];
 function switchView(v){
   if(!VIEWS.includes(v))v='dashboard';
   if(!window.KURYER_MODE)localStorage.setItem('ketoshop_admin_view',v);
@@ -1533,6 +1562,7 @@ function switchView(v){
   if(v==='reklama')loadAds();
   if(v==='retention')loadRetention();
   if(v==='expenses')loadExpenses();
+  if(v==='pickup')loadPickup();
 }
 $$('.tab').forEach(t=>t.addEventListener('click',()=>switchView(t.dataset.view)));
 
@@ -2764,7 +2794,7 @@ const KB_ALLOWED_FROM={
 };
 /* minutes in one stage before the age badge turns amber / red, per column */
 const KB_SLA={new:[10,25],accepted:[20,45],delivery:[45,100],done:[0,0],cancelled:[0,0]};
-const KB_DELIVERY={courier:'🚚 Kuryer',self:'🏃 Olib ketish',yandex_taxi:'🚕 Yandex Taxi',
+const KB_DELIVERY={courier:'🚚 Kuryer',self:'🏃 Olib ketish',pickup:'🏪 Olib ketish',yandex_taxi:'🚕 Yandex Taxi',
                    yandex_market:'📦 Yandex Market',bts:'🚛 BTS',emu:'✈️ EMU'};
 const KB_PAYMENT={cash:'💵 Naqd',card:'💳 Karta',click:'💳 Click',payme:'💳 Payme',online:'💳 Onlayn'};
 const KB_POLL_MS=12000;
@@ -2968,6 +2998,8 @@ function kbCardHtml(c,col,i){
   const chips=[];
   if(col.key==='delivery')
     chips.push(`<span class="kb-chip ${c.status==='shipped'?'tone':'soft'}">${c.status==='shipped'?"🚚 Yo'lda":'📦 Tayyor'}</span>`);
+  if(col.key==='done'&&c.delivery_method==='pickup')
+    chips.push('<span class="kb-chip tone">✅ Olib ketildi</span>');
   if(c.courier_name)chips.push(`<span class="kb-chip tone">🧍 ${esc(c.courier_name)}</span>`);
   // The surprise pack has no order line of its own — the team adds it by
   // hand — so the board is the only thing that can remind them.
@@ -3001,7 +3033,9 @@ function kbCardHtml(c,col,i){
         ${done&&c.status==='cancelled'?'':
           `<button class="kb-mini" data-act="prev" title="Orqaga: ${pv?esc(KB_LABEL[pv]):''}" ${kbCan(c.status,pv)?'':'disabled'}>◀</button>`}
         ${goShipped
-          ? `<button class="kb-mini wide go" data-act="ship" title="Kuryer yo’lga chiqdi">🚚 Yo’lda</button>`
+          ? (c.delivery_method==='pickup'
+              ? `<button class="kb-mini wide go" data-act="collect" title="Xaridor buyurtmani olib ketdi">✅ Olib ketildi</button>`
+              : `<button class="kb-mini wide go" data-act="ship" title="Kuryer yo’lga chiqdi">🚚 Yo’lda</button>`)
           : (done?'':`<button class="kb-mini" data-act="next" title="Oldinga: ${nx?esc(KB_LABEL[nx]):''}" ${kbCan(c.status,nx)?'':'disabled'}>▶</button>`)}
         <button class="kb-mini" data-act="open" title="Batafsil">⋯</button>
       </div>
@@ -3018,7 +3052,8 @@ const KB_CONFIRM_ALWAYS=new Set(['delivered','cancelled']);
 function kbConfirmMove(id,from,target,fromDrag){
   if(!fromDrag&&!KB_CONFIRM_ALWAYS.has(target))return true;
   const notify=$('#kbNotify')&&$('#kbNotify').checked;
-  return confirm(`#${id}: «${KB_LABEL[from]||from}» → «${KB_LABEL[target]||target}»\n\n`+
+  const card=kbCard(id),label=target==='delivered'&&card?.delivery_method==='pickup'?'Olib ketildi':(KB_LABEL[target]||target);
+  return confirm(`#${id}: «${KB_LABEL[from]||from}» → «${label}»\n\n`+
     `Rostdan o’tkazilsinmi?`+(notify?'\n(Mijozga xabar ketadi)':''));
 }
 
@@ -3050,7 +3085,8 @@ async function kbMove(id,target,opts){
     const moved=document.querySelector(`.kb-card[data-id="${id}"]`);
     if(moved){moved.classList.add('landed');moved.scrollIntoView({block:'nearest',behavior:'smooth'});}
     if(!(opts&&opts.quiet)){
-      toast(`✅ #${id} → ${KB_LABEL[target]}${res.notified?' · mijozga xabar ketdi':''}`);
+      const label=target==='delivered'&&fresh.delivery_method==='pickup'?'Olib ketildi':KB_LABEL[target];
+      toast(`✅ #${id} → ${label}${res.notified?' · mijozga xabar ketdi':''}`);
     }
     if(KB_DETAIL_ID===id&&$('#kbModal').classList.contains('open'))kbRenderDetail(id);
   }catch(err){
@@ -3182,6 +3218,7 @@ $('#kanban').addEventListener('click',e=>{
   if(btn.dataset.act==='next')kbMove(id,kbNext(card.status));
   else if(btn.dataset.act==='prev')kbMove(id,kbPrev(card.status));
   else if(btn.dataset.act==='ship')kbMove(id,'shipped');
+  else if(btn.dataset.act==='collect')kbMove(id,'delivered');
   else if(btn.dataset.act==='open')kbOpenDetail(id);
 });
 

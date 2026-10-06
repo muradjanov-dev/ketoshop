@@ -703,7 +703,7 @@ TEXTS = {
     "order_summary": {
         "uz": "📋 <b>Buyurtma tafsilotlari:</b>\n\n"
               "📱 Telefon: {phone}{secondary_block}\n"
-              "📍 Joylashuv: {address}{note_block}\n"
+              "📍 Joylashuv: {address}{note_block}{pickup_block}\n"
               "🚚 Yetkazib berish: {delivery}\n"
               "💳 To'lov: {payment}\n\n"
               "{items}"
@@ -712,7 +712,7 @@ TEXTS = {
               "💰 <b>Jami: {total} so'm</b>",
         "ru": "📋 <b>Детали заказа:</b>\n\n"
               "📱 Телефон: {phone}{secondary_block}\n"
-              "📍 Геолокация: {address}{note_block}\n"
+              "📍 Геолокация: {address}{note_block}{pickup_block}\n"
               "🚚 Доставка: {delivery}\n"
               "💳 Оплата: {payment}\n\n"
               "{items}"
@@ -720,6 +720,13 @@ TEXTS = {
               "{keto_block}\n"
               "💰 <b>Итого: {total} сум</b>",
     },
+    "choose_fulfillment": {"uz": "Buyurtmani qanday olasiz?", "ru": "Как вы хотите получить заказ?"},
+    "fulfillment_delivery": {"uz": "🚚 Yetkazib berish", "ru": "🚚 Доставка"},
+    "fulfillment_pickup": {"uz": "🏪 Olib ketish", "ru": "🏪 Самовывоз"},
+    "pickup_enter_phone": {"uz": "Olib ketish uchun bog'lanish telefon raqamingizni kiriting:", "ru": "Введите контактный номер телефона для самовывоза:"},
+    "pickup_unavailable": {"uz": "Olib ketish hozircha mavjud emas. Iltimos, yetkazib berishni tanlang.", "ru": "Самовывоз сейчас недоступен. Пожалуйста, выберите доставку."},
+    "checkout_step_expired": {"uz": "Bu checkout bosqichi eskirgan. Buyurtmani qaytadan boshlang.", "ru": "Этот шаг оформления устарел. Начните оформление заново."},
+    "pickup_instructions": {"uz": "🏪 <b>Olib ketish manzili:</b> {address}\n🗺 <a href=\"{map_url}\">Xaritada ochish</a>\n🕒 Ish vaqti: {working_hours}", "ru": "🏪 <b>Адрес самовывоза:</b> {address}\n🗺 <a href=\"{map_url}\">Открыть карту</a>\n🕒 Часы работы: {working_hours}"},
     "delivery_fee_line": {
         "uz": "🚚 Yetkazib berish narxi: {fee} so'm\n",
         "ru": "🚚 Стоимость доставки: {fee} сум\n",
@@ -831,6 +838,7 @@ TEXTS = {
         "ru": "🚚 Выберите способ доставки:",
     },
     "btn_delivery_self": {"uz": "🚚 Ketoshop kuryer", "ru": "🚚 Курьер Ketoshop"},
+    "btn_delivery_pickup": {"uz": "🏪 Olib ketish", "ru": "🏪 Самовывоз"},
     "btn_delivery_yandex_taxi": {"uz": "🚖 Yandex Taxi", "ru": "🚖 Yandex Taxi"},
     "btn_delivery_yandex_market": {"uz": "📦 Yandex Market", "ru": "📦 Yandex Market"},
     "btn_delivery_bts": {"uz": "📦 BTS", "ru": "📦 BTS"},
@@ -1051,6 +1059,7 @@ TEXTS = {
     "order_status_shipped": {"uz": "🚚 Yo'lda", "ru": "🚚 В пути"},
     "order_status_delivering": {"uz": "🚚 Yetkazilmoqda", "ru": "🚚 Доставляется"},
     "order_status_delivered": {"uz": "📦 Yetkazildi", "ru": "📦 Доставлен"},
+    "order_status_pickup_collected": {"uz": "✅ Olib ketildi", "ru": "✅ Забран из магазина"},
     "order_status_cancelled": {"uz": "❌ Bekor qilingan", "ru": "❌ Отменён"},
 
     # ===== SELLER PANEL =====
@@ -1987,6 +1996,14 @@ TEXTS = {
               "{timeline}\n\n"
               "Заказ упакован и передаётся курьеру.\n"
               "Совсем скоро он будет в пути 🚚",
+    },
+    "buyer_pickup_ready": {
+        "uz": "🏪 <b>Buyurtmangizni olib ketish mumkin!</b>\n\nBuyurtma №<b>{order_id}</b>\n📍 {address}\n🗺 <a href=\"{map_url}\">Xaritada ochish</a>\n🕒 Ish vaqti: {working_hours}",
+        "ru": "🏪 <b>Ваш заказ готов к самовывозу!</b>\n\nЗаказ №<b>{order_id}</b>\n📍 {address}\n🗺 <a href=\"{map_url}\">Открыть карту</a>\n🕒 Часы работы: {working_hours}",
+    },
+    "buyer_pickup_collected": {
+        "uz": "✅ <b>Olib ketildi</b>\n\nBuyurtma №<b>{order_id}</b> do'kondan olib ketildi. Xaridingiz uchun rahmat!",
+        "ru": "✅ <b>Заказ забран</b>\n\nЗаказ №<b>{order_id}</b> забрали из магазина. Спасибо за покупку!",
     },
     "buyer_order_shipped": {
         "uz": "🚚 <b>Buyurtmangiz yo'lda!</b>\n\n"

@@ -29,6 +29,7 @@ class FeeTest(unittest.TestCase):
 
     def test_unknown_and_missing(self):
         self.assertEqual(delivery_costs.fee_for("yandex_market"), 0)
+        self.assertEqual(delivery_costs.fee_for("pickup"), 0)
         self.assertEqual(delivery_costs.fee_for(None), 0)
         self.assertEqual(delivery_costs.fee_for(""), 0)
 

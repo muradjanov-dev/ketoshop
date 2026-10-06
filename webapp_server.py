@@ -49,6 +49,7 @@ from database import (
     add_product_view, effective_price, active_discount,
     get_user_orders, get_order, cancel_order, get_user, create_user,
     get_product_reviews, add_review, delete_review, get_user_review,
+    get_pickup_settings,
     InsufficientStockError, InsufficientKetoError, LEADERBOARD_EXCLUDED_USER_IDS,
 )
 import gamification
@@ -683,30 +684,37 @@ async def api_checkout(request: web.Request):
 
     if not phone or not re.match(r'^\+?998\d{9}$', phone.replace(" ", "").replace("-", "")):
         return _json({"error": "invalid_phone"}, status=400)
-    if not latitude or not longitude:
-        return _json({"error": "invalid_location"}, status=400)
-
+    pickup_snapshot = {"pickup_map_url": None, "pickup_working_hours": None}
     from handlers.cart import verify_uzbekistan, get_location_address_text, delivery_fee_for, _is_tashkent
-    if not await verify_uzbekistan(float(latitude), float(longitude)):
-        return _json({"error": "outside_uzbekistan"}, status=400)
-
-    # "self" (Ketoshop's own courier) only exists inside Tashkent — reject it
-    # if the submitted coords don't actually fall in that area, so a buyer
-    # elsewhere can't claim the flat in-city fee / cash payment.
-    if delivery_method == "self" and not _is_tashkent(float(latitude), float(longitude)):
-        return _json({"error": "invalid_delivery_method"}, status=400)
-
-    # Ketoshop's own courier ("self") takes cash or online. Every other
-    # delivery method (Yandex Taxi/Market, BTS, EMU) is a third-party courier
-    # that won't collect cash on our behalf — online only for those.
-    if payment_method == "cash" and delivery_method != "self":
-        return _json({"error": "cash_not_available"}, status=400)
-
-    if not address:
-        readable = await get_location_address_text(float(latitude), float(longitude))
-        address = f"📍 {latitude:.6f}, {longitude:.6f}"
-        if readable:
-            address += f" — {readable}"
+    if delivery_method == "pickup":
+        import pickup
+        settings = await get_pickup_settings()
+        try:
+            details = pickup.checkout_values(body, settings)
+        except pickup.PickupUnavailable:
+            return _json({"error": "pickup_unavailable"}, status=409)
+        if payment_method not in ("cash", "online"):
+            return _json({"error": "invalid_payment_method"}, status=400)
+        address = details["address"]
+        latitude = longitude = None
+        address_note = None
+        pickup_snapshot = {"pickup_map_url": details["pickup_map_url"],
+                           "pickup_working_hours": details["pickup_working_hours"]}
+    else:
+        if not latitude or not longitude:
+            return _json({"error": "invalid_location"}, status=400)
+        if not await verify_uzbekistan(float(latitude), float(longitude)):
+            return _json({"error": "outside_uzbekistan"}, status=400)
+        # Ketoshop's own courier only exists inside Tashkent.
+        if delivery_method == "self" and not _is_tashkent(float(latitude), float(longitude)):
+            return _json({"error": "invalid_delivery_method"}, status=400)
+        if payment_method == "cash" and delivery_method != "self":
+            return _json({"error": "cash_not_available"}, status=400)
+        if not address:
+            readable = await get_location_address_text(float(latitude), float(longitude))
+            address = f"📍 {latitude:.6f}, {longitude:.6f}"
+            if readable:
+                address += f" — {readable}"
 
     cart_items = await get_cart(user_id)
     if not cart_items:
@@ -740,7 +748,8 @@ async def api_checkout(request: web.Request):
     total = sum(item["price"] * item["quantity"] for item in items_data)
     subtotal = total  # product-only, before delivery fee — what Keto earns off of
     # Ketoshop courier: 25 000, free from FREE_DELIVERY_FROM of products.
-    total += delivery_fee_for(delivery_method, subtotal)
+    if delivery_method != "pickup":
+        total += delivery_fee_for(delivery_method, subtotal)
 
     # Preview of the Keto reward this order will earn once delivered (see
     # gamification.py) — shown on the order-success screen so the buyer
@@ -806,9 +815,11 @@ async def api_checkout(request: web.Request):
                 pending_address_note=address_note,
                 pending_secondary_phone=None,  # Mini App doesn't collect a backup number yet
                 pending_delivery_method=delivery_method,
-                pending_latitude=float(latitude),
-                pending_longitude=float(longitude),
+                pending_latitude=float(latitude) if latitude is not None else None,
+                pending_longitude=float(longitude) if longitude is not None else None,
                 pending_keto_redeem=keto_redeem,
+                pending_pickup_map_url=pickup_snapshot["pickup_map_url"],
+                pending_pickup_working_hours=pickup_snapshot["pickup_working_hours"],
             )
         except Exception:
             logger.exception("Failed to stash pending checkout for user %s", user_id)
@@ -841,6 +852,7 @@ async def api_checkout(request: web.Request):
             delivery_method=delivery_method,
             address_note=address_note,
             keto_redeem=keto_redeem,
+            **pickup_snapshot,
         )
     except InsufficientStockError as exc:
         return await _stock_gone(exc, request)
@@ -859,8 +871,9 @@ async def api_checkout(request: web.Request):
         "address": address,
         "address_note": address_note,
         "total": total,
-        "latitude": float(latitude) if latitude else None,
-        "longitude": float(longitude) if longitude else None,
+        "latitude": float(latitude) if latitude is not None else None,
+        "longitude": float(longitude) if longitude is not None else None,
+        **pickup_snapshot,
         "user_id": user_id,
         "username": customer_username,
         "delivery_method": delivery_method,
@@ -915,6 +928,8 @@ async def api_orders(request: web.Request):
             "shipped_at": o["shipped_at"].isoformat() if o.get("shipped_at") else None,
             "delivered_at": o["delivered_at"].isoformat() if o.get("delivered_at") else None,
             "delivery_method": o.get("delivery_method"),
+            "pickup_map_url": o.get("pickup_map_url"),
+            "pickup_working_hours": o.get("pickup_working_hours"),
             "payment_method": o.get("payment_method"),
             "address": o.get("address"),
             "items": [
@@ -1067,6 +1082,8 @@ async def api_checkout_cheque(request: web.Request):
             address_note=data.get("pending_address_note"),
             secondary_phone=data.get("pending_secondary_phone"),
             keto_redeem=keto_redeem,
+            pickup_map_url=data.get("pending_pickup_map_url"),
+            pickup_working_hours=data.get("pending_pickup_working_hours"),
         )
     except InsufficientStockError as exc:
         return await _stock_gone(exc, request)
@@ -1091,6 +1108,8 @@ async def api_checkout_cheque(request: web.Request):
                 address_note=data.get("pending_address_note"),
                 secondary_phone=data.get("pending_secondary_phone"),
                 keto_redeem=0,
+                pickup_map_url=data.get("pending_pickup_map_url"),
+                pickup_working_hours=data.get("pending_pickup_working_hours"),
             )
         except InsufficientStockError as exc:
             return await _stock_gone(exc, request)
@@ -1145,6 +1164,8 @@ async def api_checkout_cheque(request: web.Request):
         "username": None,
         "delivery_method": data.get("pending_delivery_method"),
         "payment_method": "online",
+        "pickup_map_url": data.get("pending_pickup_map_url"),
+        "pickup_working_hours": data.get("pending_pickup_working_hours"),
     }, lang)
     from handlers.cart import send_order_thanks
     await send_order_thanks(bot, user_id, order_id, data.get("pending_delivery_method"))
@@ -1418,6 +1439,12 @@ def _serialize_products(products: list[dict], lang: str) -> list[dict]:
     return [_serialize_product(p, lang) for p in products]
 
 
+async def api_pickup_config(request: web.Request):
+    """Customer-visible pickup instructions, behind Telegram initData auth."""
+    import pickup
+    return _json(pickup.public_config(await get_pickup_settings()))
+
+
 # ===== APP FACTORY =====
 
 def create_webapp(bot: Bot, storage=None) -> web.Application:
@@ -1430,6 +1457,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/", index)
     app.router.add_get("/api/categories", api_categories)
+    app.router.add_get("/api/pickup-config", api_pickup_config)
     app.router.add_get("/api/promo", api_promo)
     app.router.add_get("/api/products", api_products)
     app.router.add_get("/api/top", api_top)

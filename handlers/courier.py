@@ -75,7 +75,7 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
     
     async def get_new_orders():
         async with database.pool.acquire() as conn:
-            return await conn.fetch("SELECT * FROM orders WHERE status = 'confirmed' AND courier_id IS NULL ORDER BY created_at ASC")
+            return await conn.fetch("SELECT * FROM orders WHERE status = 'confirmed' AND delivery_method IS DISTINCT FROM 'pickup' AND courier_id IS NULL ORDER BY created_at ASC")
             
     async def get_my_orders():
         async with database.pool.acquire() as conn:
@@ -190,7 +190,7 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
         
         async with database.pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM orders WHERE id = $1", order_id)
-            if not row or row["courier_id"] is not None:
+            if not row or row["courier_id"] is not None or row.get("delivery_method") == "pickup" or row.get("status") != "confirmed":
                 await callback.answer("Bu buyurtma allaqachon boshqa kuryer tomonidan olingan yoki topilmadi!", show_alert=True)
             else:
                 await conn.execute("UPDATE orders SET courier_id = $1, status = 'delivering' WHERE id = $2", callback.from_user.id, order_id)
@@ -263,4 +263,3 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
         # Refresh my orders list
         await show_list("my", idx, "Sizda boshqa yetkazilayotgan buyurtmalar qolmadi.")
         return
-

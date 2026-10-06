@@ -88,6 +88,21 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Pickup instructions are configured by an authenticated admin. The
+        # single checked row makes startup idempotent and keeps it disabled
+        # until a real shop address is entered.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS pickup_settings (
+                id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+                enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                address TEXT NOT NULL DEFAULT '',
+                map_url TEXT NOT NULL DEFAULT '',
+                working_hours TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        await conn.execute("INSERT INTO pickup_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+        for col in ("pickup_map_url", "pickup_working_hours"):
+            await conn.execute(f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {col} TEXT")
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS order_line_cost_audit (
                 id BIGSERIAL PRIMARY KEY,
@@ -2024,7 +2039,9 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
                        delivery_method: str | None = None,
                        address_note: str | None = None,
                        secondary_phone: str | None = None,
-                       keto_redeem: int = 0) -> tuple[int, list[dict]]:
+                       keto_redeem: int = 0,
+                       pickup_map_url: str | None = None,
+                       pickup_working_hours: str | None = None) -> tuple[int, list[dict]]:
     if not items:
         raise ValueError("Cannot create order with empty items")
     seller_id = items[0].get("seller_id")
@@ -2098,10 +2115,11 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
 
             import json
             order_id = await conn.fetchval(
-                """INSERT INTO orders (user_id, seller_id, customer_name, phone, address, items, total, payment_method, latitude, longitude, delivery_method, address_note, secondary_phone, keto_redeemed)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id""",
+                """INSERT INTO orders (user_id, seller_id, customer_name, phone, address, items, total, payment_method, latitude, longitude, delivery_method, address_note, secondary_phone, keto_redeemed, pickup_map_url, pickup_working_hours)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id""",
                 user_id, seller_id, customer_name, phone, address, json.dumps(items, ensure_ascii=False), total, payment_method,
-                latitude, longitude, delivery_method, address_note, secondary_phone, keto_redeem
+                latitude, longitude, delivery_method, address_note, secondary_phone, keto_redeem,
+                pickup_map_url, pickup_working_hours
             )
 
             if keto_redeem > 0:
@@ -2111,6 +2129,27 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
             await conn.execute("DELETE FROM cart WHERE user_id = $1", user_id)
 
     return order_id, low_stock
+
+
+async def get_pickup_settings() -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT enabled, address, map_url, working_hours FROM pickup_settings WHERE id = 1")
+    return dict(row) if row else {"enabled": False, "address": "", "map_url": "", "working_hours": ""}
+
+
+async def save_pickup_settings(settings: dict) -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO pickup_settings (id, enabled, address, map_url, working_hours)
+               VALUES (1, $1, $2, $3, $4)
+               ON CONFLICT (id) DO UPDATE SET enabled = EXCLUDED.enabled,
+                 address = EXCLUDED.address, map_url = EXCLUDED.map_url,
+                 working_hours = EXCLUDED.working_hours
+               RETURNING enabled, address, map_url, working_hours""",
+            bool(settings.get("enabled")), str(settings.get("address") or "").strip(),
+            str(settings.get("map_url") or "").strip(), str(settings.get("working_hours") or "").strip(),
+        )
+    return dict(row)
 
 
 async def get_order_history_position(user_id: int, order_id: int) -> dict:
