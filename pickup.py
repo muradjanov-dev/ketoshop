@@ -10,7 +10,7 @@ def validate_settings(settings: dict) -> str | None:
     """Return the first invalid field, or None when settings are usable."""
     if not settings.get("enabled"):
         return None
-    for field in ("address", "map_url", "working_hours"):
+    for field in ("address", "map_url"):
         if not str(settings.get(field) or "").strip():
             return field
     parsed = urlparse(str(settings.get("map_url") or "").strip())
@@ -27,7 +27,6 @@ def public_config(settings: dict | None) -> dict:
         "enabled": enabled,
         "address": str(values.get("address") or "") if enabled else "",
         "map_url": str(values.get("map_url") or "") if enabled else "",
-        "working_hours": str(values.get("working_hours") or "") if enabled else "",
         "fee": 0,
     }
 
@@ -37,10 +36,9 @@ def checkout_values(body: dict, settings: dict | None) -> dict:
     if body.get("delivery_method") != "pickup":
         return {"address": body.get("address"), "latitude": body.get("latitude"),
                 "longitude": body.get("longitude"), "fee": None,
-                "pickup_map_url": None, "pickup_working_hours": None}
+                "pickup_map_url": None}
     config = public_config(settings)
     if not config["enabled"]:
         raise PickupUnavailable("pickup is not available")
     return {"address": config["address"], "latitude": None, "longitude": None,
-            "fee": 0, "pickup_map_url": config["map_url"],
-            "pickup_working_hours": config["working_hours"]}
+            "fee": 0, "pickup_map_url": config["map_url"]}

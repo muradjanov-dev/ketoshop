@@ -726,7 +726,7 @@ TEXTS = {
     "pickup_enter_phone": {"uz": "Olib ketish uchun bog'lanish telefon raqamingizni kiriting:", "ru": "Введите контактный номер телефона для самовывоза:"},
     "pickup_unavailable": {"uz": "Olib ketish hozircha mavjud emas. Iltimos, yetkazib berishni tanlang.", "ru": "Самовывоз сейчас недоступен. Пожалуйста, выберите доставку."},
     "checkout_step_expired": {"uz": "Bu checkout bosqichi eskirgan. Buyurtmani qaytadan boshlang.", "ru": "Этот шаг оформления устарел. Начните оформление заново."},
-    "pickup_instructions": {"uz": "🏪 <b>Olib ketish manzili:</b> {address}\n🗺 <a href=\"{map_url}\">Xaritada ochish</a>\n🕒 Ish vaqti: {working_hours}", "ru": "🏪 <b>Адрес самовывоза:</b> {address}\n🗺 <a href=\"{map_url}\">Открыть карту</a>\n🕒 Часы работы: {working_hours}"},
+    "pickup_instructions": {"uz": "🏪 <b>Olib ketish manzili:</b> {address}\n🗺 <a href=\"{map_url}\">Xaritada ochish</a>", "ru": "🏪 <b>Адрес самовывоза:</b> {address}\n🗺 <a href=\"{map_url}\">Открыть карту</a>"},
     "delivery_fee_line": {
         "uz": "🚚 Yetkazib berish narxi: {fee} so'm\n",
         "ru": "🚚 Стоимость доставки: {fee} сум\n",
@@ -1998,8 +1998,8 @@ TEXTS = {
               "Совсем скоро он будет в пути 🚚",
     },
     "buyer_pickup_ready": {
-        "uz": "🏪 <b>Buyurtmangizni olib ketish mumkin!</b>\n\nBuyurtma №<b>{order_id}</b>\n📍 {address}\n🗺 <a href=\"{map_url}\">Xaritada ochish</a>\n🕒 Ish vaqti: {working_hours}",
-        "ru": "🏪 <b>Ваш заказ готов к самовывозу!</b>\n\nЗаказ №<b>{order_id}</b>\n📍 {address}\n🗺 <a href=\"{map_url}\">Открыть карту</a>\n🕒 Часы работы: {working_hours}",
+        "uz": "🏪 <b>Buyurtmangizni olib ketish mumkin!</b>\n\nBuyurtma №<b>{order_id}</b>\n📍 {address}\n🗺 <a href=\"{map_url}\">Xaritada ochish</a>",
+        "ru": "🏪 <b>Ваш заказ готов к самовывозу!</b>\n\nЗаказ №<b>{order_id}</b>\n📍 {address}\n🗺 <a href=\"{map_url}\">Открыть карту</a>",
     },
     "buyer_pickup_collected": {
         "uz": "✅ <b>Olib ketildi</b>\n\nBuyurtma №<b>{order_id}</b> do'kondan olib ketildi. Xaridingiz uchun rahmat!",

@@ -3165,7 +3165,7 @@ let totalPages = 1;
 let currentProduct = null;
 let qty = 1;
 let cartData = { items: [], total: 0 };
-let pickupConfig = {enabled:false,address:'',map_url:'',working_hours:'',fee:0};
+let pickupConfig = {enabled:false,address:'',map_url:'',fee:0};
 let pickupMode = false;
 let pickupConfigLoaded = false;
 // Keto-as-discount at checkout — off by default (owner's admin-panel toggle).
@@ -5355,8 +5355,7 @@ async function loadOrdersPage() {
       '<div class="order-meta">' + t.orderDelivery + ': ' + deliveryLabel(o.delivery_method) +
         ' &nbsp;·&nbsp; ' + t.orderPayment + ': ' + paymentLabel(o.payment_method) + '</div>' +
       (o.delivery_method==='pickup' ? '<div class="order-meta">🏪 '+escapeHtml(o.address||'')+
-        (o.pickup_map_url?' · <a href="'+escapeHtml(o.pickup_map_url)+'" target="_blank" rel="noopener">Xaritada ochish</a>':'')+
-        (o.pickup_working_hours?' · '+escapeHtml(o.pickup_working_hours):'')+'</div>' : '') +
+        (o.pickup_map_url?' · <a href="'+escapeHtml(o.pickup_map_url)+'" target="_blank" rel="noopener">Xaritada ochish</a>':'')+'</div>' : '') +
       '<div class="order-items">' + itemsHtml + moreItems + '</div>' +
       (timeline.length ? '<div class="order-timeline">' + timeline.join('') + '</div>' : '') +
       cancelBtn;
@@ -5504,7 +5503,7 @@ async function loadPickupConfig() {
   if (!pickupConfigLoaded) {
     pickupConfigLoaded = true;
     try { pickupConfig = await api('/api/pickup-config'); }
-    catch (_) { pickupConfig = {enabled:false,address:'',map_url:'',working_hours:'',fee:0}; }
+    catch (_) { pickupConfig = {enabled:false,address:'',map_url:'',fee:0}; }
   }
   const modes = document.getElementById('checkout-mode-options');
   if (!modes) return;
@@ -5523,8 +5522,7 @@ async function loadPickupConfig() {
     const instructions = document.getElementById('pickup-instructions');
     instructions.style.display = view.showPickupInstructions ? '' : 'none';
     instructions.innerHTML = view.showPickupInstructions ? '<b>🏪 Olib ketish manzili</b><br>' + escapeHtml(pickupConfig.address) +
-      '<br><a href="' + escapeHtml(pickupConfig.map_url) + '" target="_blank" rel="noopener">Xaritada ochish</a><br>' +
-      '<b>Ish vaqti:</b> ' + escapeHtml(pickupConfig.working_hours) : '';
+      '<br><a href="' + escapeHtml(pickupConfig.map_url) + '" target="_blank" rel="noopener">Xaritada ochish</a>' : '';
     applyPaymentRestrictions();refreshCheckoutTotal();
   });
   // If pickup settings arrive while checkout is already on screen, keep the

@@ -970,7 +970,7 @@ async def choose_fulfillment(callback: CallbackQuery, state: FSMContext):
         # address into the buyer's saved profile.
         await state.update_data(pickup=True, delivery_method="pickup",
             address=config["address"], latitude=None, longitude=None,
-            pickup_map_url=config["map_url"], pickup_working_hours=config["working_hours"],
+            pickup_map_url=config["map_url"],
             address_note=None, secondary_phone=None, online_only=False, in_tashkent=False)
         await state.set_state(CheckoutStates.waiting_phone)
         await callback.message.edit_text(get_text("pickup_enter_phone", lang), parse_mode="HTML")
@@ -1078,12 +1078,11 @@ async def _phone_accepted(message: Message, state: FSMContext, lang: str, phone:
             await message.answer(get_text("pickup_unavailable", lang))
             return
         await state.update_data(delivery_method="pickup", address=cfg["address"],
-            latitude=None, longitude=None, pickup_map_url=cfg["map_url"],
-            pickup_working_hours=cfg["working_hours"], address_note=None,
+            latitude=None, longitude=None, pickup_map_url=cfg["map_url"], address_note=None,
             secondary_phone=None, online_only=False, in_tashkent=False)
         await state.set_state(CheckoutStates.waiting_payment_method)
         info = get_text("pickup_instructions", lang, address=cfg["address"],
-                        map_url=cfg["map_url"], working_hours=cfg["working_hours"])
+                        map_url=cfg["map_url"])
         await message.answer(info + "\n\n" + get_text("choose_payment", lang),
             reply_markup=payment_method_keyboard(lang, online_only=False), parse_mode="HTML")
         return
@@ -1720,8 +1719,7 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     if delivery_method == "pickup":
         pickup_block = "\n" + get_text("pickup_instructions", lang,
             address=_escape_html(data.get("address") or ""),
-            map_url=_escape_html(data.get("pickup_map_url") or ""),
-            working_hours=_escape_html(data.get("pickup_working_hours") or ""))
+            map_url=_escape_html(data.get("pickup_map_url") or ""))
     text = get_text("order_summary", lang,
         phone=_escape_html(data["phone"]),
         secondary_block=secondary_block,
@@ -1938,7 +1936,6 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
                 secondary_phone=secondary_phone,
                 keto_redeem=keto_redeem,
                 pickup_map_url=data.get("pickup_map_url"),
-                pickup_working_hours=data.get("pickup_working_hours"),
             )
         except InsufficientStockError as exc:
             await state.clear()
@@ -1984,7 +1981,6 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
             "delivery_method": delivery_method,
             "payment_method": "cash",
             "pickup_map_url": data.get("pickup_map_url"),
-            "pickup_working_hours": data.get("pickup_working_hours"),
         }, lang)
         await send_order_thanks(bot, callback.from_user.id, order_id, delivery_method)
 
@@ -2007,7 +2003,6 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
             pending_summary_text=text,
             pending_keto_redeem=keto_redeem,
             pending_pickup_map_url=data.get("pickup_map_url"),
-            pending_pickup_working_hours=data.get("pickup_working_hours"),
         )
 
         cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -2135,7 +2130,6 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
             secondary_phone=data.get("pending_secondary_phone"),
             keto_redeem=keto_redeem,
             pickup_map_url=data.get("pending_pickup_map_url"),
-            pickup_working_hours=data.get("pending_pickup_working_hours"),
         )
     except InsufficientStockError as exc:
         await state.clear()
@@ -2169,7 +2163,6 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
                 secondary_phone=data.get("pending_secondary_phone"),
                 keto_redeem=0,
                 pickup_map_url=data.get("pending_pickup_map_url"),
-                pickup_working_hours=data.get("pending_pickup_working_hours"),
             )
         except InsufficientStockError as exc:
             await state.clear()
@@ -2208,7 +2201,6 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
         "delivery_method": data.get("pending_delivery_method"),
         "payment_method": "online",
         "pickup_map_url": data.get("pending_pickup_map_url"),
-        "pickup_working_hours": data.get("pending_pickup_working_hours"),
     }, lang)
     await send_order_thanks(bot, message.from_user.id, order_id,
                             data.get("pending_delivery_method"))
@@ -2380,8 +2372,7 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
             if data.get("delivery_method") == "pickup":
                 text += "\n" + get_text("pickup_instructions", admin_lang,
                     address=_escape_html(data.get("address") or ""),
-                    map_url=_escape_html(data.get("pickup_map_url") or ""),
-                    working_hours=_escape_html(data.get("pickup_working_hours") or ""))
+                    map_url=_escape_html(data.get("pickup_map_url") or ""))
             # The total above is already net of any Keto the buyer spent, so
             # without saying so the payment reads as short. Taken from the
             # order row rather than the caller's dict: three different flows

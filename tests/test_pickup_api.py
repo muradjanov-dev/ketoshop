@@ -25,8 +25,7 @@ class Request(dict):
 
 
 class PickupCheckoutApiTests(unittest.IsolatedAsyncioTestCase):
-    config = {"enabled": True, "address": "Real shop address", "map_url": "https://maps.example/shop",
-              "working_hours": "Mon-Fri 09:00-18:00"}
+    config = {"enabled": True, "address": "Real shop address", "map_url": "https://maps.example/shop"}
     cart = [{"product_id": 7, "set_id": None, "is_set": False, "name": "Tea", "cart_quantity": 2,
              "price": 100, "unit": "kg", "seller_id": 9}]
 
@@ -97,7 +96,7 @@ class PickupCheckoutApiTests(unittest.IsolatedAsyncioTestCase):
         data = await storage.get_data(StorageKey(bot_id=1, chat_id=123, user_id=123))
         self.assertEqual(data["pending_address"], "Real shop address")
         self.assertEqual(data["pending_pickup_map_url"], self.config["map_url"])
-        self.assertEqual(data["pending_pickup_working_hours"], self.config["working_hours"])
+        self.assertNotIn("pending_pickup_working_hours", data)
         self.assertIsNone(data["pending_latitude"])
         self.assertIsNone(data["pending_longitude"])
         self.assertEqual(data["pending_total"], 200)
@@ -106,8 +105,7 @@ class PickupCheckoutApiTests(unittest.IsolatedAsyncioTestCase):
         class State:
             data = {"lang": "uz", "payment_method": "online", "phone": "+998901234567",
                     "address": "Real shop", "delivery_method": "pickup", "latitude": None,
-                    "longitude": None, "pickup_map_url": self.config["map_url"],
-                    "pickup_working_hours": self.config["working_hours"]}
+                    "longitude": None, "pickup_map_url": self.config["map_url"]}
             async def get_data(self): return dict(self.data)
             async def set_state(self, state): self.current_state = state
             async def update_data(self, **kwargs): self.data.update(kwargs)
@@ -120,7 +118,7 @@ class PickupCheckoutApiTests(unittest.IsolatedAsyncioTestCase):
             await cart._create_and_process_order(callback, state, object())
         self.assertEqual(state.data["pending_address"], "Real shop")
         self.assertEqual(state.data["pending_pickup_map_url"], self.config["map_url"])
-        self.assertEqual(state.data["pending_pickup_working_hours"], self.config["working_hours"])
+        self.assertNotIn("pending_pickup_working_hours", state.data)
         self.assertIsNone(state.data["pending_latitude"])
         self.assertIsNone(state.data["pending_longitude"])
 
@@ -212,9 +210,9 @@ class PickupCheckoutApiTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PickupCourierBoardTests(unittest.IsolatedAsyncioTestCase):
-    async def test_pickup_ready_message_uses_saved_collection_instructions(self):
+    async def test_pickup_ready_message_uses_saved_address_and_map_link(self):
         order = {"id": 56, "user_id": 123, "delivery_method": "pickup", "address": "Real shop",
-                 "pickup_map_url": "https://maps.example/shop", "pickup_working_hours": "09:00-18:00"}
+                 "pickup_map_url": "https://maps.example/shop"}
         bot = SimpleNamespace(send_message=AsyncMock())
         with patch.object(courier_board.database, "get_user_language", AsyncMock(return_value="uz")), \
              patch("handlers.seller._build_buyer_status_block", return_value=("now", "timeline")):
@@ -222,7 +220,7 @@ class PickupCourierBoardTests(unittest.IsolatedAsyncioTestCase):
         sent = bot.send_message.await_args.kwargs["text"]
         self.assertIn("Real shop", sent)
         self.assertIn("https://maps.example/shop", sent)
-        self.assertIn("09:00-18:00", sent)
+        self.assertNotIn("vaqti", sent)
 
     async def test_pickup_collection_message_is_labelled_collected(self):
         order = {"id": 56, "user_id": 123, "delivery_method": "pickup"}
@@ -235,7 +233,7 @@ class PickupCourierBoardTests(unittest.IsolatedAsyncioTestCase):
     async def test_ready_pickup_can_be_collected_without_shipped_transition(self):
         order = {"id": 55, "status": "ready", "delivery_method": "pickup", "user_id": 123,
                  "address": "Real shop", "pickup_map_url": "https://maps.example/shop",
-                 "pickup_working_hours": "09:00-18:00", "items": "[]"}
+                 "items": "[]"}
         fresh = dict(order, status="delivered")
         with patch.object(courier_board.database, "get_order", AsyncMock(side_effect=[order, fresh])), \
              patch.object(courier_board.database, "transition_order_status", AsyncMock(return_value=True)) as move, \

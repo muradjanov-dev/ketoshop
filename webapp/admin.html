@@ -687,11 +687,10 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
 
   <section class="view" id="view-pickup">
     <div class="toolbar"><h2>🏪 Olib ketish sozlamalari</h2></div>
-    <p class="hint">Xaridorlar bu manzildan buyurtmani o'zlari olib ketadi. Yoqishdan oldin haqiqiy manzil, HTTPS xarita havolasi va ish vaqtini kiriting.</p>
+    <p class="hint">Xaridorlar bu manzildan buyurtmani o'zlari olib ketadi. Yoqishdan oldin haqiqiy manzil va HTTPS xarita havolasini kiriting.</p>
     <form id="pickupForm" style="max-width:640px;display:grid;gap:12px">
       <label>Do'kon manzili<textarea id="pickupAddress" rows="3"></textarea></label>
       <label>Xarita havolasi (HTTPS)<input id="pickupMap" type="text" inputmode="url" placeholder="https://maps.google.com/…"></label>
-      <label>Ish vaqti<input id="pickupHours" type="text"></label>
       <label style="display:flex;gap:8px;align-items:center"><input id="pickupEnabled" type="checkbox"> Xaridorlar uchun olib ketishni yoqish</label>
       <button class="btn btn-p" type="submit">Saqlash</button>
       <div id="pickupFeedback" role="status"></div>
@@ -1336,14 +1335,14 @@ async function boot(){
 async function loadPickup(){
   const d=await api('/admin/api/pickup');
   $('#pickupAddress').value=d.address||'';$('#pickupMap').value=d.map_url||'';
-  $('#pickupHours').value=d.working_hours||'';$('#pickupEnabled').checked=!!d.enabled;
+  $('#pickupEnabled').checked=!!d.enabled;
   $('#pickupFeedback').textContent=d.effective_enabled?'Faol':'O\'chiq yoki sozlamalar to\'liq emas';
 }
 $('#pickupForm').addEventListener('submit',async e=>{
   e.preventDefault();const box=$('#pickupFeedback');box.textContent='Saqlanmoqda…';
   try{const d=await api('/admin/api/pickup',{method:'POST',body:JSON.stringify({
     address:$('#pickupAddress').value,map_url:$('#pickupMap').value,
-    working_hours:$('#pickupHours').value,enabled:$('#pickupEnabled').checked})});
+    enabled:$('#pickupEnabled').checked})});
     box.textContent=d.effective_enabled?'Olib ketish yoqildi':'Sozlamalar saqlandi, olib ketish o\'chiq';
   }catch(err){box.textContent=err.message;}
 });

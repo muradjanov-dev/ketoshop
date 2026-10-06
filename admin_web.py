@@ -222,12 +222,10 @@ async def api_pickup_settings_update(request: web.Request):
         return _json({"error": "JSON format noto'g'ri"}, status=400)
     values = {"enabled": bool(body.get("enabled")),
               "address": str(body.get("address") or "").strip(),
-              "map_url": str(body.get("map_url") or "").strip(),
-              "working_hours": str(body.get("working_hours") or "").strip()}
+              "map_url": str(body.get("map_url") or "").strip()}
     invalid = pickup.validate_settings(values)
     if invalid:
-        labels = {"address": "Manzil", "map_url": "HTTPS xarita havolasi",
-                  "working_hours": "Ish vaqti"}
+        labels = {"address": "Manzil", "map_url": "HTTPS xarita havolasi"}
         return _json({"error": f"{labels[invalid]}ni to'g'ri kiriting."}, status=400)
     saved = await database.save_pickup_settings(values)
     return _json({"ok": True, **saved,

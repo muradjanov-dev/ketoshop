@@ -684,7 +684,7 @@ async def api_checkout(request: web.Request):
 
     if not phone or not re.match(r'^\+?998\d{9}$', phone.replace(" ", "").replace("-", "")):
         return _json({"error": "invalid_phone"}, status=400)
-    pickup_snapshot = {"pickup_map_url": None, "pickup_working_hours": None}
+    pickup_snapshot = {"pickup_map_url": None}
     from handlers.cart import verify_uzbekistan, get_location_address_text, delivery_fee_for, _is_tashkent
     if delivery_method == "pickup":
         import pickup
@@ -698,8 +698,7 @@ async def api_checkout(request: web.Request):
         address = details["address"]
         latitude = longitude = None
         address_note = None
-        pickup_snapshot = {"pickup_map_url": details["pickup_map_url"],
-                           "pickup_working_hours": details["pickup_working_hours"]}
+        pickup_snapshot = {"pickup_map_url": details["pickup_map_url"]}
     else:
         if not latitude or not longitude:
             return _json({"error": "invalid_location"}, status=400)
@@ -819,7 +818,6 @@ async def api_checkout(request: web.Request):
                 pending_longitude=float(longitude) if longitude is not None else None,
                 pending_keto_redeem=keto_redeem,
                 pending_pickup_map_url=pickup_snapshot["pickup_map_url"],
-                pending_pickup_working_hours=pickup_snapshot["pickup_working_hours"],
             )
         except Exception:
             logger.exception("Failed to stash pending checkout for user %s", user_id)
@@ -929,7 +927,6 @@ async def api_orders(request: web.Request):
             "delivered_at": o["delivered_at"].isoformat() if o.get("delivered_at") else None,
             "delivery_method": o.get("delivery_method"),
             "pickup_map_url": o.get("pickup_map_url"),
-            "pickup_working_hours": o.get("pickup_working_hours"),
             "payment_method": o.get("payment_method"),
             "address": o.get("address"),
             "items": [
@@ -1083,7 +1080,6 @@ async def api_checkout_cheque(request: web.Request):
             secondary_phone=data.get("pending_secondary_phone"),
             keto_redeem=keto_redeem,
             pickup_map_url=data.get("pending_pickup_map_url"),
-            pickup_working_hours=data.get("pending_pickup_working_hours"),
         )
     except InsufficientStockError as exc:
         return await _stock_gone(exc, request)
@@ -1109,7 +1105,6 @@ async def api_checkout_cheque(request: web.Request):
                 secondary_phone=data.get("pending_secondary_phone"),
                 keto_redeem=0,
                 pickup_map_url=data.get("pending_pickup_map_url"),
-                pickup_working_hours=data.get("pending_pickup_working_hours"),
             )
         except InsufficientStockError as exc:
             return await _stock_gone(exc, request)
@@ -1165,7 +1160,6 @@ async def api_checkout_cheque(request: web.Request):
         "delivery_method": data.get("pending_delivery_method"),
         "payment_method": "online",
         "pickup_map_url": data.get("pending_pickup_map_url"),
-        "pickup_working_hours": data.get("pending_pickup_working_hours"),
     }, lang)
     from handlers.cart import send_order_thanks
     await send_order_thanks(bot, user_id, order_id, data.get("pending_delivery_method"))

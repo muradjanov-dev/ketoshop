@@ -312,8 +312,7 @@ async def _notify_buyer(bot, order: dict, new_status: str) -> None:
     if order.get("delivery_method") == "pickup" and new_status == "ready":
         text = get_text("buyer_pickup_ready", lang, order_id=order["id"],
                         address=html.escape(order.get("address") or ""),
-                        map_url=html.escape(order.get("pickup_map_url") or ""),
-                        working_hours=html.escape(order.get("pickup_working_hours") or ""))
+                        map_url=html.escape(order.get("pickup_map_url") or ""))
     elif order.get("delivery_method") == "pickup" and new_status == "delivered":
         text = get_text("buyer_pickup_collected", lang, order_id=order["id"])
     else:
