@@ -3884,6 +3884,51 @@ async def get_month_stats(year: int, month: int) -> dict:
     return {"year": year, "month": month, "is_current": is_current, **stats}
 
 
+async def get_monthly_product_sales(year: int, month: int) -> list[dict]:
+    """Product quantity and booked sales for one Tashkent calendar month.
+
+    Promotion gifts and other non-sale gift/bonus lines remain visible in an
+    order snapshot, but do not count as product sales here.
+    """
+    if isinstance(year, bool) or not isinstance(year, int) or not 2 <= year <= 9998:
+        raise ValueError("year must be between 2 and 9998")
+    if isinstance(month, bool) or not isinstance(month, int) or not 1 <= month <= 12:
+        raise ValueError("month must be between 1 and 12")
+    start_utc, end_utc = _month_window_utc(year, month, cap_at_now=True)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"SELECT items FROM orders WHERE {SALE_SQL} AND created_at >= $1 AND created_at < $2",
+            start_utc, end_utc,
+        )
+
+    products: dict[int, dict] = {}
+    for row in rows:
+        raw = row["items"]
+        items = json.loads(raw) if isinstance(raw, str) else raw
+        for item in items or []:
+            if not isinstance(item, dict) or item.get("is_gift") or item.get("is_bonus") \
+                    or item.get("cost_in_expenses"):
+                continue
+            product_id = item.get("product_id")
+            if product_id is None:
+                continue
+            product = products.setdefault(product_id, {
+                "product_id": product_id, "name": item.get("name") or "—",
+                "qty": 0.0, "revenue": 0.0,
+            })
+            quantity = float(item.get("quantity") or 0)
+            price = float(item.get("price") or 0)
+            product["qty"] += quantity
+            product["revenue"] += quantity * price
+
+    result = sorted(products.values(), key=lambda product: product["revenue"], reverse=True)
+    for product in result:
+        product["qty"] = (int(product["qty"]) if product["qty"].is_integer()
+                           else round(product["qty"], 1))
+        product["revenue"] = int(product["revenue"])
+    return result
+
+
 async def log_activity(user_id: int, kind: str, action: str) -> None:
     """Record one interaction (button tap or message) for the admin activity
     dashboard. Best-effort — callers fire this without letting failures
