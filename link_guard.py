@@ -18,10 +18,16 @@ aks holda o'chira olmaydi, xato jurnalga yoziladi va boshqa hech narsa
 buzilmaydi. Tahrirlangan xabarlar ham tekshiriladi: spamchilar oddiy xabar
 yozib, keyin unga havola qo'shib tahrirlaydi.
 
+"Guruhga qo'shildi" xizmat xabarlari ham o'chiriladi — egasi so'rovi
+2026-10-08: kanalga ulangan guruh "X qo'shildi" yozuvlari bilan to'lib
+ketmasin. Bot faqat o'zi ko'rgan yangi xabarlarni o'chira oladi; Telegram
+botga eski tarixni bermaydi.
+
 Sozlama (ixtiyoriy):
-  LINK_GUARD=0           qo'riqchini butunlay o'chiradi
-  LINK_GUARD_CHATS       faqat shu guruh id larida ishlasin (vergul bilan);
-                         bo'sh bo'lsa — bot admin bo'lgan hamma guruhda.
+  LINK_GUARD=0           havola qo'riqchisini butunlay o'chiradi
+  JOIN_CLEANUP=0         "qo'shildi" xabarlarini o'chirmaydi
+  LINK_GUARD_CHATS       ikkalasi faqat shu guruh id larida ishlasin (vergul
+                         bilan); bo'sh bo'lsa — bot admin bo'lgan hamma guruhda.
 """
 import asyncio
 import logging
@@ -38,6 +44,7 @@ logger = logging.getLogger(__name__)
 router = Router(name="link_guard")
 
 ENABLED = os.getenv("LINK_GUARD", "1").strip() not in ("0", "false", "off", "")
+JOIN_CLEANUP = os.getenv("JOIN_CLEANUP", "1").strip() not in ("0", "false", "off", "")
 ONLY_CHATS = {
     int(part) for part in os.getenv("LINK_GUARD_CHATS", "").replace(" ", "").split(",")
     if part.lstrip("-").isdigit()
@@ -210,3 +217,23 @@ async def on_group_link(message: Message, bot: Bot):
 @router.edited_message(_should_guard)
 async def on_group_link_edited(message: Message, bot: Bot):
     await _remove(message, bot)
+
+
+def _is_join_notice(message: Message) -> bool:
+    """FILTR: guruhdagi "X guruhga qo'shildi" xizmat xabari."""
+    if not JOIN_CLEANUP or not _is_group(message):
+        return False
+    if ONLY_CHATS and message.chat.id not in ONLY_CHATS:
+        return False
+    return bool(message.new_chat_members)
+
+
+@router.message(_is_join_notice)
+async def on_member_joined(message: Message):
+    try:
+        await message.delete()
+    except Exception as exc:
+        logger.warning(
+            "Could not delete join notice %s in chat %s — is the bot an admin "
+            "with 'Delete messages' right? (%s)", message.message_id, message.chat.id, exc,
+        )
