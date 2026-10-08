@@ -506,7 +506,7 @@ async def api_cart(request: web.Request):
     # gift and surprise thresholds read the paid sum, as checkout does.
     import bot_discount
     bot_pct = await bot_discount.percent_for(user_id)
-    bot_saved = bot_discount.cart_saving(items, bot_pct)
+    bot_saved = await bot_discount.cart_saving(items, bot_pct)
     pay_total = total - bot_saved
     # The 111 000 so'm gift shows up in the Mini App's existing 🎁 block the
     # moment the cart qualifies; below it, gift_hint tells how much is left.
@@ -752,7 +752,7 @@ async def api_checkout(request: web.Request):
         })
     # 10% bot-order discount, same as the bot's checkout (bot_discount.py).
     import bot_discount
-    bot_saved = bot_discount.apply(items_data, await bot_discount.percent_for(user_id))
+    bot_saved = await bot_discount.apply(items_data, await bot_discount.percent_for(user_id))
     # Free aksiya bonuses become 0-so'm lines inside items_data, exactly as on
     # the bot side — create_order freezes them into orders.items and the
     # admin's order notification shows them to whoever packs the box. They add
@@ -1408,6 +1408,8 @@ async def api_promo(request: web.Request):
         # "Bot orqali buyurtma qilib, istalgan summaga 10% chegirma" — first
         # in the strip while the discount is on, "" otherwise.
         "bot_discount": await bot_discount.reminder(lang),
+        # The home page's announcement card (None while the discount is off).
+        "bot_discount_banner": await bot_discount.site_banner(lang),
         "mystery": re.sub(r"<[^>]+>", "", mystery_gift.card_line(lang)),
         "delivery": re.sub(r"<[^>]+>", "", mystery_gift.free_delivery_card_line(lang)),
     }

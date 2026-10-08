@@ -697,7 +697,7 @@ async def build_cart_view(user_id: int, lang: str):
     # free delivery reads the sum before the discount (owner, 2026-10-08).
     import bot_discount
     bot_pct = await bot_discount.percent_for(user_id)
-    bot_saved = bot_discount.cart_saving(cart_items, bot_pct)
+    bot_saved = await bot_discount.cart_saving(cart_items, bot_pct)
     pay_total = total - bot_saved
 
     # Free aksiya bonuses earned by what's in the cart right now. Recomputed
@@ -1662,7 +1662,7 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     # the admin card follow by themselves.
     import bot_discount
     bot_pct = await bot_discount.percent_for(user_id)
-    bot_saved = bot_discount.apply(items_data, bot_pct)
+    bot_saved = await bot_discount.apply(items_data, bot_pct)
 
     # Free aksiya bonuses ride along inside items_data as 0-so'm lines, so
     # create_order freezes them into orders.items and _notify_sellers shows

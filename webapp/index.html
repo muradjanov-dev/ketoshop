@@ -228,6 +228,13 @@
   }
   .promo-banner .pb-sub { font-size: 12px; opacity: 0.92; margin-top: 2px; }
   .promo-banner .pb-arrow { font-size: 18px; opacity: 0.85; flex-shrink: 0; }
+  /* 10% bot-order discount card — green, so it never reads as the aksiya. */
+  .promo-banner.bot-discount-banner {
+    margin-top: 12px;
+    background: linear-gradient(120deg, #4CAF50, #2E7D32);
+    box-shadow: 0 6px 18px rgba(46,125,50,0.28);
+  }
+  .promo-banner.bot-discount-banner .pb-title { white-space: normal; }
   /* Slim strip for the catalog/cart, where the full banner would crowd things */
   .promo-strip {
     margin: 0 14px 10px; padding: 8px 12px; border-radius: 12px;
@@ -2222,6 +2229,16 @@
   <!-- Every product, auto-scrolling, at the very top (owner, 2026-10-02:
        "barcha mahsulotlarni saytda eng tepada"). Filled by renderHomePage. -->
   <div id="home-top-carousel"></div>
+  <!-- 10% for ordering through the bot (bot_discount.py) — right under the
+       carousel, shown only while the discount is on. -->
+  <button class="promo-banner bot-discount-banner" id="home-bot-discount" style="display:none" type="button" onclick="switchPage('catalog')">
+    <span class="pb-icon">🎁</span>
+    <span class="pb-body">
+      <span class="pb-title" id="home-bot-discount-title"></span>
+      <span class="pb-sub" id="home-bot-discount-sub"></span>
+    </span>
+    <span class="pb-arrow">›</span>
+  </button>
   <div class="home-hero">
     <div class="home-hero-eyebrow" id="home-hero-eyebrow"></div>
     <div class="home-hero-title" id="home-hero-title"></div>
@@ -3327,6 +3344,19 @@ async function loadPromo() {
   }
   renderPromoBanners();
   renderPerks();
+  renderBotDiscountBanner();
+}
+
+// "Bot orqali buyurtmaga 10% chegirma" card on the home page. Worded and
+// translated server-side; absent (null) while the discount is off.
+function renderBotDiscountBanner() {
+  const el = document.getElementById('home-bot-discount');
+  if (!el) return;
+  const b = promo && promo.perks && promo.perks.bot_discount_banner;
+  if (!b) { el.style.display = 'none'; return; }
+  document.getElementById('home-bot-discount-title').textContent = b.title;
+  document.getElementById('home-bot-discount-sub').textContent = b.sub;
+  el.style.display = 'flex';
 }
 
 // The surprise pack (400 000) and free Tashkent delivery (800 000). The

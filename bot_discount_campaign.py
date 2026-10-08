@@ -281,7 +281,8 @@ async def _notify_admins(bot: Bot, step: str, sent: int, failed: int, stopped: l
             f"✅ {sent} ta yetkazildi · ⚠️ {failed} ta yetmadi · kanalga ham")
     if step == "announce":
         text += ("\n\n✅ Bot orqali buyurtmaga 10% chegirma YOQILDI (adminlarga emas).\n"
-                 + bot_discount._stopped_text(stopped))
+                 + bot_discount._stopped_text(stopped)
+                 + "\n" + await bot_discount.margin_summary_line())
     else:
         nxt = STEPS[STEPS.index(step) + 1]
         text += f"\nKeyingisi — {_STEP_NAMES[nxt]}, kamida 2 soatdan keyin."

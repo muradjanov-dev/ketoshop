@@ -28,9 +28,20 @@ def line(price, qty=1, original=None, **kw):
 
 
 class ApplyTest(unittest.TestCase):
+    """Narx hisobi. Tannarx bazadan olinadi — bu yerda _cost_maps almashtiriladi."""
+
+    def setUp(self):
+        self.costs = ({}, {})            # {product_id: (cost, known)}, {set_id: ...}
+        patcher = patch.object(bot_discount, "_cost_maps", AsyncMock(side_effect=lambda items: self.costs))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def apply(self, items, percent=10):
+        return run(bot_discount.apply(items, percent))
+
     def test_ten_percent_off_every_paid_line(self):
-        items = [line(45000, 2), line(120000)]
-        saved = bot_discount.apply(items, 10)
+        items = [line(45000, 2), line(120000, product_id=2)]
+        saved = self.apply(items)
         self.assertEqual(saved, 4500 * 2 + 12000)
         self.assertEqual([it["price"] for it in items], [40500, 108000])
         self.assertEqual([it["original_price"] for it in items], [45000, 120000])
@@ -38,34 +49,87 @@ class ApplyTest(unittest.TestCase):
         self.assertTrue(all(it["bot_discount"] == 10 for it in items))
 
     def test_any_amount_even_one_cheap_item(self):
-        items = [line(9000)]
-        self.assertEqual(bot_discount.apply(items, 10), 900)
+        self.assertEqual(self.apply([line(9000)]), 900)
 
     def test_gifts_and_bonuses_are_untouched(self):
         items = [line(0, is_bonus=True), line(0, is_gift=True)]
-        self.assertEqual(bot_discount.apply(items, 10), 0)
+        self.assertEqual(self.apply(items), 0)
         self.assertNotIn("bot_discount", items[0])
 
     def test_does_not_stack_with_a_product_discount(self):
         # 🔥-20% already cheaper than -10% → the product's own price stays.
         bigger = [line(80000, original=100000, discount_percent=20)]
-        self.assertEqual(bot_discount.apply(bigger, 10), 0)
+        self.assertEqual(self.apply(bigger), 0)
         self.assertEqual(bigger[0]["price"], 80000)
         # 🔥-5% → -10% of the shelf price wins, not -5% then -10%.
         smaller = [line(95000, original=100000, discount_percent=5)]
-        self.assertEqual(bot_discount.apply(smaller, 10), 5000)
+        self.assertEqual(self.apply(smaller), 5000)
         self.assertEqual(smaller[0]["price"], 90000)
 
     def test_zero_percent_changes_nothing(self):
         items = [line(45000)]
-        self.assertEqual(bot_discount.apply(items, 0), 0)
+        self.assertEqual(self.apply(items, 0), 0)
         self.assertEqual(items[0]["price"], 45000)
 
+    def test_never_below_cost(self):
+        # Shelf 100 000, cost 95 000 → only 5 000 off, never 90 000.
+        self.costs = ({1: (95000.0, True)}, {})
+        items = [line(100000, 2)]
+        self.assertEqual(self.apply(items), 10000)
+        self.assertEqual(items[0]["price"], 95000)
+        self.assertEqual(items[0]["discount_percent"], 5)
+
+    def test_no_margin_no_discount(self):
+        self.costs = ({1: (100000.0, True)}, {})
+        items = [line(100000)]
+        self.assertEqual(self.apply(items), 0)
+        self.assertEqual(items[0]["price"], 100000)
+        self.assertNotIn("bot_discount", items[0])
+
+    def test_fractional_cost_rounds_up(self):
+        self.costs = ({1: (91234.4, True)}, {})
+        items = [line(100000)]
+        self.apply(items)
+        self.assertEqual(items[0]["price"], 91235)
+
+    def test_healthy_margin_gets_the_full_ten(self):
+        self.costs = ({1: (60000.0, True)}, {})
+        items = [line(100000)]
+        self.assertEqual(self.apply(items), 10000)
+
+    def test_set_is_floored_by_its_components_cost(self):
+        self.costs = ({}, {7: (115000.0, True)})
+        items = [{"set_id": 7, "is_set": True, "name": "Set", "unit": "piece", "quantity": 1,
+                  "price": 120000, "original_price": 120000, "discount_percent": 0}]
+        self.assertEqual(self.apply(items), 5000)
+
+    def test_unknown_cost_gets_the_full_ten(self):
+        self.costs = ({1: (0.0, False)}, {})
+        self.assertEqual(self.apply([line(100000)]), 10000)
+
     def test_cart_saving_matches_checkout(self):
-        rows = [{"price": 45000, "cart_quantity": 2, "discount_percent": 0},
-                {"price": 120000, "cart_quantity": 1, "is_set": True}]
-        self.assertEqual(bot_discount.cart_saving(rows, 10), 4500 * 2 + 12000)
-        self.assertEqual(bot_discount.cart_saving(rows, 0), 0)
+        rows = [{"product_id": 1, "price": 45000, "cart_quantity": 2, "discount_percent": 0},
+                {"set_id": 7, "price": 120000, "cart_quantity": 1, "is_set": True}]
+        self.assertEqual(run(bot_discount.cart_saving(rows, 10)), 4500 * 2 + 12000)
+        self.assertEqual(run(bot_discount.cart_saving(rows, 0)), 0)
+        self.costs = ({1: (44000.0, True)}, {7: (115000.0, True)})
+        self.assertEqual(run(bot_discount.cart_saving(rows, 10)), 1000 * 2 + 5000)
+
+
+class MarginReportTextTest(unittest.TestCase):
+    def test_lists_capped_and_missing_cost(self):
+        text = bot_discount.margin_report_text({
+            "total": 3,
+            "capped": [{"name": "Kokos <yog'i>", "price": 100000, "cost": 95000, "new": 95000, "percent": 5.0}],
+            "no_cost": [{"name": "Chia", "price": 30000}],
+        })
+        self.assertIn("Kokos &lt;yog'i&gt; — 100 000 → 95 000 (tannarx 95 000, chegirma 5%)", text)
+        self.assertIn("Tannarxi kiritilmagan (1 ta)", text)
+        self.assertIn("• Chia — 30 000", text)
+
+    def test_all_fine(self):
+        text = bot_discount.margin_report_text({"total": 2, "capped": [], "no_cost": []})
+        self.assertIn("zararsiz", text)
 
 
 class EligibilityTest(unittest.TestCase):
@@ -99,6 +163,15 @@ class EligibilityTest(unittest.TestCase):
         self.assertEqual(run(bot_discount.footer("uz")), "")
         self.assertEqual(run(bot_discount.channel_footer()), "")
 
+    def test_site_banner_only_while_on(self):
+        self._active(True)
+        banner = run(bot_discount.site_banner("uz"))
+        self.assertEqual(banner["title"], "Bot orqali buyurtmaga 10% chegirma")
+        self.assertIn("Istalgan summaga", banner["sub"])
+        self.assertIn("Скидка 10%", run(bot_discount.site_banner("ru"))["title"])
+        self._active(False)
+        self.assertIsNone(run(bot_discount.site_banner("uz")))
+
     def test_saving_line(self):
         self.assertEqual(bot_discount.saving_line("uz", 10, 12300),
                          "🎁 Bot orqali buyurtma chegirmasi (−10%): <b>−12 300 so'm</b>")
@@ -122,6 +195,7 @@ class CheckoutSummaryTest(unittest.TestCase):
         data = {"delivery_method": delivery, "payment_method": "cash", "phone": "+998901234567",
                 "address": "Chilonzor"}
         with patch.object(cart, "get_cart", AsyncMock(return_value=cart_rows)), \
+             patch.object(bot_discount, "_cost_maps", AsyncMock(return_value=({}, {}))), \
              patch.object(promotions, "bonuses_for_items", AsyncMock(return_value=[])), \
              patch.object(promotions, "get_active", AsyncMock(return_value=None)), \
              patch.object(gift_campaign, "gift_lines", AsyncMock(return_value=[])), \

@@ -130,7 +130,7 @@ async def build_reminder(user_id: int, stage: int, lang: str) -> tuple[str, Inli
     # 10% for ordering through the bot (bot_discount.py) — what they'd pay.
     import bot_discount
     bot_pct = await bot_discount.percent_for(user_id)
-    bot_saved = bot_discount.cart_saving(items, bot_pct)
+    bot_saved = await bot_discount.cart_saving(items, bot_pct)
     if bot_saved > 0:
         parts += [bot_discount.saving_line(lang, bot_pct, bot_saved),
                   bot_discount.cart_pay_line(lang, total - bot_saved)]
