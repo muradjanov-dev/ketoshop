@@ -247,6 +247,7 @@ async def api_products(request: web.Request):
                 "name": s["name_ru"] if lang == "ru" and s.get("name_ru") else s["name"],
                 "price": s["set_price"],
                 "photo_id": s["image_url"],
+                "photo_url": photo_url(s["image_url"]),
                 "unit": "piece",
                 "quantity": 999,
                 "is_set": True,
@@ -341,6 +342,7 @@ async def api_set_detail(request: web.Request):
         "description": "Tarkibi: " + ", ".join([f"{i['name_ru'] if lang == 'ru' and i.get('name_ru') else i['name']} ({i['quantity']})" for i in s["items"]]),
         "price": s["set_price"],
         "photo_id": s["image_url"],
+        "photo_url": photo_url(s["image_url"]),
         "unit": "piece",
         "quantity": 999,
         "is_set": True,
@@ -489,7 +491,7 @@ async def api_cart(request: web.Request):
             "packaged": item["unit"] in ("kg", "g"),
             "available": float(item.get("stock") or 0),
             "total": item_total,
-            "photo_url": f"/api/photo/{item['photo_id']}" if item.get("photo_id") else None,
+            "photo_url": photo_url(item.get("photo_id")),
         })
 
     # Free aksiya bonuses earned by what's in the cart. Recomputed on every
@@ -540,7 +542,7 @@ async def api_cart(request: web.Request):
              # Shelf price of the giveaway, struck through client-side so the
              # bonus reads as money saved rather than a valueless freebie.
              "value": round(float(b.get("bonus_value") or 0)),
-             "photo_url": f"/api/photo/{b['photo_id']}" if b.get("photo_id") else None}
+             "photo_url": photo_url(b.get("photo_id"))}
             for b in bonuses
         ],
         "bonuses_value": round(promotions.bonuses_total_value(bonuses)),
@@ -1428,6 +1430,20 @@ async def api_promo(request: web.Request):
     })
 
 
+def photo_url(ref) -> str | None:
+    """Image address for the Mini App. A Telegram file_id goes through the
+    /api/photo proxy; an image uploaded on /admin is already a URL ("/img/7",
+    or an absolute https link) and is served as is. Sets carry the latter in
+    image_url — sent as photo_id with no photo_url, their picture never
+    showed in the shop, and in the cart it turned into "/api/photo//img/7"."""
+    if not ref:
+        return None
+    ref = str(ref).strip()
+    if ref.startswith(("/", "http://", "https://")):
+        return ref
+    return f"/api/photo/{ref}"
+
+
 def _serialize_product(p: dict, lang: str) -> dict:
     # Russian translation when available; Latin → Cyrillic transliteration
     # for "uz_cyr" users; Latin source as-is for everyone else.
@@ -1455,7 +1471,7 @@ def _serialize_product(p: dict, lang: str) -> dict:
         "packaged": p["unit"] in ("kg", "g"),
         "out_of_stock": (p.get("quantity") or 0) <= 0,
         "category": p["category"],
-        "photo_url": f"/api/photo/{p['photo_id']}" if p.get("photo_id") else None,
+        "photo_url": photo_url(p.get("photo_id")),
         "bonus": bonus,
     }
 
