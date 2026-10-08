@@ -2216,6 +2216,76 @@
   .detail-back-btn:active { background: var(--btn); color: var(--bg); }
   .detail-back-btn:focus-visible { outline: 2px solid var(--btn); outline-offset: 2px; }
   #detail-modal .detail-fav-btn { order: 2; }
+
+  /* ===== RETSEPTLAR (2026-10-08) — a new recipe every 2 days, at the very
+     top of home; recipes.py. Premium editorial card: photo first, quiet
+     type, one green action. ===== */
+  .recipe-hero {
+    margin: 12px 14px 16px; border-radius: 22px; overflow: hidden; cursor: pointer;
+    background: var(--surface, var(--secondary-bg));
+    box-shadow: var(--elev-2, 0 10px 28px rgba(0,0,0,.18));
+    border: 1px solid var(--hairline, transparent);
+  }
+  .recipe-hero:active { transform: scale(.99); }
+  .recipe-hero .rh-photo { position: relative; }
+  .recipe-hero .rh-photo img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+  .recipe-hero .rh-badge {
+    position: absolute; top: 12px; left: 12px; padding: 6px 12px; border-radius: 999px;
+    background: rgba(255,255,255,.94); color: #2E5E2A; font-size: 12px; font-weight: 800;
+    box-shadow: 0 4px 14px rgba(0,0,0,.12);
+  }
+  .recipe-hero .rh-body { padding: 14px 16px 16px; }
+  .recipe-hero .rh-title { font-family: var(--serif); font-size: 21px; font-weight: 700; line-height: 1.2; color: var(--text); }
+  .recipe-hero .rh-meta, .recipe-modal .rm-meta {
+    margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--hint);
+  }
+  .rh-meta span, .rm-meta span { padding: 4px 9px; border-radius: 999px; background: var(--secondary-bg); }
+  .recipe-hero .rh-cta {
+    margin-top: 12px; display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 14px; border-radius: 14px; background: var(--leaf-deep); color: #fff;
+    font-weight: 800; font-size: 14px;
+  }
+  .recipe-modal .rm-img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+  .recipe-modal .rm-ai { padding: 6px 16px 0; font-size: 11px; color: var(--hint); }
+  .recipe-modal .rm-pad { padding: 10px 16px 28px; }
+  .recipe-modal .rm-title { font-family: var(--serif); font-size: 24px; font-weight: 700; line-height: 1.2; color: var(--text); }
+  .recipe-modal .rm-intro { margin: 8px 0 0; font-size: 14px; line-height: 1.55; color: var(--text); opacity: .9; }
+  .recipe-modal .rm-note { margin-top: 4px; font-size: 11px; color: var(--hint); }
+  .recipe-modal h3 { margin: 22px 0 10px; font-family: var(--serif); font-size: 18px; color: var(--text); }
+  .rm-ings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .rm-ing { padding: 10px 12px; border-radius: 14px; background: var(--secondary-bg); }
+  .rm-ing-main { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; color: var(--text); }
+  .rm-ing-main b { font-weight: 700; }
+  .rm-amt { color: var(--hint); white-space: nowrap; }
+  .rm-home { font-size: 11px; color: var(--hint); margin-left: 6px; }
+  .rm-prod {
+    margin-top: 8px; display: flex; align-items: center; gap: 10px; padding: 8px;
+    border-radius: 12px; background: var(--surface, var(--bg)); cursor: pointer;
+  }
+  .rm-prod img, .rm-prod .rm-noimg {
+    width: 44px; height: 44px; border-radius: 10px; object-fit: cover; flex-shrink: 0;
+    background: var(--secondary-bg); display: flex; align-items: center; justify-content: center;
+  }
+  .rm-prod-name { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; }
+  .rm-prod-price { font-size: 13px; color: var(--leaf-deep); font-weight: 800; }
+  .rm-prod-out { font-size: 12px; color: var(--berry); font-weight: 700; }
+  .rm-why { margin-top: 6px; font-size: 12px; line-height: 1.45; color: var(--hint); }
+  .rm-add {
+    margin-top: 14px; width: 100%; border: none; border-radius: 16px; padding: 14px 16px;
+    background: var(--leaf-deep); color: #fff; font: inherit; font-size: 16px; font-weight: 800;
+    cursor: pointer; box-shadow: 0 8px 20px -8px rgba(76,140,43,.6);
+  }
+  .rm-add small { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 600; opacity: .85; }
+  .rm-add:disabled { opacity: .6; }
+  .rm-steps { margin: 0; padding: 0; list-style: none; counter-reset: step; display: flex; flex-direction: column; gap: 12px; }
+  .rm-steps li { position: relative; padding-left: 38px; font-size: 14px; line-height: 1.55; color: var(--text); }
+  .rm-steps li::before {
+    counter-increment: step; content: counter(step); position: absolute; left: 0; top: 0;
+    width: 26px; height: 26px; border-radius: 50%; background: var(--leaf-deep); color: #fff;
+    font-size: 13px; font-weight: 800; display: flex; align-items: center; justify-content: center;
+  }
+  .rm-tip { margin-top: 18px; padding: 12px 14px; border-radius: 14px; background: rgba(240,165,0,.12); font-size: 13.5px; line-height: 1.5; color: var(--text); }
+  .rm-next { margin-top: 16px; font-size: 12px; color: var(--hint); text-align: center; }
 </style>
 </head>
 <body>
@@ -2228,6 +2298,9 @@
 <div class="page active" id="page-home">
   <!-- Every product, auto-scrolling, at the very top (owner, 2026-10-02:
        "barcha mahsulotlarni saytda eng tepada"). Filled by renderHomePage. -->
+  <!-- A new recipe every 2 days, first thing on the page (owner, 2026-10-08:
+       "retseptni eng yuqoriga qo'shishimiz kerak"). Filled by loadRecipes. -->
+  <div id="home-recipe"></div>
   <div id="home-top-carousel"></div>
   <!-- 10% for ordering through the bot (bot_discount.py) — right under the
        carousel, shown only while the discount is on. -->
@@ -2466,6 +2539,19 @@
 </div>
 
 <!-- ===== PRODUCT DETAIL MODAL ===== -->
+<!-- Recipe sheet. Before detail-modal in the DOM on purpose: a product tapped
+     inside a recipe opens its detail ON TOP of the recipe. -->
+<div class="modal-overlay" id="recipe-modal">
+  <div class="modal recipe-modal">
+    <div class="modal-header">
+      <button class="detail-back-btn" id="recipe-back-btn" type="button" onclick="closeRecipe()">← Orqaga</button>
+      <h2 id="recipe-modal-title"></h2>
+      <button class="modal-close" onclick="closeRecipe()">&times;</button>
+    </div>
+    <div id="recipe-body"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="detail-modal">
   <div class="modal">
     <div class="modal-header">
@@ -3231,6 +3317,7 @@ function onBackPressed() {
   // Highest-priority overlays win.
   if (_isModalOpen('map-modal')) { closeMapPicker(); return; }
   if (_isModalOpen('detail-modal')) { closeDetail(); return; }
+  if (_isModalOpen('recipe-modal')) { closeRecipe(); return; }
   // Then page-level: anywhere except home → go home. (Home itself has
   // BackButton hidden, so Telegram handles back natively → app closes.)
   if (activePage && activePage !== 'home') {
@@ -3243,6 +3330,7 @@ function updateBackButton() {
   const shouldShow = (
     _isModalOpen('map-modal') ||
     _isModalOpen('detail-modal') ||
+    _isModalOpen('recipe-modal') ||
     (activePage && activePage !== 'home')
   );
   if (shouldShow) tg.BackButton.show();
@@ -3470,7 +3558,119 @@ function ketoBadgeHtml(amount) {
 }
 
 // ===== HOME PAGE =====
+// ===== RETSEPTLAR =====
+// A new recipe every 2 days at the very top of home (recipes.py). Words and
+// labels come from the server in the buyer's language; products are linked
+// to the live catalogue, so prices and stock are always current.
+let recipesData = null;
+
+function recipeMetaHtml(r, L) {
+  const parts = ['⏱ ' + L.minutes.replace('{n}', r.minutes) + (r.rest ? ' ' + r.rest : ''),
+                 '🍽 ' + r.servings];
+  if (r.per_serving) {
+    parts.push(L.carbs.replace('{n}', r.per_serving.carbs));
+    parts.push(L.kcal.replace('{n}', r.per_serving.kcal));
+  }
+  return parts.map(p => '<span>' + escapeHtml(p) + '</span>').join('');
+}
+
+async function loadRecipes() {
+  const slot = document.getElementById('home-recipe');
+  if (!slot) return;
+  try {
+    recipesData = await api('/api/recipes');
+  } catch (e) {
+    slot.innerHTML = '';
+    return;
+  }
+  const r = recipesData.current, L = recipesData.labels;
+  slot.innerHTML =
+    '<div class="recipe-hero" onclick="openRecipe()">' +
+      '<div class="rh-photo"><img src="' + r.image_url + '" alt="" loading="eager">' +
+        '<span class="rh-badge">' + escapeHtml(L.badge) + '</span></div>' +
+      '<div class="rh-body">' +
+        '<div class="rh-title">' + escapeHtml(r.title) + '</div>' +
+        '<div class="rh-meta">' + recipeMetaHtml(r, L) + '</div>' +
+        '<div class="rh-cta"><span>' + escapeHtml(L.open) + '</span><span>›</span></div>' +
+      '</div>' +
+    '</div>';
+}
+
+// Only today's recipe is ever shown — no archive (owner, 2026-10-08:
+// "har kuni faqat 1 ta retsept ko'rsat ... hammasini emas").
+function openRecipe() {
+  if (!recipesData) return;
+  renderRecipe(recipesData.current);
+  try { tg.expand(); } catch (_) {}
+  document.getElementById('recipe-modal').classList.add('show');
+  updateBackButton();
+}
+
+function renderRecipe(r) {
+  const L = recipesData.labels;
+  document.getElementById('recipe-modal-title').textContent = '';
+  document.getElementById('recipe-back-btn').textContent = L.back;
+  const ings = r.ingredients.map(i => {
+    let html = '<li class="rm-ing"><div class="rm-ing-main"><b>' + escapeHtml(i.name) +
+      (i.product === undefined ? '<span class="rm-home">' + escapeHtml(L.from_home) + '</span>' : '') +
+      '</b><span class="rm-amt">' + escapeHtml(i.amount) + '</span></div>';
+    if (i.product) {
+      const p = i.product;
+      const img = p.photo_url
+        ? '<img src="' + p.photo_url + '" alt="" loading="lazy" onerror="this.outerHTML=\'<div class=rm-noimg>📦</div>\'">'
+        : '<div class="rm-noimg">📦</div>';
+      const price = p.out_of_stock
+        ? '<div class="rm-prod-out">' + escapeHtml(L.out_of_stock) + '</div>'
+        : '<div class="rm-prod-price">' + formatPrice(p.price) + ' UZS</div>';
+      html += '<div class="rm-prod" onclick="openDetail(' + p.id + ')">' + img +
+        '<div><div class="rm-prod-name">' + escapeHtml(p.name) + '</div>' + price + '</div></div>';
+    }
+    if (i.why) html += '<div class="rm-why">' + escapeHtml(i.why) + '</div>';
+    return html + '</li>';
+  }).join('');
+  document.getElementById('recipe-body').innerHTML =
+    '<img class="rm-img" src="' + r.image_url + '" alt="">' +
+    '<div class="rm-ai">' + escapeHtml(r.ai_note) + '</div>' +
+    '<div class="rm-pad">' +
+      '<div class="rm-title">' + escapeHtml(r.title) + '</div>' +
+      '<p class="rm-intro">' + escapeHtml(r.intro) + '</p>' +
+      '<div class="rm-meta">' + recipeMetaHtml(r, L) + '</div>' +
+      '<div class="rm-note">' + escapeHtml(L.per_serving) + '</div>' +
+      '<h3>' + escapeHtml(L.ingredients) + '</h3><ul class="rm-ings">' + ings + '</ul>' +
+      '<button class="rm-add" type="button" onclick="recipeToCart(\'' + r.slug + '\', this)">' +
+        escapeHtml(L.add_all) + '<small>' + escapeHtml(L.add_all_sub) + '</small></button>' +
+      '<h3>' + escapeHtml(L.steps) + '</h3><ol class="rm-steps">' +
+        r.steps.map(s => '<li>' + escapeHtml(s) + '</li>').join('') + '</ol>' +
+      (r.tip ? '<div class="rm-tip"><b>' + escapeHtml(L.tip) + '</b><br>' + escapeHtml(r.tip) + '</div>' : '') +
+      '<div class="rm-next">' + escapeHtml(L.next.replace('{date}', recipesData.next_at)) + '</div>' +
+    '</div>';
+  document.querySelector('#recipe-modal .modal').scrollTop = 0;
+}
+
+async function recipeToCart(slug, btn) {
+  const L = recipesData.labels;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api('/api/recipes/' + encodeURIComponent(slug) + '/cart', { method: 'POST' });
+    let msg = res.added.length ? L.added.replace('{n}', res.added.length) : L.already;
+    if (res.missing.length) msg += ' · ' + L.missing.replace('{names}', res.missing.join(', '));
+    showToast(msg, false, 3500);
+    try { tg.HapticFeedback.notificationOccurred('success'); } catch (_) {}
+    await loadCart();
+  } catch (e) {
+    showToast(t.errorLoad, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function closeRecipe() {
+  document.getElementById('recipe-modal').classList.remove('show');
+  updateBackButton();
+}
+
 async function renderHomePage() {
+  loadRecipes();
   const container = document.getElementById('home-sections');
   const topSlot = document.getElementById('home-top-carousel');
   const loading = document.getElementById('home-loading');
@@ -5711,7 +5911,7 @@ function showToast(msg, isError = false, ms = 2500) {
   if (!toast) {
     toast = document.createElement('div');
     toast.id = 'app-toast';
-    toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:10px 20px;border-radius:12px;font-size:14px;z-index:9999;opacity:0;transition:opacity 0.3s;pointer-events:none;max-width:80%;text-align:center';
+    toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:10px 20px;border-radius:12px;font-size:14px;z-index:10050;opacity:0;transition:opacity 0.3s;pointer-events:none;max-width:80%;text-align:center';
     document.body.appendChild(toast);
   }
   toast.textContent = msg;
