@@ -1393,6 +1393,40 @@ async def api_photo(request: web.Request):
 
 # ===== HELPERS =====
 
+async def api_recipes(request: web.Request):
+    """Today's recipe in full + the earlier ones as cards (recipes.py)."""
+    import recipes
+    lang = request.get("user_lang", "uz")
+    current, earlier, next_at = recipes.schedule()
+    return _json({
+        "current": await recipes.view(current, lang),
+        "earlier": [await recipes.view(r, lang, full=False) for r in earlier],
+        "next_at": next_at.strftime("%d.%m"),
+        "labels": recipes.labels(lang),
+    })
+
+
+async def api_recipe_detail(request: web.Request):
+    import recipes
+    recipe = recipes.find(request.match_info["slug"])
+    if not recipe:
+        return _json({"error": "not_found"}, status=404)
+    return _json(await recipes.view(recipe, request.get("user_lang", "uz")))
+
+
+async def api_recipe_to_cart(request: web.Request):
+    """"🛒 Barcha masalliqlarni savatga" — one pack of every in-stock product."""
+    import recipes
+    from database import get_cart_count
+    recipe = recipes.find(request.match_info["slug"])
+    if not recipe:
+        return _json({"error": "not_found"}, status=404)
+    user_id = request["user_id"]
+    result = await recipes.add_all_to_cart(user_id, recipe, request.get("user_lang", "uz"))
+    result["cart_count"] = await get_cart_count(user_id)
+    return _json({"ok": True, **result})
+
+
 async def api_promo(request: web.Request):
     """The running aksiya, or {"active": false}.
 
@@ -1489,6 +1523,9 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_get("/api/leaderboard", api_leaderboard)
     app.router.add_get("/api/product/{id}", api_product_detail)
     app.router.add_get("/api/set/{id}", api_set_detail)
+    app.router.add_get("/api/recipes", api_recipes)
+    app.router.add_get("/api/recipes/{slug}", api_recipe_detail)
+    app.router.add_post("/api/recipes/{slug}/cart", api_recipe_to_cart)
     app.router.add_get("/api/product/{id}/reviews", api_product_reviews)
     app.router.add_post("/api/product/{id}/reviews", api_product_review_submit)
     app.router.add_post("/api/reviews/{id}/delete", api_review_delete)
