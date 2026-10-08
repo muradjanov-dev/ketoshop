@@ -151,6 +151,16 @@ async def percent_for(user_id: int) -> int:
     return PERCENT if await is_active() else 0
 
 
+async def preview_percent_for(user_id: int) -> int:
+    """Admin savatni mijoz bilan bir xil ko'radi (−10% va chegirmali summa),
+    lekin buyurtmasi to'liq narxda qoladi — egasi, 2026-10-08: "adminlar
+    uchun ham huddi userlarga ko'rsatgandek ko'rsat, faqat chegirma amal
+    qilmasin ohirida". Admin bo'lmagan yoki chegirma o'chiq bo'lsa — 0."""
+    if eligible(user_id):
+        return 0
+    return PERCENT if await is_active() else 0
+
+
 def line_price(base: float, current: float, percent: int, cost: float | None = None) -> float:
     """Katalog narxidan `percent` kam, lekin:
       • mahsulotning o'z chegirmali narxidan qimmat emas — ikkalasi
@@ -307,6 +317,18 @@ _TEXT = {
         "uz": "Istalgan summaga, promokodsiz — chegirma savatda o'zi hisoblanadi",
         "ru": "На любую сумму, без промокода — скидка считается в корзине сама",
     },
+    # Egasi: "adminlar uchun ham huddi userlarga ko'rsatgandek ko'rsat,
+    # faqat chegirma amal qilmasin ohirida".
+    "admin_cart_note": {
+        "uz": "ℹ️ Mijozlar savatni aynan shunday ko'radi. Admin buyurtmasiga chegirma qo'llanmaydi — "
+              "rasmiylashtirishda summa to'liq narxda bo'ladi.",
+        "ru": "ℹ️ Клиенты видят корзину именно так. К заказам админов скидка не применяется — "
+              "при оформлении сумма будет по полной цене.",
+    },
+    "admin_checkout_note": {
+        "uz": "ℹ️ Admin buyurtmasi — {p}% chegirma qo'llanmadi, summa to'liq narxda.",
+        "ru": "ℹ️ Заказ админа — скидка {p}% не применена, сумма по полной цене.",
+    },
     "cart_pay": {
         "uz": "💚 <b>Chegirma bilan to'lovga: {total} so'm</b>",
         "ru": "💚 <b>К оплате со скидкой: {total} сум</b>",
@@ -350,6 +372,14 @@ def saving_label(lang: str, percent: int) -> str:
 def saving_line(lang: str, percent: int, amount: float) -> str:
     sum_text = _pick(_TEXT["amount"], lang).replace("{amount}", _som(amount))
     return f"{saving_label(lang, percent)}: <b>{sum_text}</b>"
+
+
+def admin_cart_note(lang: str) -> str:
+    return _pick(_TEXT["admin_cart_note"], lang)
+
+
+def admin_checkout_note(lang: str, percent: int) -> str:
+    return _pick(_TEXT["admin_checkout_note"], lang).replace("{p}", str(percent))
 
 
 def cart_pay_line(lang: str, total: float) -> str:

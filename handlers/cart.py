@@ -718,6 +718,14 @@ async def build_cart_view(user_id: int, lang: str):
     if bot_saved > 0:
         text += ("\n" + bot_discount.saving_line(lang, bot_pct, bot_saved)
                  + "\n" + bot_discount.cart_pay_line(lang, pay_total))
+    elif preview_pct := await bot_discount.preview_percent_for(user_id):
+        # An admin sees the cart exactly as a customer does; only their own
+        # order, at checkout, stays full price.
+        preview = await bot_discount.cart_saving(cart_items, preview_pct)
+        if preview > 0:
+            text += ("\n" + bot_discount.saving_line(lang, preview_pct, preview)
+                     + "\n" + bot_discount.cart_pay_line(lang, total - preview)
+                     + "\n" + bot_discount.admin_cart_note(lang))
     if saved_total > 0:
         text += get_text("cart_saved", lang, amount=f"{int(saved_total):,}".replace(",", " "))
     if keto_rate:
@@ -1714,6 +1722,9 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
         items_text += (f"  {keto_tag}\n" if keto_tag else "\n")
     if bot_saved:
         items_text += bot_discount.saving_line(lang, bot_pct, bot_saved) + "\n"
+    elif preview_pct := await bot_discount.preview_percent_for(user_id):
+        # The end of an admin's checkout: the cart showed −10%, the order doesn't get it.
+        items_text += bot_discount.admin_checkout_note(lang, preview_pct) + "\n"
     if keto_rate:
         reward = gamification.order_reward_line(gamification.keto_for(items_subtotal, keto_rate), lang)
         if reward:

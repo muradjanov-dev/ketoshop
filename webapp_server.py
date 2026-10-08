@@ -508,6 +508,13 @@ async def api_cart(request: web.Request):
     bot_pct = await bot_discount.percent_for(user_id)
     bot_saved = await bot_discount.cart_saving(items, bot_pct)
     pay_total = total - bot_saved
+    # An admin sees the cart exactly as a customer does (`preview`); only
+    # their own order, at checkout, stays full price.
+    bot_shown_pct, bot_shown, bot_preview = bot_pct, bot_saved, False
+    if not bot_saved and (preview_pct := await bot_discount.preview_percent_for(user_id)):
+        bot_shown_pct = preview_pct
+        bot_shown = await bot_discount.cart_saving(items, preview_pct)
+        bot_preview = bot_shown > 0
     # The 111 000 so'm gift shows up in the Mini App's existing 🎁 block the
     # moment the cart qualifies; below it, gift_hint tells how much is left.
     import gift_campaign
@@ -555,11 +562,15 @@ async def api_cart(request: web.Request):
         # 10% bot-order discount: the client shows the line and takes
         # `amount` off the grand total. None when it doesn't apply.
         "bot_discount": {
-            "percent": bot_pct,
-            "amount": round(bot_saved),
-            "pay_total": round(pay_total),
-            "label": bot_discount.saving_label(lang, bot_pct),
-        } if bot_saved > 0 else None,
+            "percent": bot_shown_pct,
+            "amount": round(bot_shown),
+            "pay_total": round(total - bot_shown),
+            "label": bot_discount.saving_label(lang, bot_shown_pct),
+            # Admin: shown like a customer's, not taken off at checkout.
+            "preview": bot_preview,
+            "note": bot_discount.admin_cart_note(lang) if bot_preview else "",
+            "checkout_note": bot_discount.admin_checkout_note(lang, bot_shown_pct) if bot_preview else "",
+        } if bot_shown > 0 else None,
     })
 
 

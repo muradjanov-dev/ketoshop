@@ -2296,6 +2296,7 @@
       <input type="checkbox" id="cart-keto-toggle">
     </label>
     <div class="cart-discount-line" id="cart-bot-discount-line" style="display:none"></div>
+    <div id="cart-bot-discount-note" style="display:none;font-size:12px;opacity:.8;line-height:1.4;margin:2px 0 8px"></div>
     <div class="cart-discount-line" id="cart-discount-line" style="display:none"></div>
     <div class="cart-total-row">
       <span id="cart-total-label"></span>
@@ -4519,6 +4520,13 @@ function botDiscountAmount() {
   return (cartData.bot_discount && cartData.bot_discount.amount) || 0;
 }
 
+// What actually comes off at checkout. An admin's cart shows the customer's
+// −10% (`preview`) but their own order is full price (owner, 2026-10-08).
+function botCheckoutOff() {
+  const b = cartData.bot_discount;
+  return (b && !b.preview && b.amount) || 0;
+}
+
 function botDiscountLineHtml() {
   const off = botDiscountAmount();
   if (!off) return '';
@@ -4532,8 +4540,14 @@ function renderCartTotal() {
     botLine.innerHTML = botDiscountLineHtml();
     botLine.style.display = botOff ? 'flex' : 'none';
   }
+  const botNote = document.getElementById('cart-bot-discount-note');
+  if (botNote) {
+    const note = (cartData.bot_discount && cartData.bot_discount.note) || '';
+    botNote.textContent = note;
+    botNote.style.display = note ? 'block' : 'none';
+  }
   const payable = Math.max(0, cartData.total - botOff);
-  const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(payable)) : 0;
+  const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(cartData.total - botCheckoutOff())) : 0;
   const discountLine = document.getElementById('cart-discount-line');
   if (redeem > 0) {
     discountLine.innerHTML = '<span>' + t.ketoRedeemLine + '</span><span>-' + formatPrice(redeem) + ' UZS</span>';
@@ -4576,7 +4590,7 @@ async function initCartKetoUI() {
   toggleText.innerHTML = ketoSwitchHtml(t.cartKetoLabel, keto.redeem || 0);
 
   toggle.onchange = () => {
-    keto.redeem = toggle.checked ? Math.min(keto.balance, Math.round(cartData.total - botDiscountAmount())) : 0;
+    keto.redeem = toggle.checked ? Math.min(keto.balance, Math.round(cartData.total - botCheckoutOff())) : 0;
     toggleText.innerHTML = ketoSwitchHtml(t.cartKetoLabel, keto.redeem);
     renderCartTotal();
   };
@@ -4709,7 +4723,7 @@ async function initKetoRedeemUI() {
   function currentCap() {
     const method = pickupMode ? 'pickup' : document.querySelector('.del-opt[data-method].active')?.dataset.method;
     const fee = deliveryFee(method);
-    return Math.min(keto.balance, Math.round(cartData.total - botDiscountAmount() + fee));
+    return Math.min(keto.balance, Math.round(cartData.total - botCheckoutOff() + fee));
   }
 
   // One switch, no typing (owner, 2026-09-18): flipping it on spends as much
@@ -5609,11 +5623,14 @@ function refreshCheckoutTotal() {
   const fee = deliveryFee(method);
   // Keto-as-discount (off unless the owner has enabled it) — a genuine
   // discount, unlike the delivery fee above, so it does reduce "Jami".
-  const botOff = botDiscountAmount();
+  // Checkout is "the end": an admin's −10% preview is not taken off here.
+  const botOff = botCheckoutOff();
   const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(cartData.total - botOff)) : 0;
   let html = '<div class="ct-line"><span>' + t.subtotal + '</span><span>' + formatPrice(cartData.total) + ' UZS</span></div>';
   if (botOff > 0) {
     html += '<div class="ct-line">' + botDiscountLineHtml() + '</div>';
+  } else if (cartData.bot_discount && cartData.bot_discount.checkout_note) {
+    html += '<div class="ct-line"><span>' + escapeHtml(cartData.bot_discount.checkout_note) + '</span></div>';
   }
   if (fee > 0) {
     html += '<div class="ct-line"><span>' + t.deliveryFeeLabel + '</span><span>' + formatPrice(fee) + ' UZS</span></div>';

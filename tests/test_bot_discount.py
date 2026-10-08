@@ -163,6 +163,16 @@ class EligibilityTest(unittest.TestCase):
         self.assertEqual(run(bot_discount.footer("uz")), "")
         self.assertEqual(run(bot_discount.channel_footer()), "")
 
+    def test_admin_sees_the_customer_view_but_never_gets_it(self):
+        admin = next(iter(ADMIN_IDS))
+        self._active(True)
+        self.assertEqual(run(bot_discount.percent_for(admin)), 0)          # order: full price
+        self.assertEqual(run(bot_discount.preview_percent_for(admin)), 10)  # cart: shown
+        self.assertEqual(run(bot_discount.preview_percent_for(BUYER)), 0)   # buyers get the real one
+        self.assertIn("qo'llanmadi", bot_discount.admin_checkout_note("uz", 10))
+        self._active(False)
+        self.assertEqual(run(bot_discount.preview_percent_for(admin)), 0)
+
     def test_site_banner_only_while_on(self):
         self._active(True)
         banner = run(bot_discount.site_banner("uz"))
