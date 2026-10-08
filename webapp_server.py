@@ -1394,24 +1394,16 @@ async def api_photo(request: web.Request):
 # ===== HELPERS =====
 
 async def api_recipes(request: web.Request):
-    """Today's recipe in full + the earlier ones as cards (recipes.py)."""
+    """Today's recipe — only today's, never an archive (owner: "har kuni
+    faqat 1 ta retsept ko'rsat ... hammasini emas"). recipes.py."""
     import recipes
     lang = request.get("user_lang", "uz")
-    current, earlier, next_at = recipes.schedule()
+    current, _, next_at = recipes.schedule()
     return _json({
         "current": await recipes.view(current, lang),
-        "earlier": [await recipes.view(r, lang, full=False) for r in earlier],
         "next_at": next_at.strftime("%d.%m"),
         "labels": recipes.labels(lang),
     })
-
-
-async def api_recipe_detail(request: web.Request):
-    import recipes
-    recipe = recipes.find(request.match_info["slug"])
-    if not recipe:
-        return _json({"error": "not_found"}, status=404)
-    return _json(await recipes.view(recipe, request.get("user_lang", "uz")))
 
 
 async def api_recipe_to_cart(request: web.Request):
@@ -1524,7 +1516,6 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_get("/api/product/{id}", api_product_detail)
     app.router.add_get("/api/set/{id}", api_set_detail)
     app.router.add_get("/api/recipes", api_recipes)
-    app.router.add_get("/api/recipes/{slug}", api_recipe_detail)
     app.router.add_post("/api/recipes/{slug}/cart", api_recipe_to_cart)
     app.router.add_get("/api/product/{id}/reviews", api_product_reviews)
     app.router.add_post("/api/product/{id}/reviews", api_product_review_submit)

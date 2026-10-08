@@ -2,7 +2,8 @@
 Saytdagi retseptlar — har 2 kunda bitta (egasi, 2026-10-08).
 
 Kontent recipes_content.py da. Bu modul:
-  • qaysi retsept "bugungi" ekanini hisoblaydi — START dan boshlab har
+  • qaysi retsept "bugungi" ekanini hisoblaydi (saytda faqat shu bitta
+    ko'rinadi — egasi: "har kuni faqat 1 ta retsept ko'rsat, hammasini emas") — START dan boshlab har
     EVERY_DAYS kunda navbatdagisi; kutubxona tugasa, boshidan aylanadi.
     Yangi retsept qo'shish = recipes_content.RECIPES oxiriga qo'shish;
   • retsept masalliqlarini katalogdagi haqiqiy mahsulotlarga bog'laydi
@@ -45,7 +46,6 @@ LABELS = {
                     "ru": "Продукты Ketoshop — по 1 упаковке"},
     "steps": {"uz": "Tayyorlash", "ru": "Приготовление"},
     "tip": {"uz": "💡 Maslahat", "ru": "💡 Совет"},
-    "earlier": {"uz": "Avvalgi retseptlar", "ru": "Предыдущие рецепты"},
     "next": {"uz": "Keyingi retsept — {date}", "ru": "Следующий рецепт — {date}"},
     "added": {"uz": "✅ {n} ta mahsulot savatga qo'shildi", "ru": "✅ Добавлено в корзину: {n}"},
     "already": {"uz": "👍 Masalliqlar allaqachon savatingizda", "ru": "👍 Ингредиенты уже в корзине"},
