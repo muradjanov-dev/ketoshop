@@ -26,6 +26,12 @@ _LANG_LABELS = {
 router = Router()
 
 
+async def _welcome(lang: str) -> str:
+    """Welcome text + the 10% bot-order reminder while it is on (bot_discount.py)."""
+    import bot_discount
+    return get_text("welcome", lang) + await bot_discount.footer(lang)
+
+
 # Every localized label of the two persistent-keyboard buttons. Pressing one
 # arrives as an ordinary text message, so the handlers below have to recognise
 # the button by its text in whichever language the user picked.
@@ -67,7 +73,7 @@ async def menu_button_pressed(message: Message, state: FSMContext):
     await state.clear()
     lang = await get_user_language(message.from_user.id)
     await message.answer(
-        get_text("welcome", lang),
+        await _welcome(lang),
         reply_markup=main_menu_keyboard(lang, is_admin=message.from_user.id in ADMIN_IDS),
         parse_mode="HTML",
     )
@@ -94,7 +100,7 @@ async def cmd_menu(message: Message, state: FSMContext):
     lang = await get_user_language(message.from_user.id)
     await ensure_menu_keyboard(message.bot, message.from_user.id, lang)
     await message.answer(
-        get_text("welcome", lang),
+        await _welcome(lang),
         reply_markup=main_menu_keyboard(lang, is_admin=message.from_user.id in ADMIN_IDS),
         parse_mode="HTML",
     )
@@ -310,7 +316,7 @@ async def set_language(callback: CallbackQuery):
     # left labelled in whatever the previous pick was.
     await _resend_menu_keyboard(callback.bot, callback.from_user.id, lang)
     await callback.message.edit_text(
-        get_text("welcome", lang),
+        await _welcome(lang),
         reply_markup=main_menu_keyboard(lang, is_admin=is_admin),
         parse_mode="HTML"
     )
@@ -335,7 +341,7 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     lang = await get_user_language(callback.from_user.id)
     is_admin = callback.from_user.id in ADMIN_IDS
-    text = get_text("welcome", lang)
+    text = await _welcome(lang)
     keyboard = main_menu_keyboard(lang, is_admin=is_admin)
 
     if callback.message.photo:

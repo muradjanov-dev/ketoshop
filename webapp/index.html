@@ -2278,6 +2278,7 @@
       <span id="cart-keto-toggle-text"></span>
       <input type="checkbox" id="cart-keto-toggle">
     </label>
+    <div class="cart-discount-line" id="cart-bot-discount-line" style="display:none"></div>
     <div class="cart-discount-line" id="cart-discount-line" style="display:none"></div>
     <div class="cart-total-row">
       <span id="cart-total-label"></span>
@@ -3333,8 +3334,11 @@ async function loadPromo() {
 // live in config.py, so the client never restates them.
 function renderPerks() {
   const perks = promo && promo.perks;
+  // "Bot orqali buyurtma qilib, istalgan summaga 10% chegirma" leads the
+  // strip while the discount is on (bot_discount.py); "" when it's off.
   const strip = perks
-    ? '<span>' + escapeHtml(perks.mystery) + '</span><span>' + escapeHtml(perks.delivery) + '</span>'
+    ? (perks.bot_discount ? '<span>' + escapeHtml(perks.bot_discount) + '</span>' : '') +
+      '<span>' + escapeHtml(perks.mystery) + '</span><span>' + escapeHtml(perks.delivery) + '</span>'
     : '';
   ['home-perks', 'catalog-perks', 'cart-perks', 'detail-perks'].forEach(id => {
     const el = document.getElementById(id);
@@ -4479,8 +4483,27 @@ function renderCartPage() {
 // once a delivery method is picked on checkout, so the cap here is just the
 // product subtotal (checkout's own redeem UI re-clamps against the final
 // total once the fee is known).
+// 10% off for ordering through the bot by yourself (bot_discount.py) —
+// worked out server-side per cart, 0 when it doesn't apply (admins, off).
+function botDiscountAmount() {
+  return (cartData.bot_discount && cartData.bot_discount.amount) || 0;
+}
+
+function botDiscountLineHtml() {
+  const off = botDiscountAmount();
+  if (!off) return '';
+  return '<span>' + escapeHtml(cartData.bot_discount.label) + '</span><span>-' + formatPrice(off) + ' UZS</span>';
+}
+
 function renderCartTotal() {
-  const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(cartData.total)) : 0;
+  const botOff = botDiscountAmount();
+  const botLine = document.getElementById('cart-bot-discount-line');
+  if (botLine) {
+    botLine.innerHTML = botDiscountLineHtml();
+    botLine.style.display = botOff ? 'flex' : 'none';
+  }
+  const payable = Math.max(0, cartData.total - botOff);
+  const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(payable)) : 0;
   const discountLine = document.getElementById('cart-discount-line');
   if (redeem > 0) {
     discountLine.innerHTML = '<span>' + t.ketoRedeemLine + '</span><span>-' + formatPrice(redeem) + ' UZS</span>';
@@ -4488,7 +4511,7 @@ function renderCartTotal() {
   } else {
     discountLine.style.display = 'none';
   }
-  document.getElementById('cart-total-value').textContent = formatPrice(Math.max(0, cartData.total - redeem)) + ' UZS';
+  document.getElementById('cart-total-value').textContent = formatPrice(Math.max(0, payable - redeem)) + ' UZS';
 }
 
 // "Pay with Keto" toggle on the cart page itself (owner request, 2026-08-12):
@@ -4523,7 +4546,7 @@ async function initCartKetoUI() {
   toggleText.innerHTML = ketoSwitchHtml(t.cartKetoLabel, keto.redeem || 0);
 
   toggle.onchange = () => {
-    keto.redeem = toggle.checked ? Math.min(keto.balance, Math.round(cartData.total)) : 0;
+    keto.redeem = toggle.checked ? Math.min(keto.balance, Math.round(cartData.total - botDiscountAmount())) : 0;
     toggleText.innerHTML = ketoSwitchHtml(t.cartKetoLabel, keto.redeem);
     renderCartTotal();
   };
@@ -4656,7 +4679,7 @@ async function initKetoRedeemUI() {
   function currentCap() {
     const method = pickupMode ? 'pickup' : document.querySelector('.del-opt[data-method].active')?.dataset.method;
     const fee = deliveryFee(method);
-    return Math.min(keto.balance, Math.round(cartData.total + fee));
+    return Math.min(keto.balance, Math.round(cartData.total - botDiscountAmount() + fee));
   }
 
   // One switch, no typing (owner, 2026-09-18): flipping it on spends as much
@@ -5556,8 +5579,12 @@ function refreshCheckoutTotal() {
   const fee = deliveryFee(method);
   // Keto-as-discount (off unless the owner has enabled it) — a genuine
   // discount, unlike the delivery fee above, so it does reduce "Jami".
-  const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(cartData.total)) : 0;
+  const botOff = botDiscountAmount();
+  const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(cartData.total - botOff)) : 0;
   let html = '<div class="ct-line"><span>' + t.subtotal + '</span><span>' + formatPrice(cartData.total) + ' UZS</span></div>';
+  if (botOff > 0) {
+    html += '<div class="ct-line">' + botDiscountLineHtml() + '</div>';
+  }
   if (fee > 0) {
     html += '<div class="ct-line"><span>' + t.deliveryFeeLabel + '</span><span>' + formatPrice(fee) + ' UZS</span></div>';
     const left = FREE_DELIVERY_FROM - cartData.total;
@@ -5570,7 +5597,7 @@ function refreshCheckoutTotal() {
   if (redeem > 0) {
     html += '<div class="ct-line"><span>' + t.ketoRedeemLine + '</span><span>-' + formatPrice(redeem) + ' UZS</span></div>';
   }
-  html += '<div class="ct-grand"><span>' + t.total + '</span><span>' + formatPrice(cartData.total - redeem) + ' UZS</span></div>';
+  html += '<div class="ct-grand"><span>' + t.total + '</span><span>' + formatPrice(cartData.total - botOff - redeem) + ' UZS</span></div>';
   document.getElementById('checkout-total-row').innerHTML = html;
 
   // Keep the switch's own line honest when the total or the delivery method

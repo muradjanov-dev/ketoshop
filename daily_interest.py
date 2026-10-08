@@ -180,6 +180,8 @@ async def send_batch(bot: Bot, only_user: int | None = None) -> tuple[int, int, 
             if not text:
                 skipped += 1
                 continue
+            import bot_discount
+            text += await bot_discount.footer(lang)
             try:
                 await bot.send_message(uid, text, parse_mode=ParseMode.HTML,
                                         disable_web_page_preview=True, reply_markup=keyboard)

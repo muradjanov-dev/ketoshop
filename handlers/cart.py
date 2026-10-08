@@ -691,6 +691,15 @@ async def build_cart_view(user_id: int, lang: str):
         badge = gamification.reward_badge(gamification.keto_for(item_total, keto_rate)) if keto_rate else ""
         text += (line.rstrip("\n") + f"  {badge}\n") if badge else line
 
+    # 10% bot-order discount (bot_discount.py): the list above stays at shelf
+    # price, the saving and the sum to pay come under the total. Gift and
+    # surprise thresholds read the paid sum — the same basis checkout uses —
+    # free delivery reads the sum before the discount (owner, 2026-10-08).
+    import bot_discount
+    bot_pct = await bot_discount.percent_for(user_id)
+    bot_saved = bot_discount.cart_saving(cart_items, bot_pct)
+    pay_total = total - bot_saved
+
     # Free aksiya bonuses earned by what's in the cart right now. Recomputed
     # on every render (not stored on the cart row) so a stepper tap, a
     # campaign edit, or a campaign ending is reflected immediately.
@@ -702,14 +711,17 @@ async def build_cart_view(user_id: int, lang: str):
     # The 111 000 so'm gift (gift_campaign.py) sits in the same 🎁 block as
     # aksiya bonuses the moment the cart qualifies — the buyer sees it land
     # in their basket, exactly as the owner asked, before they ever check out.
-    gifts = await gift_campaign.gift_lines(user_id, [{"price": total, "quantity": 1}])
+    gifts = await gift_campaign.gift_lines(user_id, [{"price": pay_total, "quantity": 1}])
     text += promotions.bonus_lines_text(promotions.compute_bonuses(promo, bonus_input) + gifts, lang)
 
     text += get_text("cart_total", lang, total=f"{int(total):,}".replace(",", " "))
+    if bot_saved > 0:
+        text += ("\n" + bot_discount.saving_line(lang, bot_pct, bot_saved)
+                 + "\n" + bot_discount.cart_pay_line(lang, pay_total))
     if saved_total > 0:
         text += get_text("cart_saved", lang, amount=f"{int(saved_total):,}".replace(",", " "))
     if keto_rate:
-        reward = gamification.order_reward_line(gamification.keto_for(total, keto_rate), lang)
+        reward = gamification.order_reward_line(gamification.keto_for(pay_total, keto_rate), lang)
         if reward:
             text += "\n" + reward
 
@@ -720,12 +732,12 @@ async def build_cart_view(user_id: int, lang: str):
     # Below the threshold: "yana 15 000 so'm — sovg'a". Above it the gift is
     # already listed in the 🎁 block, so no second line.
     if not gifts:
-        hint = await gift_campaign.cart_hint(user_id, total, lang)
+        hint = await gift_campaign.cart_hint(user_id, pay_total, lang)
         if hint:
             text += "\n" + hint + "\n"
     # The two standing promises, in the order a growing cart meets them:
     # the surprise at 400 000, free Tashkent delivery at 800 000.
-    mystery = mystery_gift.cart_hint(total, lang)
+    mystery = mystery_gift.cart_hint(pay_total, lang)
     if mystery:
         text += "\n" + mystery + "\n"
     delivery_hint = free_delivery_hint(total, lang)
@@ -1645,6 +1657,13 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
             "seller_id": item.get("seller_id"),
         })
 
+    # 10% off every line when the buyer orders by themselves (not an admin) —
+    # bot_discount.py. Written into the lines, so orders.total, profit and
+    # the admin card follow by themselves.
+    import bot_discount
+    bot_pct = await bot_discount.percent_for(user_id)
+    bot_saved = bot_discount.apply(items_data, bot_pct)
+
     # Free aksiya bonuses ride along inside items_data as 0-so'm lines, so
     # create_order freezes them into orders.items and _notify_sellers shows
     # them to whoever packs the box — no extra plumbing at either call site.
@@ -1663,8 +1682,9 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
 
     delivery_method = data.get("delivery_method")
     # Free across Tashkent from FREE_DELIVERY_FROM of products — measured on
-    # the goods before any Keto is applied below.
-    delivery_fee = delivery_fee_for(delivery_method, items_subtotal)
+    # the goods before any Keto is applied below, and before the 10% bot
+    # discount (owner, 2026-10-08: the discount must not cost free delivery).
+    delivery_fee = delivery_fee_for(delivery_method, items_subtotal + bot_saved)
     total += delivery_fee
 
     # Keto-as-discount (opt-in, off by default — see gamification.is_redemption_enabled).
@@ -1684,11 +1704,16 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     keto_rate = await gamification.buyer_rate(user_id)
     for i, item in enumerate([it for it in items_data if not it.get("is_bonus")], 1):
         item_total = item["price"] * item["quantity"]
-        badge = f" 🔥-{item['discount_percent']}%" if item.get("discount_percent") else ""
+        if item.get("bot_discount"):
+            badge = f" 🎁-{item['discount_percent']}%"
+        else:
+            badge = f" 🔥-{item['discount_percent']}%" if item.get("discount_percent") else ""
         name = localize_product_text(item["name"], item.get("name_ru"), lang)
         keto_tag = gamification.reward_badge(gamification.keto_for(item_total, keto_rate)) if keto_rate else ""
         items_text += f"{i}. {name} — {item['quantity']} {get_display_unit(item['unit'], lang)} × {int(item['price']):,}{badge} = {int(item_total):,}".replace(",", " ")
         items_text += (f"  {keto_tag}\n" if keto_tag else "\n")
+    if bot_saved:
+        items_text += bot_discount.saving_line(lang, bot_pct, bot_saved) + "\n"
     if keto_rate:
         reward = gamification.order_reward_line(gamification.keto_for(items_subtotal, keto_rate), lang)
         if reward:

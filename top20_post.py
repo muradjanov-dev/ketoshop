@@ -111,8 +111,10 @@ async def post(bot: Bot) -> bool:
         return False
     try:
         # No reply_markup — the owner asked for no inline buttons.
-        await bot.send_message(REQUIRED_CHANNEL_ID, TEXT, parse_mode=ParseMode.HTML,
-                               disable_web_page_preview=True)
+        import bot_discount
+        text = TEXT + await bot_discount.channel_footer()
+        await bot.send_message(REQUIRED_CHANNEL_ID, text if len(text) <= 4096 else TEXT,
+                               parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         return True
     except Exception:
         logger.exception("Top-70 kanal posti yuborilmadi")
