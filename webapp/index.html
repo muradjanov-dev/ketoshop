@@ -228,6 +228,13 @@
   }
   .promo-banner .pb-sub { font-size: 12px; opacity: 0.92; margin-top: 2px; }
   .promo-banner .pb-arrow { font-size: 18px; opacity: 0.85; flex-shrink: 0; }
+  /* 10% bot-order discount card — green, so it never reads as the aksiya. */
+  .promo-banner.bot-discount-banner {
+    margin-top: 12px;
+    background: linear-gradient(120deg, #4CAF50, #2E7D32);
+    box-shadow: 0 6px 18px rgba(46,125,50,0.28);
+  }
+  .promo-banner.bot-discount-banner .pb-title { white-space: normal; }
   /* Slim strip for the catalog/cart, where the full banner would crowd things */
   .promo-strip {
     margin: 0 14px 10px; padding: 8px 12px; border-radius: 12px;
@@ -2222,6 +2229,16 @@
   <!-- Every product, auto-scrolling, at the very top (owner, 2026-10-02:
        "barcha mahsulotlarni saytda eng tepada"). Filled by renderHomePage. -->
   <div id="home-top-carousel"></div>
+  <!-- 10% for ordering through the bot (bot_discount.py) — right under the
+       carousel, shown only while the discount is on. -->
+  <button class="promo-banner bot-discount-banner" id="home-bot-discount" style="display:none" type="button" onclick="switchPage('catalog')">
+    <span class="pb-icon">🎁</span>
+    <span class="pb-body">
+      <span class="pb-title" id="home-bot-discount-title"></span>
+      <span class="pb-sub" id="home-bot-discount-sub"></span>
+    </span>
+    <span class="pb-arrow">›</span>
+  </button>
   <div class="home-hero">
     <div class="home-hero-eyebrow" id="home-hero-eyebrow"></div>
     <div class="home-hero-title" id="home-hero-title"></div>
@@ -2279,6 +2296,7 @@
       <input type="checkbox" id="cart-keto-toggle">
     </label>
     <div class="cart-discount-line" id="cart-bot-discount-line" style="display:none"></div>
+    <div id="cart-bot-discount-note" style="display:none;font-size:12px;opacity:.8;line-height:1.4;margin:2px 0 8px"></div>
     <div class="cart-discount-line" id="cart-discount-line" style="display:none"></div>
     <div class="cart-total-row">
       <span id="cart-total-label"></span>
@@ -3327,6 +3345,19 @@ async function loadPromo() {
   }
   renderPromoBanners();
   renderPerks();
+  renderBotDiscountBanner();
+}
+
+// "Bot orqali buyurtmaga 10% chegirma" card on the home page. Worded and
+// translated server-side; absent (null) while the discount is off.
+function renderBotDiscountBanner() {
+  const el = document.getElementById('home-bot-discount');
+  if (!el) return;
+  const b = promo && promo.perks && promo.perks.bot_discount_banner;
+  if (!b) { el.style.display = 'none'; return; }
+  document.getElementById('home-bot-discount-title').textContent = b.title;
+  document.getElementById('home-bot-discount-sub').textContent = b.sub;
+  el.style.display = 'flex';
 }
 
 // The surprise pack (400 000) and free Tashkent delivery (800 000). The
@@ -4489,6 +4520,13 @@ function botDiscountAmount() {
   return (cartData.bot_discount && cartData.bot_discount.amount) || 0;
 }
 
+// What actually comes off at checkout. An admin's cart shows the customer's
+// −10% (`preview`) but their own order is full price (owner, 2026-10-08).
+function botCheckoutOff() {
+  const b = cartData.bot_discount;
+  return (b && !b.preview && b.amount) || 0;
+}
+
 function botDiscountLineHtml() {
   const off = botDiscountAmount();
   if (!off) return '';
@@ -4502,8 +4540,14 @@ function renderCartTotal() {
     botLine.innerHTML = botDiscountLineHtml();
     botLine.style.display = botOff ? 'flex' : 'none';
   }
+  const botNote = document.getElementById('cart-bot-discount-note');
+  if (botNote) {
+    const note = (cartData.bot_discount && cartData.bot_discount.note) || '';
+    botNote.textContent = note;
+    botNote.style.display = note ? 'block' : 'none';
+  }
   const payable = Math.max(0, cartData.total - botOff);
-  const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(payable)) : 0;
+  const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(cartData.total - botCheckoutOff())) : 0;
   const discountLine = document.getElementById('cart-discount-line');
   if (redeem > 0) {
     discountLine.innerHTML = '<span>' + t.ketoRedeemLine + '</span><span>-' + formatPrice(redeem) + ' UZS</span>';
@@ -4546,7 +4590,7 @@ async function initCartKetoUI() {
   toggleText.innerHTML = ketoSwitchHtml(t.cartKetoLabel, keto.redeem || 0);
 
   toggle.onchange = () => {
-    keto.redeem = toggle.checked ? Math.min(keto.balance, Math.round(cartData.total - botDiscountAmount())) : 0;
+    keto.redeem = toggle.checked ? Math.min(keto.balance, Math.round(cartData.total - botCheckoutOff())) : 0;
     toggleText.innerHTML = ketoSwitchHtml(t.cartKetoLabel, keto.redeem);
     renderCartTotal();
   };
@@ -4679,7 +4723,7 @@ async function initKetoRedeemUI() {
   function currentCap() {
     const method = pickupMode ? 'pickup' : document.querySelector('.del-opt[data-method].active')?.dataset.method;
     const fee = deliveryFee(method);
-    return Math.min(keto.balance, Math.round(cartData.total - botDiscountAmount() + fee));
+    return Math.min(keto.balance, Math.round(cartData.total - botCheckoutOff() + fee));
   }
 
   // One switch, no typing (owner, 2026-09-18): flipping it on spends as much
@@ -5579,11 +5623,14 @@ function refreshCheckoutTotal() {
   const fee = deliveryFee(method);
   // Keto-as-discount (off unless the owner has enabled it) — a genuine
   // discount, unlike the delivery fee above, so it does reduce "Jami".
-  const botOff = botDiscountAmount();
+  // Checkout is "the end": an admin's −10% preview is not taken off here.
+  const botOff = botCheckoutOff();
   const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(cartData.total - botOff)) : 0;
   let html = '<div class="ct-line"><span>' + t.subtotal + '</span><span>' + formatPrice(cartData.total) + ' UZS</span></div>';
   if (botOff > 0) {
     html += '<div class="ct-line">' + botDiscountLineHtml() + '</div>';
+  } else if (cartData.bot_discount && cartData.bot_discount.checkout_note) {
+    html += '<div class="ct-line"><span>' + escapeHtml(cartData.bot_discount.checkout_note) + '</span></div>';
   }
   if (fee > 0) {
     html += '<div class="ct-line"><span>' + t.deliveryFeeLabel + '</span><span>' + formatPrice(fee) + ' UZS</span></div>';

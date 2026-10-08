@@ -351,6 +351,10 @@ async def main():
     # bot-order discount is switched on and announced (bot_discount_campaign.py).
     from bot_discount_campaign import scheduler_loop as bot_discount_campaign_loop
     bot_discount_campaign_task = asyncio.create_task(bot_discount_campaign_loop(bot))
+    # Once, by day: which products the 10% can't fully apply to without
+    # selling under cost, and which have no cost price at all (bot_discount.py).
+    from bot_discount import margin_report_once
+    bot_discount_margin_task = asyncio.create_task(margin_report_once(bot))
 
     # Ombor ogohlantirishlari — every admin hears when a product runs low (<5)
     # or out, each time it reaches that level, from any code path.
@@ -392,6 +396,7 @@ async def main():
         retention_task.cancel()
         keto_explainer_task.cancel()
         bot_discount_campaign_task.cancel()
+        bot_discount_margin_task.cancel()
         stock_alerts_task.cancel()
         product_of_day_task.cancel()
         channel_posts_task.cancel()

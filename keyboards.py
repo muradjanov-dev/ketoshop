@@ -38,6 +38,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="qaytarish", description="🔁 Qayta sotuv xabarlari (tugash, sovg'a, sog'indik)"),
     BotCommand(command="chegirma", description="🎁 Bot orqali buyurtmaga 10% chegirma — holat"),
     BotCommand(command="chegirma_korish", description="🎁 10% chegirma e'lonlari ko'rinishi"),
+    BotCommand(command="chegirma_marja", description="🛡 10% chegirma: marjasi kam va tannarxi yo'q mahsulotlar"),
     BotCommand(command="sovga", description="🎁 Sovg'a kampaniyasi (Eritritol)"),
     BotCommand(command="sovga_elon", description="🎉 Sovg'a e'loni ko'rinishi (3 tilda)"),
     BotCommand(command="ombor", description="📦 Tugagan va kam qolgan mahsulotlar"),
