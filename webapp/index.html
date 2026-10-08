@@ -3670,7 +3670,9 @@ function launchConfetti(container) {
 function createCarouselCard(p) {
   const card = document.createElement('div');
   card.className = 'carousel-card';
-  card.onclick = () => openDetail(p.id);
+  // A set opens /api/set/<id>; without the flag the home row asked for
+  // /api/product/<id> and a tapped set only showed "Yuklab bo'lmadi".
+  card.onclick = () => openDetail(p.id, p.is_set);
 
   const isFav = !!favorites[p.id];
   let imgInner;
@@ -3688,7 +3690,7 @@ function createCarouselCard(p) {
       imgInner +
       '<button class="card-fav-btn" data-id="' + p.id + '">' + (isFav ? '❤️' : '🤍') + '</button>' +
     '</div>' +
-    '<div class="card-name">' + escapeHtml(p.name) + '</div>' +
+    '<div class="card-name">' + (p.is_set ? '🎁 ' : '') + escapeHtml(p.name) + '</div>' +
     '<div class="card-price">' + priceHtml(p) + '</div>' +
     savingHtml(p) +
     bonusBadgeHtml(p) +
