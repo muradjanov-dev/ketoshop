@@ -501,12 +501,19 @@ async def api_cart(request: web.Request):
     ]
     promo = await promotions.get_active()
     bonuses = promotions.compute_bonuses(promo, bonus_input)
+    # 10% bot-order discount (bot_discount.py). `total` stays the shelf sum —
+    # the client measures free delivery on it (owner: before the discount);
+    # gift and surprise thresholds read the paid sum, as checkout does.
+    import bot_discount
+    bot_pct = await bot_discount.percent_for(user_id)
+    bot_saved = bot_discount.cart_saving(items, bot_pct)
+    pay_total = total - bot_saved
     # The 111 000 so'm gift shows up in the Mini App's existing 🎁 block the
     # moment the cart qualifies; below it, gift_hint tells how much is left.
     import gift_campaign
-    gifts = await gift_campaign.gift_lines(user_id, [{"price": total, "quantity": 1}])
+    gifts = await gift_campaign.gift_lines(user_id, [{"price": pay_total, "quantity": 1}])
     bonuses = bonuses + gifts
-    gift_hint = "" if gifts else await gift_campaign.cart_hint(user_id, total, lang)
+    gift_hint = "" if gifts else await gift_campaign.cart_hint(user_id, pay_total, lang)
     misses = promotions.compute_near_misses(promo, bonus_input)
 
     def _nm(m):
@@ -543,8 +550,16 @@ async def api_cart(request: web.Request):
         # The two standing promises a growing cart runs into: the surprise
         # pack at 400 000 and free Tashkent delivery at 800 000. Sent as
         # text so the client only has to place them.
-        "mystery_hint": re.sub(r"<[^>]+>", "", mystery_gift.cart_hint(total, lang)),
+        "mystery_hint": re.sub(r"<[^>]+>", "", mystery_gift.cart_hint(pay_total, lang)),
         "delivery_hint": re.sub(r"<[^>]+>", "", free_delivery_hint(total, lang)),
+        # 10% bot-order discount: the client shows the line and takes
+        # `amount` off the grand total. None when it doesn't apply.
+        "bot_discount": {
+            "percent": bot_pct,
+            "amount": round(bot_saved),
+            "pay_total": round(pay_total),
+            "label": bot_discount.saving_label(lang, bot_pct),
+        } if bot_saved > 0 else None,
     })
 
 
@@ -735,6 +750,9 @@ async def api_checkout(request: web.Request):
             "unit": item["unit"],
             "seller_id": item.get("seller_id"),
         })
+    # 10% bot-order discount, same as the bot's checkout (bot_discount.py).
+    import bot_discount
+    bot_saved = bot_discount.apply(items_data, await bot_discount.percent_for(user_id))
     # Free aksiya bonuses become 0-so'm lines inside items_data, exactly as on
     # the bot side — create_order freezes them into orders.items and the
     # admin's order notification shows them to whoever packs the box. They add
@@ -746,9 +764,10 @@ async def api_checkout(request: web.Request):
 
     total = sum(item["price"] * item["quantity"] for item in items_data)
     subtotal = total  # product-only, before delivery fee — what Keto earns off of
-    # Ketoshop courier: 25 000, free from FREE_DELIVERY_FROM of products.
+    # Ketoshop courier: 25 000, free from FREE_DELIVERY_FROM of products —
+    # measured before the 10% bot discount (owner, 2026-10-08).
     if delivery_method != "pickup":
-        total += delivery_fee_for(delivery_method, subtotal)
+        total += delivery_fee_for(delivery_method, subtotal + bot_saved)
 
     # Preview of the Keto reward this order will earn once delivered (see
     # gamification.py) — shown on the order-success screen so the buyer
@@ -1384,7 +1403,11 @@ async def api_promo(request: web.Request):
     # The two standing promises ride along with the aksiya payload: the Mini
     # App reads this endpoint once per session, and rendering the lines here
     # keeps the thresholds (config.py) and their wording out of the client.
+    import bot_discount
     perks = {
+        # "Bot orqali buyurtma qilib, istalgan summaga 10% chegirma" — first
+        # in the strip while the discount is on, "" otherwise.
+        "bot_discount": await bot_discount.reminder(lang),
         "mystery": re.sub(r"<[^>]+>", "", mystery_gift.card_line(lang)),
         "delivery": re.sub(r"<[^>]+>", "", mystery_gift.free_delivery_card_line(lang)),
     }

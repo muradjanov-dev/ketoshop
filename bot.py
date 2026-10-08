@@ -45,6 +45,8 @@ from ai_sales import router as ai_sales_router
 from abandoned_cart import router as abandoned_cart_router
 from retention import router as retention_router
 from keto_explainer import router as keto_explainer_router
+from bot_discount import router as bot_discount_router
+from bot_discount_campaign import router as bot_discount_campaign_router
 from stock_alerts import router as stock_alerts_router
 from referral_stats import router as referral_stats_router
 from referral_program import router as referral_program_router
@@ -216,6 +218,10 @@ async def main():
     dp.include_router(webapp_data_router)
     dp.include_router(start_router)
     dp.include_router(broadcast_admin_router)
+    # 10% chegirma — admin-only /chegirma* commands, high for the same reason
+    # as broadcast_admin: they must win over any FSM state an admin is in.
+    dp.include_router(bot_discount_router)
+    dp.include_router(bot_discount_campaign_router)
     # State-filtered text steps (qty / product search) must beat the catalog
     # search and support-relay catch-alls below.
     dp.include_router(order_edit_router)
@@ -341,6 +347,11 @@ async def main():
     from keto_explainer import scheduler_loop as keto_explainer_loop
     keto_explainer_task = asyncio.create_task(keto_explainer_loop(bot))
 
+    # One-off, from the deploy on: two warm teasers 2 h apart, then the 10%
+    # bot-order discount is switched on and announced (bot_discount_campaign.py).
+    from bot_discount_campaign import scheduler_loop as bot_discount_campaign_loop
+    bot_discount_campaign_task = asyncio.create_task(bot_discount_campaign_loop(bot))
+
     # Ombor ogohlantirishlari — every admin hears when a product runs low (<5)
     # or out, each time it reaches that level, from any code path.
     from stock_alerts import scheduler_loop as stock_alerts_loop
@@ -380,6 +391,7 @@ async def main():
         cart_reminder_task.cancel()
         retention_task.cancel()
         keto_explainer_task.cancel()
+        bot_discount_campaign_task.cancel()
         stock_alerts_task.cancel()
         product_of_day_task.cancel()
         channel_posts_task.cancel()

@@ -1072,6 +1072,9 @@ async def render(uid: int, plan: dict, *, grant: bool) -> tuple[str, dict, dict 
     news = await _new_products() if plan["kind"].startswith("winback") else None
     orders = (await _load_orders(uid)).get(uid, [])
     text = build_text(plan, lang, gift=gift, offer=offer, also=also, quick_ready=quick, new_products=news)
+    if text:
+        import bot_discount
+        text += await bot_discount.footer(lang)
     payload = {"lines": repeat_lines(plan, orders), "order_id": plan.get("order_id"),
                "also": [p["id"] for p in also[1]] if also else []}
     return text, payload, offer
