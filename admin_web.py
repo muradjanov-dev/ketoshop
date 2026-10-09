@@ -1648,7 +1648,12 @@ async def api_courier_board(request: web.Request):
     hours = max(1, min(hours, 24 * 14))
     scope = "active" if request.query.get("scope") == "active" else "all"
     snapshot = await courier_board.board_snapshot(hours, scope)
-    return _json(snapshot)
+    resp = _json(snapshot)
+    # "Hammasi" carries every finished order (~1 KB of JSON per card) and is
+    # re-polled every few seconds, often by a courier on mobile data — gzip
+    # cuts it roughly 8×.
+    resp.enable_compression()
+    return resp
 
 
 @require_courier_auth

@@ -2768,14 +2768,13 @@ async def get_all_orders(page: int = 0, per_page: int = 20, status: str = None) 
 
 
 # Statuses the courier Kanban board (2026-09-18) shows as live work, in
-# pipeline order. Finished orders are on the board too, but bounded — see
-# get_courier_board_orders.
+# pipeline order. Finished orders are on the board too — see
+# get_courier_board_orders for how many.
 COURIER_BOARD_STATUSES = ("pending", "confirmed", "preparing", "ready", "shipped")
 COURIER_DONE_STATUSES = ("delivered", "cancelled")
 
 
-async def get_courier_board_orders(delivered_hours: int = 24, scope: str = "active",
-                                   done_limit: int = 400) -> list[dict]:
+async def get_courier_board_orders(delivered_hours: int = 24, scope: str = "active") -> list[dict]:
     """Every order the courier board needs, in one query.
 
     Live orders are always returned in full — the board must never hide work
@@ -2784,17 +2783,18 @@ async def get_courier_board_orders(delivered_hours: int = 24, scope: str = "acti
 
       "active" — only orders delivered in the last `delivered_hours`, so the
                  last column shows today's work rather than the whole archive.
-      "all"    — the most recent `done_limit` delivered *and* cancelled
-                 orders, for the admin who wants to look further back.
+      "all"    — every delivered *and* cancelled order. "Hammasi" means all:
+                 until 2026-10-09 this was capped at the newest 400, and once
+                 the shop passed 400 finished orders the oldest silently fell
+                 off the board (122 of 522 missing on the day it was found).
 
     Joins the buyer for the username/full_name a contact link needs, and the
     courier for the name shown on a claimed card.
     """
     live = list(COURIER_BOARD_STATUSES)
     if scope == "all":
-        done_clause = """SELECT id FROM orders WHERE status = ANY($2::text[])
-                         ORDER BY COALESCE(delivered_at, created_at) DESC LIMIT $3"""
-        args = (live, list(COURIER_DONE_STATUSES), int(done_limit))
+        done_clause = "SELECT id FROM orders WHERE status = ANY($2::text[])"
+        args = (live, list(COURIER_DONE_STATUSES))
     else:
         done_clause = """SELECT id FROM orders WHERE status = ANY($2::text[])
                          AND COALESCE(delivered_at, created_at)
