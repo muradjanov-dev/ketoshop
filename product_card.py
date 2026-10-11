@@ -66,13 +66,22 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     seller_name = product.get("seller_name") or product.get("seller_username") or "—"
     name = localize_product_text(product.get("name"), product.get("name_ru"), lang)
     desc = localize_product_text(product.get("description"), product.get("description_ru"), lang) or "—"
+    # «📊 100 g: ~590 kkal · uglevod 10 g · GI ~20 · ✅ keto» (owner,
+    # 2026-10-11) — the figures keto, diet and diabetic buyers decide on. It
+    # sits under the description and, like the other blocks, is paid for out
+    # of the description's budget.
+    import product_guides
+    nutri = product_guides.card_line(product.get("name") or "", lang)
     # Trim here, not in tg_safety's net: that would save the message by
     # dropping the price lines below instead of the tail of the description.
     desc_budget = DESC_IN_CARD_MAX - (len(extra) + 2 if extra else 0) \
                                    - (len(gift) + 2 if gift else 0) \
-                                   - (len(tip) + 6 if tip else 0)
+                                   - (len(tip) + 6 if tip else 0) \
+                                   - (len(nutri) + 2 if nutri else 0)
     if len(desc) > desc_budget:
         desc = desc[: max(40, desc_budget - 1)].rstrip() + "…"
+    if nutri:
+        desc = f"{desc}\n\n{nutri}"
 
     discount_until = product.get("discount_until")
     discount = active_discount(product.get("discount_percent"), discount_until)

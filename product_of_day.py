@@ -108,19 +108,62 @@ async def pick_product() -> tuple[dict | None, int]:
 
 # ──────────────────────────────── sending ───────────────────────────────────
 
+def caption_extra(product: dict):
+    """Per-language block under the card: "Bugun shundan nima tayyorlash
+    mumkin" — one concrete idea — but only for a product with no guide.
+
+    A product with a guide (product_guides) gets the guide as the very next
+    message, with three or more ways to use it, so the single idea would just
+    repeat it — and dropping it gives that room back to the description,
+    which used to be cut off mid-sentence on exactly these cards.
+    """
+    import product_guides
+    import product_ideas
+    name = product.get("name") or ""
+    if product_guides.guide_key(name):
+        return lambda lang: None
+    return lambda lang: product_ideas.idea_block(name, lang)
+
+
+async def send_guide(bot: Bot, chat_id: int, product: dict, lang: str,
+                     text: str | None = None) -> bool:
+    """«Qayerda va qanday ishlatiladi» — sent right under the card (owner,
+    2026-10-11). Too long for the photo caption, so it is its own message.
+    Never fatal: the card already went out, the guide is the extra."""
+    if text is None:
+        import product_guides
+        text = product_guides.guide_text(product, lang)
+    if not text:
+        return False
+    for attempt in (1, 2):
+        try:
+            await bot.send_message(chat_id, text, parse_mode=ParseMode.HTML,
+                                   disable_web_page_preview=True)
+            return True
+        except TelegramRetryAfter as e:
+            if attempt == 2:
+                return False
+            await asyncio.sleep(e.retry_after + 1)
+        except (TelegramForbiddenError, TelegramBadRequest):
+            return False
+        except Exception:
+            logger.exception("Spotlight guide send failed for %s", chat_id)
+            return False
+    return False
+
+
 async def _send_to_user(bot: Bot, user_id: int, product: dict, lang: str,
-                        captions: product_card.CaptionCache) -> bool:
+                        captions: product_card.CaptionCache,
+                        guides: dict[str, str | None] | None = None) -> bool:
     import gamification
     rate = await gamification.buyer_rate(user_id)
     caption = await captions.get(lang, rate)
     try:
         await product_card.send_card(bot, user_id, product, lang, rate=rate, caption=caption)
-        return True
     except TelegramRetryAfter as e:
         await asyncio.sleep(e.retry_after + 1)
         try:
             await product_card.send_card(bot, user_id, product, lang, rate=rate, caption=caption)
-            return True
         except Exception:
             return False
     except (TelegramForbiddenError, TelegramBadRequest):
@@ -130,21 +173,26 @@ async def _send_to_user(bot: Bot, user_id: int, product: dict, lang: str,
         logger.exception("Spotlight send failed for user %s", user_id)
         return False
 
+    if guides is not None and guides.get(lang):
+        # Two messages per buyer now — pause between them too, so the whole
+        # broadcast stays at ~20 messages a second, under Telegram's limit.
+        await asyncio.sleep(SEND_DELAY)
+        await send_guide(bot, user_id, product, lang, guides[lang])
+    return True
+
 
 async def broadcast(bot: Bot, product: dict) -> tuple[int, int]:
-    """Send the card to every eligible buyer, each in their own language."""
+    """Send the card (and, under it, the product guide) to every eligible
+    buyer, each in their own language."""
+    import product_guides
     user_ids = await database.get_all_user_ids()
     langs = await database.get_user_languages(user_ids)
-    # "Bugun shundan nima tayyorlash mumkin" — one concrete idea under the
-    # card. It is what turns a product announcement into something worth
-    # reading, and it carries the product with it instead of selling it.
-    import product_ideas
-    name = product.get("name") or ""
-    captions = product_card.CaptionCache(
-        product, extra_for=lambda lang: product_ideas.idea_block(name, lang))
+    captions = product_card.CaptionCache(product, extra_for=caption_extra(product))
+    # One rendering per language, not per buyer.
+    guides = {lang: product_guides.guide_text(product, lang) for lang in ("uz", "uz_cyr", "ru")}
     sent = failed = 0
     for uid in user_ids:
-        ok = await _send_to_user(bot, uid, product, langs.get(uid, "uz"), captions)
+        ok = await _send_to_user(bot, uid, product, langs.get(uid, "uz"), captions, guides)
         sent += ok
         failed += not ok
         await asyncio.sleep(SEND_DELAY)
@@ -171,10 +219,8 @@ async def post_to_channel(bot: Bot, product: dict) -> bool:
         # No single reader to rate, so the channel advertises the entry-level
         # cashback every buyer is guaranteed — never more than they'd get.
         rate = gamification.EARN_RATE if await gamification.is_enabled() else None
-        import product_ideas
         caption = await product_card.build_caption(
-            product, CHANNEL_LANG, rate,
-            product_ideas.idea_block(product.get("name") or "", CHANNEL_LANG))
+            product, CHANNEL_LANG, rate, caption_extra(product)(CHANNEL_LANG))
         markup = channel_keyboard(product["id"])
         if product.get("photo_id"):
             await bot.send_photo(REQUIRED_CHANNEL_ID, photo=product["photo_id"],
@@ -184,6 +230,7 @@ async def post_to_channel(bot: Bot, product: dict) -> bool:
             await bot.send_message(REQUIRED_CHANNEL_ID, caption, reply_markup=markup,
                                    parse_mode=ParseMode.HTML,
                                    disable_web_page_preview=True)
+        await send_guide(bot, REQUIRED_CHANNEL_ID, product, CHANNEL_LANG)
         return True
     except Exception:
         logger.exception("Spotlight channel post failed")
