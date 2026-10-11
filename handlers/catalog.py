@@ -75,6 +75,25 @@ async def show_category(callback: CallbackQuery):
     await _show_product_list(callback, category, page)
 
 
+@router.callback_query(F.data.startswith("guide:"))
+async def show_product_guide(callback: CallbackQuery):
+    """«📖 Qo'llanma» — the full «qayerda va qanday ishlatiladi» guide
+    (product_guides) as a new message under whatever card or nudge carried
+    the button; the card itself stays put."""
+    import product_guides
+    lang = await get_user_language(callback.from_user.id)
+    try:
+        product = await get_product(int(callback.data.split(":")[1]))
+    except (ValueError, IndexError):
+        product = None
+    text = product_guides.guide_text(product, lang) if product else None
+    if not text:
+        await callback.answer("—", show_alert=False)
+        return
+    await callback.message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("product:"))
 async def show_product_detail(callback: CallbackQuery):
     """Show single product detail card"""

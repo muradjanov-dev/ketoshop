@@ -15,7 +15,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import database
 from database import (
     active_discount, effective_price, get_cart_badge, get_cart_line_for_product,
-    get_product_rating,
+    get_product, get_product_rating,
 )
 from keyboards import cart_shortcut_row
 from locales import get_text, get_display_unit, localize_product_text
@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 # Longest description that still leaves room for the rest of the card inside
 # Telegram's 1024-character photo caption.
 DESC_IN_CARD_MAX = 650
+
+_GUIDE_BTN = {"uz": "📖 Qo'llanma", "uz_cyr": "📖 Қўлланма", "ru": "📖 Как использовать"}
 
 
 async def build_caption(product: dict, lang: str, rate: float | None,
@@ -174,8 +176,18 @@ async def detail_keyboard(user_id: int, product_id: int, back_category: str,
     # opens the catalogue in a new message and leaves the card where it is.
     back_cb = f"cat:{back_category}:{back_page}" if back_category else (
         "catalog_keep" if keep else "catalog")
-    rows = [primary_row, [InlineKeyboardButton(text=get_text("btn_reviews", lang),
-                                               callback_data=f"reviews:{product_id}")]]
+    info_row = [InlineKeyboardButton(text=get_text("btn_reviews", lang),
+                                     callback_data=f"reviews:{product_id}")]
+    # «📖 Qo'llanma» next to the reviews — how and where to use it, with the
+    # per-100 g figures (product_guides, 2026-10-11). Looked up here rather
+    # than passed in, so the +/- re-renders keep it too; only shown when the
+    # product actually has a guide.
+    import product_guides
+    product = await get_product(product_id)
+    if product and product_guides.guide_key(product.get("name") or ""):
+        info_row.append(InlineKeyboardButton(text=_GUIDE_BTN.get(lang, _GUIDE_BTN["uz"]),
+                                             callback_data=f"guide:{product_id}"))
+    rows = [primary_row, info_row]
     if cart_row:
         rows.append(cart_row)
     rows.append([InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=back_cb)])
