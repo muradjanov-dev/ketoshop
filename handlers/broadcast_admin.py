@@ -485,11 +485,19 @@ async def kun_test(message: Message):
     lang = await database.get_user_language(message.from_user.id)
     await message.answer(
         f"👀 Navbatdagi kun mahsuloti: <b>{product.get('name')}</b>\n"
-        f"Quyida — mijoz ko'radigan kartochka:",
+        f"Quyida — mijoz ko'radigan kartochka va qo'llanma:",
         parse_mode=ParseMode.HTML,
     )
+    import gamification
     import product_card
-    await product_card.send_card(message.bot, message.from_user.id, product, lang)
+    # Exactly what the 13:00 send builds: same trailing block, same guide.
+    rate = await gamification.buyer_rate(message.from_user.id)
+    caption = await product_card.build_caption(
+        product, lang, rate, product_of_day.caption_extra(product)(lang))
+    await product_card.send_card(message.bot, message.from_user.id, product, lang,
+                                 rate=rate, caption=caption)
+    if not await product_of_day.send_guide(message.bot, message.from_user.id, product, lang):
+        await message.answer("ℹ️ Bu mahsulot uchun qo'llanma yo'q — faqat kartochka ketadi.")
 
 
 @router.message(Command("kun_kanal"))
