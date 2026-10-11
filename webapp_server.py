@@ -1043,6 +1043,56 @@ async def _read_cheque_upload(request: web.Request) -> tuple[bytes, str, str] | 
     return bytes(buf), content_type, filename
 
 
+async def _store_cheque_file(bot: Bot, user_id: int, lang: str, order_id: int,
+                             customer_name: str, file_bytes: bytes, filename: str,
+                             is_image: bool) -> tuple[str, str, int | None] | None:
+    """Upload a Mini App cheque to Telegram once and return
+    (file_id, kind, admin_id_that_already_has_it) so the order can store it
+    and the other admins get it by file_id, without re-uploading the bytes.
+
+    The buyer's own chat comes first, so they keep a copy of what they sent.
+    If the bot can't write there (they opened the shop without ever pressing
+    START, or blocked the bot), the cheque goes straight to an admin instead.
+    Before 2026-10-11 that case answered "Chekni yuborib bo'lmadi" after the
+    order already existed, so every retry left one more order with no cheque
+    and no admin notice. A picture Telegram refuses as a photo (HEIC, a very
+    long screenshot) is sent as a document. None only if every chat refused."""
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.types import BufferedInputFile
+
+    async def _send(chat_id: int, caption: str) -> tuple[str, str]:
+        if is_image:
+            try:
+                sent = await bot.send_photo(chat_id=chat_id,
+                                            photo=BufferedInputFile(file_bytes, filename=filename),
+                                            caption=caption, parse_mode="HTML")
+                return sent.photo[-1].file_id, "photo"
+            except TelegramBadRequest as exc:
+                logger.warning("Cheque for order %s refused as a photo (%s) — sending as a document",
+                               order_id, exc)
+        sent = await bot.send_document(chat_id=chat_id,
+                                       document=BufferedInputFile(file_bytes, filename=filename),
+                                       caption=caption, parse_mode="HTML")
+        return sent.document.file_id, "document"
+
+    try:
+        file_id, kind = await _send(user_id, get_text("cheque_received", lang, order_id=order_id))
+        return file_id, kind, None
+    except Exception as exc:
+        logger.warning("Cheque echo to buyer %s failed (order %s): %s — sending it to the admins directly",
+                       user_id, order_id, exc)
+
+    for admin_id in ADMIN_IDS:
+        try:
+            caption = get_text("cheque_from_customer", await get_user_language(admin_id),
+                               order_id=order_id, name=customer_name)
+            file_id, kind = await _send(admin_id, caption)
+            return file_id, kind, admin_id
+        except Exception as exc:
+            logger.warning("Cheque upload to admin %s failed (order %s): %s", admin_id, order_id, exc)
+    return None
+
+
 async def api_checkout_cheque(request: web.Request):
     """Upload payment cheque for a deferred online checkout.
 
@@ -1145,32 +1195,19 @@ async def api_checkout_cheque(request: web.Request):
         except InsufficientStockError as exc:
             return await _stock_gone(exc, request)
 
-    # Echo cheque back to buyer's chat to get a reusable Telegram file_id
-    # (and so they have a copy in their history).
-    from aiogram.types import BufferedInputFile
-    input_file = BufferedInputFile(file_bytes, filename=filename)
-    try:
-        if is_image:
-            sent = await bot.send_photo(
-                chat_id=user_id,
-                photo=input_file,
-                caption=get_text("cheque_received", lang, order_id=order_id),
-                parse_mode="HTML",
-            )
-            file_id = sent.photo[-1].file_id
-            kind = "photo"
-        else:
-            sent = await bot.send_document(
-                chat_id=user_id,
-                document=input_file,
-                caption=get_text("cheque_received", lang, order_id=order_id),
-                parse_mode="HTML",
-            )
-            file_id = sent.document.file_id
-            kind = "document"
-    except Exception:
-        logger.exception("Cheque echo to buyer %s failed (order %s already created)", user_id, order_id)
-        return _json({"error": "telegram_upload_failed"}, status=502)
+    # The deferred checkout is a real order now — drop it from the FSM before
+    # anything else can fail, so a retry can never create a second order.
+    await state.clear()
+
+    customer_name = data.get("pending_customer_name") or "—"
+    stored = await _store_cheque_file(bot, user_id, lang, order_id, customer_name,
+                                      file_bytes, filename, is_image)
+    if stored is None:
+        # Telegram refused every chat. The Mini App retries against
+        # /api/orders/{order_id}/cheque, which attaches to this same order.
+        logger.error("Cheque for order %s could not be uploaded anywhere", order_id)
+        return _json({"error": "telegram_upload_failed", "order_id": order_id}, status=502)
+    file_id, kind, admin_with_copy = stored
 
     from handlers.cart import _forward_cheque_to_admins, _notify_sellers, notify_low_stock
     from database import set_order_cheque
@@ -1180,8 +1217,8 @@ async def api_checkout_cheque(request: web.Request):
     if low_stock:
         await notify_low_stock(bot, low_stock)
 
-    customer_name = data.get("pending_customer_name") or "—"
-    await _forward_cheque_to_admins(bot, order_id, customer_name, kind, file_id)
+    await _forward_cheque_to_admins(bot, order_id, customer_name, kind, file_id,
+                                    skip={admin_with_copy})
     await _notify_sellers(bot, order_id, items_data, {
         "customer_name": customer_name,
         "phone": data["pending_phone"],
@@ -1200,12 +1237,40 @@ async def api_checkout_cheque(request: web.Request):
     from handlers.cart import send_order_thanks
     await send_order_thanks(bot, user_id, order_id, data.get("pending_delivery_method"))
 
-    await state.clear()
     response = {"ok": True, "order_id": order_id, "total": total, "keto_redeemed": keto_redeem}
     if data.get("pending_delivery_method") == "pickup":
         response.update(delivery_method="pickup", pickup_address=data["pending_address"],
                         pickup_map_url=data.get("pending_pickup_map_url"))
     return _json(response)
+
+
+async def api_checkout_pay_in_chat(request: web.Request):
+    """"Botga qaytib to'layman" on the Mini App cheque page — the buyer will
+    send the cheque from the chat. The online checkout writes nothing there
+    by itself, so put the card details and the cancel button in the chat
+    before the Mini App closes."""
+    user_id = request["user_id"]
+    storage = request.app.get("storage")
+    if storage is None:
+        return _json({"error": "server_misconfigured"}, status=500)
+    bot: Bot = request.app["bot"]
+
+    from aiogram.fsm.context import FSMContext
+    from aiogram.fsm.storage.base import StorageKey
+
+    state = FSMContext(storage=storage, key=StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id))
+    data = await state.get_data()
+    if not data.get("pending_items"):
+        return _json({"error": "no_pending_checkout"}, status=409)
+
+    from handlers.cart import send_pending_cheque_prompt
+    try:
+        await send_pending_cheque_prompt(bot, user_id, data)
+    except Exception as exc:
+        # Never pressed START: /start in the chat shows the same prompt.
+        logger.warning("Pay-in-chat prompt to %s failed: %s", user_id, exc)
+        return _json({"error": "bot_cant_write"}, status=502)
+    return _json({"ok": True})
 
 
 async def api_order_cheque(request: web.Request):
@@ -1240,42 +1305,19 @@ async def api_order_cheque(request: web.Request):
     is_image = content_type.startswith("image/")
 
     bot: Bot = request.app["bot"]
-
-    # Telegram needs an InputFile wrapper for raw uploads. Sending to the buyer
-    # first echoes the cheque back into their bot chat (so they have a record)
-    # AND gives us a reusable file_id we can hand to every admin without
-    # re-uploading bytes N times.
-    from aiogram.types import BufferedInputFile
-    input_file = BufferedInputFile(file_bytes, filename=filename)
-    try:
-        if is_image:
-            sent = await bot.send_photo(
-                chat_id=user_id,
-                photo=input_file,
-                caption=get_text("cheque_received", lang, order_id=order_id),
-                parse_mode="HTML",
-            )
-            file_id = sent.photo[-1].file_id
-            kind = "photo"
-        else:
-            sent = await bot.send_document(
-                chat_id=user_id,
-                document=input_file,
-                caption=get_text("cheque_received", lang, order_id=order_id),
-                parse_mode="HTML",
-            )
-            file_id = sent.document.file_id
-            kind = "document"
-    except Exception:
-        logger.exception("Cheque upload echo to buyer %s failed", user_id)
-        return _json({"error": "telegram_upload_failed"}, status=502)
-
     customer_name = order.get("customer_name") or "—"
+
+    stored = await _store_cheque_file(bot, user_id, lang, order_id, customer_name,
+                                      file_bytes, filename, is_image)
+    if stored is None:
+        return _json({"error": "telegram_upload_failed", "order_id": order_id}, status=502)
+    file_id, kind, admin_with_copy = stored
 
     from handlers.cart import _forward_cheque_to_admins, _notify_sellers
     from database import set_order_cheque
     await set_order_cheque(order_id, file_id, kind)
-    await _forward_cheque_to_admins(bot, order_id, customer_name, kind, file_id)
+    await _forward_cheque_to_admins(bot, order_id, customer_name, kind, file_id,
+                                    skip={admin_with_copy})
 
     items_raw = order.get("items")
     items = json.loads(items_raw) if isinstance(items_raw, str) else (items_raw or [])
@@ -1557,6 +1599,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_post("/api/cart/clear", api_cart_clear)
     app.router.add_post("/api/checkout", api_checkout)
     app.router.add_post("/api/checkout/cheque", api_checkout_cheque)
+    app.router.add_post("/api/checkout/pay-in-chat", api_checkout_pay_in_chat)
     app.router.add_get("/api/orders", api_orders)
     app.router.add_post("/api/orders/{id}/cancel", api_order_cancel)
     app.router.add_post("/api/orders/{id}/cheque", api_order_cheque)

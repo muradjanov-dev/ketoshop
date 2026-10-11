@@ -865,6 +865,10 @@ TEXTS = {
             "⚠️ <b>Заказ не будет оформлен, пока не получен чек.</b>"
         ),
     },
+    "pending_cheque_reminder": {
+        "uz": "⏳ <b>Buyurtmangiz to'lovni kutmoqda.</b>",
+        "ru": "⏳ <b>Ваш заказ ждёт оплаты.</b>",
+    },
     "cheque_must_be_photo_or_doc": {
         "uz": "📸 Iltimos, to'lov chekini <b>rasm</b> yoki <b>fayl</b> sifatida yuboring.",
         "ru": "📸 Пожалуйста, отправьте чек оплаты как <b>фото</b> или <b>файл</b>.",

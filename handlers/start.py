@@ -133,8 +133,26 @@ async def cmd_help(message: Message, state: FSMContext):
     )
 
 
+async def _remind_pending_cheque(message: Message, state: FSMContext) -> None:
+    """/start in the middle of paying for an online order (state_guard.py
+    keeps that state) — put the card details and the cancel button back in
+    front of the buyer so the cheque they send next lands on the order."""
+    if not _is_private_chat(message):
+        return
+    data = await state.get_data()
+    if not data.get("pending_items"):
+        return
+    from handlers.cart import send_pending_cheque_prompt
+    try:
+        await send_pending_cheque_prompt(message.bot, message.from_user.id, data)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Pending-cheque reminder to %s failed", message.from_user.id, exc_info=True)
+
+
 @router.message(CommandStart(deep_link=True))
-async def cmd_start_deep_link(message: Message, command: CommandObject):
+async def cmd_start_deep_link(message: Message, command: CommandObject, state: FSMContext):
     """A /start carrying a payload — the channel's daily product link
     (?start=prod_<id>, see product_card.py), a Facebook/Instagram ad link
     (?start=fb_<reklama>, see ad_sources.py), a blogger's personal link
@@ -152,12 +170,14 @@ async def cmd_start_deep_link(message: Message, command: CommandObject):
     product_id = product_card.parse_product_payload(command.args)
     await _handle_start(message, referrer_id, blogger_code, ad_source,
                         product_id=product_id)
+    await _remind_pending_cheque(message, state)
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: FSMContext):
     """Handle /start — show language selection"""
     await _handle_start(message, None)
+    await _remind_pending_cheque(message, state)
 
 
 async def _handle_start(message: Message, referrer_id: int | None,

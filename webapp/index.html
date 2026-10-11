@@ -5195,6 +5195,23 @@ function showCheckoutSuccess(result) {
   switchPage('order-success');
 }
 
+// A buyer who opened the shop without ever pressing START can't get a single
+// bot message: no copy of their cheque, no "order confirmed / on its way".
+// Ask Telegram for that permission before the order goes in. The client
+// answers by itself, without a popup, when the bot may already write. Always
+// resolves — a refusal or an old client must never block the order.
+function ensureBotCanWrite() {
+  const u = tg.initDataUnsafe && tg.initDataUnsafe.user;
+  if (!u || u.allows_write_to_pm || typeof tg.requestWriteAccess !== 'function') {
+    return Promise.resolve();
+  }
+  return new Promise(resolve => {
+    const timer = setTimeout(resolve, 30000);
+    const done = () => { clearTimeout(timer); resolve(); };
+    try { tg.requestWriteAccess(done); } catch (_) { done(); }  // unsupported / already asked
+  });
+}
+
 async function submitOrder() {
   const phone = document.getElementById('inp-phone').value.trim();
   const lat = document.getElementById('inp-lat').value;
@@ -5238,6 +5255,7 @@ async function submitOrder() {
   btn.textContent = t.ordering;
 
   try {
+    await ensureBotCanWrite();
     const result = await api('/api/checkout', {
       method: 'POST',
       body: JSON.stringify({
@@ -5317,12 +5335,16 @@ async function submitOrder() {
 }
 
 // ===== CHEQUE UPLOAD =====
-// No chequeOrderId: the order is only created on the server when the cheque
-// arrives, so we don't have an ID until /api/checkout/cheque returns success.
+// The order is only created on the server when the cheque arrives, so there
+// is no order ID up front. chequeOrderId is set only if the order got created
+// but Telegram refused the file — the retry then attaches to that same order
+// via /api/orders/{id}/cheque instead of placing a second one.
 let chequeFile = null;
+let chequeOrderId = null;
 
 function openChequePage(result) {
   chequeFile = null;
+  chequeOrderId = null;
 
   document.getElementById('cheque-title').textContent = t.chequeTitle;
   // The order doesn't exist yet — leave the #N line blank rather than
@@ -5415,7 +5437,8 @@ async function submitCheque() {
     // Deferred-order flow: the server reads pending checkout from FSM state
     // (set by /api/checkout) and creates the order + attaches the cheque in
     // one shot. No order_id in the URL because the order doesn't exist yet.
-    const res = await fetch('/api/checkout/cheque', {
+    const url = chequeOrderId ? '/api/orders/' + chequeOrderId + '/cheque' : '/api/checkout/cheque';
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': AUTH },  // no Content-Type — browser sets multipart boundary
       body: fd,
@@ -5423,6 +5446,7 @@ async function submitCheque() {
     if (!res.ok) {
       let body = null;
       try { body = await res.json(); } catch (_) {}
+      if (body && body.order_id) chequeOrderId = body.order_id;
       if (body && body.error === 'file_too_large') {
         showToast(t.chequeFileTooLarge, true);
       } else if (body && body.error === 'stock_gone') {
@@ -5466,13 +5490,22 @@ async function submitCheque() {
   }
 }
 
-function closeMiniAppForChat() {
+async function closeMiniAppForChat() {
   // Buyer chose to pay via the bot chat instead. /api/checkout already
   // stashed the pending order in FSM state (key: waiting_cheque), so when
   // they upload a photo or document in the bot chat the existing
   // process_cheque_photo/_document handler will see pending_items and
-  // create the order then. No need to re-prompt them with card details
-  // here — those are already visible on this page.
+  // create the order then. The server first puts the card details and a
+  // cancel button in the chat — before, the chat showed nothing at all.
+  // Best-effort and capped at 4s: if the bot can't write yet, pressing
+  // START in the chat shows the same prompt.
+  document.getElementById('cheque-pay-later-btn').disabled = true;
+  try {
+    await Promise.race([
+      api('/api/checkout/pay-in-chat', { method: 'POST' }),
+      new Promise(resolve => setTimeout(resolve, 4000)),
+    ]);
+  } catch (_) {}
   if (tg.close) tg.close();
 }
 
