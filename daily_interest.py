@@ -66,6 +66,9 @@ _INTROS = [
 ]
 
 _BENEFIT_LABEL = {"uz": "💡 <b>Foydasi:</b>", "ru": "💡 <b>Польза:</b>"}
+_USE_LABEL = {"uz": "🍽 <b>Bugun sinab ko'ring — {title}:</b>",
+              "ru": "🍽 <b>Попробуйте сегодня — {title}:</b>"}
+_GUIDE_BUTTON = {"uz": "📖 To'liq qo'llanma", "ru": "📖 Как использовать"}
 _PRICE_LABEL = {"uz": "💰 Narxi:", "ru": "💰 Цена:"}
 _OUT_OF_STOCK = {"uz": "⏳ Hozircha tugagan — tez orada qaytadi.",
                  "ru": "⏳ Пока закончился — скоро вернётся."}
@@ -109,8 +112,10 @@ def build_message(product: dict, lang: str, cycle: int, promo: dict | None):
 
     lines = [_loc(_INTROS[cycle % len(_INTROS)], lang), "", f"{emoji} <b>{name}</b>"]
 
-    currency = "сум" if lang == "ru" else "so'm"
-    price_label = _PRICE_LABEL["ru" if lang == "ru" else "uz"]
+    # Cyrillic readers get Cyrillic labels too (buyer-language rule) — these
+    # used to stay Latin under a Cyrillic product name.
+    currency = _loc({"uz": "so'm", "ru": "сум"}, lang)
+    price_label = _loc(_PRICE_LABEL, lang)
     price_line = f"{price_label} <b>{_fmt(price)} {currency}</b>"
     if discount:
         price_line += f"  <s>{_fmt(product['price'])}</s>  🔥−{int(discount)}%"
@@ -127,19 +132,41 @@ def build_message(product: dict, lang: str, cycle: int, promo: dict | None):
         lines.append(f"🎉 <b>{promo_name}</b>")
         lines.append(hint)
 
-    benefits = profile.get("benefits") or []
-    if benefits:
-        lines.append("")
-        lines.append(_BENEFIT_LABEL["ru" if lang == "ru" else "uz"])
-        lines.append(_loc(benefits[cycle % len(benefits)], lang))
+    # Product guide (product_guides, owner 2026-10-11): the precise text for
+    # THIS kind of product instead of the broad recommendation profile — the
+    # profile put psyllium copy on xanthan and one sweetener text on
+    # erythritol, allulose and stevia alike. Each day a different benefit,
+    # a different way to use it and a different caution, so a buyer who keeps
+    # looking at the same product learns something new every evening.
+    import product_guides
+    guide = product_guides.guide_parts(product.get("name") or "", lang)
+    if guide:
+        nutri = product_guides.card_line(product.get("name") or "", lang)
+        if nutri:
+            lines.append(nutri)
+        benefit = guide["benefits"][cycle % len(guide["benefits"])]
+        title, how = guide["uses"][cycle % len(guide["uses"])]
+        caution = guide["cautions"][cycle % len(guide["cautions"])]
+        lines += ["", f"{_loc(_BENEFIT_LABEL, lang)} {benefit}",
+                  "", f"{_loc(_USE_LABEL, lang).replace('{title}', title)} {how}",
+                  "", f"⚠️ {caution}"]
+    else:
+        benefits = profile.get("benefits") or []
+        if benefits:
+            lines.append("")
+            lines.append(_loc(_BENEFIT_LABEL, lang))
+            lines.append(_loc(benefits[cycle % len(benefits)], lang))
 
     rows = [[InlineKeyboardButton(
-        text="🛒 Mahsulotni ko'rish" if lang != "ru" else "🛒 Смотреть товар",
+        text=_loc({"uz": "🛒 Mahsulotni ko'rish", "ru": "🛒 Смотреть товар"}, lang),
         callback_data=f"product:{product['id']}",
     )]]
+    if guide:
+        rows.append([InlineKeyboardButton(text=_loc(_GUIDE_BUTTON, lang),
+                                          callback_data=f"guide:{product['id']}")])
     if hint:
         rows.append([InlineKeyboardButton(
-            text="🎁 Aksiya shartlari" if lang != "ru" else "🎁 Условия акции",
+            text=_loc({"uz": "🎁 Aksiya shartlari", "ru": "🎁 Условия акции"}, lang),
             callback_data="promo",
         )])
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)

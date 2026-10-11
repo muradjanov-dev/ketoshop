@@ -238,6 +238,24 @@ def guide_text(product: dict, lang: str) -> str | None:
     return body.replace("{name}", name)
 
 
+def guide_parts(product_name: str, lang: str) -> dict | None:
+    """The guide's pieces (about, benefits, uses, cautions, advice) in the
+    reader's language, for messages that quote one piece at a time — the
+    daily interest nudge rotates through them. None when there's no guide."""
+    key = guide_key(product_name)
+    if key is None:
+        return None
+    g = GUIDES[key]["ru" if lang == "ru" else "uz"]
+    if lang != "uz_cyr":
+        return dict(g)
+    from translit import lat_to_cyr
+    return dict(about=lat_to_cyr(g["about"]),
+                benefits=[lat_to_cyr(b) for b in g["benefits"]],
+                uses=[(lat_to_cyr(t), lat_to_cyr(x)) for t, x in g["uses"]],
+                cautions=[lat_to_cyr(c) for c in g["cautions"]],
+                advice=lat_to_cyr(g["advice"]))
+
+
 def card_line(product_name: str, lang: str) -> str | None:
     """One short line of numbers for the product card itself, e.g.
     «📊 100 g: ~590 kkal · uglevod 10 g · GI ~20 · ✅ keto». None when the
