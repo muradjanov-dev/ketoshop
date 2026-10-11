@@ -10,7 +10,7 @@ the campaign can be brought back without rewriting it.
 
 WHAT IS STILL LIVE from this module:
   - parse_ref_payload()      — /start ref<id> deep links still resolve
-  - award_referral()         — a referred sign-up still pays BOTH sides 10 Keto
+  - award_referral()         — a referred sign-up pays the NEW user 10 Keto (referrer: 3% on first order, referral_program.py)
   - notify_admins_new_user() — owners still get "X joined, invited by Y"
 
 Those three are wired up from handlers/start.py and subscription_gate.py and
@@ -19,7 +19,7 @@ are independent of whether a contest is running. Everything below them
 dormant: reachable only if a future change re-registers it.
 
 Public API:
-  award_referral(referrer_id, referred_id, bot)  -> credit 10 Keto to both + DM each
+  award_referral(referrer_id, referred_id, bot)  -> credit 10 Keto to the new user + DM each
   notify_admins_new_user(...)                    -> "who joined / who invited them"
   parse_ref_payload(payload)                     -> referrer id from a /start deep link
   build_contest_screen / build_share_text / share_deeplink / scheduler_loop
@@ -127,7 +127,7 @@ def _rank_label(rank: int, lang: str) -> str:
 
 async def award_referral(referrer_id: int, referred_id: int, bot: Bot) -> None:
     """Call once, right after a brand-new user's first /start is confirmed to
-    carry a valid ref<id> payload. Both sides get +10 Keto and a congrats DM
+    carry a valid ref<id> payload. The new user gets +10 Keto, both get a DM
     (owner request 2026-07-31: "qo'shilganga ham va taklif qilganga ham") —
     best-effort throughout: never raises, so a Keto bug can't block the new
     user's own onboarding message."""
@@ -138,10 +138,9 @@ async def award_referral(referrer_id: int, referred_id: int, bot: Bot) -> None:
         if not recorded:
             return  # this person was already credited to someone else
 
-        await database.credit_keto(
-            referrer_id, order_id=None, amount=REFERRAL_KETO_REWARD, kind="referral",
-            note=f"Taklif: user {referred_id} qo'shildi",
-        )
+        # 2026-10-02: taklif qiluvchi endi qo'shilish uchun Keto olmaydi —
+        # faqat taklif qilinganning birinchi xaridi uchun 3% keshbek
+        # (referral_program.py). 10 Keto faqat yangi foydalanuvchining o'ziga.
         await database.credit_keto(
             referred_id, order_id=None, amount=REFERRAL_KETO_REWARD, kind="referral",
             note=f"Taklif orqali qo'shildi: referrer {referrer_id}",
@@ -152,7 +151,6 @@ async def award_referral(referrer_id: int, referred_id: int, bot: Bot) -> None:
         if not referrer_user or not referred_user:
             return
 
-        referrer_balance = int(referrer_user["keto_balance"])
         referrer_lang = referrer_user.get("language") or "uz"
         who_joined = _display_name(referred_user.get("username"), referred_user.get("full_name"), referred_id)
 
@@ -160,8 +158,8 @@ async def award_referral(referrer_id: int, referred_id: int, bot: Bot) -> None:
         lines = [
             L(f"🎉 <b>Tabriklaymiz!</b> Sizning havolangiz bilan <b>{who_joined}</b> Ketoshopga qo'shildi!",
               f"🎉 <b>Поздравляем!</b> По вашей ссылке в Ketoshop присоединился(-ась) <b>{who_joined}</b>!"),
-            L(f"🎁 +{REFERRAL_KETO_REWARD} Keto tanga qo'lga kiritdingiz! Joriy balans: <b>{_fmt(referrer_balance)} Keto</b>",
-              f"🎁 Вы получили +{REFERRAL_KETO_REWARD} монет Keto! Ваш баланс: <b>{_fmt(referrer_balance)} Keto</b>"),
+            L("💰 U birinchi xaridini qilganda, xarid summasining <b>3%</b> i Keto tanga bo'lib hamyoningizga tushadi.",
+              "💰 Когда он(а) совершит первую покупку, <b>3%</b> от суммы поступит в ваш кошелёк монетами Keto."),
         ]
 
         state = await database.get_referral_contest_state()

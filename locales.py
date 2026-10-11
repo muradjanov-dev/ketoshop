@@ -703,7 +703,7 @@ TEXTS = {
     "order_summary": {
         "uz": "📋 <b>Buyurtma tafsilotlari:</b>\n\n"
               "📱 Telefon: {phone}{secondary_block}\n"
-              "📍 Joylashuv: {address}{note_block}\n"
+              "📍 Joylashuv: {address}{note_block}{pickup_block}\n"
               "🚚 Yetkazib berish: {delivery}\n"
               "💳 To'lov: {payment}\n\n"
               "{items}"
@@ -712,7 +712,7 @@ TEXTS = {
               "💰 <b>Jami: {total} so'm</b>",
         "ru": "📋 <b>Детали заказа:</b>\n\n"
               "📱 Телефон: {phone}{secondary_block}\n"
-              "📍 Геолокация: {address}{note_block}\n"
+              "📍 Геолокация: {address}{note_block}{pickup_block}\n"
               "🚚 Доставка: {delivery}\n"
               "💳 Оплата: {payment}\n\n"
               "{items}"
@@ -720,6 +720,13 @@ TEXTS = {
               "{keto_block}\n"
               "💰 <b>Итого: {total} сум</b>",
     },
+    "choose_fulfillment": {"uz": "Buyurtmani qanday olasiz?", "ru": "Как вы хотите получить заказ?"},
+    "fulfillment_delivery": {"uz": "🚚 Yetkazib berish", "ru": "🚚 Доставка"},
+    "fulfillment_pickup": {"uz": "🏪 Olib ketish", "ru": "🏪 Самовывоз"},
+    "pickup_enter_phone": {"uz": "Olib ketish uchun bog'lanish telefon raqamingizni kiriting:", "ru": "Введите контактный номер телефона для самовывоза:"},
+    "pickup_unavailable": {"uz": "Olib ketish hozircha mavjud emas. Iltimos, yetkazib berishni tanlang.", "ru": "Самовывоз сейчас недоступен. Пожалуйста, выберите доставку."},
+    "checkout_step_expired": {"uz": "Bu checkout bosqichi eskirgan. Buyurtmani qaytadan boshlang.", "ru": "Этот шаг оформления устарел. Начните оформление заново."},
+    "pickup_instructions": {"uz": "🏪 <b>Olib ketish manzili:</b> {address}\n🗺 <a href=\"{map_url}\">Xaritada ochish</a>", "ru": "🏪 <b>Адрес самовывоза:</b> {address}\n🗺 <a href=\"{map_url}\">Открыть карту</a>"},
     "delivery_fee_line": {
         "uz": "🚚 Yetkazib berish narxi: {fee} so'm\n",
         "ru": "🚚 Стоимость доставки: {fee} сум\n",
@@ -831,6 +838,7 @@ TEXTS = {
         "ru": "🚚 Выберите способ доставки:",
     },
     "btn_delivery_self": {"uz": "🚚 Ketoshop kuryer", "ru": "🚚 Курьер Ketoshop"},
+    "btn_delivery_pickup": {"uz": "🏪 Olib ketish", "ru": "🏪 Самовывоз"},
     "btn_delivery_yandex_taxi": {"uz": "🚖 Yandex Taxi", "ru": "🚖 Yandex Taxi"},
     "btn_delivery_yandex_market": {"uz": "📦 Yandex Market", "ru": "📦 Yandex Market"},
     "btn_delivery_bts": {"uz": "📦 BTS", "ru": "📦 BTS"},
@@ -856,6 +864,10 @@ TEXTS = {
             "📸 Пожалуйста, переведите сумму на указанную карту и отправьте чек оплаты (фото или файл).\n\n"
             "⚠️ <b>Заказ не будет оформлен, пока не получен чек.</b>"
         ),
+    },
+    "pending_cheque_reminder": {
+        "uz": "⏳ <b>Buyurtmangiz to'lovni kutmoqda.</b>",
+        "ru": "⏳ <b>Ваш заказ ждёт оплаты.</b>",
     },
     "cheque_must_be_photo_or_doc": {
         "uz": "📸 Iltimos, to'lov chekini <b>rasm</b> yoki <b>fayl</b> sifatida yuboring.",
@@ -1051,6 +1063,7 @@ TEXTS = {
     "order_status_shipped": {"uz": "🚚 Yo'lda", "ru": "🚚 В пути"},
     "order_status_delivering": {"uz": "🚚 Yetkazilmoqda", "ru": "🚚 Доставляется"},
     "order_status_delivered": {"uz": "📦 Yetkazildi", "ru": "📦 Доставлен"},
+    "order_status_pickup_collected": {"uz": "✅ Olib ketildi", "ru": "✅ Забран из магазина"},
     "order_status_cancelled": {"uz": "❌ Bekor qilingan", "ru": "❌ Отменён"},
 
     # ===== SELLER PANEL =====
@@ -1988,6 +2001,14 @@ TEXTS = {
               "Заказ упакован и передаётся курьеру.\n"
               "Совсем скоро он будет в пути 🚚",
     },
+    "buyer_pickup_ready": {
+        "uz": "🏪 <b>Buyurtmangizni olib ketish mumkin!</b>\n\nBuyurtma №<b>{order_id}</b>\n📍 {address}\n🗺 <a href=\"{map_url}\">Xaritada ochish</a>",
+        "ru": "🏪 <b>Ваш заказ готов к самовывозу!</b>\n\nЗаказ №<b>{order_id}</b>\n📍 {address}\n🗺 <a href=\"{map_url}\">Открыть карту</a>",
+    },
+    "buyer_pickup_collected": {
+        "uz": "✅ <b>Olib ketildi</b>\n\nBuyurtma №<b>{order_id}</b> do'kondan olib ketildi. Xaridingiz uchun rahmat!",
+        "ru": "✅ <b>Заказ забран</b>\n\nЗаказ №<b>{order_id}</b> забрали из магазина. Спасибо за покупку!",
+    },
     "buyer_order_shipped": {
         "uz": "🚚 <b>Buyurtmangiz yo'lda!</b>\n\n"
               "🛍 Buyurtma №<b>{order_id}</b>\n"
@@ -2043,6 +2064,56 @@ TEXTS = {
     "buyer_timeline_ready":     {"uz": "✨ Tayyor bo'ldi: {date}",    "ru": "✨ Готов: {date}"},
     "buyer_timeline_shipped":   {"uz": "🚚 Yo'lda: {date}",           "ru": "🚚 В пути: {date}"},
     "buyer_timeline_delivered": {"uz": "📦 Yetkazildi: {date}",       "ru": "📦 Доставлен: {date}"},
+
+    # ===== BEPUL XARID — REFERAL (referral_program.py) =====
+    "btn_free_buy": {"uz": "🎁 Bepul xarid qilish", "ru": "🎁 Бесплатные покупки"},
+    "btn_free_buy_share": {"uz": "📤 Do'stlarga ulashish", "ru": "📤 Поделиться с друзьями"},
+    "free_buy_screen": {
+        "uz": "🎁 <b>Bepul xarid qilish</b>\n\n"
+              "Do'stlaringizni Ketoshopga taklif qiling!\n\n"
+              "Siz taklif qilgan har bir inson <b>birinchi marta</b> xarid qilganda, "
+              "o'sha xariddan <b>{percent}%</b> sizning hamyoningizga Keto tanga bo'lib tushadi.\n"
+              "💡 1 Keto tanga = 1 so'm. Masalan, 10 000 Keto = 10 000 so'm.\n\n"
+              "🛒 Yig'ilgan tangalar bilan Ketoshopdan xarid qilasiz.\n\n"
+              "🔗 Sizning havolangiz:\n{link}\n\n"
+              "👥 Taklif qilganlaringiz: <b>{invited}</b> ta (xarid qilgan: {bought} ta)\n"
+              "💰 Referaldan ishlaganingiz: <b>{earned} Keto</b>\n"
+              "💳 Keto balansingiz: <b>{balance} Keto</b>",
+        "ru": "🎁 <b>Бесплатные покупки</b>\n\n"
+              "Приглашайте друзей в Ketoshop!\n\n"
+              "Когда приглашённый вами человек совершит <b>первую</b> покупку, "
+              "<b>{percent}%</b> от неё поступит в ваш кошелёк монетами Keto.\n"
+              "💡 1 монета Keto = 1 сум. Например, 10 000 Keto = 10 000 сум.\n\n"
+              "🛒 Накопленными монетами можно оплачивать покупки в Ketoshop.\n\n"
+              "🔗 Ваша ссылка:\n{link}\n\n"
+              "👥 Приглашено: <b>{invited}</b> (совершили покупку: {bought})\n"
+              "💰 Заработано на рефералах: <b>{earned} Keto</b>\n"
+              "💳 Ваш баланс Keto: <b>{balance} Keto</b>",
+    },
+    "free_buy_share_text": {
+        "uz": "🌿 Ketoshop — keto va dietik mahsulotlar bir joyda! "
+              "Mening havolam orqali qo'shiling va sovg'a sifatida Keto tanga oling 🎁",
+        "ru": "🌿 Ketoshop — кето и диетические продукты в одном месте! "
+              "Присоединяйтесь по моей ссылке и получите монеты Keto в подарок 🎁",
+    },
+    "referral_cashback_earned": {
+        "uz": "🎉 <b>Taklif qilgan do'stingiz xarid qildi!</b>\n\n"
+              "👤 {name} birinchi xaridini amalga oshirdi.\n"
+              "💰 Sizga <b>+{amount} Keto</b> ({percent}% keshbek) tushdi.\n"
+              "💳 Balansingiz: <b>{balance} Keto</b>\n\n"
+              "Yana do'stlaringizni taklif qiling va bepul xarid qiling! 🛒",
+        "ru": "🎉 <b>Приглашённый вами друг совершил покупку!</b>\n\n"
+              "👤 {name} оформил(а) первую покупку.\n"
+              "💰 Вам начислено <b>+{amount} Keto</b> ({percent}% кешбэк).\n"
+              "💳 Ваш баланс: <b>{balance} Keto</b>\n\n"
+              "Приглашайте ещё друзей и покупайте бесплатно! 🛒",
+    },
+    "welcome_keto_bonus": {
+        "uz": "🎁 <b>Xush kelibsiz!</b> Sovg'a sifatida sizga <b>+{amount} Keto tanga</b> berildi.\n"
+              "💡 1 Keto = 1 so'm — Ketoshopdan xarid qilishda ishlatishingiz mumkin.",
+        "ru": "🎁 <b>Добро пожаловать!</b> В подарок вам начислено <b>+{amount} монет Keto</b>.\n"
+              "💡 1 Keto = 1 сум — их можно использовать при покупках в Ketoshop.",
+    },
 }
 
 

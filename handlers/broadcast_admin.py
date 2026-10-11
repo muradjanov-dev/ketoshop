@@ -788,3 +788,57 @@ async def sovga_eslatma_test(message: Message):
         f"📅 Avtomatik: {gift_campaign.REMINDER_FROM:%d.%m.%Y} soat "
         f"{gift_campaign.REMINDER_WINDOW[0]:02d}:00 dan, bir marta.\n"
         f"👥 Jami {total} ta foydalanuvchi: {got} tasiga «yana sovg'a», qolganiga «xabaringiz bormi».")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shaxsiy tavsiyalar tekshiruvi (product_tips.py) — prod bazasidagi haqiqiy
+# xaridorlar uchun kartochkada qaysi juftlik gapi chiqishini ko'rsatadi.
+#   /tavsiya_test           — oxirgi xarid qilgan 3 ta mijoz
+#   /tavsiya_test <user_id> — aniq bitta mijoz
+# Hech kimga hech narsa yuborilmaydi.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.message(Command("tavsiya_test"))
+async def tavsiya_test(message: Message, command: CommandObject):
+    import html as _html
+    import product_tips
+    import retention
+    arg = (command.args or "").strip()
+    only = int(arg) if arg.lstrip("-").isdigit() else None
+    orders_by_user = await retention._load_orders(only)     # real orders only, admins excluded
+    available = await retention._load_available()
+    lang = await database.get_user_language(message.from_user.id)
+    products = [p for key, p in available.items() if key[0] == "p"]
+
+    def recent(uid):
+        return max(o["created_at"] for o in orders_by_user[uid])
+
+    blocks = []
+    for uid in sorted(orders_by_user, key=recent, reverse=True):
+        hist = product_tips.history_from_orders(orders_by_user[uid])
+        owned = {h["key"] for h in hist if h["key"]}
+        lines = []
+        for prod in products:
+            vkey = product_tips.tip_key(prod.get("name") or "")
+            earlier = next((h for h in hist if h["key"] and h["key"] != vkey
+                            and (vkey, h["key"]) in product_tips.PAIRS), None)
+            if not vkey or vkey in owned or not earlier:
+                continue
+            tip = product_tips.choose(hist, prod, lang, turn=0)
+            lines.append(f"• <b>{_html.escape(prod['name'])}</b> ← {_html.escape(earlier['name'])}\n"
+                         f"  💡 <i>{_html.escape(tip or '')}</i>")
+            if len(lines) == 3:
+                break
+        if lines:
+            bought = ", ".join(_html.escape(h["name"]) for h in hist[:4])
+            blocks.append(f"👤 Mijoz <code>{uid}</code> — avval olgan: {bought}\n" + "\n".join(lines))
+        if len(blocks) == (1 if only else 3):
+            break
+
+    if not blocks:
+        await message.answer("Mos juftligi bor mijoz topilmadi."
+                             + (" Bu mijozning bekor qilinmagan o'z buyurtmasi yo'q." if only else ""))
+        return
+    await message.answer("🧪 <b>Shaxsiy tavsiyalar — haqiqiy mijozlar</b>\n"
+                         "Kartochkada (birinchi variant) shunday chiqadi:\n\n" + "\n\n".join(blocks),
+                         parse_mode=ParseMode.HTML)

@@ -48,12 +48,16 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     import mystery_gift
     import promotions
 
-    # The three standing promises close every card (owner, 2026-09-19): the
+    # The standing promises close every card (owner, 2026-09-19): the
     # Eritritol on every order, the surprise from 400 000, free Tashkent
     # delivery from 800 000. Built first because, like `extra`, their length
     # is budgeted before the description is trimmed — the promises are the
     # reason to order, so they never lose room to a long description.
+    import bot_discount
     gift = "\n".join(filter(None, [
+        # 10% for ordering through the bot (owner, 2026-10-08) — leads the
+        # promises while it is on, gone the moment it is switched off.
+        await bot_discount.reminder(lang),
         await gift_campaign.card_line(lang),
         mystery_gift.card_line(lang),
         mystery_gift.free_delivery_card_line(lang),

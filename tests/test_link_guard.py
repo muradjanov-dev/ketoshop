@@ -115,5 +115,46 @@ class WarningTextTest(unittest.TestCase):
         self.assertTrue(link_guard.warning_text(5, "", "uz").startswith("🙏 Iltimos, guruhda"))
 
 
+class JoinNoticeTest(unittest.TestCase):
+    def setUp(self):
+        self._on, self._only = link_guard.JOIN_CLEANUP, link_guard.ONLY_CHATS
+        link_guard.JOIN_CLEANUP, link_guard.ONLY_CHATS = True, set()
+
+    def tearDown(self):
+        link_guard.JOIN_CLEANUP, link_guard.ONLY_CHATS = self._on, self._only
+
+    def joined(self, **kw):
+        msg = _msg(**kw)
+        msg.new_chat_members = [NS(id=555)]
+        return msg
+
+    def test_join_notice_in_group(self):
+        self.assertTrue(link_guard._is_join_notice(self.joined()))
+        self.assertTrue(link_guard._is_join_notice(self.joined(chat_type="group")))
+
+    def test_ordinary_message_is_not_a_join_notice(self):
+        msg = _msg("salom")
+        msg.new_chat_members = None
+        self.assertFalse(link_guard._is_join_notice(msg))
+
+    def test_private_chat_is_untouched(self):
+        self.assertFalse(link_guard._is_join_notice(self.joined(chat_type="private")))
+
+    def test_switch_and_chat_scope(self):
+        link_guard.ONLY_CHATS = {-100999}
+        self.assertFalse(link_guard._is_join_notice(self.joined()))
+        link_guard.ONLY_CHATS = set()
+        link_guard.JOIN_CLEANUP = False
+        self.assertFalse(link_guard._is_join_notice(self.joined()))
+
+    def test_handler_deletes_and_survives_missing_rights(self):
+        msg = self.joined()
+        msg.delete = AsyncMock()
+        run(link_guard.on_member_joined(msg))
+        msg.delete.assert_awaited_once()
+        msg.delete = AsyncMock(side_effect=RuntimeError("not enough rights"))
+        run(link_guard.on_member_joined(msg))  # must not raise
+
+
 if __name__ == "__main__":
     unittest.main()

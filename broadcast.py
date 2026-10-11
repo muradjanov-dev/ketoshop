@@ -141,11 +141,18 @@ async def _broadcast_to_all(bot: Bot, text: str | dict) -> tuple[int, int]:
     user_ids = await database.get_all_user_ids()
     langs = await database.get_user_languages(user_ids) if isinstance(text, dict) else {}
     sent = failed = 0
+    import bot_discount
+    footers: dict[str, str] = {}
     for uid in user_ids:
         lang = langs.get(uid, "uz")
         body = text.get(lang, text.get("uz")) if isinstance(text, dict) else text
         if body is None:
             continue
+        # "Bot orqali buyurtma qilib, 10% chegirma" under every tip while it
+        # is on — once per language, not a DB read per recipient.
+        if lang not in footers:
+            footers[lang] = await bot_discount.footer(lang)
+        body += footers[lang]
         markup = shop_button(lang)
         try:
             await bot.send_message(

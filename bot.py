@@ -45,8 +45,11 @@ from ai_sales import router as ai_sales_router
 from abandoned_cart import router as abandoned_cart_router
 from retention import router as retention_router
 from keto_explainer import router as keto_explainer_router
+from bot_discount import router as bot_discount_router
+from bot_discount_campaign import router as bot_discount_campaign_router
 from stock_alerts import router as stock_alerts_router
 from referral_stats import router as referral_stats_router
+from referral_program import router as referral_program_router
 from retention_stats import router as retention_stats_router
 from review_stats import router as review_stats_router
 
@@ -58,12 +61,20 @@ async def _register_commands(bot: Bot, logger) -> None:
     has never seen (an admin who never messaged it, a blogger who hasn't
     started it yet) makes Telegram reject that one scope, which must not stop
     the others — the default list is what matters most."""
-    from aiogram.types import BotCommandScopeDefault, BotCommandScopeChat
+    from aiogram.types import (BotCommandScopeAllChatAdministrators, BotCommandScopeAllGroupChats,
+                               BotCommandScopeAllPrivateChats, BotCommandScopeChat,
+                               BotCommandScopeDefault)
     from keyboards import BUYER_COMMANDS, ADMIN_COMMANDS, BLOGGER_COMMAND
 
+    # Private chats only (owner, 2026-10-04): a "/" menu in a group put the
+    # shop's buttons in front of every member. The default scope is emptied
+    # too, because groups fall back to it when they have no list of their own.
     try:
-        await bot.set_my_commands(BUYER_COMMANDS, scope=BotCommandScopeDefault())
-        logger.info("Bot commands registered (%d for everyone)", len(BUYER_COMMANDS))
+        await bot.set_my_commands(BUYER_COMMANDS, scope=BotCommandScopeAllPrivateChats())
+        for scope in (BotCommandScopeDefault(), BotCommandScopeAllGroupChats(),
+                      BotCommandScopeAllChatAdministrators()):
+            await bot.delete_my_commands(scope=scope)
+        logger.info("Bot commands registered (%d for private chats, none in groups)", len(BUYER_COMMANDS))
     except Exception:
         logger.exception("Failed to set default bot commands")
 
@@ -137,6 +148,13 @@ async def main():
     dp = Dispatcher(storage=storage)
     dp.update.outer_middleware(admin_mood.CurrentUserMiddleware())
 
+    # In groups the bot is not a menu: members' commands get no reply and
+    # its buttons answer only admins (owner, 2026-10-04) — see group_quiet.py.
+    from group_quiet import GroupQuietMiddleware
+    quiet_mw = GroupQuietMiddleware()
+    dp.message.outer_middleware(quiet_mw)
+    dp.callback_query.outer_middleware(quiet_mw)
+
     # Channel-subscription gate — must run before activity logging so a
     # blocked (not-yet-subscribed) attempt never counts as real engagement.
     gate_mw = SubscriptionGateMiddleware()
@@ -200,6 +218,10 @@ async def main():
     dp.include_router(webapp_data_router)
     dp.include_router(start_router)
     dp.include_router(broadcast_admin_router)
+    # 10% chegirma — admin-only /chegirma* commands, high for the same reason
+    # as broadcast_admin: they must win over any FSM state an admin is in.
+    dp.include_router(bot_discount_router)
+    dp.include_router(bot_discount_campaign_router)
     # State-filtered text steps (qty / product search) must beat the catalog
     # search and support-relay catch-alls below.
     dp.include_router(order_edit_router)
@@ -215,6 +237,7 @@ async def main():
     dp.include_router(meta_ads_router)
     dp.include_router(ad_sources_router)
     dp.include_router(referral_stats_router)
+    dp.include_router(referral_program_router)
     dp.include_router(retention_stats_router)
     dp.include_router(review_stats_router)
     dp.include_router(search_router)
@@ -324,6 +347,15 @@ async def main():
     from keto_explainer import scheduler_loop as keto_explainer_loop
     keto_explainer_task = asyncio.create_task(keto_explainer_loop(bot))
 
+    # One-off, from the deploy on: two warm teasers 2 h apart, then the 10%
+    # bot-order discount is switched on and announced (bot_discount_campaign.py).
+    from bot_discount_campaign import scheduler_loop as bot_discount_campaign_loop
+    bot_discount_campaign_task = asyncio.create_task(bot_discount_campaign_loop(bot))
+    # Once, by day: which products the 10% can't fully apply to without
+    # selling under cost, and which have no cost price at all (bot_discount.py).
+    from bot_discount import margin_report_once
+    bot_discount_margin_task = asyncio.create_task(margin_report_once(bot))
+
     # Ombor ogohlantirishlari — every admin hears when a product runs low (<5)
     # or out, each time it reaches that level, from any code path.
     from stock_alerts import scheduler_loop as stock_alerts_loop
@@ -340,6 +372,11 @@ async def main():
 
     from release_notes import scheduler_loop as release_notes_loop
     release_notes_task = asyncio.create_task(release_notes_loop(bot))
+
+    # One-off channel post: the all-time top 20 (owner, 2026-10-04), sent
+    # once right after this deploy — see top20_post.py.
+    from top20_post import scheduler_loop as top20_loop
+    top20_task = asyncio.create_task(top20_loop(bot))
 
     # Start polling
     logger.info("Bot started! Press Ctrl+C to stop.")
@@ -358,6 +395,8 @@ async def main():
         cart_reminder_task.cancel()
         retention_task.cancel()
         keto_explainer_task.cancel()
+        bot_discount_campaign_task.cancel()
+        bot_discount_margin_task.cancel()
         stock_alerts_task.cancel()
         product_of_day_task.cancel()
         channel_posts_task.cancel()

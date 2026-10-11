@@ -36,6 +36,9 @@ ADMIN_COMMANDS = [
     BotCommand(command="sharhlar", description="⭐ Sharhlar va baholar"),
     BotCommand(command="savat_eslatma", description="🛒 Tashlab ketilgan savat eslatmalari"),
     BotCommand(command="qaytarish", description="🔁 Qayta sotuv xabarlari (tugash, sovg'a, sog'indik)"),
+    BotCommand(command="chegirma", description="🎁 Bot orqali buyurtmaga 10% chegirma — holat"),
+    BotCommand(command="chegirma_korish", description="🎁 10% chegirma e'lonlari ko'rinishi"),
+    BotCommand(command="chegirma_marja", description="🛡 10% chegirma: marjasi kam va tannarxi yo'q mahsulotlar"),
     BotCommand(command="sovga", description="🎁 Sovg'a kampaniyasi (Eritritol)"),
     BotCommand(command="sovga_elon", description="🎉 Sovg'a e'loni ko'rinishi (3 tilda)"),
     BotCommand(command="ombor", description="📦 Tugagan va kam qolgan mahsulotlar"),
@@ -129,6 +132,8 @@ def main_menu_keyboard(lang: str, is_admin: bool = False) -> InlineKeyboardMarku
             # Keto balance/level — one place for everything personal.
             InlineKeyboardButton(text=get_text("btn_kabinetim", lang), callback_data="kabinetim"),
         ],
+        # Mijozdan mijozga referal (referral_program.py)
+        [InlineKeyboardButton(text=get_text("btn_free_buy", lang), callback_data="free_buy")],
         [InlineKeyboardButton(text=get_text("btn_delivery", lang), callback_data="delivery_zones")],
         # Language switch now lives inside the Qo'llanma (Help) screen, so the
         # main menu shows a single full-width Help entry here.

@@ -261,3 +261,33 @@ class OneGiftPerOrderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoPressureNoNamesTest(unittest.TestCase):
+    """Owner, 2026-10-04: reminders must not manipulate, and must not address
+    the buyer by name."""
+    PRESSURE = ("сгорит", "tugab qolmasidan", "saqlanmoqda", "yarim yo'lda", "отложены для вас",
+                "пока товары есть", "на полпути", "faqat bugun", "shoshiling", "успейте")
+
+    def test_every_retention_kind(self):
+        offer = {"id": 7, "kind": "second_checkin", "expires_at": NOW + timedelta(days=5)}
+        gift = {"name": "Eritritol 100gr", "name_ru": "Эритрит 100г", "quantity": 3}
+        plans = [{"kind": "second_checkin", "days": 4, "order_id": 1},
+                 {"kind": "second_lastcall", "days_left": 2, "order_id": 1},
+                 {"kind": "winback_30", "days": 31, "order_id": 1},
+                 {"kind": "winback_60", "days": 62, "order_id": 1},
+                 {"kind": "winback_90", "days": 91, "order_id": 1},
+                 retention.plan_for_user(1, [order(1, 60, KOKOS), order(2, 30, KOKOS)], NOW, ctx())]
+        for plan in plans:
+            for lang in ("uz", "uz_cyr", "ru"):
+                text = retention.build_text(dict(plan, first_name="Aziz"), lang, gift=gift, offer=offer,
+                                            also=None, quick_ready=True)
+                with self.subTest(kind=plan["kind"], lang=lang):
+                    self.assertNotIn("Aziz", text)
+                    self.assertNotIn("Азиз", text)
+                    for word in self.PRESSURE:
+                        self.assertNotIn(word, text.lower())
+                    # a title still starts with a capital letter after the emoji
+                    title = re.sub(r"<[^>]+>", "", text.split("\n")[0])
+                    first = next(ch for ch in title if ch.isalpha())
+                    self.assertTrue(first.isupper(), title)

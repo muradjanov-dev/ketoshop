@@ -2703,6 +2703,234 @@
     }
     .organic-leaves { display: none; }
   }
+
+  /* ── Features that landed on master while the redesign was in review,
+     drawn in the Quyosh look. Behaviour is master's: the 10% bot-order
+     card, the full-screen product screen with its big "← Orqaga"
+     (2026-10-02 / 10-04), and today's recipe at the very top (10-08). */
+
+  /* 10% for ordering through the bot — the green twin of the aksiya ticket. */
+  .promo-banner.bot-discount-banner {
+    margin-top: 4px;
+    background: linear-gradient(115deg, #2FA35A 0%, #13AE96 100%);
+  }
+  .promo-banner.bot-discount-banner .pb-title { white-space: normal; }
+
+  /* Product screen: full height, photo shown whole (contain), nothing
+     cropped; the bottom-sheet look stays for the other sheets. */
+  #detail-modal { align-items: stretch; }
+  #detail-modal .modal {
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    animation: pageIn .38s var(--ease);
+  }
+  #detail-modal .modal-header {
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    padding-top: calc(14px + env(safe-area-inset-top, 0px));
+  }
+  #detail-modal .modal-header::before { display: none; }
+  #detail-modal .modal-header h2 { order: 3; flex: 1 1 100%; margin: 0; font-size: 19px; }
+  #detail-modal .modal-close { display: none; }
+  #detail-modal .detail-fav-btn { order: 2; }
+  /* flex-shrink:0 — the photo box clips (overflow:hidden), so as a flex
+     item it would otherwise shrink to nothing inside the fixed-height screen. */
+  #detail-modal #detail-photo-container { flex-shrink: 0; background: var(--surface); }
+  #detail-modal .detail-footer { flex-shrink: 0; }
+  #detail-modal .modal img.detail-img,
+  #detail-modal .modal video.detail-video,
+  #detail-modal .detail-media-carousel .media-slide img,
+  #detail-modal .detail-media-carousel .media-slide video {
+    width: 100%;
+    height: auto;
+    aspect-ratio: auto;
+    max-height: 62vh;
+    max-height: 62dvh;
+    object-fit: contain;
+  }
+  #detail-modal .detail-body { flex: 1 0 auto; }
+  #detail-modal .detail-desc { opacity: .9; overflow: visible; max-height: none; }
+  .detail-back-btn {
+    order: 1;
+    margin-right: auto;
+    min-height: 44px;
+    padding: 0 18px 0 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    border: 2px solid var(--btn);
+    background: var(--surface);
+    color: var(--btn);
+    font: 700 16px var(--font-body);
+    cursor: pointer;
+    transition: transform .3s var(--ease-spring), background-color .2s, color .2s;
+  }
+  .detail-back-btn:active { transform: scale(.95); background: var(--btn); color: #fff; }
+  /* Recipe sheet keeps its small × too: back on the left, × on the right. */
+  #recipe-modal .detail-back-btn { order: 0; }
+  #recipe-modal .modal-header h2:empty { display: none; }
+
+  /* Today's recipe card, first thing on the home page. */
+  .recipe-hero {
+    margin: 10px 14px 6px;
+    overflow: hidden;
+    cursor: pointer;
+    border-radius: 32px 40px 28px 44px / 38px 30px 42px 32px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-2);
+    transition: transform .35s var(--ease-spring);
+  }
+  .recipe-hero:active { transform: scale(.985); }
+  .recipe-hero .rh-photo { position: relative; }
+  .recipe-hero .rh-photo img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+  .recipe-hero .rh-badge {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    padding: 8px 14px;
+    border-radius: var(--blob-b);
+    background: var(--c-sun);
+    color: var(--on-pop);
+    font: 800 11.5px var(--font-display);
+    letter-spacing: .02em;
+    transform: rotate(-4deg);
+    box-shadow: 0 8px 18px -8px rgba(80,40,0,.55);
+  }
+  .recipe-hero .rh-body { padding: 14px 16px 16px; }
+  .recipe-hero .rh-title { font: 800 19px/1.2 var(--font-display); letter-spacing: -.02em; text-wrap: balance; color: var(--text); }
+  .recipe-hero .rh-meta, .recipe-modal .rm-meta {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .rh-meta span, .rm-meta span { padding: 5px 10px; border-radius: 999px; background: var(--t-leaf); }
+  .rh-meta span:nth-child(2), .rm-meta span:nth-child(2) { background: var(--t-sun); }
+  .rh-meta span:nth-child(3), .rm-meta span:nth-child(3) { background: var(--t-berry); }
+  .rh-meta span:nth-child(4), .rm-meta span:nth-child(4) { background: var(--t-sky); }
+  .recipe-hero .rh-cta {
+    margin-top: 14px;
+    height: 50px;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #46C774, #1D8446);
+    color: #fff;
+    font-size: 14.5px;
+    font-weight: 800;
+    box-shadow: 0 12px 24px -14px #1D8446;
+  }
+
+  /* Recipe sheet */
+  .recipe-modal .rm-img {
+    display: block;
+    width: calc(100% - 28px);
+    margin: 0 14px;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: 30px 40px 26px 44px / 38px 28px 42px 30px;
+  }
+  .recipe-modal .rm-ai { padding: 8px 18px 0; font-size: 11px; color: var(--hint); }
+  .recipe-modal .rm-pad { padding: 10px 16px 28px; }
+  .recipe-modal .rm-title { font: 800 22px/1.2 var(--font-display); letter-spacing: -.02em; text-wrap: balance; color: var(--text); }
+  .recipe-modal .rm-intro { margin: 8px 0 0; font-size: 14.5px; line-height: 1.6; opacity: .9; color: var(--text); }
+  .recipe-modal .rm-note { margin-top: 6px; font-size: 11px; color: var(--hint); }
+  .recipe-modal h3 { margin: 24px 0 12px; font: 800 16px var(--font-display); letter-spacing: -.01em; color: var(--text); }
+  .rm-ings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .rm-ing {
+    padding: 12px 14px;
+    border-radius: 18px 24px 16px 26px / 22px 16px 24px 18px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+  }
+  .rm-ing-main { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; color: var(--text); }
+  .rm-ing-main b { font-weight: 700; }
+  .rm-amt { color: var(--hint); font-weight: 600; white-space: nowrap; }
+  .rm-home { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--hint); }
+  .rm-prod {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border-radius: 16px 20px 14px 22px / 18px 14px 20px 16px;
+    background: var(--t-sun);
+    cursor: pointer;
+  }
+  .rm-prod img, .rm-prod .rm-noimg {
+    width: 46px;
+    height: 46px;
+    flex-shrink: 0;
+    border-radius: var(--blob-d);
+    object-fit: cover;
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .rm-prod-name { font-size: 13px; font-weight: 700; line-height: 1.3; color: var(--text); }
+  .rm-prod-price { font-size: 13px; font-weight: 800; color: var(--link); }
+  .rm-prod-out { font-size: 12px; font-weight: 700; color: var(--berry); }
+  .rm-why { margin-top: 6px; font-size: 12px; line-height: 1.45; color: var(--hint); }
+  .rm-add {
+    width: 100%;
+    margin-top: 14px;
+    padding: 14px 16px;
+    border: 0;
+    border-radius: 22px 26px 20px 28px / 26px 20px 28px 22px;
+    background: linear-gradient(135deg, #46C774, #1D8446);
+    color: #fff;
+    font: 800 16px var(--font-body);
+    cursor: pointer;
+    box-shadow: 0 14px 26px -14px #1D8446;
+    transition: transform .3s var(--ease-spring);
+  }
+  .rm-add:active { transform: scale(.97); }
+  .rm-add small { display: block; margin-top: 3px; font-size: 11.5px; font-weight: 600; opacity: .9; }
+  .rm-add:disabled { opacity: .6; }
+  .rm-steps { margin: 0; padding: 0; list-style: none; counter-reset: step; display: flex; flex-direction: column; gap: 12px; }
+  .rm-steps li { position: relative; padding-left: 42px; font-size: 14px; line-height: 1.6; color: var(--text); }
+  .rm-steps li::before {
+    counter-increment: step;
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: -1px;
+    width: 30px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--blob-c);
+    background: var(--c-orange);
+    color: #fff;
+    font: 800 13px var(--font-display);
+  }
+  .rm-steps li:nth-child(4n+2)::before { background: var(--c-leaf); }
+  .rm-steps li:nth-child(4n+3)::before { background: var(--c-berry); }
+  .rm-steps li:nth-child(4n)::before { background: var(--c-lilac); }
+  .rm-tip {
+    margin-top: 18px;
+    padding: 14px 16px;
+    border-radius: 20px 26px 18px 28px / 24px 18px 26px 20px;
+    background: var(--pop-soft);
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text);
+  }
+  .rm-next { margin-top: 18px; font-size: 12px; color: var(--hint); text-align: center; }
 </style>
 </head>
 <body>
@@ -2715,7 +2943,20 @@
 <div class="page active" id="page-home">
   <!-- Every product, auto-scrolling, at the very top (owner, 2026-10-02:
        "barcha mahsulotlarni saytda eng tepada"). Filled by renderHomePage. -->
+  <!-- A new recipe every 2 days, first thing on the page (owner, 2026-10-08:
+       "retseptni eng yuqoriga qo'shishimiz kerak"). Filled by loadRecipes. -->
+  <div id="home-recipe"></div>
   <div id="home-top-carousel"></div>
+  <!-- 10% for ordering through the bot (bot_discount.py) — right under the
+       carousel, shown only while the discount is on. -->
+  <button class="promo-banner bot-discount-banner" id="home-bot-discount" style="display:none" type="button" onclick="switchPage('catalog')">
+    <span class="pb-icon">🎁</span>
+    <span class="pb-body">
+      <span class="pb-title" id="home-bot-discount-title"></span>
+      <span class="pb-sub" id="home-bot-discount-sub"></span>
+    </span>
+    <span class="pb-arrow">›</span>
+  </button>
   <div class="home-hero">
     <!-- Decorative rotating brand stamp; the headline wraps around it. -->
     <div class="hero-stamp" aria-hidden="true">
@@ -2791,6 +3032,8 @@
       <span id="cart-keto-toggle-text"></span>
       <input type="checkbox" id="cart-keto-toggle">
     </label>
+    <div class="cart-discount-line" id="cart-bot-discount-line" style="display:none"></div>
+    <div id="cart-bot-discount-note" style="display:none;font-size:12px;opacity:.8;line-height:1.4;margin:2px 0 8px"></div>
     <div class="cart-discount-line" id="cart-discount-line" style="display:none"></div>
     <div class="cart-total-row">
       <span id="cart-total-label"></span>
@@ -2812,10 +3055,16 @@
 
     <div class="checkout-form">
       <div class="form-group">
+        <label>Buyurtmani olish usuli</label>
+        <div class="delivery-options-list" id="checkout-mode-options">
+          <button type="button" class="del-opt active" data-mode="delivery">🚚 Yetkazib berish</button>
+        </div>
+      </div>
+      <div class="form-group">
         <label id="lbl-phone"></label>
         <input type="tel" id="inp-phone" placeholder="+998901234567" autocomplete="tel">
       </div>
-      <div class="form-group">
+      <div class="form-group" id="customer-location-group">
         <label id="lbl-location"></label>
         <button class="location-btn" id="btn-get-location" onclick="getLocation()">
           <span id="location-icon">📍</span>
@@ -2832,6 +3081,7 @@
         <input type="hidden" id="inp-lat" value="">
         <input type="hidden" id="inp-lng" value="">
       </div>
+      <div class="form-group" id="pickup-instructions" style="display:none"></div>
       <div class="form-group" id="delivery-group" style="display:none">
         <label id="lbl-delivery"></label>
         <div class="delivery-options-list" id="delivery-options"></div>
@@ -2864,6 +3114,7 @@
     <div class="emoji">✅</div>
     <div id="order-success-text" style="font-size:16px;font-weight:600;color:var(--text)"></div>
     <div id="order-success-detail" style="margin-top:8px"></div>
+    <div id="order-success-pickup" style="margin-top:12px;display:none"></div>
     <div id="order-success-keto" style="margin-top:14px;font-size:14px;font-weight:600;display:none"></div>
     <button class="checkout-submit-btn" style="margin-top:24px;width:80%" onclick="switchPage('home')" id="btn-continue-shopping"></button>
   </div>
@@ -2958,9 +3209,23 @@
 </div>
 
 <!-- ===== PRODUCT DETAIL MODAL ===== -->
+<!-- Recipe sheet. Before detail-modal in the DOM on purpose: a product tapped
+     inside a recipe opens its detail ON TOP of the recipe. -->
+<div class="modal-overlay" id="recipe-modal">
+  <div class="modal recipe-modal">
+    <div class="modal-header">
+      <button class="detail-back-btn" id="recipe-back-btn" type="button" onclick="closeRecipe()">← Orqaga</button>
+      <h2 id="recipe-modal-title"></h2>
+      <button class="modal-close" onclick="closeRecipe()">&times;</button>
+    </div>
+    <div id="recipe-body"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="detail-modal">
   <div class="modal">
     <div class="modal-header">
+      <button class="detail-back-btn" id="detail-back-btn" type="button" onclick="closeDetail()">← Orqaga</button>
       <h2 id="detail-name"></h2>
       <button class="detail-fav-btn" id="detail-fav-btn" onclick="toggleFavFromDetail()">♡</button>
       <button class="modal-close" onclick="closeDetail()">&times;</button>
@@ -3041,6 +3306,7 @@
   </div>
 </nav>
 
+<script src="/static/pickup_checkout.js"></script>
 <script>
 const tg = window.Telegram.WebApp;
 tg.ready();
@@ -3234,6 +3500,7 @@ const L = {
     currency: "so'm",
     perUnit: '/{unit}',
     tipLabel: 'Siz uchun maslahat',
+    backBtn: 'Orqaga',
     rating: '{rating}/5 ({count} ta sharh)',
     seller: 'Sotuvchi: {name}',
     reviewsTitle: '💬 Sharhlar',
@@ -3393,6 +3660,7 @@ const L = {
     currency: 'сум',
     perUnit: '/{unit}',
     tipLabel: 'Совет для вас',
+    backBtn: 'Назад',
     rating: '{rating}/5 ({count} отзывов)',
     seller: 'Продавец: {name}',
     reviewsTitle: '💬 Отзывы',
@@ -3683,6 +3951,9 @@ let totalPages = 1;
 let currentProduct = null;
 let qty = 1;
 let cartData = { items: [], total: 0 };
+let pickupConfig = {enabled:false,address:'',map_url:'',fee:0};
+let pickupMode = false;
+let pickupConfigLoaded = false;
 // Keto-as-discount at checkout — off by default (owner's admin-panel toggle).
 // keto.enabled/balance come from /api/keto/status; keto.redeem is what the
 // buyer chose to apply (0 unless they opt in via the checkout UI).
@@ -3727,6 +3998,7 @@ function onBackPressed() {
   // Highest-priority overlays win.
   if (_isModalOpen('map-modal')) { closeMapPicker(); return; }
   if (_isModalOpen('detail-modal')) { closeDetail(); return; }
+  if (_isModalOpen('recipe-modal')) { closeRecipe(); return; }
   // Inside a game, back returns to the games menu first.
   if (activePage === 'games' && gameState) { renderGamesPage(); return; }
   // Then page-level: anywhere except home → go home. (Home itself has
@@ -3741,6 +4013,7 @@ function updateBackButton() {
   const shouldShow = (
     _isModalOpen('map-modal') ||
     _isModalOpen('detail-modal') ||
+    _isModalOpen('recipe-modal') ||
     (activePage && activePage !== 'home')
   );
   if (shouldShow) tg.BackButton.show();
@@ -4376,6 +4649,19 @@ async function loadPromo() {
   }
   renderPromoBanners();
   renderPerks();
+  renderBotDiscountBanner();
+}
+
+// "Bot orqali buyurtmaga 10% chegirma" card on the home page. Worded and
+// translated server-side; absent (null) while the discount is off.
+function renderBotDiscountBanner() {
+  const el = document.getElementById('home-bot-discount');
+  if (!el) return;
+  const b = promo && promo.perks && promo.perks.bot_discount_banner;
+  if (!b) { el.style.display = 'none'; return; }
+  document.getElementById('home-bot-discount-title').textContent = b.title;
+  document.getElementById('home-bot-discount-sub').textContent = b.sub;
+  el.style.display = 'flex';
 }
 
 // The surprise pack (400 000) and free Tashkent delivery (800 000). The
@@ -4383,8 +4669,11 @@ async function loadPromo() {
 // live in config.py, so the client never restates them.
 function renderPerks() {
   const perks = promo && promo.perks;
+  // "Bot orqali buyurtma qilib, istalgan summaga 10% chegirma" leads the
+  // strip while the discount is on (bot_discount.py); "" when it's off.
   const strip = perks
-    ? '<span>' + escapeHtml(perks.mystery) + '</span><span>' + escapeHtml(perks.delivery) + '</span>'
+    ? (perks.bot_discount ? '<span>' + escapeHtml(perks.bot_discount) + '</span>' : '') +
+      '<span>' + escapeHtml(perks.mystery) + '</span><span>' + escapeHtml(perks.delivery) + '</span>'
     : '';
   ['home-perks', 'catalog-perks', 'cart-perks', 'detail-perks'].forEach(id => {
     const el = document.getElementById(id);
@@ -4485,7 +4774,119 @@ function ketoBadgeHtml(amount) {
 }
 
 // ===== HOME PAGE =====
+// ===== RETSEPTLAR =====
+// A new recipe every 2 days at the very top of home (recipes.py). Words and
+// labels come from the server in the buyer's language; products are linked
+// to the live catalogue, so prices and stock are always current.
+let recipesData = null;
+
+function recipeMetaHtml(r, L) {
+  const parts = ['⏱ ' + L.minutes.replace('{n}', r.minutes) + (r.rest ? ' ' + r.rest : ''),
+                 '🍽 ' + r.servings];
+  if (r.per_serving) {
+    parts.push(L.carbs.replace('{n}', r.per_serving.carbs));
+    parts.push(L.kcal.replace('{n}', r.per_serving.kcal));
+  }
+  return parts.map(p => '<span>' + escapeHtml(p) + '</span>').join('');
+}
+
+async function loadRecipes() {
+  const slot = document.getElementById('home-recipe');
+  if (!slot) return;
+  try {
+    recipesData = await api('/api/recipes');
+  } catch (e) {
+    slot.innerHTML = '';
+    return;
+  }
+  const r = recipesData.current, L = recipesData.labels;
+  slot.innerHTML =
+    '<div class="recipe-hero" onclick="openRecipe()">' +
+      '<div class="rh-photo"><img src="' + r.image_url + '" alt="" loading="eager">' +
+        '<span class="rh-badge">' + escapeHtml(L.badge) + '</span></div>' +
+      '<div class="rh-body">' +
+        '<div class="rh-title">' + escapeHtml(r.title) + '</div>' +
+        '<div class="rh-meta">' + recipeMetaHtml(r, L) + '</div>' +
+        '<div class="rh-cta"><span>' + escapeHtml(L.open) + '</span><span>›</span></div>' +
+      '</div>' +
+    '</div>';
+}
+
+// Only today's recipe is ever shown — no archive (owner, 2026-10-08:
+// "har kuni faqat 1 ta retsept ko'rsat ... hammasini emas").
+function openRecipe() {
+  if (!recipesData) return;
+  renderRecipe(recipesData.current);
+  try { tg.expand(); } catch (_) {}
+  document.getElementById('recipe-modal').classList.add('show');
+  updateBackButton();
+}
+
+function renderRecipe(r) {
+  const L = recipesData.labels;
+  document.getElementById('recipe-modal-title').textContent = '';
+  document.getElementById('recipe-back-btn').textContent = L.back;
+  const ings = r.ingredients.map(i => {
+    let html = '<li class="rm-ing"><div class="rm-ing-main"><b>' + escapeHtml(i.name) +
+      (i.product === undefined ? '<span class="rm-home">' + escapeHtml(L.from_home) + '</span>' : '') +
+      '</b><span class="rm-amt">' + escapeHtml(i.amount) + '</span></div>';
+    if (i.product) {
+      const p = i.product;
+      const img = p.photo_url
+        ? '<img src="' + p.photo_url + '" alt="" loading="lazy" onerror="this.outerHTML=\'<div class=rm-noimg>📦</div>\'">'
+        : '<div class="rm-noimg">📦</div>';
+      const price = p.out_of_stock
+        ? '<div class="rm-prod-out">' + escapeHtml(L.out_of_stock) + '</div>'
+        : '<div class="rm-prod-price">' + formatPrice(p.price) + ' UZS</div>';
+      html += '<div class="rm-prod" onclick="openDetail(' + p.id + ')">' + img +
+        '<div><div class="rm-prod-name">' + escapeHtml(p.name) + '</div>' + price + '</div></div>';
+    }
+    if (i.why) html += '<div class="rm-why">' + escapeHtml(i.why) + '</div>';
+    return html + '</li>';
+  }).join('');
+  document.getElementById('recipe-body').innerHTML =
+    '<img class="rm-img" src="' + r.image_url + '" alt="">' +
+    '<div class="rm-ai">' + escapeHtml(r.ai_note) + '</div>' +
+    '<div class="rm-pad">' +
+      '<div class="rm-title">' + escapeHtml(r.title) + '</div>' +
+      '<p class="rm-intro">' + escapeHtml(r.intro) + '</p>' +
+      '<div class="rm-meta">' + recipeMetaHtml(r, L) + '</div>' +
+      '<div class="rm-note">' + escapeHtml(L.per_serving) + '</div>' +
+      '<h3>' + escapeHtml(L.ingredients) + '</h3><ul class="rm-ings">' + ings + '</ul>' +
+      '<button class="rm-add" type="button" onclick="recipeToCart(\'' + r.slug + '\', this)">' +
+        escapeHtml(L.add_all) + '<small>' + escapeHtml(L.add_all_sub) + '</small></button>' +
+      '<h3>' + escapeHtml(L.steps) + '</h3><ol class="rm-steps">' +
+        r.steps.map(s => '<li>' + escapeHtml(s) + '</li>').join('') + '</ol>' +
+      (r.tip ? '<div class="rm-tip"><b>' + escapeHtml(L.tip) + '</b><br>' + escapeHtml(r.tip) + '</div>' : '') +
+      '<div class="rm-next">' + escapeHtml(L.next.replace('{date}', recipesData.next_at)) + '</div>' +
+    '</div>';
+  document.querySelector('#recipe-modal .modal').scrollTop = 0;
+}
+
+async function recipeToCart(slug, btn) {
+  const L = recipesData.labels;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api('/api/recipes/' + encodeURIComponent(slug) + '/cart', { method: 'POST' });
+    let msg = res.added.length ? L.added.replace('{n}', res.added.length) : L.already;
+    if (res.missing.length) msg += ' · ' + L.missing.replace('{names}', res.missing.join(', '));
+    showToast(msg, false, 3500);
+    try { tg.HapticFeedback.notificationOccurred('success'); } catch (_) {}
+    await loadCart();
+  } catch (e) {
+    showToast(t.errorLoad, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function closeRecipe() {
+  document.getElementById('recipe-modal').classList.remove('show');
+  updateBackButton();
+}
+
 async function renderHomePage() {
+  loadRecipes();
   const container = document.getElementById('home-sections');
   const topSlot = document.getElementById('home-top-carousel');
   const loading = document.getElementById('home-loading');
@@ -4685,7 +5086,9 @@ function launchConfetti(container) {
 function createCarouselCard(p) {
   const card = document.createElement('div');
   card.className = 'carousel-card';
-  card.onclick = () => openDetail(p.id);
+  // A set opens /api/set/<id>; without the flag the home row asked for
+  // /api/product/<id> and a tapped set only showed "Yuklab bo'lmadi".
+  card.onclick = () => openDetail(p.id, p.is_set);
 
   const isFav = !!favorites[p.id];
   let imgInner;
@@ -4703,7 +5106,7 @@ function createCarouselCard(p) {
       imgInner +
       '<button class="card-fav-btn" data-id="' + p.id + '">' + (isFav ? '❤️' : '🤍') + '</button>' +
     '</div>' +
-    '<div class="card-name">' + escapeHtml(p.name) + '</div>' +
+    '<div class="card-name">' + (p.is_set ? '🎁 ' : '') + escapeHtml(p.name) + '</div>' +
     '<div class="card-price">' + priceHtml(p) + '</div>' +
     savingHtml(p) +
     bonusBadgeHtml(p) +
@@ -4969,6 +5372,9 @@ document.getElementById('catalog-search').addEventListener('input', function(e) 
 
 // ===== PRODUCT DETAIL =====
 async function openDetail(productId, isSet = false) {
+  // The product opens over the whole window — make sure the Mini App
+  // itself is expanded too, even if the buyer had collapsed it.
+  try { tg.expand(); } catch (_) {}
   try {
     const url = isSet ? '/api/set/' + productId : '/api/product/' + productId;
     const p = await api(url);
@@ -4976,6 +5382,7 @@ async function openDetail(productId, isSet = false) {
     qty = 1;
 
     document.getElementById('detail-name').textContent = p.name;
+    document.getElementById('detail-back-btn').textContent = '← ' + (t.backBtn || 'Orqaga');
     // Personal advice (product_tips) — first thing under the name.
     const tipEl = document.getElementById('detail-tip');
     if (p.tip) {
@@ -5525,8 +5932,40 @@ function renderCartPage() {
 // once a delivery method is picked on checkout, so the cap here is just the
 // product subtotal (checkout's own redeem UI re-clamps against the final
 // total once the fee is known).
+// 10% off for ordering through the bot by yourself (bot_discount.py) —
+// worked out server-side per cart, 0 when it doesn't apply (admins, off).
+function botDiscountAmount() {
+  return (cartData.bot_discount && cartData.bot_discount.amount) || 0;
+}
+
+// What actually comes off at checkout. An admin's cart shows the customer's
+// −10% (`preview`) but their own order is full price (owner, 2026-10-08).
+function botCheckoutOff() {
+  const b = cartData.bot_discount;
+  return (b && !b.preview && b.amount) || 0;
+}
+
+function botDiscountLineHtml() {
+  const off = botDiscountAmount();
+  if (!off) return '';
+  return '<span>' + escapeHtml(cartData.bot_discount.label) + '</span><span>-' + formatPrice(off) + ' UZS</span>';
+}
+
 function renderCartTotal() {
-  const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(cartData.total)) : 0;
+  const botOff = botDiscountAmount();
+  const botLine = document.getElementById('cart-bot-discount-line');
+  if (botLine) {
+    botLine.innerHTML = botDiscountLineHtml();
+    botLine.style.display = botOff ? 'flex' : 'none';
+  }
+  const botNote = document.getElementById('cart-bot-discount-note');
+  if (botNote) {
+    const note = (cartData.bot_discount && cartData.bot_discount.note) || '';
+    botNote.textContent = note;
+    botNote.style.display = note ? 'block' : 'none';
+  }
+  const payable = Math.max(0, cartData.total - botOff);
+  const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(cartData.total - botCheckoutOff())) : 0;
   const discountLine = document.getElementById('cart-discount-line');
   if (redeem > 0) {
     discountLine.innerHTML = '<span>' + t.ketoRedeemLine + '</span><span>-' + formatPrice(redeem) + ' UZS</span>';
@@ -5534,7 +5973,7 @@ function renderCartTotal() {
   } else {
     discountLine.style.display = 'none';
   }
-  document.getElementById('cart-total-value').textContent = formatPrice(Math.max(0, cartData.total - redeem)) + ' UZS';
+  document.getElementById('cart-total-value').textContent = formatPrice(Math.max(0, payable - redeem)) + ' UZS';
 }
 
 // "Pay with Keto" toggle on the cart page itself (owner request, 2026-08-12):
@@ -5569,7 +6008,7 @@ async function initCartKetoUI() {
   toggleText.innerHTML = ketoSwitchHtml(t.cartKetoLabel, keto.redeem || 0);
 
   toggle.onchange = () => {
-    keto.redeem = toggle.checked ? Math.min(keto.balance, Math.round(cartData.total)) : 0;
+    keto.redeem = toggle.checked ? Math.min(keto.balance, Math.round(cartData.total - botCheckoutOff())) : 0;
     toggleText.innerHTML = ketoSwitchHtml(t.cartKetoLabel, keto.redeem);
     renderCartTotal();
   };
@@ -5602,13 +6041,14 @@ function renderCheckoutPage() {
   document.getElementById('lbl-payment').textContent = t.lblPayment;
   document.getElementById('pay-cash').textContent = t.payCash;
   document.getElementById('pay-online').textContent = t.payOnline;
+  loadPickupConfig();
   // Re-render delivery options if a selection has been shown for this checkout
   const deliveryGroup = document.getElementById('delivery-group');
   if (deliveryGroup && deliveryGroup.style.display !== 'none') {
     const lat = parseFloat(document.getElementById('inp-lat').value);
     const lng = parseFloat(document.getElementById('inp-lng').value);
     if (!isNaN(lat) && !isNaN(lng)) {
-      const prev = document.querySelector('.del-opt.active')?.dataset.method;
+      const prev = document.querySelector('.del-opt[data-method].active')?.dataset.method;
       renderDeliveryOptions(isInTashkent(lat, lng));
       if (prev) {
         const restored = document.querySelector('.del-opt[data-method="' + prev + '"]');
@@ -5699,9 +6139,9 @@ async function initKetoRedeemUI() {
   toggle.disabled = false;
 
   function currentCap() {
-    const method = document.querySelector('.del-opt.active')?.dataset.method;
+    const method = pickupMode ? 'pickup' : document.querySelector('.del-opt[data-method].active')?.dataset.method;
     const fee = deliveryFee(method);
-    return Math.min(keto.balance, Math.round(cartData.total + fee));
+    return Math.min(keto.balance, Math.round(cartData.total - botCheckoutOff() + fee));
   }
 
   // One switch, no typing (owner, 2026-09-18): flipping it on spends as much
@@ -5948,10 +6388,52 @@ function confirmMapPick() {
   closeMapPicker();
 }
 
+function resetPickupSelection() {
+  pickupMode = false;
+  document.querySelectorAll('#checkout-mode-options [data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode==='delivery'));
+  const instructions = document.getElementById('pickup-instructions');
+  if (instructions) instructions.style.display = 'none';
+}
+
+function showCheckoutSuccess(result) {
+  document.getElementById('order-success-text').textContent = t.orderSuccess;
+  document.getElementById('order-success-detail').textContent =
+    t.orderSuccessDetail.replace('{id}', result.order_id);
+  document.getElementById('order-success-detail').style.whiteSpace = 'pre-line';
+  window.renderPickupSuccessDetails(document, result);
+  const ketoEl = document.getElementById('order-success-keto');
+  if (result.expected_keto > 0) {
+    ketoEl.innerHTML = t.orderSuccessKeto.replace('{amount}', formatPrice(result.expected_keto));
+    ketoEl.style.display = 'block';
+  } else {
+    ketoEl.style.display = 'none';
+  }
+  switchPage('order-success');
+}
+
+// A buyer who opened the shop without ever pressing START can't get a single
+// bot message: no copy of their cheque, no "order confirmed / on its way".
+// Ask Telegram for that permission before the order goes in. The client
+// answers by itself, without a popup, when the bot may already write. Always
+// resolves — a refusal or an old client must never block the order.
+function ensureBotCanWrite() {
+  const u = tg.initDataUnsafe && tg.initDataUnsafe.user;
+  if (!u || u.allows_write_to_pm || typeof tg.requestWriteAccess !== 'function') {
+    return Promise.resolve();
+  }
+  return new Promise(resolve => {
+    const timer = setTimeout(resolve, 30000);
+    const done = () => { clearTimeout(timer); resolve(); };
+    try { tg.requestWriteAccess(done); } catch (_) { done(); }  // unsupported / already asked
+  });
+}
+
 async function submitOrder() {
   const phone = document.getElementById('inp-phone').value.trim();
   const lat = document.getElementById('inp-lat').value;
   const lng = document.getElementById('inp-lng').value;
+  const modeState = window.ketoshopPickupState(pickupConfig.enabled, pickupMode, Boolean(lat && lng));
+  const isPickup = modeState.pickupSelected;
   const payMethod = document.querySelector('.pay-opt.active')?.dataset.method || 'cash';
 
   // Remove old errors
@@ -5966,7 +6448,7 @@ async function submitOrder() {
     document.getElementById('inp-phone').after(err);
     return;
   }
-  if (!lat || !lng) {
+  if (modeState.locationRequired && (!lat || !lng)) {
     const err = document.createElement('div');
     err.className = 'checkout-error';
     err.textContent = t.errorAddress;
@@ -5974,13 +6456,13 @@ async function submitOrder() {
     return;
   }
 
-  const deliveryMethod = document.querySelector('.del-opt.active')?.dataset.method;
-  if (!deliveryMethod) {
+  const deliveryMethod = modeState.deliveryMethod || document.querySelector('.del-opt[data-method].active')?.dataset.method;
+  if (!isPickup && !deliveryMethod) {
     showToast(t.errorDelivery, true);
     return;
   }
 
-  const address = '📍 ' + parseFloat(lat).toFixed(6) + ', ' + parseFloat(lng).toFixed(6);
+  const address = isPickup ? '' : ('📍 ' + parseFloat(lat).toFixed(6) + ', ' + parseFloat(lng).toFixed(6));
   // Optional human-readable address the buyer reviewed/corrected. Sent as
   // address_note so it renders as 📝 next to the coords for the courier.
   const addressNote = (document.getElementById('location-address')?.value || '').trim();
@@ -5989,14 +6471,15 @@ async function submitOrder() {
   btn.textContent = t.ordering;
 
   try {
+    await ensureBotCanWrite();
     const result = await api('/api/checkout', {
       method: 'POST',
       body: JSON.stringify({
         phone,
         address,
-        address_note: addressNote || null,
-        latitude: parseFloat(lat),
-        longitude: parseFloat(lng),
+        address_note: isPickup ? null : (addressNote || null),
+        latitude: isPickup ? null : parseFloat(lat),
+        longitude: isPickup ? null : parseFloat(lng),
         payment_method: payMethod,
         delivery_method: deliveryMethod,
         keto_redeem: keto.enabled ? (keto.redeem || 0) : 0,
@@ -6020,25 +6503,14 @@ async function submitOrder() {
     if (addrEl) addrEl.value = '';
     document.getElementById('delivery-group').style.display = 'none';
     document.getElementById('delivery-options').innerHTML = '';
-
     if (result.awaiting_cheque) {
       // Online payment — go to cheque-upload page directly inside the
       // Mini App instead of bouncing the buyer back to the bot chat.
       openChequePage(result);
     } else {
-      // Cash flow — show the standard success screen.
-      document.getElementById('order-success-text').textContent = t.orderSuccess;
-      document.getElementById('order-success-detail').textContent =
-        t.orderSuccessDetail.replace('{id}', result.order_id);
-      document.getElementById('order-success-detail').style.whiteSpace = 'pre-line';
-      const ketoEl = document.getElementById('order-success-keto');
-      if (result.expected_keto > 0) {
-        ketoEl.innerHTML = t.orderSuccessKeto.replace('{amount}', formatPrice(result.expected_keto));
-        ketoEl.style.display = 'block';
-      } else {
-        ketoEl.style.display = 'none';
-      }
-      switchPage('order-success');
+      // Cash flow — server returns the address/map snapshot used by the order.
+      showCheckoutSuccess(result);
+      resetPickupSelection();
     }
 
     if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
@@ -6079,12 +6551,16 @@ async function submitOrder() {
 }
 
 // ===== CHEQUE UPLOAD =====
-// No chequeOrderId: the order is only created on the server when the cheque
-// arrives, so we don't have an ID until /api/checkout/cheque returns success.
+// The order is only created on the server when the cheque arrives, so there
+// is no order ID up front. chequeOrderId is set only if the order got created
+// but Telegram refused the file — the retry then attaches to that same order
+// via /api/orders/{id}/cheque instead of placing a second one.
 let chequeFile = null;
+let chequeOrderId = null;
 
 function openChequePage(result) {
   chequeFile = null;
+  chequeOrderId = null;
 
   document.getElementById('cheque-title').textContent = t.chequeTitle;
   // The order doesn't exist yet — leave the #N line blank rather than
@@ -6177,7 +6653,8 @@ async function submitCheque() {
     // Deferred-order flow: the server reads pending checkout from FSM state
     // (set by /api/checkout) and creates the order + attaches the cheque in
     // one shot. No order_id in the URL because the order doesn't exist yet.
-    const res = await fetch('/api/checkout/cheque', {
+    const url = chequeOrderId ? '/api/orders/' + chequeOrderId + '/cheque' : '/api/checkout/cheque';
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': AUTH },  // no Content-Type — browser sets multipart boundary
       body: fd,
@@ -6185,6 +6662,7 @@ async function submitCheque() {
     if (!res.ok) {
       let body = null;
       try { body = await res.json(); } catch (_) {}
+      if (body && body.order_id) chequeOrderId = body.order_id;
       if (body && body.error === 'file_too_large') {
         showToast(t.chequeFileTooLarge, true);
       } else if (body && body.error === 'stock_gone') {
@@ -6208,10 +6686,18 @@ async function submitCheque() {
       submit.textContent = t.chequeSubmitBtn;
       return;
     }
+    const result = await res.json();
     showToast(t.chequeReceivedToast);
     if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-    // Land them on My Orders so they can see the new pending order.
-    switchPage('orders');
+    if (result.delivery_method === 'pickup') {
+      // Use the stored server-side deferred snapshot; the shop config may
+      // have changed since the buyer opened the cheque page.
+      showCheckoutSuccess(result);
+      resetPickupSelection();
+    } else {
+      // Land them on My Orders so they can see the new pending order.
+      switchPage('orders');
+    }
   } catch (e) {
     console.error('Cheque upload error:', e);
     showToast(t.chequeUploadError, true);
@@ -6220,13 +6706,22 @@ async function submitCheque() {
   }
 }
 
-function closeMiniAppForChat() {
+async function closeMiniAppForChat() {
   // Buyer chose to pay via the bot chat instead. /api/checkout already
   // stashed the pending order in FSM state (key: waiting_cheque), so when
   // they upload a photo or document in the bot chat the existing
   // process_cheque_photo/_document handler will see pending_items and
-  // create the order then. No need to re-prompt them with card details
-  // here — those are already visible on this page.
+  // create the order then. The server first puts the card details and a
+  // cancel button in the chat — before, the chat showed nothing at all.
+  // Best-effort and capped at 4s: if the bot can't write yet, pressing
+  // START in the chat shows the same prompt.
+  document.getElementById('cheque-pay-later-btn').disabled = true;
+  try {
+    await Promise.race([
+      api('/api/checkout/pay-in-chat', { method: 'POST' }),
+      new Promise(resolve => setTimeout(resolve, 4000)),
+    ]);
+  } catch (_) {}
   if (tg.close) tg.close();
 }
 
@@ -6302,6 +6797,7 @@ function contactAdmin() {
 // ===== ORDERS PAGE =====
 function deliveryLabel(method) {
   const map = {
+    pickup: '🏪 Olib ketish',
     self: t.delSelfLabel,
     yandex_taxi: t.delYandexTaxiLabel,
     yandex_market: t.delYandexMarketLabel,
@@ -6317,7 +6813,8 @@ function paymentLabel(method) {
   return '—';
 }
 
-function statusLabel(status) {
+function statusLabel(status, deliveryMethod) {
+  if (deliveryMethod === 'pickup' && status === 'delivered') return '✅ Olib ketildi';
   const map = {
     pending: t.orderStatusPending,
     confirmed: t.orderStatusConfirmed,
@@ -6392,11 +6889,13 @@ async function loadOrdersPage() {
     card.innerHTML =
       '<div class="order-card-head">' +
         '<div><span class="order-id">#' + o.id + '</span>' +
-          '<span class="order-status ' + o.status + '">' + statusLabel(o.status) + '</span></div>' +
+          '<span class="order-status ' + o.status + '">' + statusLabel(o.status,o.delivery_method) + '</span></div>' +
         '<div class="order-total">' + formatPrice(o.total) + ' UZS</div>' +
       '</div>' +
       '<div class="order-meta">' + t.orderDelivery + ': ' + deliveryLabel(o.delivery_method) +
         ' &nbsp;·&nbsp; ' + t.orderPayment + ': ' + paymentLabel(o.payment_method) + '</div>' +
+      (o.delivery_method==='pickup' ? '<div class="order-meta">🏪 '+escapeHtml(o.address||'')+
+        (o.pickup_map_url?' · <a href="'+escapeHtml(o.pickup_map_url)+'" target="_blank" rel="noopener">Xaritada ochish</a>':'')+'</div>' : '') +
       '<div class="order-items">' + itemsHtml + moreItems + '</div>' +
       (timeline.length ? '<div class="order-timeline">' + timeline.join('') + '</div>' : '') +
       cancelBtn;
@@ -6507,6 +7006,7 @@ const SELF_DELIVERY_FEE = 25000;
 // Free across Tashkent from this products total — handlers/cart.py FREE_DELIVERY_FROM.
 const FREE_DELIVERY_FROM = 800000;
 function deliveryFee(method) {
+  if (method === 'pickup') return 0;
   if (method !== 'self') return 0;
   return cartData.total >= FREE_DELIVERY_FROM ? 0 : SELF_DELIVERY_FEE;
 }
@@ -6539,17 +7039,54 @@ function renderDeliveryOptions(inTashkent) {
   refreshCheckoutTotal();
 }
 
+async function loadPickupConfig() {
+  if (!pickupConfigLoaded) {
+    pickupConfigLoaded = true;
+    try { pickupConfig = await api('/api/pickup-config'); }
+    catch (_) { pickupConfig = {enabled:false,address:'',map_url:'',fee:0}; }
+  }
+  const modes = document.getElementById('checkout-mode-options');
+  if (!modes) return;
+  const pickupState = window.ketoshopPickupState(pickupConfig.enabled, pickupMode,
+    Boolean(document.getElementById('inp-lat').value && document.getElementById('inp-lng').value));
+  if (pickupState.offerPickup && !modes.querySelector('[data-mode="pickup"]')) {
+    modes.insertAdjacentHTML('beforeend','<button type="button" class="del-opt" data-mode="pickup">🏪 Olib ketish</button>');
+  }
+  modes.querySelectorAll('[data-mode]').forEach(btn => btn.onclick = () => {
+    pickupMode = btn.dataset.mode === 'pickup';
+    modes.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b===btn));
+    const view = window.ketoshopPickupState(pickupConfig.enabled, pickupMode,
+      Boolean(document.getElementById('inp-lat').value && document.getElementById('inp-lng').value));
+    document.getElementById('customer-location-group').style.display = view.showCustomerLocation ? '' : 'none';
+    document.getElementById('delivery-group').style.display = view.showDeliveryOptions ? '' : 'none';
+    const instructions = document.getElementById('pickup-instructions');
+    instructions.style.display = view.showPickupInstructions ? '' : 'none';
+    instructions.innerHTML = view.showPickupInstructions ? '<b>🏪 Olib ketish manzili</b><br>' + escapeHtml(pickupConfig.address) +
+      '<br><a href="' + escapeHtml(pickupConfig.map_url) + '" target="_blank" rel="noopener">Xaritada ochish</a>' : '';
+    applyPaymentRestrictions();refreshCheckoutTotal();
+  });
+  // If pickup settings arrive while checkout is already on screen, keep the
+  // current delivery choice and only expose the newly available option.
+}
+
 // Recompute + display the checkout total. The self-courier fee is broken out
 // as its own line — shown to the buyer, but kept out of the "Jami" grand
 // total, which stays the products subtotal (owner's request, 2026-07-28:
 // the grand total was confusingly folding delivery in).
 function refreshCheckoutTotal() {
-  const method = document.querySelector('.del-opt.active')?.dataset.method;
+  const method = pickupMode ? 'pickup' : document.querySelector('.del-opt[data-method].active')?.dataset.method;
   const fee = deliveryFee(method);
   // Keto-as-discount (off unless the owner has enabled it) — a genuine
   // discount, unlike the delivery fee above, so it does reduce "Jami".
-  const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(cartData.total)) : 0;
+  // Checkout is "the end": an admin's −10% preview is not taken off here.
+  const botOff = botCheckoutOff();
+  const redeem = keto.enabled ? Math.min(keto.redeem || 0, Math.round(cartData.total - botOff)) : 0;
   let html = '<div class="ct-line"><span>' + t.subtotal + '</span><span>' + formatPrice(cartData.total) + ' UZS</span></div>';
+  if (botOff > 0) {
+    html += '<div class="ct-line">' + botDiscountLineHtml() + '</div>';
+  } else if (cartData.bot_discount && cartData.bot_discount.checkout_note) {
+    html += '<div class="ct-line"><span>' + escapeHtml(cartData.bot_discount.checkout_note) + '</span></div>';
+  }
   if (fee > 0) {
     html += '<div class="ct-line"><span>' + t.deliveryFeeLabel + '</span><span>' + formatPrice(fee) + ' UZS</span></div>';
     const left = FREE_DELIVERY_FROM - cartData.total;
@@ -6562,7 +7099,7 @@ function refreshCheckoutTotal() {
   if (redeem > 0) {
     html += '<div class="ct-line"><span>' + t.ketoRedeemLine + '</span><span>-' + formatPrice(redeem) + ' UZS</span></div>';
   }
-  html += '<div class="ct-grand"><span>' + t.total + '</span><span>' + formatPrice(cartData.total - redeem) + ' UZS</span></div>';
+  html += '<div class="ct-grand"><span>' + t.total + '</span><span>' + formatPrice(cartData.total - botOff - redeem) + ' UZS</span></div>';
   document.getElementById('checkout-total-row').innerHTML = html;
 
   // Keep the switch's own line honest when the total or the delivery method
@@ -6577,11 +7114,11 @@ function refreshCheckoutTotal() {
 // method (Yandex Taxi, Yandex Market, BTS, EMU) is a third party that won't
 // take cash on our behalf, so cash is disabled and payment forced to online.
 function applyPaymentRestrictions() {
-  const method = document.querySelector('.del-opt.active')?.dataset.method;
+  const method = pickupMode ? 'pickup' : document.querySelector('.del-opt[data-method].active')?.dataset.method;
   const cashBtn = document.getElementById('pay-cash');
   const onlineBtn = document.getElementById('pay-online');
   if (!cashBtn || !onlineBtn) return;
-  const cashForbidden = method !== 'self';
+  const cashForbidden = !pickupMode && method !== 'self';
   cashBtn.disabled = cashForbidden;
   cashBtn.style.opacity = cashForbidden ? '0.4' : '';
   cashBtn.style.cursor = cashForbidden ? 'not-allowed' : '';
@@ -6627,7 +7164,7 @@ function showToast(msg, isError = false, ms = 2500) {
   if (!toast) {
     toast = document.createElement('div');
     toast.id = 'app-toast';
-    toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:10px 20px;border-radius:12px;font-size:14px;z-index:9999;opacity:0;transition:opacity 0.3s;pointer-events:none;max-width:80%;text-align:center';
+    toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:10px 20px;border-radius:12px;font-size:14px;z-index:10050;opacity:0;transition:opacity 0.3s;pointer-events:none;max-width:80%;text-align:center';
     document.body.appendChild(toast);
   }
   toast.textContent = msg;

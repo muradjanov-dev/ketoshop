@@ -49,6 +49,7 @@ from database import (
     add_product_view, effective_price, active_discount,
     get_user_orders, get_order, cancel_order, get_user, create_user,
     get_product_reviews, add_review, delete_review, get_user_review,
+    get_pickup_settings,
     InsufficientStockError, InsufficientKetoError, LEADERBOARD_EXCLUDED_USER_IDS,
 )
 import gamification
@@ -246,6 +247,7 @@ async def api_products(request: web.Request):
                 "name": s["name_ru"] if lang == "ru" and s.get("name_ru") else s["name"],
                 "price": s["set_price"],
                 "photo_id": s["image_url"],
+                "photo_url": photo_url(s["image_url"]),
                 "unit": "piece",
                 "quantity": 999,
                 "is_set": True,
@@ -340,6 +342,7 @@ async def api_set_detail(request: web.Request):
         "description": "Tarkibi: " + ", ".join([f"{i['name_ru'] if lang == 'ru' and i.get('name_ru') else i['name']} ({i['quantity']})" for i in s["items"]]),
         "price": s["set_price"],
         "photo_id": s["image_url"],
+        "photo_url": photo_url(s["image_url"]),
         "unit": "piece",
         "quantity": 999,
         "is_set": True,
@@ -488,7 +491,7 @@ async def api_cart(request: web.Request):
             "packaged": item["unit"] in ("kg", "g"),
             "available": float(item.get("stock") or 0),
             "total": item_total,
-            "photo_url": f"/api/photo/{item['photo_id']}" if item.get("photo_id") else None,
+            "photo_url": photo_url(item.get("photo_id")),
         })
 
     # Free aksiya bonuses earned by what's in the cart. Recomputed on every
@@ -500,12 +503,26 @@ async def api_cart(request: web.Request):
     ]
     promo = await promotions.get_active()
     bonuses = promotions.compute_bonuses(promo, bonus_input)
+    # 10% bot-order discount (bot_discount.py). `total` stays the shelf sum —
+    # the client measures free delivery on it (owner: before the discount);
+    # gift and surprise thresholds read the paid sum, as checkout does.
+    import bot_discount
+    bot_pct = await bot_discount.percent_for(user_id)
+    bot_saved = await bot_discount.cart_saving(items, bot_pct)
+    pay_total = total - bot_saved
+    # An admin sees the cart exactly as a customer does (`preview`); only
+    # their own order, at checkout, stays full price.
+    bot_shown_pct, bot_shown, bot_preview = bot_pct, bot_saved, False
+    if not bot_saved and (preview_pct := await bot_discount.preview_percent_for(user_id)):
+        bot_shown_pct = preview_pct
+        bot_shown = await bot_discount.cart_saving(items, preview_pct)
+        bot_preview = bot_shown > 0
     # The 111 000 so'm gift shows up in the Mini App's existing 🎁 block the
     # moment the cart qualifies; below it, gift_hint tells how much is left.
     import gift_campaign
-    gifts = await gift_campaign.gift_lines(user_id, [{"price": total, "quantity": 1}])
+    gifts = await gift_campaign.gift_lines(user_id, [{"price": pay_total, "quantity": 1}])
     bonuses = bonuses + gifts
-    gift_hint = "" if gifts else await gift_campaign.cart_hint(user_id, total, lang)
+    gift_hint = "" if gifts else await gift_campaign.cart_hint(user_id, pay_total, lang)
     misses = promotions.compute_near_misses(promo, bonus_input)
 
     def _nm(m):
@@ -532,7 +549,7 @@ async def api_cart(request: web.Request):
              # Shelf price of the giveaway, struck through client-side so the
              # bonus reads as money saved rather than a valueless freebie.
              "value": round(float(b.get("bonus_value") or 0)),
-             "photo_url": f"/api/photo/{b['photo_id']}" if b.get("photo_id") else None}
+             "photo_url": photo_url(b.get("photo_id"))}
             for b in bonuses
         ],
         "bonuses_value": round(promotions.bonuses_total_value(bonuses)),
@@ -542,8 +559,20 @@ async def api_cart(request: web.Request):
         # The two standing promises a growing cart runs into: the surprise
         # pack at 400 000 and free Tashkent delivery at 800 000. Sent as
         # text so the client only has to place them.
-        "mystery_hint": re.sub(r"<[^>]+>", "", mystery_gift.cart_hint(total, lang)),
+        "mystery_hint": re.sub(r"<[^>]+>", "", mystery_gift.cart_hint(pay_total, lang)),
         "delivery_hint": re.sub(r"<[^>]+>", "", free_delivery_hint(total, lang)),
+        # 10% bot-order discount: the client shows the line and takes
+        # `amount` off the grand total. None when it doesn't apply.
+        "bot_discount": {
+            "percent": bot_shown_pct,
+            "amount": round(bot_shown),
+            "pay_total": round(total - bot_shown),
+            "label": bot_discount.saving_label(lang, bot_shown_pct),
+            # Admin: shown like a customer's, not taken off at checkout.
+            "preview": bot_preview,
+            "note": bot_discount.admin_cart_note(lang) if bot_preview else "",
+            "checkout_note": bot_discount.admin_checkout_note(lang, bot_shown_pct) if bot_preview else "",
+        } if bot_shown > 0 else None,
     })
 
 
@@ -683,30 +712,36 @@ async def api_checkout(request: web.Request):
 
     if not phone or not re.match(r'^\+?998\d{9}$', phone.replace(" ", "").replace("-", "")):
         return _json({"error": "invalid_phone"}, status=400)
-    if not latitude or not longitude:
-        return _json({"error": "invalid_location"}, status=400)
-
+    pickup_snapshot = {"pickup_map_url": None}
     from handlers.cart import verify_uzbekistan, get_location_address_text, delivery_fee_for, _is_tashkent
-    if not await verify_uzbekistan(float(latitude), float(longitude)):
-        return _json({"error": "outside_uzbekistan"}, status=400)
-
-    # "self" (Ketoshop's own courier) only exists inside Tashkent — reject it
-    # if the submitted coords don't actually fall in that area, so a buyer
-    # elsewhere can't claim the flat in-city fee / cash payment.
-    if delivery_method == "self" and not _is_tashkent(float(latitude), float(longitude)):
-        return _json({"error": "invalid_delivery_method"}, status=400)
-
-    # Ketoshop's own courier ("self") takes cash or online. Every other
-    # delivery method (Yandex Taxi/Market, BTS, EMU) is a third-party courier
-    # that won't collect cash on our behalf — online only for those.
-    if payment_method == "cash" and delivery_method != "self":
-        return _json({"error": "cash_not_available"}, status=400)
-
-    if not address:
-        readable = await get_location_address_text(float(latitude), float(longitude))
-        address = f"📍 {latitude:.6f}, {longitude:.6f}"
-        if readable:
-            address += f" — {readable}"
+    if delivery_method == "pickup":
+        import pickup
+        settings = await get_pickup_settings()
+        try:
+            details = pickup.checkout_values(body, settings)
+        except pickup.PickupUnavailable:
+            return _json({"error": "pickup_unavailable"}, status=409)
+        if payment_method not in ("cash", "online"):
+            return _json({"error": "invalid_payment_method"}, status=400)
+        address = details["address"]
+        latitude = longitude = None
+        address_note = None
+        pickup_snapshot = {"pickup_map_url": details["pickup_map_url"]}
+    else:
+        if not latitude or not longitude:
+            return _json({"error": "invalid_location"}, status=400)
+        if not await verify_uzbekistan(float(latitude), float(longitude)):
+            return _json({"error": "outside_uzbekistan"}, status=400)
+        # Ketoshop's own courier only exists inside Tashkent.
+        if delivery_method == "self" and not _is_tashkent(float(latitude), float(longitude)):
+            return _json({"error": "invalid_delivery_method"}, status=400)
+        if payment_method == "cash" and delivery_method != "self":
+            return _json({"error": "cash_not_available"}, status=400)
+        if not address:
+            readable = await get_location_address_text(float(latitude), float(longitude))
+            address = f"📍 {latitude:.6f}, {longitude:.6f}"
+            if readable:
+                address += f" — {readable}"
 
     cart_items = await get_cart(user_id)
     if not cart_items:
@@ -728,6 +763,9 @@ async def api_checkout(request: web.Request):
             "unit": item["unit"],
             "seller_id": item.get("seller_id"),
         })
+    # 10% bot-order discount, same as the bot's checkout (bot_discount.py).
+    import bot_discount
+    bot_saved = await bot_discount.apply(items_data, await bot_discount.percent_for(user_id))
     # Free aksiya bonuses become 0-so'm lines inside items_data, exactly as on
     # the bot side — create_order freezes them into orders.items and the
     # admin's order notification shows them to whoever packs the box. They add
@@ -739,8 +777,10 @@ async def api_checkout(request: web.Request):
 
     total = sum(item["price"] * item["quantity"] for item in items_data)
     subtotal = total  # product-only, before delivery fee — what Keto earns off of
-    # Ketoshop courier: 25 000, free from FREE_DELIVERY_FROM of products.
-    total += delivery_fee_for(delivery_method, subtotal)
+    # Ketoshop courier: 25 000, free from FREE_DELIVERY_FROM of products —
+    # measured before the 10% bot discount (owner, 2026-10-08).
+    if delivery_method != "pickup":
+        total += delivery_fee_for(delivery_method, subtotal + bot_saved)
 
     # Preview of the Keto reward this order will earn once delivered (see
     # gamification.py) — shown on the order-success screen so the buyer
@@ -806,9 +846,10 @@ async def api_checkout(request: web.Request):
                 pending_address_note=address_note,
                 pending_secondary_phone=None,  # Mini App doesn't collect a backup number yet
                 pending_delivery_method=delivery_method,
-                pending_latitude=float(latitude),
-                pending_longitude=float(longitude),
+                pending_latitude=float(latitude) if latitude is not None else None,
+                pending_longitude=float(longitude) if longitude is not None else None,
                 pending_keto_redeem=keto_redeem,
+                pending_pickup_map_url=pickup_snapshot["pickup_map_url"],
             )
         except Exception:
             logger.exception("Failed to stash pending checkout for user %s", user_id)
@@ -841,6 +882,7 @@ async def api_checkout(request: web.Request):
             delivery_method=delivery_method,
             address_note=address_note,
             keto_redeem=keto_redeem,
+            **pickup_snapshot,
         )
     except InsufficientStockError as exc:
         return await _stock_gone(exc, request)
@@ -859,8 +901,9 @@ async def api_checkout(request: web.Request):
         "address": address,
         "address_note": address_note,
         "total": total,
-        "latitude": float(latitude) if latitude else None,
-        "longitude": float(longitude) if longitude else None,
+        "latitude": float(latitude) if latitude is not None else None,
+        "longitude": float(longitude) if longitude is not None else None,
+        **pickup_snapshot,
         "user_id": user_id,
         "username": customer_username,
         "delivery_method": delivery_method,
@@ -869,7 +912,11 @@ async def api_checkout(request: web.Request):
     from handlers.cart import send_order_thanks
     await send_order_thanks(bot, user_id, order_id, delivery_method)
 
-    return _json({"ok": True, "order_id": order_id, "total": total, "keto_redeemed": keto_redeem})
+    response = {"ok": True, "order_id": order_id, "total": total, "keto_redeemed": keto_redeem}
+    if delivery_method == "pickup":
+        response.update(delivery_method="pickup", pickup_address=address,
+                        pickup_map_url=pickup_snapshot["pickup_map_url"])
+    return _json(response)
 
 
 
@@ -915,6 +962,7 @@ async def api_orders(request: web.Request):
             "shipped_at": o["shipped_at"].isoformat() if o.get("shipped_at") else None,
             "delivered_at": o["delivered_at"].isoformat() if o.get("delivered_at") else None,
             "delivery_method": o.get("delivery_method"),
+            "pickup_map_url": o.get("pickup_map_url"),
             "payment_method": o.get("payment_method"),
             "address": o.get("address"),
             "items": [
@@ -995,6 +1043,56 @@ async def _read_cheque_upload(request: web.Request) -> tuple[bytes, str, str] | 
     return bytes(buf), content_type, filename
 
 
+async def _store_cheque_file(bot: Bot, user_id: int, lang: str, order_id: int,
+                             customer_name: str, file_bytes: bytes, filename: str,
+                             is_image: bool) -> tuple[str, str, int | None] | None:
+    """Upload a Mini App cheque to Telegram once and return
+    (file_id, kind, admin_id_that_already_has_it) so the order can store it
+    and the other admins get it by file_id, without re-uploading the bytes.
+
+    The buyer's own chat comes first, so they keep a copy of what they sent.
+    If the bot can't write there (they opened the shop without ever pressing
+    START, or blocked the bot), the cheque goes straight to an admin instead.
+    Before 2026-10-11 that case answered "Chekni yuborib bo'lmadi" after the
+    order already existed, so every retry left one more order with no cheque
+    and no admin notice. A picture Telegram refuses as a photo (HEIC, a very
+    long screenshot) is sent as a document. None only if every chat refused."""
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.types import BufferedInputFile
+
+    async def _send(chat_id: int, caption: str) -> tuple[str, str]:
+        if is_image:
+            try:
+                sent = await bot.send_photo(chat_id=chat_id,
+                                            photo=BufferedInputFile(file_bytes, filename=filename),
+                                            caption=caption, parse_mode="HTML")
+                return sent.photo[-1].file_id, "photo"
+            except TelegramBadRequest as exc:
+                logger.warning("Cheque for order %s refused as a photo (%s) — sending as a document",
+                               order_id, exc)
+        sent = await bot.send_document(chat_id=chat_id,
+                                       document=BufferedInputFile(file_bytes, filename=filename),
+                                       caption=caption, parse_mode="HTML")
+        return sent.document.file_id, "document"
+
+    try:
+        file_id, kind = await _send(user_id, get_text("cheque_received", lang, order_id=order_id))
+        return file_id, kind, None
+    except Exception as exc:
+        logger.warning("Cheque echo to buyer %s failed (order %s): %s — sending it to the admins directly",
+                       user_id, order_id, exc)
+
+    for admin_id in ADMIN_IDS:
+        try:
+            caption = get_text("cheque_from_customer", await get_user_language(admin_id),
+                               order_id=order_id, name=customer_name)
+            file_id, kind = await _send(admin_id, caption)
+            return file_id, kind, admin_id
+        except Exception as exc:
+            logger.warning("Cheque upload to admin %s failed (order %s): %s", admin_id, order_id, exc)
+    return None
+
+
 async def api_checkout_cheque(request: web.Request):
     """Upload payment cheque for a deferred online checkout.
 
@@ -1067,6 +1165,7 @@ async def api_checkout_cheque(request: web.Request):
             address_note=data.get("pending_address_note"),
             secondary_phone=data.get("pending_secondary_phone"),
             keto_redeem=keto_redeem,
+            pickup_map_url=data.get("pending_pickup_map_url"),
         )
     except InsufficientStockError as exc:
         return await _stock_gone(exc, request)
@@ -1091,36 +1190,24 @@ async def api_checkout_cheque(request: web.Request):
                 address_note=data.get("pending_address_note"),
                 secondary_phone=data.get("pending_secondary_phone"),
                 keto_redeem=0,
+                pickup_map_url=data.get("pending_pickup_map_url"),
             )
         except InsufficientStockError as exc:
             return await _stock_gone(exc, request)
 
-    # Echo cheque back to buyer's chat to get a reusable Telegram file_id
-    # (and so they have a copy in their history).
-    from aiogram.types import BufferedInputFile
-    input_file = BufferedInputFile(file_bytes, filename=filename)
-    try:
-        if is_image:
-            sent = await bot.send_photo(
-                chat_id=user_id,
-                photo=input_file,
-                caption=get_text("cheque_received", lang, order_id=order_id),
-                parse_mode="HTML",
-            )
-            file_id = sent.photo[-1].file_id
-            kind = "photo"
-        else:
-            sent = await bot.send_document(
-                chat_id=user_id,
-                document=input_file,
-                caption=get_text("cheque_received", lang, order_id=order_id),
-                parse_mode="HTML",
-            )
-            file_id = sent.document.file_id
-            kind = "document"
-    except Exception:
-        logger.exception("Cheque echo to buyer %s failed (order %s already created)", user_id, order_id)
-        return _json({"error": "telegram_upload_failed"}, status=502)
+    # The deferred checkout is a real order now — drop it from the FSM before
+    # anything else can fail, so a retry can never create a second order.
+    await state.clear()
+
+    customer_name = data.get("pending_customer_name") or "—"
+    stored = await _store_cheque_file(bot, user_id, lang, order_id, customer_name,
+                                      file_bytes, filename, is_image)
+    if stored is None:
+        # Telegram refused every chat. The Mini App retries against
+        # /api/orders/{order_id}/cheque, which attaches to this same order.
+        logger.error("Cheque for order %s could not be uploaded anywhere", order_id)
+        return _json({"error": "telegram_upload_failed", "order_id": order_id}, status=502)
+    file_id, kind, admin_with_copy = stored
 
     from handlers.cart import _forward_cheque_to_admins, _notify_sellers, notify_low_stock
     from database import set_order_cheque
@@ -1130,8 +1217,8 @@ async def api_checkout_cheque(request: web.Request):
     if low_stock:
         await notify_low_stock(bot, low_stock)
 
-    customer_name = data.get("pending_customer_name") or "—"
-    await _forward_cheque_to_admins(bot, order_id, customer_name, kind, file_id)
+    await _forward_cheque_to_admins(bot, order_id, customer_name, kind, file_id,
+                                    skip={admin_with_copy})
     await _notify_sellers(bot, order_id, items_data, {
         "customer_name": customer_name,
         "phone": data["pending_phone"],
@@ -1145,12 +1232,45 @@ async def api_checkout_cheque(request: web.Request):
         "username": None,
         "delivery_method": data.get("pending_delivery_method"),
         "payment_method": "online",
+        "pickup_map_url": data.get("pending_pickup_map_url"),
     }, lang)
     from handlers.cart import send_order_thanks
     await send_order_thanks(bot, user_id, order_id, data.get("pending_delivery_method"))
 
-    await state.clear()
-    return _json({"ok": True, "order_id": order_id, "total": total, "keto_redeemed": keto_redeem})
+    response = {"ok": True, "order_id": order_id, "total": total, "keto_redeemed": keto_redeem}
+    if data.get("pending_delivery_method") == "pickup":
+        response.update(delivery_method="pickup", pickup_address=data["pending_address"],
+                        pickup_map_url=data.get("pending_pickup_map_url"))
+    return _json(response)
+
+
+async def api_checkout_pay_in_chat(request: web.Request):
+    """"Botga qaytib to'layman" on the Mini App cheque page — the buyer will
+    send the cheque from the chat. The online checkout writes nothing there
+    by itself, so put the card details and the cancel button in the chat
+    before the Mini App closes."""
+    user_id = request["user_id"]
+    storage = request.app.get("storage")
+    if storage is None:
+        return _json({"error": "server_misconfigured"}, status=500)
+    bot: Bot = request.app["bot"]
+
+    from aiogram.fsm.context import FSMContext
+    from aiogram.fsm.storage.base import StorageKey
+
+    state = FSMContext(storage=storage, key=StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id))
+    data = await state.get_data()
+    if not data.get("pending_items"):
+        return _json({"error": "no_pending_checkout"}, status=409)
+
+    from handlers.cart import send_pending_cheque_prompt
+    try:
+        await send_pending_cheque_prompt(bot, user_id, data)
+    except Exception as exc:
+        # Never pressed START: /start in the chat shows the same prompt.
+        logger.warning("Pay-in-chat prompt to %s failed: %s", user_id, exc)
+        return _json({"error": "bot_cant_write"}, status=502)
+    return _json({"ok": True})
 
 
 async def api_order_cheque(request: web.Request):
@@ -1185,42 +1305,19 @@ async def api_order_cheque(request: web.Request):
     is_image = content_type.startswith("image/")
 
     bot: Bot = request.app["bot"]
-
-    # Telegram needs an InputFile wrapper for raw uploads. Sending to the buyer
-    # first echoes the cheque back into their bot chat (so they have a record)
-    # AND gives us a reusable file_id we can hand to every admin without
-    # re-uploading bytes N times.
-    from aiogram.types import BufferedInputFile
-    input_file = BufferedInputFile(file_bytes, filename=filename)
-    try:
-        if is_image:
-            sent = await bot.send_photo(
-                chat_id=user_id,
-                photo=input_file,
-                caption=get_text("cheque_received", lang, order_id=order_id),
-                parse_mode="HTML",
-            )
-            file_id = sent.photo[-1].file_id
-            kind = "photo"
-        else:
-            sent = await bot.send_document(
-                chat_id=user_id,
-                document=input_file,
-                caption=get_text("cheque_received", lang, order_id=order_id),
-                parse_mode="HTML",
-            )
-            file_id = sent.document.file_id
-            kind = "document"
-    except Exception:
-        logger.exception("Cheque upload echo to buyer %s failed", user_id)
-        return _json({"error": "telegram_upload_failed"}, status=502)
-
     customer_name = order.get("customer_name") or "—"
+
+    stored = await _store_cheque_file(bot, user_id, lang, order_id, customer_name,
+                                      file_bytes, filename, is_image)
+    if stored is None:
+        return _json({"error": "telegram_upload_failed", "order_id": order_id}, status=502)
+    file_id, kind, admin_with_copy = stored
 
     from handlers.cart import _forward_cheque_to_admins, _notify_sellers
     from database import set_order_cheque
     await set_order_cheque(order_id, file_id, kind)
-    await _forward_cheque_to_admins(bot, order_id, customer_name, kind, file_id)
+    await _forward_cheque_to_admins(bot, order_id, customer_name, kind, file_id,
+                                    skip={admin_with_copy})
 
     items_raw = order.get("items")
     items = json.loads(items_raw) if isinstance(items_raw, str) else (items_raw or [])
@@ -1351,6 +1448,32 @@ async def api_photo(request: web.Request):
 
 # ===== HELPERS =====
 
+async def api_recipes(request: web.Request):
+    """Today's recipe — only today's, never an archive (owner: "har kuni
+    faqat 1 ta retsept ko'rsat ... hammasini emas"). recipes.py."""
+    import recipes
+    lang = request.get("user_lang", "uz")
+    current, _, next_at = recipes.schedule()
+    return _json({
+        "current": await recipes.view(current, lang),
+        "next_at": next_at.strftime("%d.%m"),
+        "labels": recipes.labels(lang),
+    })
+
+
+async def api_recipe_to_cart(request: web.Request):
+    """"🛒 Barcha masalliqlarni savatga" — one pack of every in-stock product."""
+    import recipes
+    from database import get_cart_count
+    recipe = recipes.find(request.match_info["slug"])
+    if not recipe:
+        return _json({"error": "not_found"}, status=404)
+    user_id = request["user_id"]
+    result = await recipes.add_all_to_cart(user_id, recipe, request.get("user_lang", "uz"))
+    result["cart_count"] = await get_cart_count(user_id)
+    return _json({"ok": True, **result})
+
+
 async def api_promo(request: web.Request):
     """The running aksiya, or {"active": false}.
 
@@ -1361,7 +1484,13 @@ async def api_promo(request: web.Request):
     # The two standing promises ride along with the aksiya payload: the Mini
     # App reads this endpoint once per session, and rendering the lines here
     # keeps the thresholds (config.py) and their wording out of the client.
+    import bot_discount
     perks = {
+        # "Bot orqali buyurtma qilib, istalgan summaga 10% chegirma" — first
+        # in the strip while the discount is on, "" otherwise.
+        "bot_discount": await bot_discount.reminder(lang),
+        # The home page's announcement card (None while the discount is off).
+        "bot_discount_banner": await bot_discount.site_banner(lang),
         "mystery": re.sub(r"<[^>]+>", "", mystery_gift.card_line(lang)),
         "delivery": re.sub(r"<[^>]+>", "", mystery_gift.free_delivery_card_line(lang)),
     }
@@ -1380,6 +1509,20 @@ async def api_promo(request: web.Request):
         "trigger_ids": sorted({r["trigger_product_id"] for r in rules}),
         "perks": perks,
     })
+
+
+def photo_url(ref) -> str | None:
+    """Image address for the Mini App. A Telegram file_id goes through the
+    /api/photo proxy; an image uploaded on /admin is already a URL ("/img/7",
+    or an absolute https link) and is served as is. Sets carry the latter in
+    image_url — sent as photo_id with no photo_url, their picture never
+    showed in the shop, and in the cart it turned into "/api/photo//img/7"."""
+    if not ref:
+        return None
+    ref = str(ref).strip()
+    if ref.startswith(("/", "http://", "https://")):
+        return ref
+    return f"/api/photo/{ref}"
 
 
 def _serialize_product(p: dict, lang: str) -> dict:
@@ -1409,13 +1552,19 @@ def _serialize_product(p: dict, lang: str) -> dict:
         "packaged": p["unit"] in ("kg", "g"),
         "out_of_stock": (p.get("quantity") or 0) <= 0,
         "category": p["category"],
-        "photo_url": f"/api/photo/{p['photo_id']}" if p.get("photo_id") else None,
+        "photo_url": photo_url(p.get("photo_id")),
         "bonus": bonus,
     }
 
 
 def _serialize_products(products: list[dict], lang: str) -> list[dict]:
     return [_serialize_product(p, lang) for p in products]
+
+
+async def api_pickup_config(request: web.Request):
+    """Customer-visible pickup instructions, behind Telegram initData auth."""
+    import pickup
+    return _json(pickup.public_config(await get_pickup_settings()))
 
 
 # ===== APP FACTORY =====
@@ -1430,12 +1579,15 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/", index)
     app.router.add_get("/api/categories", api_categories)
+    app.router.add_get("/api/pickup-config", api_pickup_config)
     app.router.add_get("/api/promo", api_promo)
     app.router.add_get("/api/products", api_products)
     app.router.add_get("/api/top", api_top)
     app.router.add_get("/api/leaderboard", api_leaderboard)
     app.router.add_get("/api/product/{id}", api_product_detail)
     app.router.add_get("/api/set/{id}", api_set_detail)
+    app.router.add_get("/api/recipes", api_recipes)
+    app.router.add_post("/api/recipes/{slug}/cart", api_recipe_to_cart)
     app.router.add_get("/api/product/{id}/reviews", api_product_reviews)
     app.router.add_post("/api/product/{id}/reviews", api_product_review_submit)
     app.router.add_post("/api/reviews/{id}/delete", api_review_delete)
@@ -1447,6 +1599,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_post("/api/cart/clear", api_cart_clear)
     app.router.add_post("/api/checkout", api_checkout)
     app.router.add_post("/api/checkout/cheque", api_checkout_cheque)
+    app.router.add_post("/api/checkout/pay-in-chat", api_checkout_pay_in_chat)
     app.router.add_get("/api/orders", api_orders)
     app.router.add_post("/api/orders/{id}/cancel", api_order_cancel)
     app.router.add_post("/api/orders/{id}/cheque", api_order_cheque)

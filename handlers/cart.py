@@ -2,6 +2,7 @@
 Shopping cart, checkout flow, and order handlers
 """
 import json
+import html
 import re
 from aiogram import Router, F, Bot
 from aiogram.types import (
@@ -17,6 +18,7 @@ from database import (
     get_user_language, get_product, add_to_cart, get_cart,
     clear_cart, remove_from_cart, get_cart_total, get_cart_badge,
     get_cart_item, set_cart_quantity, get_last_order_prefs,
+    get_pickup_settings,
     set_order_cheque,
     create_order, get_user_orders, get_order, get_user,
     update_user_info, effective_price, active_discount,
@@ -42,6 +44,7 @@ class CartStates(StatesGroup):
 
 
 class CheckoutStates(StatesGroup):
+    waiting_fulfillment = State()
     waiting_phone = State()
     waiting_location = State()
     confirming_location = State()
@@ -295,6 +298,11 @@ async def get_location_address_text(lat: float, lng: float) -> str | None:
 
 def _escape_html(s: str) -> str:
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _escape_html_attr(s: str) -> str:
+    """Escape values inserted into quoted HTML attributes such as href."""
+    return html.escape(s or "", quote=True)
 
 
 def payment_status_block(payment_method: str | None, status: str | None, lang: str) -> str:
@@ -556,6 +564,11 @@ async def _quick_order_prefs(user_id: int) -> dict | None:
     last = await get_last_order_prefs(user_id)
     if not last or not last.get("delivery_method") or not last.get("payment_method"):
         return None
+    # Pickup is deliberately not replayed by the saved-location shortcut: its
+    # availability/instructions can change, and the buyer's home pin remains
+    # the only saved location. Fall back to the normal fulfillment chooser.
+    if last["delivery_method"] == "pickup":
+        return None
 
     online_only = not _is_tashkent(lat, lng) or last["delivery_method"] == "yandex_taxi"
     payment_method = "online" if online_only else last["payment_method"]
@@ -678,6 +691,15 @@ async def build_cart_view(user_id: int, lang: str):
         badge = gamification.reward_badge(gamification.keto_for(item_total, keto_rate)) if keto_rate else ""
         text += (line.rstrip("\n") + f"  {badge}\n") if badge else line
 
+    # 10% bot-order discount (bot_discount.py): the list above stays at shelf
+    # price, the saving and the sum to pay come under the total. Gift and
+    # surprise thresholds read the paid sum — the same basis checkout uses —
+    # free delivery reads the sum before the discount (owner, 2026-10-08).
+    import bot_discount
+    bot_pct = await bot_discount.percent_for(user_id)
+    bot_saved = await bot_discount.cart_saving(cart_items, bot_pct)
+    pay_total = total - bot_saved
+
     # Free aksiya bonuses earned by what's in the cart right now. Recomputed
     # on every render (not stored on the cart row) so a stepper tap, a
     # campaign edit, or a campaign ending is reflected immediately.
@@ -689,14 +711,25 @@ async def build_cart_view(user_id: int, lang: str):
     # The 111 000 so'm gift (gift_campaign.py) sits in the same 🎁 block as
     # aksiya bonuses the moment the cart qualifies — the buyer sees it land
     # in their basket, exactly as the owner asked, before they ever check out.
-    gifts = await gift_campaign.gift_lines(user_id, [{"price": total, "quantity": 1}])
+    gifts = await gift_campaign.gift_lines(user_id, [{"price": pay_total, "quantity": 1}])
     text += promotions.bonus_lines_text(promotions.compute_bonuses(promo, bonus_input) + gifts, lang)
 
     text += get_text("cart_total", lang, total=f"{int(total):,}".replace(",", " "))
+    if bot_saved > 0:
+        text += ("\n" + bot_discount.saving_line(lang, bot_pct, bot_saved)
+                 + "\n" + bot_discount.cart_pay_line(lang, pay_total))
+    elif preview_pct := await bot_discount.preview_percent_for(user_id):
+        # An admin sees the cart exactly as a customer does; only their own
+        # order, at checkout, stays full price.
+        preview = await bot_discount.cart_saving(cart_items, preview_pct)
+        if preview > 0:
+            text += ("\n" + bot_discount.saving_line(lang, preview_pct, preview)
+                     + "\n" + bot_discount.cart_pay_line(lang, total - preview)
+                     + "\n" + bot_discount.admin_cart_note(lang))
     if saved_total > 0:
         text += get_text("cart_saved", lang, amount=f"{int(saved_total):,}".replace(",", " "))
     if keto_rate:
-        reward = gamification.order_reward_line(gamification.keto_for(total, keto_rate), lang)
+        reward = gamification.order_reward_line(gamification.keto_for(pay_total, keto_rate), lang)
         if reward:
             text += "\n" + reward
 
@@ -707,12 +740,12 @@ async def build_cart_view(user_id: int, lang: str):
     # Below the threshold: "yana 15 000 so'm — sovg'a". Above it the gift is
     # already listed in the 🎁 block, so no second line.
     if not gifts:
-        hint = await gift_campaign.cart_hint(user_id, total, lang)
+        hint = await gift_campaign.cart_hint(user_id, pay_total, lang)
         if hint:
             text += "\n" + hint + "\n"
     # The two standing promises, in the order a growing cart meets them:
     # the surprise at 400 000, free Tashkent delivery at 800 000.
-    mystery = mystery_gift.cart_hint(total, lang)
+    mystery = mystery_gift.cart_hint(pay_total, lang)
     if mystery:
         text += "\n" + mystery + "\n"
     delivery_hint = free_delivery_hint(total, lang)
@@ -893,10 +926,28 @@ async def start_checkout(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
 
-    await state.update_data(lang=lang)
+    await state.set_data({"lang": lang})
 
+    import pickup
+    pickup_cfg = pickup.public_config(await get_pickup_settings())
+    if pickup_cfg["enabled"]:
+        await state.set_state(CheckoutStates.waiting_fulfillment)
+        await callback.message.edit_text(
+            get_text("choose_fulfillment", lang),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=get_text("fulfillment_delivery", lang), callback_data="fulfillment:delivery")],
+                [InlineKeyboardButton(text=get_text("fulfillment_pickup", lang), callback_data="fulfillment:pickup")],
+            ]), parse_mode="HTML")
+        await callback.answer()
+        return
+    await _start_delivery_checkout(callback.message, state, lang, callback.from_user.id)
+    await callback.answer()
+
+
+async def _start_delivery_checkout(message, state: FSMContext, lang: str, user_id: int):
+    """Existing address-based checkout entry, shared after fulfillment choice."""
     # Check if user has saved phone & address
-    user = await get_user(callback.from_user.id)
+    user = await get_user(user_id)
     if user and user.get("phone") and user.get("address"):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
@@ -909,7 +960,7 @@ async def start_checkout(callback: CallbackQuery, state: FSMContext):
             )],
         ])
         await state.set_state(CheckoutStates.waiting_phone)
-        await callback.message.edit_text(
+        await message.edit_text(
             get_text("saved_info_prompt", lang,
                 phone=user["phone"],
                 address=user["address"],
@@ -919,7 +970,39 @@ async def start_checkout(callback: CallbackQuery, state: FSMContext):
         )
     else:
         await state.set_state(CheckoutStates.waiting_phone)
-        await _ask_phone(callback.message, lang)
+        await _ask_phone(message, lang)
+
+
+@router.callback_query(F.data.startswith("fulfillment:"))
+async def choose_fulfillment(callback: CallbackQuery, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state != CheckoutStates.waiting_fulfillment.state:
+        stale_data = await state.get_data()
+        await callback.answer(get_text("checkout_step_expired", stale_data.get("lang", "uz")),
+                              show_alert=True)
+        return
+    lang = (await state.get_data()).get("lang", "uz")
+    choice = callback.data.split(":", 1)[1]
+    if choice == "delivery":
+        await _start_delivery_checkout(callback.message, state, lang, callback.from_user.id)
+    elif choice == "pickup":
+        import pickup
+        config = pickup.public_config(await get_pickup_settings())
+        if not config["enabled"]:
+            await callback.answer(get_text("pickup_unavailable", lang), show_alert=True)
+            await state.clear()
+            return
+        # Freeze shop instructions into FSM immediately. Never put the shop
+        # address into the buyer's saved profile.
+        await state.update_data(pickup=True, delivery_method="pickup",
+            address=config["address"], latitude=None, longitude=None,
+            pickup_map_url=config["map_url"],
+            address_note=None, secondary_phone=None, online_only=False, in_tashkent=False)
+        await state.set_state(CheckoutStates.waiting_phone)
+        await callback.message.edit_text(get_text("pickup_enter_phone", lang), parse_mode="HTML")
+    else:
+        await callback.answer()
+        return
     await callback.answer()
 
 
@@ -1012,6 +1095,23 @@ async def _phone_accepted(message: Message, state: FSMContext, lang: str, phone:
     and the shared-contact entry points."""
     await state.update_data(phone=phone)
     await update_user_info(message.from_user.id, phone=phone)
+    data = await state.get_data()
+    if data.get("pickup"):
+        import pickup
+        cfg = pickup.public_config(await get_pickup_settings())
+        if not cfg["enabled"]:
+            await state.clear()
+            await message.answer(get_text("pickup_unavailable", lang))
+            return
+        await state.update_data(delivery_method="pickup", address=cfg["address"],
+            latitude=None, longitude=None, pickup_map_url=cfg["map_url"], address_note=None,
+            secondary_phone=None, online_only=False, in_tashkent=False)
+        await state.set_state(CheckoutStates.waiting_payment_method)
+        info = get_text("pickup_instructions", lang, address=_escape_html(cfg["address"]),
+                        map_url=_escape_html_attr(cfg["map_url"]))
+        await message.answer(info + "\n\n" + get_text("choose_payment", lang),
+            reply_markup=payment_method_keyboard(lang, online_only=False), parse_mode="HTML")
+        return
     await state.set_state(CheckoutStates.waiting_location)
 
     location_kb = ReplyKeyboardMarkup(
@@ -1385,9 +1485,13 @@ async def build_my_orders_view(user_id: int, lang: str):
         text += get_text("order_item", lang,
             id=order["id"],
             date=format_local_dt(order["created_at"], "%d.%m.%Y"),
-            status=get_order_status(order["status"], lang),
+            status=(get_text("order_status_pickup_collected", lang)
+                    if order.get("delivery_method") == "pickup" and order.get("status") == "delivered"
+                    else get_order_status(order["status"], lang)),
             total=f"{int(order['total']):,}".replace(",", " "),
         )
+        if order.get("delivery_method") == "pickup":
+            text += "   " + get_delivery_method_name("pickup", lang) + "\n"
     # 🔁 one tap puts a past order back into the cart (retention.py).
     import retention
     rows = await retention.repeat_order_rows(user_id, lang)
@@ -1561,6 +1665,13 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
             "seller_id": item.get("seller_id"),
         })
 
+    # 10% off every line when the buyer orders by themselves (not an admin) —
+    # bot_discount.py. Written into the lines, so orders.total, profit and
+    # the admin card follow by themselves.
+    import bot_discount
+    bot_pct = await bot_discount.percent_for(user_id)
+    bot_saved = await bot_discount.apply(items_data, bot_pct)
+
     # Free aksiya bonuses ride along inside items_data as 0-so'm lines, so
     # create_order freezes them into orders.items and _notify_sellers shows
     # them to whoever packs the box — no extra plumbing at either call site.
@@ -1579,8 +1690,9 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
 
     delivery_method = data.get("delivery_method")
     # Free across Tashkent from FREE_DELIVERY_FROM of products — measured on
-    # the goods before any Keto is applied below.
-    delivery_fee = delivery_fee_for(delivery_method, items_subtotal)
+    # the goods before any Keto is applied below, and before the 10% bot
+    # discount (owner, 2026-10-08: the discount must not cost free delivery).
+    delivery_fee = delivery_fee_for(delivery_method, items_subtotal + bot_saved)
     total += delivery_fee
 
     # Keto-as-discount (opt-in, off by default — see gamification.is_redemption_enabled).
@@ -1600,11 +1712,19 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     keto_rate = await gamification.buyer_rate(user_id)
     for i, item in enumerate([it for it in items_data if not it.get("is_bonus")], 1):
         item_total = item["price"] * item["quantity"]
-        badge = f" 🔥-{item['discount_percent']}%" if item.get("discount_percent") else ""
+        if item.get("bot_discount"):
+            badge = f" 🎁-{item['discount_percent']}%"
+        else:
+            badge = f" 🔥-{item['discount_percent']}%" if item.get("discount_percent") else ""
         name = localize_product_text(item["name"], item.get("name_ru"), lang)
         keto_tag = gamification.reward_badge(gamification.keto_for(item_total, keto_rate)) if keto_rate else ""
         items_text += f"{i}. {name} — {item['quantity']} {get_display_unit(item['unit'], lang)} × {int(item['price']):,}{badge} = {int(item_total):,}".replace(",", " ")
         items_text += (f"  {keto_tag}\n" if keto_tag else "\n")
+    if bot_saved:
+        items_text += bot_discount.saving_line(lang, bot_pct, bot_saved) + "\n"
+    elif preview_pct := await bot_discount.preview_percent_for(user_id):
+        # The end of an admin's checkout: the cart showed −10%, the order doesn't get it.
+        items_text += bot_discount.admin_checkout_note(lang, preview_pct) + "\n"
     if keto_rate:
         reward = gamification.order_reward_line(gamification.keto_for(items_subtotal, keto_rate), lang)
         if reward:
@@ -1637,10 +1757,16 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
 
     # The buyer's own address is echoed back to them inside an HTML template:
     # an unescaped "&" broke the checkout screen for the person ordering.
+    pickup_block = ""
+    if delivery_method == "pickup":
+        pickup_block = "\n" + get_text("pickup_instructions", lang,
+            address=_escape_html(data.get("address") or ""),
+            map_url=_escape_html_attr(data.get("pickup_map_url") or ""))
     text = get_text("order_summary", lang,
         phone=_escape_html(data["phone"]),
         secondary_block=secondary_block,
         address=_escape_html(data["address"]),
+        pickup_block=pickup_block,
         note_block=note_block,
         payment=payment_label,
         delivery=delivery_label,
@@ -1766,6 +1892,14 @@ async def keto_redeem_clear(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "order_confirm:yes", CheckoutStates.confirming)
 async def order_confirm_yes(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    if data.get("delivery_method") == "pickup":
+        import pickup
+        if not pickup.public_config(await get_pickup_settings())["enabled"]:
+            await state.clear()
+            await callback.message.edit_text(get_text("pickup_unavailable", data.get("lang", "uz")))
+            await callback.answer(get_text("pickup_unavailable", data.get("lang", "uz")), show_alert=True)
+            return
     await _create_and_process_order(callback, state, bot)
 
 
@@ -1843,6 +1977,7 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
                 address_note=address_note,
                 secondary_phone=secondary_phone,
                 keto_redeem=keto_redeem,
+                pickup_map_url=data.get("pickup_map_url"),
             )
         except InsufficientStockError as exc:
             await state.clear()
@@ -1887,6 +2022,7 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
             "username": callback.from_user.username,
             "delivery_method": delivery_method,
             "payment_method": "cash",
+            "pickup_map_url": data.get("pickup_map_url"),
         }, lang)
         await send_order_thanks(bot, callback.from_user.id, order_id, delivery_method)
 
@@ -1908,6 +2044,7 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
             pending_longitude=data.get("longitude"),
             pending_summary_text=text,
             pending_keto_redeem=keto_redeem,
+            pending_pickup_map_url=data.get("pickup_map_url"),
         )
 
         cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -2034,6 +2171,7 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
             address_note=data.get("pending_address_note"),
             secondary_phone=data.get("pending_secondary_phone"),
             keto_redeem=keto_redeem,
+            pickup_map_url=data.get("pending_pickup_map_url"),
         )
     except InsufficientStockError as exc:
         await state.clear()
@@ -2066,6 +2204,7 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
                 address_note=data.get("pending_address_note"),
                 secondary_phone=data.get("pending_secondary_phone"),
                 keto_redeem=0,
+                pickup_map_url=data.get("pending_pickup_map_url"),
             )
         except InsufficientStockError as exc:
             await state.clear()
@@ -2103,6 +2242,7 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
         "username": message.from_user.username,
         "delivery_method": data.get("pending_delivery_method"),
         "payment_method": "online",
+        "pickup_map_url": data.get("pending_pickup_map_url"),
     }, lang)
     await send_order_thanks(bot, message.from_user.id, order_id,
                             data.get("pending_delivery_method"))
@@ -2156,9 +2296,33 @@ async def cancel_online_checkout(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+async def send_pending_cheque_prompt(bot: Bot, user_id: int, data: dict) -> None:
+    """Card details, "send the cheque here" and the cancel button for an
+    online checkout still waiting for its cheque (`data` is that FSM data).
+
+    Sent when a Mini App buyer taps "Botga qaytib to'layman", and on /start
+    mid-payment. Before 2026-10-11 the chat said nothing in either case, and
+    /start silently dropped the pending order."""
+    lang = await get_user_language(user_id)
+    total = f"{int(data['pending_total']):,}".replace(",", " ")
+    await bot.send_message(
+        user_id,
+        get_text("pending_cheque_reminder", lang) + "\n\n" + get_text(
+            "send_payment_cheque", lang,
+            total=total, card=PAYMENT_CARD_NUMBER, recipient=PAYMENT_RECIPIENT_NAME,
+        ),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=get_text("btn_cancel_checkout", lang),
+                                   callback_data="checkout_cancel")],
+        ]),
+        parse_mode="HTML",
+    )
+
+
 async def _forward_cheque_to_admins(bot: Bot, order_id: int, customer_name: str,
-                                     kind: str, file_id: str) -> None:
-    """Forward a payment cheque (photo or document) to every admin in parallel."""
+                                     kind: str, file_id: str, skip=frozenset()) -> None:
+    """Forward a payment cheque (photo or document) to every admin in parallel.
+    `skip` holds admins who already got it (the Mini App upload fallback)."""
     import asyncio
     import logging
     logger = logging.getLogger(__name__)
@@ -2177,7 +2341,8 @@ async def _forward_cheque_to_admins(bot: Bot, order_id: int, customer_name: str,
         except Exception as exc:
             logger.warning("Cheque forward to admin %s failed: %s", admin_id, exc)
 
-    await asyncio.gather(*(_send(aid) for aid in ADMIN_IDS), return_exceptions=True)
+    await asyncio.gather(*(_send(aid) for aid in ADMIN_IDS if aid not in skip),
+                         return_exceptions=True)
 
 
 async def notify_low_stock(bot: Bot, low_stock: list[dict]) -> None:
@@ -2271,6 +2436,10 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
             note = mystery_gift.admin_note(goods_subtotal(items), admin_lang)
             if note:
                 text += "\n" + note
+            if data.get("delivery_method") == "pickup":
+                text += "\n" + get_text("pickup_instructions", admin_lang,
+                    address=_escape_html(data.get("address") or ""),
+                    map_url=_escape_html_attr(data.get("pickup_map_url") or ""))
             # The total above is already net of any Keto the buyer spent, so
             # without saying so the payment reads as short. Taken from the
             # order row rather than the caller's dict: three different flows

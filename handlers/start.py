@@ -26,11 +26,21 @@ _LANG_LABELS = {
 router = Router()
 
 
+async def _welcome(lang: str) -> str:
+    """Welcome text + the 10% bot-order reminder while it is on (bot_discount.py)."""
+    import bot_discount
+    return get_text("welcome", lang) + await bot_discount.footer(lang)
+
+
 # Every localized label of the two persistent-keyboard buttons. Pressing one
 # arrives as an ordinary text message, so the handlers below have to recognise
 # the button by its text in whichever language the user picked.
 _MENU_BTN_TEXTS = {get_text("btn_kb_menu", lg) for lg in ("uz", "uz_cyr", "ru")}
 _CART_BTN_TEXTS = {get_text("btn_kb_cart", lg) for lg in ("uz", "uz_cyr", "ru")}
+
+
+def _is_private_chat(message: Message) -> bool:
+    return message.chat.type == "private"
 
 
 async def ensure_menu_keyboard(bot, user_id: int, lang: str) -> None:
@@ -58,10 +68,12 @@ async def menu_button_pressed(message: Message, state: FSMContext):
     """🏠 Bosh menyu — the way home from anywhere, including out of a stuck
     "waiting for X" flow (same escape-hatch behaviour as the inline
     main_menu button, which is why this clears the FSM too)."""
+    if not _is_private_chat(message):
+        return
     await state.clear()
     lang = await get_user_language(message.from_user.id)
     await message.answer(
-        get_text("welcome", lang),
+        await _welcome(lang),
         reply_markup=main_menu_keyboard(lang, is_admin=message.from_user.id in ADMIN_IDS),
         parse_mode="HTML",
     )
@@ -70,6 +82,8 @@ async def menu_button_pressed(message: Message, state: FSMContext):
 @router.message(F.text.in_(_CART_BTN_TEXTS))
 async def cart_button_pressed(message: Message, state: FSMContext):
     """🛒 Savat — jumps straight to the cart from any screen."""
+    if not _is_private_chat(message):
+        return
     await state.clear()
     from handlers.cart import render_cart_message
     lang = await get_user_language(message.from_user.id)
@@ -80,11 +94,13 @@ async def cart_button_pressed(message: Message, state: FSMContext):
 async def cmd_menu(message: Message, state: FSMContext):
     """/menu — the same landing spot as /start, minus the language prompt.
     Registered in the bot's command list so typing "/" offers it."""
+    if not _is_private_chat(message):
+        return
     await state.clear()
     lang = await get_user_language(message.from_user.id)
     await ensure_menu_keyboard(message.bot, message.from_user.id, lang)
     await message.answer(
-        get_text("welcome", lang),
+        await _welcome(lang),
         reply_markup=main_menu_keyboard(lang, is_admin=message.from_user.id in ADMIN_IDS),
         parse_mode="HTML",
     )
@@ -117,8 +133,26 @@ async def cmd_help(message: Message, state: FSMContext):
     )
 
 
+async def _remind_pending_cheque(message: Message, state: FSMContext) -> None:
+    """/start in the middle of paying for an online order (state_guard.py
+    keeps that state) — put the card details and the cancel button back in
+    front of the buyer so the cheque they send next lands on the order."""
+    if not _is_private_chat(message):
+        return
+    data = await state.get_data()
+    if not data.get("pending_items"):
+        return
+    from handlers.cart import send_pending_cheque_prompt
+    try:
+        await send_pending_cheque_prompt(message.bot, message.from_user.id, data)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Pending-cheque reminder to %s failed", message.from_user.id, exc_info=True)
+
+
 @router.message(CommandStart(deep_link=True))
-async def cmd_start_deep_link(message: Message, command: CommandObject):
+async def cmd_start_deep_link(message: Message, command: CommandObject, state: FSMContext):
     """A /start carrying a payload — the channel's daily product link
     (?start=prod_<id>, see product_card.py), a Facebook/Instagram ad link
     (?start=fb_<reklama>, see ad_sources.py), a blogger's personal link
@@ -136,18 +170,23 @@ async def cmd_start_deep_link(message: Message, command: CommandObject):
     product_id = product_card.parse_product_payload(command.args)
     await _handle_start(message, referrer_id, blogger_code, ad_source,
                         product_id=product_id)
+    await _remind_pending_cheque(message, state)
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: FSMContext):
     """Handle /start — show language selection"""
     await _handle_start(message, None)
+    await _remind_pending_cheque(message, state)
 
 
 async def _handle_start(message: Message, referrer_id: int | None,
                         blogger_code: str | None = None,
                         ad_source: str | None = None,
                         product_id: int | None = None):
+    if not _is_private_chat(message):
+        return
+
     # Check if user is banned
     if await is_user_banned(message.from_user.id):
         lang = await get_user_language(message.from_user.id)
@@ -253,6 +292,11 @@ async def _process_new_user(bot, tg_user, referrer_id: int | None,
         except Exception:
             pass
 
+    # Har bir yangi foydalanuvchiga 10 Keto start bonusi — referal orqali
+    # kelib, uni yuqorida olgan bo'lsa, qayta berilmaydi.
+    import referral_program
+    await referral_program.grant_welcome_bonus(bot, tg_user.id)
+
 
 async def _resend_menu_keyboard(bot, user_id: int, lang: str) -> None:
     """Same as ensure_menu_keyboard but unconditional — used after a language
@@ -292,7 +336,7 @@ async def set_language(callback: CallbackQuery):
     # left labelled in whatever the previous pick was.
     await _resend_menu_keyboard(callback.bot, callback.from_user.id, lang)
     await callback.message.edit_text(
-        get_text("welcome", lang),
+        await _welcome(lang),
         reply_markup=main_menu_keyboard(lang, is_admin=is_admin),
         parse_mode="HTML"
     )
@@ -317,7 +361,7 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     lang = await get_user_language(callback.from_user.id)
     is_admin = callback.from_user.id in ADMIN_IDS
-    text = get_text("welcome", lang)
+    text = await _welcome(lang)
     keyboard = main_menu_keyboard(lang, is_admin=is_admin)
 
     if callback.message.photo:

@@ -88,6 +88,19 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Pickup instructions are configured by an authenticated admin. The
+        # single checked row makes startup idempotent and keeps it disabled
+        # until a real shop address is entered.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS pickup_settings (
+                id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+                enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                address TEXT NOT NULL DEFAULT '',
+                map_url TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        await conn.execute("INSERT INTO pickup_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+        await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_map_url TEXT")
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS order_line_cost_audit (
                 id BIGSERIAL PRIMARY KEY,
@@ -586,6 +599,24 @@ async def init_db():
             )
         """)
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_user_id)")
+        # "Bepul xarid" referal keshbegi (2026-10-02, referral_program.py):
+        # taklif qilingan odamning birinchi yetkazilgan xaridining 3% i
+        # taklif qiluvchiga. cashback_order_id to'lgach qayta to'lanmaydi.
+        await conn.execute("ALTER TABLE referrals ADD COLUMN IF NOT EXISTS cashback_order_id INTEGER")
+        await conn.execute("ALTER TABLE referrals ADD COLUMN IF NOT EXISTS cashback_amount INTEGER")
+        await conn.execute("ALTER TABLE referrals ADD COLUMN IF NOT EXISTS cashback_at TIMESTAMP")
+        # Faqat shu dastur ishga tushgandan keyingi takliflar keshbek beradi:
+        # ustun qo'shilganda mavjud (eski musobaqa) qatorlar FALSE oladi,
+        # keyin default TRUE — yangi qatorlar avtomatik loyiq bo'ladi.
+        await conn.execute(
+            "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS cashback_eligible BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+        await conn.execute("ALTER TABLE referrals ALTER COLUMN cashback_eligible SET DEFAULT TRUE")
+        # Har bir yangi foydalanuvchiga bir martalik 10 Keto start bonusi.
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_keto_ledger_welcome_once "
+            "ON keto_ledger(user_id) WHERE kind = 'welcome'"
+        )
 
         # Single-row contest state, same pattern as gamification_state/
         # broadcast_state. image_url points at a web_images row uploaded
@@ -749,6 +780,20 @@ async def init_db():
                 sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Owner, 2026-10-02: "Keto muzqaymoqlarini eng pastga tushurib qo'y".
+        # The category had sort_order -1, so it led every list (shop home,
+        # catalogue tabs, the bot's category keyboard). There is no reorder
+        # screen, so it is moved to the end ONCE — claimed by key, so a later
+        # manual reorder in the database is never undone by a restart.
+        claimed = await conn.fetchval(
+            "INSERT INTO release_notes_sent (key) VALUES ('category-icecream-last-2026-10-02') "
+            "ON CONFLICT (key) DO NOTHING RETURNING key")
+        if claimed:
+            await conn.execute(
+                """UPDATE categories
+                      SET sort_order = (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories)
+                    WHERE key = 'keto_muzqaymoqlari'""")
 
         # ===== Ombor ogohlantirishlari (stock_alerts.py, 2026-09-17) =====
         # Last level each product was alerted at (ok / low / out). An alert fires
@@ -1992,7 +2037,8 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
                        delivery_method: str | None = None,
                        address_note: str | None = None,
                        secondary_phone: str | None = None,
-                       keto_redeem: int = 0) -> tuple[int, list[dict]]:
+                       keto_redeem: int = 0,
+                       pickup_map_url: str | None = None) -> tuple[int, list[dict]]:
     if not items:
         raise ValueError("Cannot create order with empty items")
     seller_id = items[0].get("seller_id")
@@ -2066,10 +2112,11 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
 
             import json
             order_id = await conn.fetchval(
-                """INSERT INTO orders (user_id, seller_id, customer_name, phone, address, items, total, payment_method, latitude, longitude, delivery_method, address_note, secondary_phone, keto_redeemed)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id""",
+                """INSERT INTO orders (user_id, seller_id, customer_name, phone, address, items, total, payment_method, latitude, longitude, delivery_method, address_note, secondary_phone, keto_redeemed, pickup_map_url)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id""",
                 user_id, seller_id, customer_name, phone, address, json.dumps(items, ensure_ascii=False), total, payment_method,
-                latitude, longitude, delivery_method, address_note, secondary_phone, keto_redeem
+                latitude, longitude, delivery_method, address_note, secondary_phone, keto_redeem,
+                pickup_map_url
             )
 
             if keto_redeem > 0:
@@ -2079,6 +2126,26 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
             await conn.execute("DELETE FROM cart WHERE user_id = $1", user_id)
 
     return order_id, low_stock
+
+
+async def get_pickup_settings() -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT enabled, address, map_url FROM pickup_settings WHERE id = 1")
+    return dict(row) if row else {"enabled": False, "address": "", "map_url": ""}
+
+
+async def save_pickup_settings(settings: dict) -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO pickup_settings (id, enabled, address, map_url)
+               VALUES (1, $1, $2, $3)
+               ON CONFLICT (id) DO UPDATE SET enabled = EXCLUDED.enabled,
+                 address = EXCLUDED.address, map_url = EXCLUDED.map_url
+               RETURNING enabled, address, map_url""",
+            bool(settings.get("enabled")), str(settings.get("address") or "").strip(),
+            str(settings.get("map_url") or "").strip(),
+        )
+    return dict(row)
 
 
 async def get_order_history_position(user_id: int, order_id: int) -> dict:
@@ -5383,6 +5450,145 @@ async def record_referral(referred_user_id: int, referrer_user_id: int) -> bool:
             return True
         except asyncpg.UniqueViolationError:
             return False
+
+
+# ===== "BEPUL XARID" REFERAL KESHBEGI (2026-10-02, referral_program.py) =====
+
+async def credit_welcome_keto(user_id: int, amount: int) -> bool:
+    """Yangi foydalanuvchiga bir martalik start bonusi. Referal havola orqali
+    kelib, award_referral'dan allaqachon Keto olgan bo'lsa — berilmaydi.
+    True — shu chaqiruv bonus berdi."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            already = await conn.fetchval(
+                "SELECT 1 FROM keto_ledger WHERE user_id = $1 AND kind IN ('welcome', 'referral') LIMIT 1",
+                user_id,
+            )
+            if already:
+                return False
+            try:
+                await conn.execute(
+                    "INSERT INTO keto_ledger (user_id, order_id, amount, kind, note) "
+                    "VALUES ($1, NULL, $2, 'welcome', 'Start bonusi')",
+                    user_id, amount,
+                )
+            except asyncpg.UniqueViolationError:
+                return False
+            await conn.execute(
+                "UPDATE users SET keto_balance = keto_balance + $1, keto_lifetime = keto_lifetime + $1 "
+                "WHERE user_id = $2",
+                amount, user_id,
+            )
+    return True
+
+
+async def claim_referral_cashback(referred_user_id: int, order_id: int, amount: int) -> int | None:
+    """Taklif qilingan odamning birinchi xaridi uchun keshbekni taklif
+    qiluvchiga yozadi — referrals qatorini band qilish va Keto berish bitta
+    tranzaksiyada. Taklif qiluvchi ID sini qaytaradi; referal bo'lmasa yoki
+    keshbek avval to'langan bo'lsa — None."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            referrer_id = await conn.fetchval(
+                "UPDATE referrals SET cashback_order_id = $2, cashback_amount = $3, "
+                "cashback_at = CURRENT_TIMESTAMP "
+                "WHERE referred_user_id = $1 AND cashback_order_id IS NULL AND cashback_eligible "
+                "RETURNING referrer_user_id",
+                referred_user_id, order_id, amount,
+            )
+            if referrer_id is None:
+                return None
+            await conn.execute(
+                "INSERT INTO keto_ledger (user_id, order_id, amount, kind, note) "
+                "VALUES ($1, $2, $3, 'referral_order', $4)",
+                referrer_id, order_id, amount,
+                f"Referal keshbek: user {referred_user_id}, buyurtma #{order_id}",
+            )
+            await conn.execute(
+                "UPDATE users SET keto_balance = keto_balance + $1, keto_lifetime = keto_lifetime + $1 "
+                "WHERE user_id = $2",
+                amount, referrer_id,
+            )
+    return referrer_id
+
+
+async def get_user_referral_summary(user_id: int) -> dict:
+    """Mijozning "Bepul xarid" ekrani uchun: nechta taklif, nechtasi xarid
+    qildi, referaldan jami qancha Keto ishladi."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) AS invited,
+                      COUNT(cashback_order_id) AS bought,
+                      COALESCE(SUM(cashback_amount), 0) AS cashback
+                 FROM referrals WHERE referrer_user_id = $1""",
+            user_id,
+        )
+    return {k: int(row[k] or 0) for k in ("invited", "bought", "cashback")}
+
+
+async def get_referral_program_stats(since: datetime | None = None) -> dict:
+    """Admin hisoboti uchun: taklif → xarid konversiyasi va berilgan Keto."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) AS invited,
+                      COUNT(cashback_order_id) AS bought,
+                      COALESCE(SUM(cashback_amount), 0) AS cashback
+                 FROM referrals
+                WHERE ($1::timestamp IS NULL OR created_at >= $1)""",
+            since,
+        )
+        bonus = await conn.fetchrow(
+            """SELECT COALESCE(SUM(amount) FILTER (WHERE kind = 'referral'), 0) AS referral_bonus,
+                      COALESCE(SUM(amount) FILTER (WHERE kind = 'welcome'), 0)  AS welcome_bonus
+                 FROM keto_ledger
+                WHERE kind IN ('referral', 'welcome')
+                  AND ($1::timestamp IS NULL OR created_at >= $1)""",
+            since,
+        )
+    return {
+        "invited": int(row["invited"] or 0),
+        "bought": int(row["bought"] or 0),
+        "cashback": int(row["cashback"] or 0),
+        "referral_bonus": int(bonus["referral_bonus"] or 0),
+        "welcome_bonus": int(bonus["welcome_bonus"] or 0),
+    }
+
+
+async def get_top_referral_earners(since: datetime | None = None, limit: int = 5) -> list[dict]:
+    """Referal keshbekidan eng ko'p Keto ishlaganlar."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT r.referrer_user_id AS user_id, u.username, u.full_name,
+                      COUNT(*) AS invites,
+                      COUNT(r.cashback_order_id) AS bought,
+                      COALESCE(SUM(r.cashback_amount), 0) AS cashback
+                 FROM referrals r
+                 JOIN users u ON u.user_id = r.referrer_user_id
+                WHERE ($1::timestamp IS NULL OR r.created_at >= $1)
+                GROUP BY r.referrer_user_id, u.username, u.full_name
+               HAVING COUNT(r.cashback_order_id) > 0
+                ORDER BY cashback DESC
+                LIMIT $2""",
+            since, limit,
+        )
+    return [dict(r) for r in rows]
+
+
+async def get_recent_referrals(limit: int = 30) -> list[dict]:
+    """Admin uchun: kim kimni taklif qildi, xarid qildimi, qancha keshbek."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT r.created_at, r.cashback_order_id, r.cashback_amount,
+                      r.referrer_user_id, ru.username AS referrer_username, ru.full_name AS referrer_name,
+                      r.referred_user_id, du.username AS referred_username, du.full_name AS referred_name
+                 FROM referrals r
+                 JOIN users ru ON ru.user_id = r.referrer_user_id
+                 JOIN users du ON du.user_id = r.referred_user_id
+                ORDER BY r.created_at DESC
+                LIMIT $1""",
+            limit,
+        )
+    return [dict(r) for r in rows]
 
 
 async def get_referral_contest_state() -> dict:
