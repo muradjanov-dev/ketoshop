@@ -46,6 +46,7 @@ from abandoned_cart import router as abandoned_cart_router
 from retention import router as retention_router
 from keto_explainer import router as keto_explainer_router
 from bot_discount import router as bot_discount_router
+from onboarding_video import router as onboarding_video_router
 from bot_discount_campaign import router as bot_discount_campaign_router
 from stock_alerts import router as stock_alerts_router
 from referral_stats import router as referral_stats_router
@@ -217,6 +218,7 @@ async def main():
     dp.include_router(link_guard_router)
     dp.include_router(webapp_data_router)
     dp.include_router(start_router)
+    dp.include_router(onboarding_video_router)
     dp.include_router(broadcast_admin_router)
     # 10% chegirma — admin-only /chegirma* commands, high for the same reason
     # as broadcast_admin: they must win over any FSM state an admin is in.

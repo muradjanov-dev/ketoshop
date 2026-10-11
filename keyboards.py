@@ -703,6 +703,8 @@ def admin_marketing_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="📢 Blogerlar", callback_data="admin:bloger"),
             InlineKeyboardButton(text="📊 Referallar", callback_data="admin:referrals"),
         ],
+        # How-to-order videos for new and existing buyers (onboarding_video.py).
+        [InlineKeyboardButton(text="🎬 Video qo'llanma", callback_data="admin:video")],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")],
     ])
 
