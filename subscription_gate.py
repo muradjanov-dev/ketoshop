@@ -57,6 +57,20 @@ async def _is_subscribed(bot, user_id: int, force: bool = False) -> bool:
     return subscribed
 
 
+async def _awaiting_cheque(data: dict) -> bool:
+    """True while the user owes the bot a payment cheque for an order they
+    already placed (CheckoutStates.waiting_cheque) — never block that."""
+    state = data.get("state")
+    if state is None:
+        return False
+    from handlers.cart import CheckoutStates
+    try:
+        return await state.get_state() == CheckoutStates.waiting_cheque.state
+    except Exception:
+        logger.warning("Could not read FSM state in the subscription gate", exc_info=True)
+        return False
+
+
 def _gate_text(lang: str) -> str:
     if lang == "ru":
         return (
@@ -158,6 +172,11 @@ class SubscriptionGateMiddleware(BaseMiddleware):
             return
 
         if not await _is_subscribed(bot, user.id):
+            # The Mini App isn't gated, so an unsubscribed buyer can place an
+            # online order there and then send the cheque in the chat — which
+            # this gate used to swallow with the channel nag (2026-10-11).
+            if await _awaiting_cheque(data):
+                return await handler(event, data)
             if isinstance(event, Message) and (event.text or "").startswith("/start"):
                 parts = event.text.split(maxsplit=1)
                 if len(parts) > 1:

@@ -2296,9 +2296,33 @@ async def cancel_online_checkout(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+async def send_pending_cheque_prompt(bot: Bot, user_id: int, data: dict) -> None:
+    """Card details, "send the cheque here" and the cancel button for an
+    online checkout still waiting for its cheque (`data` is that FSM data).
+
+    Sent when a Mini App buyer taps "Botga qaytib to'layman", and on /start
+    mid-payment. Before 2026-10-11 the chat said nothing in either case, and
+    /start silently dropped the pending order."""
+    lang = await get_user_language(user_id)
+    total = f"{int(data['pending_total']):,}".replace(",", " ")
+    await bot.send_message(
+        user_id,
+        get_text("pending_cheque_reminder", lang) + "\n\n" + get_text(
+            "send_payment_cheque", lang,
+            total=total, card=PAYMENT_CARD_NUMBER, recipient=PAYMENT_RECIPIENT_NAME,
+        ),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=get_text("btn_cancel_checkout", lang),
+                                   callback_data="checkout_cancel")],
+        ]),
+        parse_mode="HTML",
+    )
+
+
 async def _forward_cheque_to_admins(bot: Bot, order_id: int, customer_name: str,
-                                     kind: str, file_id: str) -> None:
-    """Forward a payment cheque (photo or document) to every admin in parallel."""
+                                     kind: str, file_id: str, skip=frozenset()) -> None:
+    """Forward a payment cheque (photo or document) to every admin in parallel.
+    `skip` holds admins who already got it (the Mini App upload fallback)."""
     import asyncio
     import logging
     logger = logging.getLogger(__name__)
@@ -2317,7 +2341,8 @@ async def _forward_cheque_to_admins(bot: Bot, order_id: int, customer_name: str,
         except Exception as exc:
             logger.warning("Cheque forward to admin %s failed: %s", admin_id, exc)
 
-    await asyncio.gather(*(_send(aid) for aid in ADMIN_IDS), return_exceptions=True)
+    await asyncio.gather(*(_send(aid) for aid in ADMIN_IDS if aid not in skip),
+                         return_exceptions=True)
 
 
 async def notify_low_stock(bot: Bot, low_stock: list[dict]) -> None:

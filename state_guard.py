@@ -22,6 +22,12 @@ from aiogram.types import Message, TelegramObject
 # (2026-08-31 — found while adding the aksiya wizard's optional photo step).
 STEP_COMMANDS = {"/skip", "/cancel"}
 
+# A placed online order waiting for its payment cheque survives /start: a
+# buyer who ordered in the Mini App without ever pressing START has to press
+# it before they can send the cheque in the chat, and that used to wipe the
+# order (2026-10-11). handlers/start.py reminds them what to pay instead.
+WAITING_CHEQUE = "CheckoutStates:waiting_cheque"
+
 
 class StateResetOnCommandMiddleware(BaseMiddleware):
     async def __call__(self, handler, event: TelegramObject, data: dict):
@@ -31,6 +37,7 @@ class StateResetOnCommandMiddleware(BaseMiddleware):
             base = text.split()[0].split("@")[0].lower() if text else ""
             if text.startswith("/") and base not in STEP_COMMANDS:
                 state = data.get("state")
-                if state is not None and await state.get_state() is not None:
+                current = await state.get_state() if state is not None else None
+                if current is not None and not (base == "/start" and current == WAITING_CHEQUE):
                     await state.clear()
         return await handler(event, data)
