@@ -228,7 +228,8 @@ async def api_products(request: web.Request):
 
     # Discounts pseudo-category: active-discount products across all categories.
     if category == "discounts":
-        products, total = await get_discounted_products(page=page, per_page=ITEMS_PER_PAGE)
+        products, total = await get_discounted_products(page=page, per_page=ITEMS_PER_PAGE,
+                                                         photos_first=True)
         return _json({
             "products": _serialize_products(products, lang),
             "total": total,
@@ -268,7 +269,8 @@ async def api_products(request: web.Request):
     if not category or category not in CATEGORIES:
         # "Hammasi/All" tab — genuinely paginated across every category, not
         # just a first-page slice, so infinite scroll actually reaches everything.
-        products, total = await get_all_products_paginated(page=page, per_page=per_page)
+        products, total = await get_all_products_paginated(page=page, per_page=per_page,
+                                                           photos_first=True)
         return _json({
             "products": _serialize_products(products, lang),
             "total": total,
@@ -276,7 +278,11 @@ async def api_products(request: web.Request):
             "pages": (total + per_page - 1) // per_page,
         })
 
-    products, total = await get_products_by_category(category, page=page, per_page=per_page)
+    # Products with a photo first, photo-less ones at the end (owner,
+    # 2026-10-11) — see database._photos_first_sql. The bot's own catalog
+    # keeps plain A→Z.
+    products, total = await get_products_by_category(category, page=page, per_page=per_page,
+                                                     photos_first=True)
     return _json({
         "products": _serialize_products(products, lang),
         "total": total,

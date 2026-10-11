@@ -1327,8 +1327,18 @@ async def add_product(seller_id: int, name: str, description: str, price: float,
         )
 
 
+def _photos_first_sql(on: bool) -> str:
+    """Leading ORDER BY term that sinks photo-less products to the end of a
+    list (owner, 2026-10-11: on the site a grey placeholder tile among the
+    real pictures looks unfinished). Done in SQL, not in the browser, because
+    these lists are paginated — sorting a page client-side would only shuffle
+    within that page. A blank photo_id counts as no photo, same as photo_url."""
+    return "(NULLIF(TRIM(p.photo_id), '') IS NULL) ASC, " if on else ""
+
+
 async def get_products_by_category(category: str, page: int = 0, per_page: int = 5,
-                                  include_b2b_only: bool = False) -> tuple[list[dict], int]:
+                                  include_b2b_only: bool = False,
+                                  photos_first: bool = False) -> tuple[list[dict], int]:
     b2b_filter = "" if include_b2b_only else " AND (p.b2b_only IS NOT TRUE)"
     b2b_count_filter = "" if include_b2b_only else " AND (b2b_only IS NOT TRUE)"
     async with pool.acquire() as conn:
@@ -1341,14 +1351,15 @@ async def get_products_by_category(category: str, page: int = 0, per_page: int =
                FROM products p
                JOIN users u ON p.seller_id = u.user_id
                WHERE p.category = $1 AND p.is_active = 1{b2b_filter}
-               ORDER BY LOWER(p.name) ASC, p.id ASC
+               ORDER BY {_photos_first_sql(photos_first)}LOWER(p.name) ASC, p.id ASC
                LIMIT $2 OFFSET $3""",
             category, per_page, page * per_page
         )
         return [dict(r) for r in rows], total
 
 
-async def get_discounted_products(page: int = 0, per_page: int = 5) -> tuple[list[dict], int]:
+async def get_discounted_products(page: int = 0, per_page: int = 5,
+                                  photos_first: bool = False) -> tuple[list[dict], int]:
     """Active-discount products across all categories, for the bot's Discounts
     section. 'Active' mirrors active_discount(): percent > 0 and not expired
     (NULL discount_until = no expiry). Compared against naive UTC, same as the
@@ -1364,25 +1375,26 @@ async def get_discounted_products(page: int = 0, per_page: int = 5) -> tuple[lis
                 FROM products p
                 JOIN users u ON p.seller_id = u.user_id
                 {where}
-                ORDER BY LOWER(p.name) ASC, p.id ASC
+                ORDER BY {_photos_first_sql(photos_first)}LOWER(p.name) ASC, p.id ASC
                 LIMIT $2 OFFSET $3""",
             now, per_page, page * per_page
         )
         return [dict(r) for r in rows], total
 
 
-async def get_all_products_paginated(page: int = 0, per_page: int = 20) -> tuple[list[dict], int]:
+async def get_all_products_paginated(page: int = 0, per_page: int = 20,
+                                     photos_first: bool = False) -> tuple[list[dict], int]:
     """Active products across every category, genuinely paginated (used by
     the catalog's "Hammasi/All" tab) — unlike get_top_ordered_products or
     the old ad-hoc per-category slice, this actually walks the whole table."""
     async with pool.acquire() as conn:
         total = await conn.fetchval("SELECT COUNT(*) FROM products WHERE is_active = 1 AND (b2b_only IS NOT TRUE)")
         rows = await conn.fetch(
-            """SELECT p.*, u.full_name as seller_name, u.username as seller_username
+            f"""SELECT p.*, u.full_name as seller_name, u.username as seller_username
                FROM products p
                JOIN users u ON p.seller_id = u.user_id
                WHERE p.is_active = 1 AND (p.b2b_only IS NOT TRUE)
-               ORDER BY LOWER(p.name) ASC, p.id ASC
+               ORDER BY {_photos_first_sql(photos_first)}LOWER(p.name) ASC, p.id ASC
                LIMIT $1 OFFSET $2""",
             per_page, page * per_page
         )
