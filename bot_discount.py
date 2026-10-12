@@ -374,6 +374,44 @@ async def price_list() -> list[dict]:
     return out
 
 
+def _base_and_current(row: dict) -> tuple[float, float]:
+    """Katalog qatori (mahsulot yoki set) → (asl narx, hozirgi narx)."""
+    if row.get("is_set"):
+        base = float(row["set_price"] if row.get("set_price") is not None else row["price"])
+        return base, base
+    base = float(row["price"])
+    return base, float(database.effective_price(base, row.get("discount_percent"), row.get("discount_until")))
+
+
+async def display_prices(rows: list[dict]) -> list[float | None]:
+    """Har bir mahsulot/set kartochkasida ko'rinadigan chegirmali narx —
+    egasi, 2026-10-12: "botda va saytda hamma mahsulotlarga bir xilda 10%
+    lik chegirma va narxlari ko'rinib tursin". Checkout bilan aynan bir xil
+    qoida (line_price, tannarx chegarasi), shuning uchun kartochka va savat
+    hech qachon farq qilmaydi. Hamma ko'radi (adminlar ham — preview kabi).
+    Qator uchun None: chegirma o'chiq yoki bu qatorni arzonlashtirmaydi
+    (marja yo'q, yoki o'z 🔥 chegirmasi kattaroq) — kartochka avvalgidek."""
+    if not rows or not await is_active():
+        return [None] * len(rows)
+    product_costs, set_costs = await _cost_maps(rows)
+    out: list[float | None] = []
+    for row in rows:
+        base, current = _base_and_current(row)
+        new = line_price(base, current, PERCENT, _unit_cost(row, product_costs, set_costs))
+        out.append(new if new < current else None)
+    return out
+
+
+async def display_price(row: dict) -> float | None:
+    return (await display_prices([row]))[0]
+
+
+def shown_percent(base: float, new: float) -> int:
+    """Kartochkadagi "−N%" — checkout qatoriga yoziladigani bilan bir xil."""
+    base = float(base)
+    return int(round((base - float(new)) * 100 / base)) if base else 0
+
+
 def margin_report_text(report: dict, limit: int = 40) -> str:
     def _cut(lines: list[str]) -> str:
         more = f"\n… yana {len(lines) - limit} ta" if len(lines) > limit else ""

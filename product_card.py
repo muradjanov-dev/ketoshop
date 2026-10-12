@@ -85,6 +85,13 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     discount_until = product.get("discount_until")
     discount = active_discount(product.get("discount_percent"), discount_until)
     final_price = effective_price(product["price"], discount, discount_until)
+    # 10% bot/site-order price on every card while it is on (owner,
+    # 2026-10-12) — the very price checkout charges; its end date is in the
+    # reminder line below, so no separate "until" line.
+    bot_price = await bot_discount.display_price(product)
+    if bot_price is not None:
+        discount = bot_discount.shown_percent(product["price"], bot_price)
+        final_price, discount_until = bot_price, None
 
     text = get_text("product_card", lang,
         name=name,
