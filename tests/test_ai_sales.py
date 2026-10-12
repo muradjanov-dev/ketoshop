@@ -485,6 +485,163 @@ class AiSalesSettingsAndModelTest(_ProviderSwap):
         self.assertEqual(provider.model, "gpt-5.4-mini")
 
 
+class AiSalesFallbackAndDefaultModelTest(_ProviderSwap):
+    """Model javob bera olmasa mijoz yo'qolmaydi; default — arzon gpt-5.4-mini."""
+
+    def setUp(self):
+        ai_sales._sessions.clear()
+
+    def tearDown(self):
+        ai_sales._sessions.clear()
+
+    def test_default_openai_model_is_the_cheap_one(self):
+        self.assertEqual(ai_provider.DEFAULT_MODELS["openai"], "gpt-5.4-mini")
+        self.assertIsNotNone(ai_provider.price_for("gpt-5.4-mini"))
+
+    def test_model_failure_hands_the_question_to_the_admins_not_an_apology(self):
+        class _Broken:
+            name, model = "openai", "gpt-5.4-mini"
+
+            async def step(self, *args, **kwargs):
+                raise RuntimeError("400 unsupported parameter")
+
+        self.use([])
+        ai_sales.PROVIDER = _Broken()
+        _patch(self, ai_sales, "_dynamic_block", AsyncMock(return_value="KATALOG"))
+        from handlers import support_relay
+        relay = AsyncMock()
+        _patch(self, support_relay, "relay_text", relay)
+        message = _FakeMessage("bodom uni bormi?")
+        ai_sales._session(777)["profiled"] = True
+
+        _run(ai_sales._answer(None, message, "salom\nbodom uni bormi?"))
+
+        relay.assert_awaited_once_with(message, None, "salom\nbodom uni bormi?")
+        message.answer.assert_not_awaited()
+
+
+class AiKeyCommandTest(_ProviderSwap):
+    """/ai_kalit: kalit botga beriladi, tekshiriladi, xabar o'chiriladi va
+    kalit hech qachon javobda yoki jurnalda to'liq ko'rinmaydi."""
+
+    KEY = "sk-proj-test0000000000000000000000000000WXYZ"
+
+    def setUp(self):
+        self.use([])
+        ai_sales.PROVIDER = None                     # serverda kalit yo'q holat
+        _patch(self, ai_sales, "MODEL", "")
+        _patch(self, ai_sales, "ADMIN_IDS", [1])
+        self.saved_from_bot = dict(ai_sales._key_source)
+        self.addCleanup(ai_sales._key_source.update, self.saved_from_bot)
+        self.store = AsyncMock()
+        _patch(self, ai_sales, "set_setting", self.store)
+        _settings()
+
+    def _message(self, text, chat_type="private"):
+        message = _FakeMessage(text, user_id=1, chat_type=chat_type)
+        message.delete = AsyncMock()
+        return message
+
+    def test_a_working_key_is_stored_applied_and_the_message_deleted(self):
+        _patch(self, ai_sales, "_verify_key", AsyncMock(return_value=None))
+        message = self._message(f"/ai_kalit {self.KEY}")
+
+        _run(ai_sales.cmd_ai_key(message))
+
+        message.delete.assert_awaited_once()
+        self.store.assert_awaited_once_with("openai_key", self.KEY, 1)
+        self.assertEqual(ai_sales.PROVIDER.name, "openai")
+        self.assertEqual(ai_sales.PROVIDER.api_key, self.KEY)
+        self.assertEqual(ai_sales.PROVIDER.model, "gpt-5.4-mini")
+        reply = message.answer.await_args.args[0]
+        self.assertIn("…WXYZ", reply)
+        self.assertNotIn(self.KEY, reply)
+        self.assertTrue(ai_sales.is_enabled())
+
+    def test_a_rejected_key_is_not_stored(self):
+        _patch(self, ai_sales, "_verify_key",
+               AsyncMock(return_value="AuthenticationError: Incorrect API key"))
+        message = self._message(f"/ai_kalit {self.KEY}")
+        _run(ai_sales.cmd_ai_key(message))
+        message.delete.assert_awaited_once()
+        self.store.assert_not_awaited()
+        self.assertIsNone(ai_sales.PROVIDER)
+
+    def test_a_key_sent_in_a_group_is_deleted_and_ignored(self):
+        verify = AsyncMock(return_value=None)
+        _patch(self, ai_sales, "_verify_key", verify)
+        message = self._message(f"/ai_kalit {self.KEY}", chat_type="supergroup")
+        _run(ai_sales.cmd_ai_key(message))
+        message.delete.assert_awaited_once()
+        verify.assert_not_awaited()
+        self.store.assert_not_awaited()
+
+    def test_stored_key_is_picked_up_from_settings(self):
+        ai_sales._apply_key(self.KEY)
+        self.assertEqual(ai_sales.PROVIDER.api_key, self.KEY)
+        self.assertIn("bot orqali", ai_sales._key_status())
+        self.assertNotIn(self.KEY, ai_sales._key_status())
+
+
+class AiUsageReportTest(unittest.TestCase):
+    """Kunlik sarf hisoboti: 23:58 da bir marta, hamma adminlarga, ovozsiz."""
+
+    def setUp(self):
+        from datetime import date
+        self.day = date(2026, 10, 13)
+        _patch(self, ai_sales, "ADMIN_IDS", [1, 2, 1])
+        self.store = AsyncMock(side_effect=lambda key, value, by=None:
+                               ai_sales._settings["values"].__setitem__(key, value))
+        _patch(self, ai_sales, "set_setting", self.store)
+        _patch(self, ai_sales, "_usage_for_day", AsyncMock(return_value=(
+            [{"model": "gpt-5.4-mini", "provider": "openai", "requests": 214,
+              "input_tokens": 2_100_000, "cached_tokens": 1_900_000,
+              "output_tokens": 31_200, "cost_usd": 0.42}],
+            {"requests": 2300, "input_tokens": 29_000_000, "output_tokens": 1_000_000,
+             "cost_usd": 6.1}, 3)))
+        import targets
+        _patch(self, targets, "current_usd_rate", AsyncMock(return_value=(12_800.0, "13.10.2026")))
+        self.bot = NS(send_message=AsyncMock())
+
+    def tearDown(self):
+        _settings()
+
+    def at(self, hour, minute, day=13):
+        return datetime(2026, 10, day, hour, minute)
+
+    def test_report_text_has_tokens_dollars_and_sum(self):
+        text = ai_sales.usage_report_text(self.day, *_run(ai_sales._usage_for_day(self.day)), 12_800.0)
+        for expected in ("13.10.2026", "$0.42", "5 376 so'm", "214 so'rov", "2.10M kirish",
+                         "1.90M keshdan", "31.2K chiqish", "gpt-5.4-mini", "Oy boshidan",
+                         "$6.10", "3 ta"):
+            self.assertIn(expected, text)
+
+    def test_sent_once_at_the_end_of_the_day_to_every_admin_silently(self):
+        _settings(usage_report_day="2026-10-12")
+        self.assertIsNone(_run(ai_sales._usage_report_tick(self.bot, self.at(20, 0))))
+        self.bot.send_message.assert_not_awaited()
+
+        self.assertEqual(_run(ai_sales._usage_report_tick(self.bot, self.at(23, 58))), self.day)
+        self.assertEqual(self.bot.send_message.await_count, 2)          # takror admin bir marta
+        self.assertTrue(self.bot.send_message.await_args.kwargs["disable_notification"])
+
+        self.assertIsNone(_run(ai_sales._usage_report_tick(self.bot, self.at(23, 59))))
+        self.assertEqual(self.bot.send_message.await_count, 2)          # qayta yuborilmadi
+
+    def test_a_missed_night_is_sent_next_morning_but_not_on_first_ever_run(self):
+        _settings()                                                    # hali hech qachon yuborilmagan
+        self.assertIsNone(_run(ai_sales._usage_report_tick(self.bot, self.at(10, 0, day=14))))
+        self.bot.send_message.assert_not_awaited()
+        _settings(usage_report_day="2026-10-12")                      # 13-kechasi o'tkazib yuborildi
+        self.assertEqual(_run(ai_sales._usage_report_tick(self.bot, self.at(10, 0, day=14))), self.day)
+        self.bot.send_message.assert_awaited()
+
+    def test_switched_off_report_sends_nothing(self):
+        _settings(report="0", usage_report_day="2026-10-12")
+        self.assertIsNone(_run(ai_sales._usage_report_tick(self.bot, self.at(23, 58))))
+        self.bot.send_message.assert_not_awaited()
+
+
 class AiSalesMemoryContextTest(_ProviderSwap):
     """Mijoz xotirasi suhbatning birinchi xabariga bir marta qo'shiladi."""
 
