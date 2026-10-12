@@ -2108,12 +2108,6 @@ TEXTS = {
               "💳 Ваш баланс: <b>{balance} Keto</b>\n\n"
               "Приглашайте ещё друзей и покупайте бесплатно! 🛒",
     },
-    "welcome_keto_bonus": {
-        "uz": "🎁 <b>Xush kelibsiz!</b> Sovg'a sifatida sizga <b>+{amount} Keto tanga</b> berildi.\n"
-              "💡 1 Keto = 1 so'm — Ketoshopdan xarid qilishda ishlatishingiz mumkin.",
-        "ru": "🎁 <b>Добро пожаловать!</b> В подарок вам начислено <b>+{amount} монет Keto</b>.\n"
-              "💡 1 Keto = 1 сум — их можно использовать при покупках в Ketoshop.",
-    },
 }
 
 

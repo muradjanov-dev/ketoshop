@@ -605,12 +605,24 @@ async def api_cart_add(request: web.Request):
         for value in (telegram_user.get("first_name"), telegram_user.get("last_name"))
         if isinstance(value, str) and value.strip()
     ]
+    is_new = await get_user(user_id) is None
     await create_user(
         user_id,
         username=telegram_user.get("username"),
         full_name=" ".join(name_parts) or None,
         language=request.get("user_lang", "uz"),
     )
+    if is_new:
+        # A Mini App-first buyer is a new joiner too: the admins' "who
+        # joined" note and the 100 Keto start gift, the same as a /start
+        # (handlers/start._process_new_user). The gift's ceremony waits for
+        # their first language pick in the bot. Best-effort, off the hot path.
+        import asyncio
+        from types import SimpleNamespace
+        from handlers.start import _process_new_user
+        tg_user = SimpleNamespace(id=user_id, username=telegram_user.get("username"),
+                                  full_name=" ".join(name_parts) or None)
+        asyncio.create_task(_process_new_user(request.app["bot"], tg_user, None))
     await add_to_cart(user_id, product_id=product_id, quantity=quantity, set_id=set_id)
 
     if not before:

@@ -342,6 +342,12 @@ async def set_language(callback: CallbackQuery):
         parse_mode="HTML"
     )
     await callback.answer(get_text("language_set", lang))
+    # The 100 Keto start gift, handed over with ceremony in the language just
+    # picked (owner, 2026-10-13) — only for a brand-new user, once; a no-op
+    # for anyone else, including a returning user switching language.
+    import referral_program
+    await referral_program.celebrate(callback.bot, callback.from_user.id, lang,
+                                     callback.from_user.first_name)
     # How-to-order videos (owner, 2026-10-11) — in the language just picked,
     # once per user ever; a no-op until the admin uploads them or if they
     # switched auto-send off. Never raises.

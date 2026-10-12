@@ -135,6 +135,7 @@ class SubscriptionGateMiddleware(BaseMiddleware):
                 # ran, so they have no users row yet and any referral
                 # payload was never processed) — see _pending_start_payload.
                 product_id = None
+                is_new = False
                 try:
                     import referral_contest
                     import bloggers
@@ -147,11 +148,23 @@ class SubscriptionGateMiddleware(BaseMiddleware):
                     blogger_code = bloggers.parse_payload(payload)
                     ad_source = ad_sources.parse_payload(payload)
                     product_id = product_card.parse_product_payload(payload)
-                    await ensure_registered(bot, user, referrer_id, blogger_code, ad_source)
+                    is_new = await ensure_registered(bot, user, referrer_id, blogger_code, ad_source)
                 except Exception:
                     logger.warning("Deferred registration failed for user %s", user.id, exc_info=True)
                 try:
-                    await event.message.edit_text(_confirmed_text(lang), reply_markup=_continue_keyboard(lang))
+                    if is_new:
+                        # A brand-new user picks a language next, exactly as
+                        # on a plain /start — that tap is what brings the
+                        # welcome, the 100 Keto gift and the how-to-order
+                        # video in their language (handlers/start.set_language).
+                        # «Davom etish» straight to the menu used to skip all three.
+                        from keyboards import language_keyboard
+                        from locales import get_text
+                        await event.message.edit_text(
+                            f"{_confirmed_text(lang)}\n\n{get_text('choose_language', 'uz')}",
+                            reply_markup=language_keyboard())
+                    else:
+                        await event.message.edit_text(_confirmed_text(lang), reply_markup=_continue_keyboard(lang))
                 except Exception:
                     pass
                 await event.answer()
