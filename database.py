@@ -921,6 +921,11 @@ async def init_db():
             )
         """)
 
+        # Existing campaigns retain their repeating bonus behavior.
+        await conn.execute(
+            "ALTER TABLE promotions ADD COLUMN IF NOT EXISTS bonus_mode TEXT NOT NULL DEFAULT 'scaled'"
+        )
+
         # One row per bonus rule: "buy `trigger_quantity` of trigger_product
         # -> get `bonus_amount bonus_unit` of bonus_product free".
         #
@@ -5874,12 +5879,12 @@ async def _fetch_promo_bonuses(conn, promo_id: int) -> list[dict]:
 
 async def create_promotion(name: str, name_ru: str | None, conditions: str | None,
                            conditions_ru: str | None, days: int,
-                           image_url: str | None) -> int:
+                           image_url: str | None, bonus_mode: str = "scaled") -> int:
     async with pool.acquire() as conn:
         return await conn.fetchval(
-            """INSERT INTO promotions (name, name_ru, conditions, conditions_ru, days, image_url)
-               VALUES ($1, $2, $3, $4, $5, $6) RETURNING id""",
-            name, name_ru, conditions, conditions_ru, int(days), image_url,
+            """INSERT INTO promotions (name, name_ru, conditions, conditions_ru, days, image_url, bonus_mode)
+               VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id""",
+            name, name_ru, conditions, conditions_ru, int(days), image_url, bonus_mode,
         )
 
 
@@ -5887,7 +5892,7 @@ async def update_promotion(promo_id: int, **fields) -> None:
     """Partial update. Editing a running campaign is allowed on purpose (fix a
     typo in the shartlar mid-flight) — only `days` needs a restart to take
     effect, since ends_at was already stamped at launch."""
-    allowed = {"name", "name_ru", "conditions", "conditions_ru", "days", "image_url"}
+    allowed = {"name", "name_ru", "conditions", "conditions_ru", "days", "image_url", "bonus_mode"}
     sets, values = [], []
     for key, value in fields.items():
         if key in allowed:
@@ -5926,22 +5931,25 @@ async def set_promotion_bonuses(promo_id: int, rules: list[dict]) -> None:
 
 
 async def start_promotion(promo_id: int, days: int | None = None) -> dict | None:
-    """Launch (or relaunch) one campaign for `days` days from now, and stop
+    """Launch (or relaunch) one campaign (`days=0` means until stopped), and stop
     every other one — only a single aksiya runs at a time (a partial unique
     index on `active` backs this up). Clears announced_at so a relaunch can
     send its announcement again."""
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await conn.execute("UPDATE promotions SET active = FALSE WHERE active AND id != $1", promo_id)
             if days is None:
                 days = await conn.fetchval("SELECT days FROM promotions WHERE id = $1", promo_id)
             if days is None:
                 return None
+            if int(days) < 0:
+                raise ValueError("days must be non-negative")
+            await conn.execute("UPDATE promotions SET active = FALSE WHERE active AND id != $1", promo_id)
             row = await conn.fetchrow(
                 """UPDATE promotions SET
                        active = TRUE, days = $2,
                        started_at = CURRENT_TIMESTAMP,
-                       ends_at = CURRENT_TIMESTAMP + ($3 || ' days')::INTERVAL,
+                       ends_at = CASE WHEN $2 = 0 THEN NULL
+                                      ELSE CURRENT_TIMESTAMP + ($3 || ' days')::INTERVAL END,
                        announced_at = NULL
                    WHERE id = $1 RETURNING id""",
                 promo_id, int(days), str(int(days)),
@@ -6596,6 +6604,82 @@ async def get_ad_source_users(source: str, limit: int = 50) -> list[dict]:
             source, limit,
         )
         return [dict(r) for r in rows]
+
+
+async def get_sales_daily(start: datetime, end: datetime,
+                          tz_hours: float | None = None) -> dict:
+    """Retail sales per local (Tashkent) day in [start, end) — naive UTC
+    bounds — for setting ad spend against what the shop sold (ads_impact.py).
+
+    Same money basis as the dashboards (SALE_SQL on created_at, `total`).
+    Wholesale is left out: a B2B sack of Eritritol is not ad demand and would
+    swamp every retail figure. Admin-keyed manual orders stay in, because an
+    Instagram ad mostly sells through Direct and an admin then types the order
+    in — so the admin/internal-account filter applies only to orders the buyer
+    placed themself. Gift and aksiya bonus lines are not sales of that product
+    and are skipped, or the Eritritol-on-every-order gift would look like ad
+    demand for Eritritol.
+
+    `tz_hours` groups the days in another UTC offset — the Meta ad account's
+    (America/Los_Angeles, UTC−7), so a sales day lines up with the ad day it
+    is compared with. Default: Tashkent.
+    """
+    from datetime import timedelta
+    shift = timedelta(hours=DISPLAY_TZ_OFFSET_HOURS if tz_hours is None else tz_hours)
+    excluded = _customer_filter_ids()
+
+    def _local_day(ts) -> str:
+        return (ts + shift).date().isoformat()
+
+    async with pool.acquire() as conn:
+        orders = await conn.fetch(
+            f"""SELECT created_at, total, items
+                  FROM orders
+                 WHERE {SALE_SQL}
+                   AND COALESCE(source, 'bot') <> 'b2b'
+                   AND (source = 'manual' OR user_id <> ALL($3::bigint[]))
+                   AND created_at >= $1 AND created_at < $2""",
+            start, end, excluded,
+        )
+        users = await conn.fetch(
+            "SELECT created_at FROM users WHERE created_at >= $1 AND created_at < $2"
+            " AND user_id <> ALL($3::bigint[])",
+            start, end, excluded,
+        )
+        ad_users = await conn.fetch(
+            "SELECT created_at FROM ad_referrals WHERE created_at >= $1 AND created_at < $2",
+            start, end,
+        )
+        catalog = {r["id"]: dict(r) for r in
+                   await conn.fetch("SELECT id, name, name_ru, quantity FROM products")}
+
+    days: dict[str, dict] = {}
+
+    def _day(key: str) -> dict:
+        return days.setdefault(key, {"orders": 0, "revenue": 0.0, "new_users": 0,
+                                     "ad_users": 0, "products": {}})
+
+    for o in orders:
+        d = _day(_local_day(o["created_at"]))
+        d["orders"] += 1
+        d["revenue"] += float(o["total"] or 0)
+        raw = o["items"]
+        items = json.loads(raw) if isinstance(raw, str) else (raw or [])
+        for it in items:
+            if not isinstance(it, dict) or it.get("is_gift") or it.get("is_bonus"):
+                continue
+            pid = it.get("product_id")
+            key = pid if pid is not None else "set:" + str(it.get("name") or "—")
+            qty = float(it.get("quantity") or 0)
+            line = d["products"].setdefault(key, {"name": it.get("name") or "—",
+                                                  "qty": 0.0, "revenue": 0.0})
+            line["qty"] += qty
+            line["revenue"] += qty * float(it.get("price") or 0)
+    for u in users:
+        _day(_local_day(u["created_at"]))["new_users"] += 1
+    for a in ad_users:
+        _day(_local_day(a["created_at"]))["ad_users"] += 1
+    return {"days": days, "catalog": catalog}
 
 
 # ===== REFERAL VA QAYTA SOTUV STATISTIKASI (2026-09-12) =====

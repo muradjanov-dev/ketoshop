@@ -22,7 +22,10 @@ Env vars
 --------
 META_ADS_TOKEN        ixtiyoriy; berilmasa META_PAGE_TOKEN ishlatiladi.
                       Kerakli ruxsat: ads_read (ads_management ham bo'ladi).
-META_AD_ACCOUNT_ID    reklama hisobi ID (act_ prefiksisiz).
+META_AD_ACCOUNT_ID    ixtiyoriy; reklama hisobi ID(lari), vergul bilan (act_ siz).
+                      Berilmasa — token ko'radigan HAMMA hisob (me/adaccounts):
+                      Instagram ilovasidan "Boost" qilinganlar ko'pincha alohida
+                      hisobda turadi, ular shu yo'l bilan o'zi qo'shiladi.
 META_ADS_DAILY_HOUR   kunlik xulosa soati, Toshkent vaqti (default 10).
 META_ADS_WATCHDOG     "0" desangiz "sarf yo'q" ogohlantirishi o'chadi.
 META_API_VERSION      meta_leads.py dagi bilan bir xil.
@@ -44,7 +47,11 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 TOKEN = (os.getenv("META_ADS_TOKEN") or os.getenv("META_PAGE_TOKEN", "")).strip()
-AD_ACCOUNT_ID = os.getenv("META_AD_ACCOUNT_ID", "840216037679254").strip().replace("act_", "")
+DEFAULT_AD_ACCOUNT = "840216037679254"
+ENV_AD_ACCOUNTS = [a.strip().replace("act_", "")
+                   for a in os.getenv("META_AD_ACCOUNT_ID", "").split(",") if a.strip()]
+AD_ACCOUNT_ID = (ENV_AD_ACCOUNTS or [DEFAULT_AD_ACCOUNT])[0]
+ACCOUNTS_TTL = 3600
 DAILY_HOUR = int(os.getenv("META_ADS_DAILY_HOUR", "10"))
 WATCHDOG_ON = os.getenv("META_ADS_WATCHDOG", "1") != "0"
 API_VERSION = os.getenv("META_API_VERSION", "").strip().strip("/")
@@ -77,6 +84,13 @@ PRESETS = {
 
 # Bitta ogohlantirish kuniga — qorovul har soatda ishlaydi, spam bo'lmasin.
 _last_watchdog_date = None
+_accounts_cache: tuple[float, list[str]] = (0.0, [])
+# Oxirgi fetch_insights'da o'qib bo'lmagan hisoblar — hisobotda ogohlantirish uchun.
+last_failed: list[str] = []
+
+# Instagram ilovasidagi "Boost" reklamaga o'zi qo'yadigan nom boshlanishlari.
+IG_BOOST_PREFIXES = ("instagram post", "публикация в instagram", "instagram-публикация",
+                     "instagram posti", "instagram publication")
 
 
 def is_enabled() -> bool:
@@ -110,28 +124,136 @@ INSIGHT_FIELDS = ("spend,impressions,reach,frequency,clicks,inline_link_clicks,"
                   "ctr,cpm,cpc,actions,cost_per_action_type")
 
 
+def is_ig_boost(name: str | None) -> bool:
+    return (name or "").strip().lower().startswith(IG_BOOST_PREFIXES)
+
+
+def source_tag(name: str | None) -> str:
+    return "📱 Instagram boost" if is_ig_boost(name) else "📣 Ads Manager"
+
+
+async def account_ids(session) -> list[str]:
+    """Qaysi reklama hisoblari o'qiladi. META_AD_ACCOUNT_ID berilgan bo'lsa —
+    o'shalar; aks holda token ko'radigan hammasi (soatiga bir yangilanadi),
+    shunda egasi yangi hisobni ketoshop-bot'ga ulasa, bot uni o'zi topadi."""
+    global _accounts_cache
+    if ENV_AD_ACCOUNTS:
+        return ENV_AD_ACCOUNTS
+    ts, ids = _accounts_cache
+    if ids and _now_tk().timestamp() - ts < ACCOUNTS_TTL:
+        return ids
+    try:
+        data = await _get(session, "me/adaccounts", fields="account_id,currency", limit=50)
+        rows = data.get("data", [])
+        for r in rows:
+            if r.get("currency") not in (None, "USD"):
+                logger.warning("Ad account %s is in %s — spend is summed as if USD",
+                               r.get("account_id"), r.get("currency"))
+        found = [str(r["account_id"]) for r in rows if r.get("account_id")]
+    except Exception:
+        logger.warning("Ad account discovery failed — using the default account", exc_info=True)
+        found = []
+    # Asosiy hisob birinchi: vaqt zonasi va holat shundan olinadi.
+    found = sorted(set(found) | {DEFAULT_AD_ACCOUNT},
+                   key=lambda a: (a != DEFAULT_AD_ACCOUNT, a))
+    _accounts_cache = (_now_tk().timestamp(), found)
+    return found
+
+
+def _f(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _sum_actions(rows: list[dict], key: str) -> list[dict]:
+    totals: dict[str, float] = {}
+    for r in rows:
+        for a in r.get(key) or []:
+            totals[a.get("action_type")] = totals.get(a.get("action_type"), 0.0) + _f(a.get("value"))
+    return [{"action_type": t, "value": str(v)} for t, v in totals.items()]
+
+
+def merge_account_rows(rows: list[dict]) -> dict | None:
+    """Bir nechta hisobning account-darajadagi qatorlari → bitta qator.
+    Qamrov (reach) qo'shiladi — bir odam ikkala hisob reklamasini ko'rgan
+    bo'lsa ikki marta sanaladi; nisbatlar yig'indidan qayta hisoblanadi."""
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return rows[0]
+    out = {"date_start": min(r.get("date_start") or "9999" for r in rows),
+           "date_stop": max(r.get("date_stop") or "" for r in rows)}
+    for k in ("spend", "impressions", "reach", "clicks", "inline_link_clicks"):
+        out[k] = str(sum(_f(r.get(k)) for r in rows))
+    for k in ("actions", "video_thruplay_watched_actions"):
+        out[k] = _sum_actions(rows, k)
+    spend, imp = _f(out["spend"]), _f(out["impressions"])
+    clicks, reach = _f(out["clicks"]), _f(out["reach"])
+    out["ctr"] = str(clicks / imp * 100) if imp else "0"
+    out["cpm"] = str(spend / imp * 1000) if imp else "0"
+    out["cpc"] = str(spend / clicks) if clicks else "0"
+    out["frequency"] = str(imp / reach) if reach else "0"
+    out["cost_per_action_type"] = [{"action_type": a["action_type"],
+                                    "value": str(spend / _f(a["value"]))}
+                                   for a in out["actions"] if _f(a["value"])]
+    return out
+
+
 async def fetch_insights(session, date_preset: str, level: str = "account") -> list[dict]:
+    """Hamma reklama hisoblari bo'yicha. Bitta hisob o'qilmasa — qolganlari
+    bilan davom etadi (last_failed'ga yoziladi); hammasi yiqilsa — xato."""
     fields = INSIGHT_FIELDS
     if level in ("ad", "adset", "campaign"):
         fields += f",{level}_name"
-    data = await _get(session, f"act_{AD_ACCOUNT_ID}/insights",
-                      fields=fields, date_preset=date_preset, level=level, limit=25)
-    return data.get("data", [])
+    ids = await account_ids(session)
+    results = await asyncio.gather(
+        *[_get(session, f"act_{a}/insights", fields=fields, date_preset=date_preset,
+               level=level, limit=100) for a in ids],
+        return_exceptions=True)
+    rows, failed, first_error = [], [], None
+    for acc, res in zip(ids, results):
+        if isinstance(res, BaseException):
+            failed.append(acc)
+            first_error = first_error or res
+            logger.warning("Insights for act_%s failed: %s", acc, res)
+            continue
+        for r in res.get("data", []):
+            r["account_id"] = acc
+            rows.append(r)
+    last_failed[:] = failed
+    if failed and len(failed) == len(ids):
+        raise first_error if isinstance(first_error, GraphError) else GraphError(None, str(first_error))
+    if level == "account" and len(rows) > 1:
+        rows = [merge_account_rows(rows)]
+    return rows
 
 
-async def fetch_account(session) -> dict:
+async def fetch_account(session, account_id: str | None = None) -> dict:
     return await _get(
-        session, f"act_{AD_ACCOUNT_ID}",
+        session, f"act_{account_id or (await account_ids(session))[0]}",
         fields="name,account_status,disable_reason,currency,balance,amount_spent,spend_cap",
     )
 
 
-async def fetch_ads_status(session) -> list[dict]:
+async def fetch_ads_status(session, account_id: str | None = None) -> list[dict]:
     """effective_status + issues_info — Ads Manager jadvalida ko'rinmaydigan,
-    lekin yetkazish nega to'xtaganini aniq aytadigan yagona joy."""
-    data = await _get(session, f"act_{AD_ACCOUNT_ID}/ads",
-                      fields="name,effective_status,configured_status,issues_info", limit=50)
-    return data.get("data", [])
+    lekin yetkazish nega to'xtaganini aniq aytadigan yagona joy.
+    account_id berilmasa — hamma hisoblar."""
+    ids = [account_id] if account_id else await account_ids(session)
+    out = []
+    for acc in ids:
+        try:
+            data = await _get(session, f"act_{acc}/ads",
+                              fields="name,effective_status,configured_status,issues_info", limit=50)
+        except GraphError:
+            if account_id:
+                raise
+            logger.warning("Ads status for act_%s failed", acc, exc_info=True)
+            continue
+        out += data.get("data", [])
+    return out
 
 
 # ---------------------------------------------------------------- formatting
@@ -202,10 +324,16 @@ def format_report(rows_account: list[dict], rows_ads: list[dict], label: str) ->
         lines.append("<b>Reklamalar bo'yicha:</b>")
         for a in sorted(rows_ads, key=lambda x: float(x.get("spend") or 0), reverse=True)[:8]:
             a_leads, _ = _leads_from(a)
+            mark = "📱 " if is_ig_boost(a.get("ad_name")) else ""
             lines.append(
-                f"• {html.escape(a.get('ad_name') or '—')} — "
+                f"• {mark}{html.escape(a.get('ad_name') or '—')} — "
                 f"${_num(a.get('spend'), 2)} · {_num(a.get('impressions'))} ko'rs. · {a_leads} lead"
             )
+    if last_failed:
+        lines.append("")
+        lines.append("⚠️ <i>O'qib bo'lmagan reklama hisobi: "
+                     + ", ".join(f"act_{a}" for a in last_failed)
+                     + " — ketoshop-bot'ga ruxsat berilganini tekshiring.</i>")
     return "\n".join(lines)
 
 
@@ -214,7 +342,8 @@ def format_status(account: dict, ads: list[dict]) -> str:
     emoji, label = ACCOUNT_STATUS.get(code, ("❔", f"Noma'lum ({code})"))
     cur = account.get("currency", "USD")
 
-    lines = [f"🔍 <b>Hisob holati</b>", ""]
+    title = html.escape(str(account.get("name") or account.get("id") or ""))
+    lines = [f"🔍 <b>Hisob holati</b>{f' · {title}' if title else ''}", ""]
     lines.append(f"{emoji} <b>Status:</b> {label}")
     if account.get("disable_reason"):
         lines.append(f"⛔ <b>Sabab kodi:</b> {account['disable_reason']}")
@@ -230,7 +359,8 @@ def format_status(account: dict, ads: list[dict]) -> str:
     for a in ads[:15]:
         st = a.get("effective_status", "?")
         mark = "🟢" if st == "ACTIVE" else ("⚪" if st in ("PAUSED", "ADSET_PAUSED", "CAMPAIGN_PAUSED") else "🔴")
-        lines.append(f"{mark} {html.escape(a.get('name') or '—')} — <code>{st}</code>")
+        ig = "📱 " if is_ig_boost(a.get("name")) else ""
+        lines.append(f"{mark} {ig}{html.escape(a.get('name') or '—')} — <code>{st}</code>")
         for issue in (a.get("issues_info") or []):
             msg = issue.get("error_summary") or issue.get("error_message") or ""
             if msg:
@@ -240,12 +370,14 @@ def format_status(account: dict, ads: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _period_keyboard() -> InlineKeyboardMarkup:
+def _period_keyboard(preset: str = "today") -> InlineKeyboardMarkup:
     row1 = [InlineKeyboardButton(text=PRESETS[k][0], callback_data=f"ads:{k}")
             for k in ("today", "yesterday")]
     row2 = [InlineKeyboardButton(text=PRESETS[k][0], callback_data=f"ads:{k}")
             for k in ("last_7d", "last_30d", "maximum")]
-    return InlineKeyboardMarkup(inline_keyboard=[row1, row2])
+    # 🎬 Videolar / 📦 Mahsulotlar / 📈 Bog'liqlik — ads_impact.py
+    import ads_impact
+    return InlineKeyboardMarkup(inline_keyboard=[row1, row2] + ads_impact.view_rows(preset))
 
 
 # ---------------------------------------------------------------- core
@@ -258,7 +390,15 @@ async def build_report(date_preset: str) -> str:
             ad_rows = await fetch_insights(session, date_preset, "ad")
         except GraphError:
             ad_rows = []
-    return format_report(account_rows, ad_rows, label)
+    text = format_report(account_rows, ad_rows, label)
+    # Shu davrda do'kon nima sotdi — bazadan; u yiqilsa Meta hisoboti baribir chiqadi.
+    try:
+        import ads_impact
+        text += "\n" + await ads_impact.sales_block(
+            date_preset, account_rows[0] if account_rows else None)
+    except Exception:
+        logger.exception("Ads sales block failed")
+    return text
 
 
 async def _notify_admins(bot: Bot, text: str, kb=None):
@@ -286,7 +426,8 @@ async def scheduler_loop(bot: Bot):
 
             # Kunlik xulosa — kechagi kun bo'yicha, chunki u to'liq yopilgan.
             if last_daily_date != today and now.hour >= DAILY_HOUR:
-                await _notify_admins(bot, await build_report("yesterday"), _period_keyboard())
+                await _notify_admins(bot, await build_report("yesterday"),
+                                     _period_keyboard("yesterday"))
                 last_daily_date = today
                 logger.info("Daily ads summary sent")
 
@@ -326,7 +467,7 @@ async def cmd_report(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
     if not is_enabled():
-        await message.answer("⚠️ META_PAGE_TOKEN o'rnatilmagan — statistika o'chiq.")
+        await message.answer("⚠️ META_ADS_TOKEN o'rnatilmagan — statistika o'chiq.")
         return
     await message.answer("⏳ Meta'dan olinmoqda…")
     try:
@@ -352,10 +493,10 @@ async def cb_period(callback: CallbackQuery):
         text = f"❌ <code>{html.escape(str(e))}</code>"
     try:
         await callback.message.edit_text(text, parse_mode="HTML",
-                                         reply_markup=_period_keyboard())
+                                         reply_markup=_period_keyboard(preset))
     except Exception:
         await callback.message.answer(text, parse_mode="HTML",
-                                      reply_markup=_period_keyboard())
+                                      reply_markup=_period_keyboard(preset))
 
 
 @router.message(Command("reklama_holat"))
@@ -363,13 +504,18 @@ async def cmd_status(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
     if not is_enabled():
-        await message.answer("⚠️ META_PAGE_TOKEN o'rnatilmagan — statistika o'chiq.")
+        await message.answer("⚠️ META_ADS_TOKEN o'rnatilmagan — statistika o'chiq.")
         return
     await message.answer("⏳ Hisob holati tekshirilmoqda…")
-    try:
-        async with aiohttp.ClientSession() as session:
-            account = await fetch_account(session)
-            ads = await fetch_ads_status(session)
-        await message.answer(format_status(account, ads), parse_mode="HTML")
-    except GraphError as e:
-        await message.answer(f"❌ <code>{html.escape(str(e))}</code>", parse_mode="HTML")
+    # Har bir reklama hisobi alohida xabar: Instagram boost'lari turgan hisobda
+    # "To'lov qarzi bor" bo'lsa, aynan shu yerda ko'rinadi.
+    async with aiohttp.ClientSession() as session:
+        ids = await account_ids(session)
+        for acc in ids:
+            try:
+                account = await fetch_account(session, acc)
+                ads = await fetch_ads_status(session, acc)
+                text = format_status(account, ads)
+            except GraphError as e:
+                text = f"❌ act_{acc}: <code>{html.escape(str(e))}</code>"
+            await message.answer(text, parse_mode="HTML")

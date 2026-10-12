@@ -10,3 +10,5 @@ for (const file of ['webapp/index.html', 'webapp/admin.html']) {
   scripts.forEach((match, index) => new vm.Script(match[1], {filename: `${file}#inline-${index + 1}`}));
   console.log(`${file}: ${scripts.length} inline script(s) parse`);
 }
+
+require('./test_promo_admin.js');

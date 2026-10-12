@@ -27,6 +27,11 @@ instead of a separate message for each of dozens of products.
 
 Checkouts still call notify_low_stock() → check_now(), so an order that empties
 a shelf alerts within seconds rather than at the next sweep.
+
+Ombor guruhi (owner, 2026-10-12): the same news also goes to the staff group
+STOCK_GROUP_ID — one message per sweep with the products that just ran low or
+out, tagging everyone the bot can tag (daytime only), and the full stock
+status every night at 23:59 with nobody tagged ("Kun yakuni").
 """
 import asyncio
 import html
@@ -40,7 +45,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 import admin_mood
 import database
-from config import ADMIN_IDS, LOW_STOCK_THRESHOLD
+from config import ADMIN_IDS, LOW_STOCK_THRESHOLD, STOCK_GROUP_ID
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -48,6 +53,8 @@ router = Router()
 TZ_OFFSET = timedelta(hours=5)
 CHECK_EVERY = 120                  # 2 min sweep for non-checkout stock changes
 SUMMARY_HOURS = (8, 22)            # first-run summary only 08:00–21:59 Tashkent
+GROUP_HOURS = (9, 22)              # staff-group change alerts only 09:00–21:59 Tashkent
+NIGHT_REPORT_AT = (23, 59)         # full status to the staff group, untagged
 _RANK = {"ok": 0, "low": 1, "out": 2}
 _lock = asyncio.Lock()
 
@@ -153,11 +160,11 @@ def summary_text(products: list[dict]) -> str:
     lines = ["📦 <b>Ombor holati</b>", ""]
     if out:
         lines.append(f"🚫 <b>Tugagan ({len(out)} ta):</b>")
-        lines += [f"• {p['name']}" for p in sorted(out, key=lambda p: p["name"].lower())]
+        lines += [f"• {html.escape(p['name'])}" for p in sorted(out, key=lambda p: p["name"].lower())]
         lines.append("")
     if low:
         lines.append(f"⚠️ <b>Kam qolgan ({len(low)} ta):</b>")
-        lines += [f"• {p['name']} — <b>{_qty(p['quantity'])} {_unit(p, 'uz')}</b>"
+        lines += [f"• {html.escape(p['name'])} — <b>{_qty(p['quantity'])} {_unit(p, 'uz')}</b>"
                   for p in sorted(low, key=lambda p: float(p["quantity"] or 0))]
         lines.append("")
     lines.append("Mahsulot shu holatga har safar tushganda alohida ogohlantirish keladi.")
@@ -191,6 +198,104 @@ def _chunks(text: str, size: int = 3800) -> list[str]:
     return parts
 
 
+async def _group_mentions(bot: Bot) -> str:
+    """Tags for everyone the bot can name in the staff group: the group's
+    admins (the only members Telegram lets a bot list) plus every bot admin
+    who is in the group."""
+    people: dict[int, str] = {}
+    try:
+        for member in await bot.get_chat_administrators(STOCK_GROUP_ID):
+            if not member.user.is_bot:
+                people[member.user.id] = member.user.first_name
+    except Exception as exc:
+        logger.warning("Stock group %s admins unavailable: %s", STOCK_GROUP_ID, exc)
+    for admin_id in ADMIN_IDS:
+        if admin_id in people:
+            continue
+        try:
+            member = await bot.get_chat_member(STOCK_GROUP_ID, admin_id)
+        except Exception:
+            continue
+        if member.status in ("creator", "administrator", "member") or getattr(member, "is_member", False):
+            people[admin_id] = member.user.first_name
+    return " ".join(f'<a href="tg://user?id={uid}">{html.escape(name or "admin")}</a>'
+                    for uid, name in people.items())
+
+
+async def post_to_group(bot: Bot, text: str, tag: bool = True) -> bool:
+    """Send text to the staff group, with everyone tagged underneath unless
+    tag is False."""
+    if not STOCK_GROUP_ID:
+        return False
+    parts = _chunks(text)
+    tags = await _group_mentions(bot) if tag else ""
+    if tags:
+        if len(parts[-1]) + len(tags) > 4000:
+            parts.append(f"👥 {tags}")
+        else:
+            parts[-1] += f"\n👥 {tags}"
+    try:
+        for part in parts:
+            await bot.send_message(STOCK_GROUP_ID, part, parse_mode=ParseMode.HTML)
+        return True
+    except Exception as exc:
+        logger.warning("Stock list to group %s failed: %s", STOCK_GROUP_ID, exc)
+        return False
+
+
+def _in_group_hours() -> bool:
+    return GROUP_HOURS[0] <= _now_tk().hour < GROUP_HOURS[1]
+
+
+def group_alert_text(worse: list[tuple[dict, str]]) -> str:
+    """The products one sweep found newly low / out, as one group message."""
+    out = [p for p, level in worse if level == "out"]
+    low = [p for p, level in worse if level == "low"]
+    lines = ["📦 <b>Ombor: yangi o'zgarish</b>", ""]
+    if out:
+        lines.append("🚫 <b>Tugadi:</b>")
+        lines += [f"• {html.escape(p['name'])}" for p in out]
+        lines.append("")
+    if low:
+        lines.append("⚠️ <b>Kam qoldi:</b>")
+        lines += [f"• {html.escape(p['name'])} — <b>{_qty(p['quantity'])} {_unit(p, 'uz')}</b>"
+                  f" (chegara: {_qty(limit_for(p))})" for p in low]
+    return "\n".join(lines).rstrip()
+
+
+def _seconds_until_night_report(now: datetime) -> float:
+    """From now (Tashkent) to today's 23:59; 0 while it's 23:59."""
+    hour, minute = NIGHT_REPORT_AT
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if now - target >= timedelta(minutes=1):
+        target += timedelta(days=1)
+    return max(0.0, (target - now).total_seconds())
+
+
+async def send_night_report(bot: Bot) -> bool:
+    """Today's full stock status in the staff group, nobody tagged. Claimed
+    per day so a restart or deploy at 23:59 never posts it twice."""
+    day = _now_tk().date()
+    if not await database.claim_release_notes(f"stock-night-{STOCK_GROUP_ID}-{day.isoformat()}"):
+        return False
+    text = (f"🌙 <b>Kun yakuni — {day:%d.%m.%Y}</b>\n\n"
+            + summary_text(await database.get_stock_snapshot()))
+    return await post_to_group(bot, text, tag=False)
+
+
+async def night_report_loop(bot: Bot) -> None:
+    if not STOCK_GROUP_ID:
+        return
+    logger.info("Stock night report to group %s at %02d:%02d", STOCK_GROUP_ID, *NIGHT_REPORT_AT)
+    while True:
+        await asyncio.sleep(_seconds_until_night_report(_now_tk()))
+        try:
+            await send_night_report(bot)
+        except Exception:
+            logger.exception("Stock night report failed")
+        await asyncio.sleep(70)    # past 23:59, so the next wait is tomorrow's
+
+
 async def check_now(bot: Bot) -> int:
     """Compare every active product with its last alerted level; alert the
     ones that got worse. Returns how many alerts went out."""
@@ -218,6 +323,8 @@ async def check_now(bot: Bot) -> int:
 
     for product, level in worse:
         await _send_all(bot, lambda lang, p=product, lv=level: _alert_text(p, lv, lang))
+    if worse and STOCK_GROUP_ID and _in_group_hours():
+        await post_to_group(bot, group_alert_text(worse))
     return len(worse)
 
 
@@ -259,8 +366,12 @@ async def cmd_stock(message: Message):
     parts = _chunks(summary_text(products))
     kb = None
     if _low_or_out(products):
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
-            text="📤 Barcha adminlarga yuborish", callback_data="ombor:send_all")]])
+        rows = [[InlineKeyboardButton(
+            text="📤 Barcha adminlarga yuborish", callback_data="ombor:send_all")]]
+        if STOCK_GROUP_ID:
+            rows.append([InlineKeyboardButton(
+                text="👥 Guruhga yuborish", callback_data="ombor:send_group")])
+        kb = InlineKeyboardMarkup(inline_keyboard=rows)
     for i, part in enumerate(parts):
         await message.answer(part, parse_mode=ParseMode.HTML,
                              reply_markup=kb if i == len(parts) - 1 else None)
@@ -287,3 +398,14 @@ async def send_stock_to_all_admins(callback: CallbackQuery, bot: Bot):
     except Exception:
         pass
     await callback.answer(f"✅ {sent}/{len(ADMIN_IDS)} ta adminga yuborildi", show_alert=True)
+
+
+@router.callback_query(F.data == "ombor:send_group", F.from_user.id.in_(ADMIN_IDS))
+async def send_stock_to_group(callback: CallbackQuery, bot: Bot):
+    """The full low/out list (fresh snapshot) into the staff group right now."""
+    products = await database.get_stock_snapshot()
+    who = html.escape(callback.from_user.full_name or str(callback.from_user.id))
+    ok = await post_to_group(bot, f"📤 Yuboruvchi: {who}\n\n" + summary_text(products))
+    await callback.answer("✅ Guruhga yuborildi" if ok else
+                          "❌ Guruhga yuborilmadi — bot guruhda va admin ekanini tekshiring",
+                          show_alert=True)
