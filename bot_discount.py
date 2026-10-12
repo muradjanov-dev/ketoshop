@@ -345,6 +345,35 @@ async def margin_report() -> dict:
     return {"capped": capped, "no_cost": no_cost, "total": len(rows) + len(sets)}
 
 
+async def price_list() -> list[dict]:
+    """Sotuvdagi (omborda bor) mahsulotlar va setlar: asl narx va bot orqali
+    buyurtmadagi narx — checkout bilan bir xil qoida (line_price, tannarx
+    chegarasi bilan). Egasi, 2026-10-12: eslatmada "barcha maxsulotlar
+    ro'yxati asl narxi va chegirmadagi narxi bilan"."""
+    async with database.pool.acquire() as conn:
+        rows = [dict(r) for r in await conn.fetch(
+            """SELECT id, name, name_ru, category, price, discount_percent, discount_until
+                 FROM products
+                WHERE is_active = 1 AND (b2b_only IS NOT TRUE)
+                  AND COALESCE(price, 0) > 0 AND COALESCE(quantity, 0) > 0
+                ORDER BY category, LOWER(name)""")]
+        sets = [dict(r) for r in await conn.fetch(
+            """SELECT id AS set_id, name, name_ru, set_price AS price, TRUE AS is_set
+                 FROM product_sets WHERE is_active = 1 AND COALESCE(set_price, 0) > 0
+                ORDER BY LOWER(name)""")]
+        product_costs, set_costs = await database._order_cost_maps(conn, rows + sets)
+    out = []
+    for item in rows + sets:
+        base = float(item["price"])
+        current = base if item.get("is_set") else database.effective_price(
+            base, item.get("discount_percent"), item.get("discount_until"))
+        new = line_price(base, current, PERCENT, _unit_cost(item, product_costs, set_costs))
+        out.append({"name": item["name"], "name_ru": item.get("name_ru"),
+                    "category": None if item.get("is_set") else item.get("category"),
+                    "is_set": bool(item.get("is_set")), "base": base, "new": new})
+    return out
+
+
 def margin_report_text(report: dict, limit: int = 40) -> str:
     def _cut(lines: list[str]) -> str:
         more = f"\n… yana {len(lines) - limit} ta" if len(lines) > limit else ""

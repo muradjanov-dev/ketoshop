@@ -415,8 +415,11 @@ class CountdownTest(unittest.TestCase):
         return campaign.countdown_due(steps, datetime(2026, 10, day, hour, minute))
 
     def test_each_reminder_only_on_its_own_day_and_hours(self):
-        self.assertIsNone(self.due({}, 12, 12))
-        self.assertIsNone(self.due({}, 13, 10, 59))
+        self.assertIsNone(self.due({}, 11, 12))
+        self.assertEqual(self.due({}, 12, 16, 40), "left3")
+        left3_done = {"left3": {"started_at": tk(12, 17), "finished_at": tk(12, 17, 5)}}
+        self.assertIsNone(self.due(left3_done, 12, 18))
+        self.assertIsNone(self.due(left3_done, 13, 10, 59))
         self.assertEqual(self.due({}, 13, 11), "left2")
         self.assertIsNone(self.due({}, 13, 21))
         self.assertIsNone(self.due({}, 15, 12))
@@ -490,6 +493,128 @@ class CountdownTest(unittest.TestCase):
         bot.send_message.assert_not_awaited()
         bot, _, claim = self._tick(tk(15, 0, 30), {})   # night — waits for 09:00
         claim.assert_not_awaited()
+
+
+class _FakeConn:
+    def __init__(self, products, sets):
+        self.products, self.sets = products, sets
+
+    async def fetch(self, sql, *args):
+        return self.sets if "product_sets" in sql else self.products
+
+
+class _FakePool:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def acquire(self):
+        pool = self
+
+        class _Ctx:
+            async def __aenter__(self):
+                return pool.conn
+
+            async def __aexit__(self, *exc):
+                return False
+        return _Ctx()
+
+
+class PriceListTest(unittest.TestCase):
+    """12-oktabr xabari: barcha mahsulotlar asl va chegirmadagi narxi bilan —
+    narx checkout bilan bir xil qoida bo'yicha (10%, tannarxdan past emas)."""
+
+    PRODUCTS = [
+        {"id": 1, "name": "Bodom uni", "name_ru": "Миндальная мука", "category": "flour",
+         "price": 120000, "discount_percent": 0, "discount_until": None},
+        {"id": 2, "name": "Kokos <yog'i>", "name_ru": None, "category": "flour",
+         "price": 50000, "discount_percent": 0, "discount_until": None},
+        {"id": 3, "name": "Eritritol", "name_ru": "Эритритол", "category": "sweet",
+         "price": 45000, "discount_percent": 0, "discount_until": None},
+    ]
+    SETS = [{"set_id": 9, "name": "Keto set", "name_ru": "Кето набор", "price": 300000, "is_set": True}]
+    COSTS = ({1: (60000.0, True), 2: (49000.0, True), 3: (0.0, False)}, {9: (100000.0, True)})
+
+    def price_list(self):
+        with patch.object(database, "pool", _FakePool(_FakeConn(self.PRODUCTS, self.SETS))), \
+             patch.object(database, "_order_cost_maps", AsyncMock(return_value=self.COSTS)):
+            return run(bot_discount.price_list())
+
+    def test_prices_follow_the_checkout_rule(self):
+        items = self.price_list()
+        by_name = {i["name"]: (i["base"], i["new"]) for i in items}
+        self.assertEqual(by_name["Bodom uni"], (120000, 108000))      # full 10%
+        self.assertEqual(by_name["Kokos <yog'i>"], (50000, 49000))    # stops at cost
+        self.assertEqual(by_name["Eritritol"], (45000, 40500))        # no cost known → 10%
+        self.assertEqual(by_name["Keto set"], (300000, 270000))
+        self.assertTrue(items[-1]["is_set"])                          # sets come last
+
+    def test_lines_show_old_and_new_price_grouped(self):
+        items = self.price_list()
+        with patch.object(campaign, "get_category_name", lambda key, lang: {"flour": "Un", "sweet": "Shirinlik"}[key]):
+            lines = campaign.price_list_lines(items, "uz")
+        self.assertEqual(lines[0], "\n<b>Un</b>")
+        self.assertEqual(lines[1], "• Bodom uni — <s>120 000</s> → <b>108 000</b>")
+        self.assertIn("&lt;yog'i&gt;", lines[2])                     # names are escaped
+        self.assertIn("\n<b>🧺 Setlar</b>", lines)
+        with patch.object(campaign, "get_category_name", lambda key, lang: key):
+            ru_lines = campaign.price_list_lines(items, "ru")
+        self.assertIn("• Миндальная мука — <s>120 000</s> → <b>108 000</b>", ru_lines)
+        self.assertIn("\n<b>🧺 Наборы</b>", ru_lines)
+
+    def test_no_discount_no_strikethrough(self):
+        line = campaign._price_line({"name": "Suv", "name_ru": None, "base": 5000, "new": 5000}, "uz")
+        self.assertEqual(line, "• Suv — 5 000")
+
+    def test_long_list_is_split_and_the_button_comes_last(self):
+        items = [{"name": f"Mahsulot {i:03d} uzun nom bilan", "name_ru": None, "category": "flour",
+                  "is_set": False, "base": 123000, "new": 110700} for i in range(150)]
+        with patch.object(campaign, "get_category_name", lambda key, lang: "Un"):
+            msgs = campaign.build_list_messages("left3", "uz", items)
+        self.assertGreater(len(msgs), 1)
+        self.assertTrue(all(len(text) <= campaign.PART_LIMIT for text, _ in msgs))
+        self.assertTrue(all(markup is None for _, markup in msgs[:-1]))
+        self.assertEqual(msgs[-1][1].inline_keyboard[0][0].text, "🎁 10% chegirmani olish")
+        joined = "\n".join(text for text, _ in msgs)
+        for i in range(150):
+            self.assertEqual(joined.count(f"Mahsulot {i:03d} "), 1)    # nothing lost or doubled
+        self.assertTrue(msgs[0][0].startswith("⏳ <b>10% chegirmaga 3 kun qoldi</b>"))
+        self.assertIn("promokodsiz", msgs[-1][0])
+
+    def test_run_step_reads_prices_once_and_sends_every_part(self):
+        items = [{"name": "Bodom uni", "name_ru": None, "category": "flour", "is_set": False,
+                  "base": 120000, "new": 108000}]
+        sent = []
+
+        async def fake_send(bot, chat_id, text, markup):
+            sent.append((chat_id, text, markup))
+            return True
+
+        price_list = AsyncMock(return_value=items)
+        audience = [{"user_id": 1, "language": "uz"}, {"user_id": 2, "language": "uz"},
+                    {"user_id": 3, "language": "ru"}]
+        with patch.object(bot_discount, "price_list", price_list), \
+             patch.object(campaign, "get_category_name", lambda key, lang: "Un"), \
+             patch.object(campaign, "PART_LIMIT", 200), \
+             patch.object(database, "get_interest_state", AsyncMock(return_value={}), create=True), \
+             patch.object(database, "advance_interest", AsyncMock(), create=True), \
+             patch.object(campaign, "_done", AsyncMock(return_value=False)), \
+             patch.object(campaign, "_audience", AsyncMock(return_value=audience)), \
+             patch.object(campaign, "_mark", AsyncMock()), \
+             patch.object(campaign, "_send_one", fake_send), \
+             patch.object(campaign, "SEND_DELAY", 0):
+            ok, failed, _ = run(campaign.run_step(object(), "left3"))
+        price_list.assert_awaited_once()
+        self.assertEqual((ok, failed), (3, 0))
+        per_chat = {}
+        for chat_id, text, markup in sent:
+            per_chat.setdefault(chat_id, []).append((text, markup))
+        self.assertGreater(len(per_chat[1]), 1)                       # split into parts
+        self.assertEqual(len(per_chat[1]), len(per_chat[2]))
+        self.assertIsNotNone(per_chat[1][-1][1])
+        channel = per_chat[campaign.REQUIRED_CHANNEL_ID]
+        self.assertIn("чегирма", channel[0][0])                       # channel in Cyrillic
+        self.assertTrue(channel[-1][1].inline_keyboard[0][0].url.startswith("https://t.me/"))
+        self.assertTrue(per_chat[3][0][0].startswith("⏳ <b>До конца скидки 10% — 3 дня</b>"))
 
 
 if __name__ == "__main__":
