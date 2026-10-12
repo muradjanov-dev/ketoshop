@@ -133,6 +133,11 @@ async def announce_support_answer(bot: Bot, buyer_id: int, admin_id: int, reply_
     raises, because the buyer's message has already gone out by this point."""
     _pause_ai(buyer_id)
     try:
+        import ai_sales
+        await ai_sales.log_admin_reply(bot, buyer_id, await admin_display_name(admin_id), reply_text)
+    except Exception:
+        logger.exception("Could not log the admin reply to %s", buyer_id)
+    try:
         await release_support_claim(buyer_id, admin_id)
         preview = (reply_text or "").strip()
         if len(preview) > ANSWER_PREVIEW_CHARS:
@@ -287,6 +292,11 @@ async def relay_text(message: Message, bot: Bot, text: str) -> None:
     Split out of the handler so the AI seller (ai_sales.py) can fall back to
     it when the model cannot answer — an API outage must leave the buyer with
     the usual "operators will contact you", not an apology and a lost question."""
+    try:
+        import ai_sales   # the conversation log topic — every bot chat in one place
+        await ai_sales.log_customer_message(bot, message.from_user, text)
+    except Exception:
+        logger.exception("Could not log the buyer message of %s", message.from_user.id)
     lang = await get_user_language(message.from_user.id)
     await message.answer(
         get_text("freeform_received", lang),

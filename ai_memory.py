@@ -42,7 +42,9 @@ logger = logging.getLogger(__name__)
 
 # Vosita enum i (o'zbekcha) -> bazadagi tur.
 KINDS = {"qiziqish": "interest", "fikr": "feedback", "eslatma": "note"}
-_KIND_LABEL = {"interest": "qiziqish", "feedback": "fikr", "note": "eslatma"}
+_KIND_LABEL = {"interest": "qiziqish", "feedback": "fikr", "note": "eslatma",
+               "recipe": "retsept berildi"}
+RECIPE_KIND = "recipe"
 
 MAX_NOTES_PER_USER = 80      # eskisi o'chadi — profil cheksiz o'smasin
 PROFILE_NOTES = 25           # promptga tushadigan oxirgi eslatmalar
@@ -112,6 +114,27 @@ async def remember(user_id: int, kind: str, text: str, product_id: int | None = 
                    ORDER BY created_at DESC, id DESC LIMIT $2)""",
             user_id, MAX_NOTES_PER_USER)
     return True
+
+
+async def recipe_given_recently(user_id: int, product_id: int, hours: int = 24) -> bool:
+    """Shu mijozga shu mahsulot bo'yicha oxirgi `hours` soatda retsept berilganmi
+    (egasi, 2026-10-13: har bir mahsulotga 24 soatda bitta retsept)."""
+    async with database.pool.acquire() as conn:
+        await _ensure(conn)
+        return bool(await conn.fetchval(
+            """SELECT 1 FROM ai_customer_notes
+                WHERE user_id = $1 AND kind = $2 AND product_id = $3
+                  AND created_at > (NOW() AT TIME ZONE 'UTC') - make_interval(hours => $4)
+                LIMIT 1""", user_id, RECIPE_KIND, product_id, hours))
+
+
+async def record_recipe(user_id: int, product_id: int, text: str) -> None:
+    """Berilgan retseptni yozadi — takrorni tekshirmaydi (har berilgani alohida)."""
+    async with database.pool.acquire() as conn:
+        await _ensure(conn)
+        await conn.execute(
+            "INSERT INTO ai_customer_notes (user_id, kind, text, product_id) VALUES ($1, $2, $3, $4)",
+            user_id, RECIPE_KIND, _clean(text), product_id)
 
 
 async def notes(user_id: int) -> list[dict]:
@@ -198,8 +221,8 @@ def profile_text(user: dict | None, lang: str, orders: list[dict], all_notes: li
              "yozilgan' kabi gaplarni aytma; shunchaki eslab turgan sotuvchidek gapir.]"]
     name = (user or {}).get("full_name") or ""
     lang_note = {"uz_cyr": "o'zbekcha KIRILL yozuvida", "ru": "ruscha"}.get(lang, "o'zbekcha lotin")
-    lines.append(f"Ism (Telegram): {name or '—'} · bot tili: {lang_note} — mijoz boshqa "
-                 f"tilda yozmasa, shu tilda javob ber.")
+    lines.append(f"Ism (Telegram): {name or '—'} · bot sozlamasidagi tili: {lang_note}. "
+                 f"Lekin javob tili va yozuvi — mijoz xabaridagidek (kirill, lotin, rus, ingliz).")
 
     real = [o for o in orders if o.get("status") != "cancelled"]
     if real:
