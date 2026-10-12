@@ -27,6 +27,12 @@ instead of a separate message for each of dozens of products.
 
 Checkouts still call notify_low_stock() → check_now(), so an order that empties
 a shelf alerts within seconds rather than at the next sweep.
+
+Ombor guruhi (owner, 2026-10-12): the same news also goes to the staff group
+STOCK_GROUP_ID, tagging everyone the bot can tag — the full list once a day
+from 09:00 (the first sweep after a deploy posts today's at once), plus one
+message per sweep with the products that just ran low or out (daytime only;
+the night's changes are in the next morning's list).
 """
 import asyncio
 import html
@@ -40,7 +46,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 import admin_mood
 import database
-from config import ADMIN_IDS, LOW_STOCK_THRESHOLD
+from config import ADMIN_IDS, LOW_STOCK_THRESHOLD, STOCK_GROUP_ID
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -48,6 +54,7 @@ router = Router()
 TZ_OFFSET = timedelta(hours=5)
 CHECK_EVERY = 120                  # 2 min sweep for non-checkout stock changes
 SUMMARY_HOURS = (8, 22)            # first-run summary only 08:00–21:59 Tashkent
+GROUP_HOURS = (9, 22)              # staff-group posts only 09:00–21:59 Tashkent
 _RANK = {"ok": 0, "low": 1, "out": 2}
 _lock = asyncio.Lock()
 
@@ -153,11 +160,11 @@ def summary_text(products: list[dict]) -> str:
     lines = ["📦 <b>Ombor holati</b>", ""]
     if out:
         lines.append(f"🚫 <b>Tugagan ({len(out)} ta):</b>")
-        lines += [f"• {p['name']}" for p in sorted(out, key=lambda p: p["name"].lower())]
+        lines += [f"• {html.escape(p['name'])}" for p in sorted(out, key=lambda p: p["name"].lower())]
         lines.append("")
     if low:
         lines.append(f"⚠️ <b>Kam qolgan ({len(low)} ta):</b>")
-        lines += [f"• {p['name']} — <b>{_qty(p['quantity'])} {_unit(p, 'uz')}</b>"
+        lines += [f"• {html.escape(p['name'])} — <b>{_qty(p['quantity'])} {_unit(p, 'uz')}</b>"
                   for p in sorted(low, key=lambda p: float(p["quantity"] or 0))]
         lines.append("")
     lines.append("Mahsulot shu holatga har safar tushganda alohida ogohlantirish keladi.")
@@ -191,6 +198,82 @@ def _chunks(text: str, size: int = 3800) -> list[str]:
     return parts
 
 
+async def _group_mentions(bot: Bot) -> str:
+    """Tags for everyone the bot can name in the staff group: the group's
+    admins (the only members Telegram lets a bot list) plus every bot admin
+    who is in the group."""
+    people: dict[int, str] = {}
+    try:
+        for member in await bot.get_chat_administrators(STOCK_GROUP_ID):
+            if not member.user.is_bot:
+                people[member.user.id] = member.user.first_name
+    except Exception as exc:
+        logger.warning("Stock group %s admins unavailable: %s", STOCK_GROUP_ID, exc)
+    for admin_id in ADMIN_IDS:
+        if admin_id in people:
+            continue
+        try:
+            member = await bot.get_chat_member(STOCK_GROUP_ID, admin_id)
+        except Exception:
+            continue
+        if member.status in ("creator", "administrator", "member") or getattr(member, "is_member", False):
+            people[admin_id] = member.user.first_name
+    return " ".join(f'<a href="tg://user?id={uid}">{html.escape(name or "admin")}</a>'
+                    for uid, name in people.items())
+
+
+async def post_to_group(bot: Bot, text: str) -> bool:
+    """Send text to the staff group with everyone tagged underneath."""
+    if not STOCK_GROUP_ID:
+        return False
+    parts = _chunks(text)
+    tags = await _group_mentions(bot)
+    if tags:
+        if len(parts[-1]) + len(tags) > 4000:
+            parts.append(f"👥 {tags}")
+        else:
+            parts[-1] += f"\n👥 {tags}"
+    try:
+        for part in parts:
+            await bot.send_message(STOCK_GROUP_ID, part, parse_mode=ParseMode.HTML)
+        return True
+    except Exception as exc:
+        logger.warning("Stock list to group %s failed: %s", STOCK_GROUP_ID, exc)
+        return False
+
+
+def _in_group_hours() -> bool:
+    return GROUP_HOURS[0] <= _now_tk().hour < GROUP_HOURS[1]
+
+
+def group_alert_text(worse: list[tuple[dict, str]]) -> str:
+    """The products one sweep found newly low / out, as one group message."""
+    out = [p for p, level in worse if level == "out"]
+    low = [p for p, level in worse if level == "low"]
+    lines = ["📦 <b>Ombor: yangi o'zgarish</b>", ""]
+    if out:
+        lines.append("🚫 <b>Tugadi:</b>")
+        lines += [f"• {html.escape(p['name'])}" for p in out]
+        lines.append("")
+    if low:
+        lines.append("⚠️ <b>Kam qoldi:</b>")
+        lines += [f"• {html.escape(p['name'])} — <b>{_qty(p['quantity'])} {_unit(p, 'uz')}</b>"
+                  f" (chegara: {_qty(limit_for(p))})" for p in low]
+    return "\n".join(lines).rstrip()
+
+
+async def _maybe_post_group_list(bot: Bot) -> None:
+    """Today's full low/out list in the staff group, once a day."""
+    if not STOCK_GROUP_ID or not _in_group_hours():
+        return
+    products = await database.get_stock_snapshot()
+    if not _low_or_out(products):
+        return
+    if not await database.claim_stock_group_post(STOCK_GROUP_ID, _now_tk().date()):
+        return
+    await post_to_group(bot, summary_text(products))
+
+
 async def check_now(bot: Bot) -> int:
     """Compare every active product with its last alerted level; alert the
     ones that got worse. Returns how many alerts went out."""
@@ -218,6 +301,8 @@ async def check_now(bot: Bot) -> int:
 
     for product, level in worse:
         await _send_all(bot, lambda lang, p=product, lv=level: _alert_text(p, lv, lang))
+    if worse and STOCK_GROUP_ID and _in_group_hours():
+        await post_to_group(bot, group_alert_text(worse))
     return len(worse)
 
 
@@ -242,6 +327,7 @@ async def scheduler_loop(bot: Bot) -> None:
         try:
             await check_now(bot)
             await _maybe_send_summary(bot)
+            await _maybe_post_group_list(bot)
         except Exception:
             logger.exception("Stock alert sweep failed")
         await asyncio.sleep(CHECK_EVERY)
@@ -259,8 +345,12 @@ async def cmd_stock(message: Message):
     parts = _chunks(summary_text(products))
     kb = None
     if _low_or_out(products):
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
-            text="📤 Barcha adminlarga yuborish", callback_data="ombor:send_all")]])
+        rows = [[InlineKeyboardButton(
+            text="📤 Barcha adminlarga yuborish", callback_data="ombor:send_all")]]
+        if STOCK_GROUP_ID:
+            rows.append([InlineKeyboardButton(
+                text="👥 Guruhga yuborish", callback_data="ombor:send_group")])
+        kb = InlineKeyboardMarkup(inline_keyboard=rows)
     for i, part in enumerate(parts):
         await message.answer(part, parse_mode=ParseMode.HTML,
                              reply_markup=kb if i == len(parts) - 1 else None)
@@ -287,3 +377,14 @@ async def send_stock_to_all_admins(callback: CallbackQuery, bot: Bot):
     except Exception:
         pass
     await callback.answer(f"✅ {sent}/{len(ADMIN_IDS)} ta adminga yuborildi", show_alert=True)
+
+
+@router.callback_query(F.data == "ombor:send_group", F.from_user.id.in_(ADMIN_IDS))
+async def send_stock_to_group(callback: CallbackQuery, bot: Bot):
+    """The full low/out list (fresh snapshot) into the staff group right now."""
+    products = await database.get_stock_snapshot()
+    who = html.escape(callback.from_user.full_name or str(callback.from_user.id))
+    ok = await post_to_group(bot, f"📤 Yuboruvchi: {who}\n\n" + summary_text(products))
+    await callback.answer("✅ Guruhga yuborildi" if ok else
+                          "❌ Guruhga yuborilmadi — bot guruhda va admin ekanini tekshiring",
+                          show_alert=True)
