@@ -20,7 +20,16 @@ Kimga yuborilgani bazada (bot_discount_campaign_sent) bittalab yoziladi:
 redeploy yoki qayta ishga tushish fan-out o'rtasida bo'lsa ham hech kim bir
 xabarni ikki marta olmaydi — qolganlarga davom etadi.
 
-Boshqaruv: /chegirma — holat · /chegirma_korish — uch xabarni ko'rish ·
+Muddat eslatmalari (egasi, 2026-10-12: chegirma 7 kun, 14-oktabr 23:59
+gacha — "odamlar vaqt kam qolayotganini bilishlari kerak"). Yana ikki xabar,
+xuddi shu yo'l bilan (mijozlar + kanal, bittalab yoziladi):
+  left2    — tugashidan oldingi kun: "2 kun qoldi — bugun va ertaga"
+  lastday  — oxirgi kun: "bugun 23:59 da tugaydi"
+Har biri faqat o'z kunida, 11:00–21:00 Toshkent oralig'ida: o'tkazib
+yuborilgan kun keyin yuborilmaydi (eskirgan "2 kun qoldi" hech kimga bormaydi).
+Chegirma tugagach adminlarga bitta xabar (ended).
+
+Boshqaruv: /chegirma — holat · /chegirma_korish — xabarlarni ko'rish ·
 /chegirma_toxtat — qolgan qadamlarni yubormaslik.
 """
 import asyncio
@@ -41,6 +50,8 @@ logger = logging.getLogger(__name__)
 router = Router(name="bot_discount_campaign")
 
 STEPS = ("teaser1", "teaser2", "announce")
+COUNTDOWN_STEPS = ("left2", "lastday")
+COUNTDOWN_FROM_HOUR = 11
 GAP = timedelta(hours=2)
 SEND_FROM_HOUR = 9
 SEND_UNTIL_HOUR = 21
@@ -51,7 +62,10 @@ SEND_DELAY = 0.05
 SHOP_URL = f"https://t.me/{BOT_USERNAME}/shop"
 
 _STEP_NAMES = {"teaser1": "1-xabar (qiziqtirish)", "teaser2": "2-xabar (qiziqtirish)",
-               "announce": "Chegirma e'loni"}
+               "announce": "Chegirma e'loni", "left2": "«2 kun qoldi» eslatmasi",
+               "lastday": "«Oxirgi kun» eslatmasi", "ended": "Tugagani haqida adminlarga"}
+# Mijozga "10% chegirmani olish" tugmasi bilan boradigan xabarlar.
+_BUTTON_STEPS = ("announce",) + COUNTDOWN_STEPS
 
 
 def _now_utc() -> datetime:
@@ -117,15 +131,52 @@ _TEXT = {
               "Это наше небольшое спасибо за то, что Вы выбираете нас и доверяете нам. "
               "Здоровых и спокойных Вам дней! 🌿",
     },
+    # Muddat eslatmalari: faqat haqiqiy sana va fakt, "shoshiling"siz.
+    "left2": {
+        "uz": "⏳ <b>10% chegirmaga 2 kun qoldi</b>\n\n"
+              "Eslatib qo'yamiz: bot orqali o'zingiz bergan buyurtmaga 10% chegirma "
+              "<b>{date} kuni soat 23:59 gacha</b> amal qiladi — bugun va ertaga.\n\n"
+              "• Istalgan summaga, minimal summa yo'q.\n"
+              "• Promokod kerak emas — chegirma savatda o'zi hisoblanadi.\n\n"
+              "Rejalashtirgan xaridingiz bo'lsa, uni chegirma bilan rasmiylashtirishga "
+              "hali ulgurasiz 🌿",
+        "ru": "⏳ <b>До конца скидки 10% — 2 дня</b>\n\n"
+              "Напоминаем: скидка 10% на заказ, оформленный Вами через бота, действует "
+              "<b>до 23:59 {date}</b> — сегодня и завтра.\n\n"
+              "• На любую сумму, без минимального заказа.\n"
+              "• Промокод не нужен — скидка считается в корзине сама.\n\n"
+              "Если планировали покупку, ещё успеете оформить её со скидкой 🌿",
+    },
+    "lastday": {
+        "uz": "⏳ <b>Bugun — 10% chegirmaning oxirgi kuni</b>\n\n"
+              "Bot orqali o'zingiz bergan buyurtmaga 10% chegirma <b>bugun soat 23:59 da</b> "
+              "tugaydi. Ertadan buyurtmalar odatdagi narxda bo'ladi.\n\n"
+              "• Istalgan summaga, promokodsiz — chegirma savatda o'zi hisoblanadi.\n\n"
+              "Shu kunlarda biz bilan bo'lganingiz uchun rahmat! 🤍",
+        "ru": "⏳ <b>Сегодня — последний день скидки 10%</b>\n\n"
+              "Скидка 10% на заказ, оформленный Вами через бота, заканчивается "
+              "<b>сегодня в 23:59</b>. С завтрашнего дня заказы — по обычной цене.\n\n"
+              "• На любую сумму, без промокода — скидка считается в корзине сама.\n\n"
+              "Спасибо, что были с нами в эти дни! 🤍",
+    },
 }
+
+
+def _text(step: str, lang: str) -> str:
+    """Xabar matni, "{date}" o'rnida tugash sanasi (bot_discount.with_end_date)."""
+    entry = _TEXT[step]
+    if lang == "ru":
+        return entry["ru"].replace("{date}", bot_discount.end_date_text("ru"))
+    return bot_discount.with_end_date(entry["uz"], lang)
 
 _BUTTON = {"uz": "🎁 10% chegirmani olish", "ru": "🎁 Получить скидку 10%"}
 
 
 def build_message(step: str, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
-    """Botdagi mijoz uchun. Tugma faqat e'londa — teaserlar hech narsa sotmaydi."""
-    text = _pick(_TEXT[step], lang)
-    if step != "announce":
+    """Botdagi mijoz uchun. Tugma e'londa va muddat eslatmalarida —
+    teaserlar hech narsa sotmaydi."""
+    text = _text(step, lang)
+    if step not in _BUTTON_STEPS:
         return text, None
     label = _pick(_BUTTON, lang)
     button = (InlineKeyboardButton(text=label, web_app=WebAppInfo(url=WEBAPP_URL)) if WEBAPP_URL
@@ -136,8 +187,8 @@ def build_message(step: str, lang: str) -> tuple[str, InlineKeyboardMarkup | Non
 def build_channel_message(step: str) -> tuple[str, InlineKeyboardMarkup | None]:
     """Kanal uchun: kirillda; kanalda web_app tugma ishlamaydi — Mini App
     havolasi (channel_posts.SHOP_URL bilan bir xil)."""
-    text = _pick(_TEXT[step], CHANNEL_LANG)
-    if step != "announce":
+    text = _text(step, CHANNEL_LANG)
+    if step not in _BUTTON_STEPS:
         return text, None
     text += f"\n\n👉 @{BOT_USERNAME}"
     return text, InlineKeyboardMarkup(inline_keyboard=[[
@@ -246,8 +297,9 @@ async def run_step(bot: Bot, step: str) -> tuple[int, int, list[dict]]:
         # chegirma allaqachon ishlayotgan bo'lsin.
         if not await bot_discount.is_active():
             stopped = await bot_discount.set_active(True)
-        # Shu kungi 18:00 qiziqish xabari o'tkazib yuboriladi — e'lon kechning
-        # yagona xabari bo'lsin (keto_explainer.py dagi kabi).
+    if step in _BUTTON_STEPS:
+        # Shu kungi 18:00 qiziqish xabari o'tkazib yuboriladi — e'lon /
+        # eslatma kunning yagona reklama xabari bo'lsin (keto_explainer.py dagi kabi).
         try:
             today = _now_tk().date()
             interest = await database.get_interest_state()
@@ -350,15 +402,98 @@ async def scheduler_loop(bot: Bot) -> None:
         await asyncio.sleep(CHECK_EVERY)
 
 
+# ───────────────────────────── muddat eslatmalari ─────────────────────────────
+
+def countdown_day(step: str):
+    """left2 — oxirgi kundan oldingi kun, lastday — oxirgi kun (Toshkent sanasi)."""
+    end = bot_discount.ENDS_AT_TK.date()
+    return end - timedelta(days=1) if step == "left2" else end
+
+
+def countdown_due(steps: dict[str, dict], now_tk: datetime) -> str | None:
+    """Qaysi eslatma hozir yuborilishi kerak (yoki None). Faqat o'z kunida va
+    11:00–21:00 da; shu kuni uzilgani (redeploy) davom etadi, kuni o'tgani —
+    hech qachon."""
+    if not (COUNTDOWN_FROM_HOUR <= now_tk.hour < SEND_UNTIL_HOUR):
+        return None
+    for step in COUNTDOWN_STEPS:
+        row = steps.get(step)
+        if row and row.get("finished_at"):
+            continue
+        if countdown_day(step) == now_tk.date():
+            return step
+    return None
+
+
+async def _notify_admins_countdown(bot: Bot, step: str, sent: int, failed: int) -> None:
+    text = (f"⏳ <b>10% chegirma — {_STEP_NAMES[step]} yuborildi</b>\n"
+            f"✅ {sent} ta yetkazildi · ⚠️ {failed} ta yetmadi · kanalga ham\n"
+            f"Chegirma {bot_discount.ENDS_AT_TK:%d.%m %H:%M} da o'zi tugaydi.")
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, text, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+
+
+async def _notify_admins_ended(bot: Bot) -> None:
+    text = (f"⏹ <b>10% chegirma muddati tugadi</b> ({bot_discount.ENDS_AT_TK:%d.%m %H:%M})\n\n"
+            "Buyurtmalar endi katalog narxida, eslatma qatorlari hamma joydan o'zi yo'qoldi.\n"
+            "Chegirma boshlanganda to'xtatilgan 🔥 mahsulot chegirmalari o'zi qaytmaydi — "
+            "kerak bo'lsa /admin → Mahsulotlar'da qayta qo'ying.")
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, text, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+
+
+async def _countdown_tick(bot: Bot) -> None:
+    steps = await _steps()
+    now_utc = _now_utc()
+    now_tk = now_utc + TZ_OFFSET
+    if bot_discount.ended(now_utc):
+        if not steps.get("ended") and in_window(now_tk):
+            await _claim("ended")
+            await _notify_admins_ended(bot)
+            await _finish("ended", 0, 0)
+        return
+    step = countdown_due(steps, now_tk)
+    # O'chirib qo'yilgan chegirmani eslatmaymiz (/chegirma_off).
+    if step is None or not await bot_discount.is_active():
+        return
+    await _claim(step)
+    sent, failed, _ = await run_step(bot, step)
+    await _finish(step, sent, failed)
+    logger.info("Bot discount countdown %s: %d sent, %d failed", step, sent, failed)
+    await _notify_admins_countdown(bot, step, sent, failed)
+
+
+async def countdown_loop(bot: Bot) -> None:
+    """Ikki muddat eslatmasi va tugagani haqida adminlarga xabar — hammasi
+    bo'lgach to'xtaydi."""
+    while True:
+        try:
+            if (await _steps()).get("ended", {}).get("finished_at"):
+                logger.info("Bot discount countdown finished — scheduler not needed")
+                return
+            await _countdown_tick(bot)
+        except Exception:
+            logger.exception("Bot discount countdown tick failed")
+        await asyncio.sleep(CHECK_EVERY)
+
+
 async def status_text() -> str:
     try:
         steps = await _steps()
     except Exception:
         return "Kampaniya holati o'qilmadi."
     lines = ["<b>E'lon kampaniyasi:</b>"]
-    for step in STEPS:
+    for step in STEPS + COUNTDOWN_STEPS:
         row = steps.get(step)
-        if not row:
+        if not row and step in COUNTDOWN_STEPS:
+            mark = f"⏳ {countdown_day(step):%d.%m} kuni {COUNTDOWN_FROM_HOUR}:00 dan"
+        elif not row:
             mark = "⏳ navbatda"
         elif not row.get("finished_at"):
             mark = "📤 yuborilmoqda"
@@ -375,9 +510,9 @@ async def status_text() -> str:
 
 @router.message(Command("chegirma_korish"), F.from_user.id.in_(ADMIN_IDS))
 async def cmd_preview(message: Message):
-    await message.answer("👀 Mijozlar ko'radigan uchta xabar (Sizning tilingizda) va kanal e'loni:")
+    await message.answer("👀 Mijozlar ko'radigan xabarlar (Sizning tilingizda) va kanal e'loni:")
     lang = await database.get_user_language(message.from_user.id) or "uz"
-    for step in STEPS:
+    for step in STEPS + COUNTDOWN_STEPS:
         text, markup = build_message(step, lang)
         await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=markup)
     text, markup = build_channel_message("announce")
@@ -389,7 +524,7 @@ async def cmd_stop(message: Message):
     """Hali ketmagan qadamlarni yubormaslik. Chegirmaning o'ziga tegmaydi —
     uni /chegirma_on bilan yoqish mumkin."""
     steps = await _steps()
-    pending = [s for s in STEPS if not steps.get(s)]
+    pending = [s for s in STEPS + COUNTDOWN_STEPS if not steps.get(s)]
     async with database.pool.acquire() as conn:
         for step in pending:
             await conn.execute(

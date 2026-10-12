@@ -15,6 +15,18 @@ import database
 from config import ADMIN_IDS
 
 BUYER = 555000111
+# Chegirma muddati ichidagi sobit payt (12.10 13:00 Toshkent) — testlar
+# 14-oktabrdan keyin ham shu holatni tekshirsin, haqiqiy soatga bog'lanmasin.
+DURING = datetime(2026, 10, 12, 8, 0)
+_clock = patch.object(bot_discount, "_now_utc", lambda: DURING)
+
+
+def setUpModule():
+    _clock.start()
+
+
+def tearDownModule():
+    _clock.stop()
 
 
 def run(coro):
@@ -340,6 +352,144 @@ class CampaignRunTest(unittest.TestCase):
              patch.object(campaign, "_audience", AsyncMock(return_value=[])):
             run(campaign.run_step(object(), "teaser1"))
         set_active.assert_not_awaited()
+
+
+def tk(day, hour=12, minute=0):
+    """Toshkent vaqtidagi payt → UTC (bot ichida hamma joy UTC bilan ishlaydi)."""
+    return datetime(2026, 10, day, hour, minute) - timedelta(hours=5)
+
+
+class DeadlineTest(unittest.TestCase):
+    """Egasi, 2026-10-12: chegirma 7 kun — 14-oktabr 23:59 (Toshkent) gacha."""
+
+    def tearDown(self):
+        bot_discount._cache.update(at=0.0, active=False)
+
+    def test_ends_at_the_last_second_of_the_14th(self):
+        self.assertFalse(bot_discount.ended(tk(14, 23, 59)))
+        self.assertTrue(bot_discount.ended(tk(15, 0, 0)))
+
+    def test_switched_on_is_still_off_after_the_end(self):
+        bot_discount._cache.update(at=10**12, active=True)
+        with patch.object(bot_discount, "_now_utc", lambda: tk(15, 0, 1)):
+            self.assertFalse(run(bot_discount.is_active()))
+            self.assertEqual(run(bot_discount.percent_for(BUYER)), 0)
+            self.assertEqual(run(bot_discount.reminder("uz")), "")
+            self.assertIsNone(run(bot_discount.site_banner("uz")))
+        self.assertEqual(run(bot_discount.percent_for(BUYER)), 10)   # DURING
+
+    def test_days_left_counts_today(self):
+        self.assertEqual(bot_discount.days_left(tk(12)), 3)
+        self.assertEqual(bot_discount.days_left(tk(13, 0, 30)), 2)
+        self.assertEqual(bot_discount.days_left(tk(14, 23, 59)), 1)
+
+    def test_deadline_line_in_every_language(self):
+        self.assertEqual(bot_discount.deadline_line("uz", tk(12)),
+                         "⏳ 14-oktabr kuni oxirigacha amal qiladi — 3 kun qoldi")
+        self.assertEqual(bot_discount.deadline_line("ru", tk(13)),
+                         "⏳ Действует до 14 октября включительно — осталось 2 дня")
+        self.assertIn("14-октябр", bot_discount.deadline_line("uz_cyr", tk(12)))
+        self.assertEqual(bot_discount.deadline_line("uz", tk(14)), "⏳ Bugun oxirgi kun — soat 23:59 gacha")
+        self.assertEqual(bot_discount.deadline_line("ru", tk(14)), "⏳ Сегодня последний день — до 23:59")
+
+    def test_reminder_and_banner_carry_the_deadline(self):
+        bot_discount._cache.update(at=10**12, active=True)
+        self.assertIn("3 kun qoldi", run(bot_discount.reminder("uz")))
+        self.assertIn("3 kun qoldi", run(bot_discount.footer("uz")))
+        self.assertIn("3 kun qoldi", run(bot_discount.channel_footer("uz")))
+        self.assertIn("осталось 3 дня", run(bot_discount.site_banner("ru"))["deadline"])
+
+    def test_no_pressure_words(self):
+        for now in (tk(12), tk(14)):
+            for lang in ("uz", "ru"):
+                text = bot_discount.deadline_line(lang, now).lower()
+                for word in ("shoshiling", "faqat bugun", "oxirgi imkoniyat", "спешите", "только сегодня"):
+                    self.assertNotIn(word, text)
+
+
+class CountdownTest(unittest.TestCase):
+    """"2 kun qoldi" (13-okt) va "oxirgi kun" (14-okt) — faqat o'z kunida, 11:00–21:00."""
+
+    @staticmethod
+    def due(steps, day, hour, minute=0):
+        return campaign.countdown_due(steps, datetime(2026, 10, day, hour, minute))
+
+    def test_each_reminder_only_on_its_own_day_and_hours(self):
+        self.assertIsNone(self.due({}, 12, 12))
+        self.assertIsNone(self.due({}, 13, 10, 59))
+        self.assertEqual(self.due({}, 13, 11), "left2")
+        self.assertIsNone(self.due({}, 13, 21))
+        self.assertIsNone(self.due({}, 15, 12))
+
+    def test_a_missed_day_is_never_sent_late(self):
+        # 13-okt butunlay o'tkazib yuborildi → 14-okt faqat "oxirgi kun".
+        self.assertEqual(self.due({}, 14, 11), "lastday")
+        started = {"left2": {"started_at": tk(13, 11), "finished_at": None}}
+        self.assertEqual(self.due(started, 14, 11), "lastday")
+
+    def test_interrupted_send_resumes_the_same_day(self):
+        started = {"left2": {"started_at": tk(13, 11), "finished_at": None}}
+        self.assertEqual(self.due(started, 13, 15), "left2")
+        done = {"left2": {"started_at": tk(13, 11), "finished_at": tk(13, 11, 5)}}
+        self.assertIsNone(self.due(done, 13, 15))
+
+    def test_messages_name_the_real_date_and_have_the_button(self):
+        for lang, date in (("uz", "14-oktabr"), ("ru", "14 октября"), ("uz_cyr", "14-октябр")):
+            text, markup = campaign.build_message("left2", lang)
+            self.assertIn(date, text)
+            self.assertIn("10%", text)
+            self.assertEqual(markup.inline_keyboard[0][0].text,
+                             {"uz": "🎁 10% chegirmani olish", "ru": "🎁 Получить скидку 10%",
+                              "uz_cyr": "🎁 10% чегирмани олиш"}[lang])
+            text, markup = campaign.build_message("lastday", lang)
+            self.assertIn("23:59", text)
+            self.assertIsNotNone(markup)
+        text, markup = campaign.build_channel_message("left2")
+        self.assertIn("14-октябр", text)
+        self.assertTrue(markup.inline_keyboard[0][0].url.startswith("https://t.me/"))
+
+    def test_no_pushy_words(self):
+        for step in campaign.COUNTDOWN_STEPS:
+            for lang in ("uz", "ru"):
+                text = campaign.build_message(step, lang)[0].lower()
+                for word in ("shoshiling", "faqat bugun", "oxirgi imkoniyat", "спешите", "только сегодня"):
+                    self.assertNotIn(word, text)
+
+    def _tick(self, now_utc, steps, active=True):
+        bot = AsyncMock()
+        run_step = AsyncMock(return_value=(5, 1, []))
+        claim, finish = AsyncMock(), AsyncMock()
+        with patch.object(campaign, "_now_utc", lambda: now_utc), \
+             patch.object(campaign, "_steps", AsyncMock(return_value=steps)), \
+             patch.object(campaign, "_claim", claim), patch.object(campaign, "_finish", finish), \
+             patch.object(campaign, "run_step", run_step), \
+             patch.object(bot_discount, "is_active", AsyncMock(return_value=active)):
+            run(campaign._countdown_tick(bot))
+        return bot, run_step, claim
+
+    def test_tick_sends_the_due_reminder_and_tells_the_admins(self):
+        bot, run_step, claim = self._tick(tk(13, 11, 1), {})
+        run_step.assert_awaited_once_with(bot, "left2")
+        claim.assert_awaited_once_with("left2")
+        self.assertIn("«2 kun qoldi» eslatmasi", bot.send_message.await_args_list[0].args[1])
+
+    def test_switched_off_discount_is_not_advertised(self):
+        _, run_step, claim = self._tick(tk(13, 11, 1), {}, active=False)
+        run_step.assert_not_awaited()
+        claim.assert_not_awaited()
+
+    def test_after_the_end_only_the_admins_hear_it_once(self):
+        bot, run_step, claim = self._tick(tk(15, 9, 0), {})
+        run_step.assert_not_awaited()
+        claim.assert_awaited_once_with("ended")
+        recipients = {c.args[0] for c in bot.send_message.await_args_list}
+        self.assertEqual(recipients, set(ADMIN_IDS))
+        self.assertIn("muddati tugadi", bot.send_message.await_args_list[0].args[1])
+        bot, _, claim = self._tick(tk(15, 10, 0), {"ended": {"started_at": tk(15, 9), "finished_at": tk(15, 9)}})
+        claim.assert_not_awaited()
+        bot.send_message.assert_not_awaited()
+        bot, _, claim = self._tick(tk(15, 0, 30), {})   # night — waits for 09:00
+        claim.assert_not_awaited()
 
 
 if __name__ == "__main__":
