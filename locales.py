@@ -115,12 +115,35 @@ TEXTS = {
               "📝 {description}\n\n"
               "💰 Narxi: {price} so'm\n"
               "📏 Birlik: {unit}\n"
-              "✅ Mavjud: {available}",
+              "{stock}",
         "ru": "📦 <b>{name}</b>\n\n"
               "📝 {description}\n\n"
               "💰 Цена: {price} сум\n"
               "📏 Единица: {unit}\n"
-              "✅ В наличии: {available}",
+              "{stock}",
+    },
+    # Qoldiq qatori (stock_alerts.stock_line). Kam qolganini mijoz kartochkada
+    # ko'rsin — egasi, 2026-10-12. Faqat haqiqiy son, "shoshiling"siz.
+    "stock_available": {
+        "uz": "✅ Mavjud: {n} {unit}",
+        "ru": "✅ В наличии: {n} {unit}",
+    },
+    "stock_low": {
+        "uz": "⚠️ <b>Kam qoldi: atigi {n} {unit}</b>",
+        "ru": "⚠️ <b>Осталось всего {n} {unit}</b>",
+    },
+    # Savat qatori ostida (handlers/cart.cart_stock_note).
+    "cart_low_stock": {
+        "uz": "⚠️ <i>{n} ta qoldi</i>",
+        "ru": "⚠️ <i>осталось {n} шт.</i>",
+    },
+    "cart_over_stock": {
+        "uz": "⚠️ <b>Omborda atigi {n} ta bor — sonini {n} taga tushiring</b>",
+        "ru": "⚠️ <b>На складе только {n} шт. — уменьшите количество до {n}</b>",
+    },
+    "cart_out_of_stock_line": {
+        "uz": "❌ <b>Sotuvda qolmadi — savatdan olib tashlang</b>",
+        "ru": "❌ <b>Закончился — уберите из корзины</b>",
     },
     "product_discount_line": {
         "uz": "🔥 <b>−{percent}%</b> · 💚 <b>{saved} so'm tejaysiz</b>\n"

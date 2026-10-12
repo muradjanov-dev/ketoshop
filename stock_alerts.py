@@ -77,6 +77,27 @@ def level_for(product: dict) -> str:
     return "ok"
 
 
+def low_left(product: dict) -> int | None:
+    """Mijozga ko'rsatish uchun: kam qolgan bo'lsa nechta butun dona qolgani,
+    aks holda None. Chegara adminlar ogohlantirishi bilan bir xil (level_for) —
+    egasi, 2026-10-12: "mijozlar mahsulotni kam qolganini va nechta qolganini
+    bilib turishlari kerak"."""
+    if level_for(product) != "low":
+        return None
+    left = int(float(product.get("quantity") or 0))
+    return left if left >= 1 else None
+
+
+def stock_line(product: dict, lang: str) -> str:
+    """Mahsulot kartochkasidagi qoldiq qatori: "✅ Mavjud: 12 dona" yoki
+    kam qolganda "⚠️ Kam qoldi: atigi 3 dona"."""
+    from locales import get_text
+    left = low_left(product)
+    if left is not None:
+        return get_text("stock_low", lang, n=left, unit=_unit(product, lang))
+    return get_text("stock_available", lang, n=_qty(product.get("quantity")), unit=_unit(product, lang))
+
+
 def _qty(value: float) -> str:
     value = float(value or 0)
     return str(int(value)) if value.is_integer() else f"{value:.1f}"

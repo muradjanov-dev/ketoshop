@@ -54,6 +54,7 @@ from database import (
 )
 import gamification
 import mystery_gift
+import stock_alerts
 from gamification import EARN_RATE as KETO_EARN_RATE
 from handlers.cart import free_delivery_hint
 from locales import CATEGORIES, get_category_name, get_unit_name, get_display_unit, get_text, get_delivery_method_name, localize_product_text
@@ -490,6 +491,8 @@ async def api_cart(request: web.Request):
             # 0.5 increments. Frontend uses this to pick the qty-stepper step.
             "packaged": item["unit"] in ("kg", "g"),
             "available": float(item.get("stock") or 0),
+            "low_stock": None if item.get("is_set") else stock_alerts.low_left(
+                {"quantity": item.get("stock"), "low_stock_threshold": item.get("low_stock_threshold")}),
             "total": item_total,
             "photo_url": photo_url(item.get("photo_id")),
         })
@@ -1551,6 +1554,9 @@ def _serialize_product(p: dict, lang: str) -> dict:
         "unit": get_display_unit(p["unit"], lang),
         "packaged": p["unit"] in ("kg", "g"),
         "out_of_stock": (p.get("quantity") or 0) <= 0,
+        # "⚠️ 3 ta qoldi" — kam qolganda nechta qolgani, aks holda None
+        # (owner, 2026-10-12: buyers should see it before checkout, not at it).
+        "low_stock": stock_alerts.low_left(p),
         "category": p["category"],
         "photo_url": photo_url(p.get("photo_id")),
         "bonus": bonus,
