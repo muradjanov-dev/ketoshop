@@ -112,6 +112,17 @@ async def _rewrite_cards(bot: Bot, buyer_id: int, footer: str,
             logger.debug("Could not update support card for admin %s", copy["admin_id"])
 
 
+def _pause_ai(buyer_id: int) -> None:
+    """A person has taken this conversation over, so the AI seller
+    (ai_sales.py) steps back for this buyer instead of talking over them.
+    Best-effort: the reply itself must never fail because of it."""
+    try:
+        import ai_sales
+        ai_sales.pause_for_human(buyer_id)
+    except Exception:
+        logger.exception("Could not pause the AI seller for %s", buyer_id)
+
+
 async def announce_support_answer(bot: Bot, buyer_id: int, admin_id: int, reply_text: str) -> None:
     """Close this buyer's question out across every admin's chat.
 
@@ -120,6 +131,7 @@ async def announce_support_answer(bot: Bot, buyer_id: int, admin_id: int, reply_
     an answer sent from either place stops the other admins seeing a live
     reply button for something already handled. Purely bookkeeping: never
     raises, because the buyer's message has already gone out by this point."""
+    _pause_ai(buyer_id)
     try:
         await release_support_claim(buyer_id, admin_id)
         preview = (reply_text or "").strip()
@@ -168,6 +180,7 @@ async def start_freeform_reply(callback: CallbackQuery, state: FSMContext, bot: 
 
     await state.set_state(SupportReplyStates.waiting_text)
     await state.update_data(buyer_id=buyer_id, from_card=from_card)
+    _pause_ai(buyer_id)   # the admin is about to write — the AI must not answer meanwhile
 
     # Tell the other admins the question is taken before anything is typed —
     # that is the whole point of claiming it early rather than at send time.
