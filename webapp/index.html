@@ -18,13 +18,15 @@
      biznesning stiliga moslab". Every class name and id the script relies
      on is unchanged, so all behaviour is unchanged.
 
-     The look: a sunny grocery poster in Ketoshop's own colours — honey
-     yellow, orange, fresh leaf green and berry — on warm cream. Unbounded
-     for headings and money, Onest for text. Product tiles, category chips
-     and section numbers each pick up one of the fruit colours below, so the
-     page reads colourful without one loud block. Day is the default theme
-     (owner, 2026-10-02); night (warm cocoa) and organic (garden green) stay
-     in the profile switch.
+     Round 3 (2026-10-12): "ranglarda chiroq va nur juda yorqin ... soft
+     bo'lishi kerak" — the same layout in muted, matte colours: butter,
+     apricot clay, sage, dusty rose, lavender and mist blue on soft linen.
+     Nothing glows: no sun rays, no coloured halo shadows, flat buttons.
+
+     Unbounded for headings and money, Onest for text. Product tiles,
+     category chips and section numbers each take one of the soft fruit
+     colours below. Day is the default theme (owner, 2026-10-02); night
+     (warm charcoal) and organic (sage) stay in the profile switch.
 
      Fonts are self-hosted under /static/fonts/ for the same reason Leaflet
      is (third-party CDNs are unreliable from Uzbekistan). The cyrillic-ext
@@ -64,53 +66,53 @@
      script still read them. --c-* are the fruit colours (strong, white text
      reads on all but sun); --t-* are their soft tints. */
   :root {
-    --c-sun: #FFC531;    --t-sun: #FFF3C8;
-    --c-orange: #FF7A1A; --t-orange: #FFE9D8;
-    --c-leaf: #2FA35A;   --t-leaf: #E2F5E7;
-    --c-berry: #EC2F55;  --t-berry: #FFE4EA;
-    --c-mint: #13AE96;   --t-mint: #DAF5EF;
-    --c-lilac: #8B6CF0;  --t-lilac: #EDE7FF;
-    --c-sky: #2E96E0;    --t-sky: #DFF0FC;
+    --c-sun: #E2BE6A;    --t-sun: #FBF3DE;
+    --c-orange: #C98A63; --t-orange: #F8EBE1;
+    --c-leaf: #7C9F77;   --t-leaf: #EAF1E6;
+    --c-berry: #C47F88;  --t-berry: #F7E9EA;
+    --c-mint: #78AA9C;   --t-mint: #E5F0EC;
+    --c-lilac: #9E92C4;  --t-lilac: #EFECF6;
+    --c-sky: #82A4C2;    --t-sky: #E7EEF5;
 
-    --bg: #FFF8EB;
-    --secondary-bg: #FCEBCB;
-    --surface: #FFFFFF;
-    --surface-hi: #FFF1D9;
-    --text: #2B1D0E;
-    --hint: #8A7457;
-    --muted: #A8957A;
-    --hairline: rgba(120,80,20,.13);
-    --pop: #FFC531;
-    --on-pop: #2B1D0E;
-    --pop-soft: rgba(255,197,49,.26);
-    --btn: #FF6A1F;
-    --btn-grad: linear-gradient(135deg, #FFA02E 0%, #FF6A1F 55%, #FF4B4B 100%);
+    --bg: #FAF6EF;
+    --secondary-bg: #F1EADF;
+    --surface: #FFFDF9;
+    --surface-hi: #F3EDE3;
+    --text: #3A3129;
+    --hint: #8F8275;
+    --muted: #ADA295;
+    --hairline: rgba(80,60,40,.11);
+    --pop: #EBCD86;
+    --on-pop: #3A3129;
+    --pop-soft: rgba(235,205,134,.26);
+    --btn: #B5684A;
+    --btn-grad: linear-gradient(180deg, #BC7152 0%, #B0624A 100%);
     --btn-text: #FFFFFF;
-    --link: #E05A0C;
-    --berry: #EC2F55;
-    --berry-soft: rgba(236,47,85,.11);
-    --gold: #FFB300;
-    --leaf: #2FA35A;
-    --leaf-deep: #1D8446;
-    --leaf-soft: rgba(47,163,90,.13);
-    --hero-bg: linear-gradient(140deg, #FFE660 0%, #FFC531 45%, #FF9A2E 100%);
-    --hero-text: #2B1D0E;
-    --hero-accent: #EC2F55;
+    --link: #A65E40;
+    --berry: #B85C67;
+    --berry-soft: rgba(184,92,103,.10);
+    --gold: #D9B25E;
+    --leaf: #6E9A6A;
+    --leaf-deep: #4F7A4C;
+    --leaf-soft: rgba(110,154,106,.13);
+    --hero-bg: linear-gradient(165deg, #F7ECD3 0%, #F1E0BE 100%);
+    --hero-text: #3A3129;
+    --hero-accent: #C47F88;
     --hero-on-accent: #FFFFFF;
-    --hero-cta-bg: #2B1D0E;
-    --hero-cta-fg: #FFE660;
-    --dock-bg: rgba(255,255,255,.92);
-    --dock-fg: #9C8667;
-    --dock-line: rgba(120,80,20,.12);
-    --glass: rgba(255,250,240,.86);
-    --scrim: rgba(43,29,14,.42);
-    --glow-1: rgba(255,206,72,.55);
-    --glow-2: rgba(255,138,92,.26);
-    --glow-3: rgba(60,200,140,.20);
-    --shadow-1: 0 1px 2px rgba(120,70,10,.06), 0 8px 18px -10px rgba(120,70,10,.24);
-    --shadow-2: 0 2px 6px rgba(120,70,10,.07), 0 24px 46px -20px rgba(120,70,10,.36);
-    --shadow-pop: 0 12px 26px -12px rgba(255,106,31,.75);
-    --dock-shadow: 0 18px 40px -18px rgba(120,60,10,.5), inset 0 1px 0 rgba(255,255,255,.6);
+    --hero-cta-bg: #3A3129;
+    --hero-cta-fg: #F7ECD3;
+    --dock-bg: rgba(255,253,249,.94);
+    --dock-fg: #A39686;
+    --dock-line: rgba(80,60,40,.10);
+    --glass: rgba(250,246,239,.9);
+    --scrim: rgba(58,49,41,.38);
+    --glow-1: rgba(235,205,134,.18);
+    --glow-2: rgba(201,138,99,.07);
+    --glow-3: rgba(124,159,119,.08);
+    --shadow-1: 0 1px 2px rgba(60,40,20,.04), 0 6px 14px -10px rgba(60,40,20,.16);
+    --shadow-2: 0 2px 5px rgba(60,40,20,.04), 0 14px 30px -20px rgba(60,40,20,.24);
+    --shadow-pop: none;
+    --dock-shadow: 0 10px 26px -18px rgba(60,40,20,.35), inset 0 1px 0 rgba(255,255,255,.7);
 
     --font-display: 'Unbounded', 'Onest', system-ui, sans-serif;
     --font-body: 'Onest', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -139,79 +141,79 @@
   }
 
   :root[data-site-theme="night"] {
-    /* Warm cocoa instead of a cold black, so the fruit colours glow. */
-    --c-leaf: #3CC170; --c-berry: #FF4D6D; --c-lilac: #9F86FF; --c-sky: #43A9F2; --c-mint: #22C3A6;
-    --t-sun: rgba(255,197,49,.13);  --t-orange: rgba(255,122,26,.14); --t-leaf: rgba(60,193,112,.15);
-    --t-berry: rgba(255,77,109,.15); --t-mint: rgba(34,195,166,.15); --t-lilac: rgba(159,134,255,.17);
-    --t-sky: rgba(67,169,242,.15);
-    --bg: #17110C;
-    --secondary-bg: #241B14;
-    --surface: #211912;
-    --surface-hi: #2F251C;
-    --text: #FFF3E2;
-    --hint: #BAA587;
-    --muted: #8E7C64;
-    --hairline: rgba(255,236,210,.09);
-    --pop: #FFC531;
-    --on-pop: #2B1D0E;
-    --pop-soft: rgba(255,197,49,.15);
-    --btn: #FF7A1A;
-    --link: #FFB547;
-    --berry: #FF5B78;
-    --berry-soft: rgba(255,91,120,.15);
-    --gold: #FFD166;
-    --leaf: #4ED37F;
-    --leaf-deep: #4ED37F;
-    --leaf-soft: rgba(78,211,127,.14);
-    --dock-bg: rgba(42,32,23,.92);
-    --dock-fg: rgba(255,243,226,.55);
-    --dock-line: rgba(255,255,255,.08);
-    --glass: rgba(33,25,18,.86);
-    --scrim: rgba(5,3,2,.62);
-    --glow-1: rgba(255,170,40,.17);
-    --glow-2: rgba(255,80,100,.10);
-    --glow-3: rgba(40,190,120,.08);
-    --shadow-1: inset 0 1px 0 rgba(255,255,255,.04), 0 8px 20px -12px rgba(0,0,0,.8);
-    --shadow-2: inset 0 1px 0 rgba(255,255,255,.05), 0 26px 50px -20px rgba(0,0,0,.9);
-    --shadow-pop: 0 12px 28px -12px rgba(255,122,26,.6);
-    --dock-shadow: 0 18px 40px -16px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.06);
+    /* Warm charcoal; the fruit colours are muted further so nothing glows. */
+    --c-sun: #CDB06A; --c-orange: #C38E6E; --c-leaf: #8BAA86; --c-berry: #C38A92;
+    --c-mint: #84B2A6; --c-lilac: #A79CCB; --c-sky: #8FADC7;
+    --t-sun: rgba(205,176,106,.11);  --t-orange: rgba(195,142,110,.12); --t-leaf: rgba(139,170,134,.12);
+    --t-berry: rgba(195,138,146,.12); --t-mint: rgba(132,178,166,.12); --t-lilac: rgba(167,156,203,.13);
+    --t-sky: rgba(143,173,199,.12);
+    --bg: #1D1A17;
+    --secondary-bg: #26221E;
+    --surface: #24201C;
+    --surface-hi: #2E2924;
+    --text: #EEE6DA;
+    --hint: #A6998B;
+    --muted: #84796D;
+    --hairline: rgba(255,240,220,.08);
+    --pop: #CDB06A;
+    --on-pop: #29231D;
+    --pop-soft: rgba(205,176,106,.14);
+    --btn: #BB7556;
+    --btn-grad: linear-gradient(180deg, #C17C5D 0%, #B26D50 100%);
+    --link: #D49B7B;
+    --berry: #D0909A;
+    --berry-soft: rgba(208,144,154,.12);
+    --gold: #CDB06A;
+    --leaf: #93B48E;
+    --leaf-deep: #A3C19E;
+    --leaf-soft: rgba(147,180,142,.12);
+    --hero-bg: linear-gradient(165deg, #322C25 0%, #2B2620 100%);
+    --hero-text: #F0E5D2;
+    --hero-accent: #B9787F;
+    --hero-on-accent: #FFFFFF;
+    --hero-cta-bg: #F0E5D2;
+    --hero-cta-fg: #29231D;
+    --dock-bg: rgba(38,34,30,.94);
+    --dock-fg: rgba(238,230,218,.5);
+    --dock-line: rgba(255,255,255,.07);
+    --glass: rgba(36,32,28,.9);
+    --scrim: rgba(5,4,3,.6);
+    --glow-1: rgba(205,176,106,.05);
+    --glow-2: rgba(195,142,110,.03);
+    --glow-3: rgba(139,170,134,.03);
+    --shadow-1: inset 0 1px 0 rgba(255,255,255,.03), 0 6px 16px -12px rgba(0,0,0,.7);
+    --shadow-2: inset 0 1px 0 rgba(255,255,255,.04), 0 18px 36px -22px rgba(0,0,0,.8);
+    --dock-shadow: 0 12px 30px -18px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.05);
     color-scheme: dark;
   }
 
   :root[data-site-theme="organic"] {
-    --bg: #EFF8E7;
-    --secondary-bg: #DCEFD0;
-    --surface: #FFFFFF;
-    --surface-hi: #E6F3DB;
-    --text: #183020;
-    --hint: #5D7B61;
-    --muted: #86A088;
-    --hairline: rgba(24,60,30,.12);
-    --on-pop: #183020;
-    --pop-soft: rgba(255,197,49,.28);
-    --btn: #22A055;
-    --btn-grad: linear-gradient(135deg, #6AD06A 0%, #22A055 55%, #12887A 100%);
-    --link: #1E8A45;
-    --berry: #E3304C;
-    --leaf: #2FA35A;
-    --leaf-deep: #1D7E3E;
-    --hero-bg: linear-gradient(140deg, #8BE070 0%, #2FA35A 55%, #12887A 100%);
-    --hero-text: #FFFFFF;
-    --hero-accent: #FFC531;
-    --hero-on-accent: #183020;
-    --hero-cta-bg: #FFFFFF;
-    --hero-cta-fg: #1D7E3E;
-    --dock-fg: #6E8C72;
-    --dock-line: rgba(24,60,30,.12);
-    --glass: rgba(247,252,242,.86);
-    --scrim: rgba(20,35,22,.42);
-    --glow-1: rgba(255,214,90,.42);
-    --glow-2: rgba(120,220,120,.34);
-    --glow-3: rgba(40,190,170,.22);
-    --shadow-1: 0 1px 2px rgba(27,60,30,.06), 0 8px 18px -10px rgba(27,60,30,.22);
-    --shadow-2: 0 2px 6px rgba(27,60,30,.07), 0 24px 46px -20px rgba(27,60,30,.34);
-    --shadow-pop: 0 12px 26px -12px rgba(34,160,85,.65);
-    --dock-shadow: 0 18px 40px -18px rgba(27,60,30,.45), inset 0 1px 0 rgba(255,255,255,.6);
+    --bg: #F2F5EC;
+    --secondary-bg: #E3EADB;
+    --surface: #FFFFFC;
+    --surface-hi: #E9EFE2;
+    --text: #2F3A2E;
+    --hint: #7A8877;
+    --muted: #98A595;
+    --hairline: rgba(40,60,40,.10);
+    --on-pop: #2F3A2E;
+    --btn: #5F8257;
+    --btn-grad: linear-gradient(180deg, #678A5F 0%, #5A7C53 100%);
+    --link: #557A4D;
+    --leaf-deep: #4C7348;
+    --hero-bg: linear-gradient(165deg, #E7EEDC 0%, #DCE6CD 100%);
+    --hero-text: #2F3A2E;
+    --hero-accent: #C9A55E;
+    --hero-on-accent: #2F3A2E;
+    --hero-cta-bg: #2F3A2E;
+    --hero-cta-fg: #EEF2E6;
+    --dock-fg: #8C9886;
+    --dock-line: rgba(40,60,40,.10);
+    --glass: rgba(242,245,236,.9);
+    --scrim: rgba(30,40,30,.38);
+    --glow-1: rgba(201,165,94,.10);
+    --glow-2: rgba(124,159,119,.10);
+    --glow-3: rgba(120,170,156,.08);
     color-scheme: light;
   }
 
@@ -2932,6 +2934,77 @@
     color: var(--text);
   }
   .rm-next { margin-top: 18px; font-size: 12px; color: var(--hint); text-align: center; }
+
+  /* ── Soft pass (round 3) ──────────────────────────────────────────────
+     Last in the sheet on purpose: it switches off every glow the earlier
+     rounds added, and turns the loud gradients into flat soft tints. */
+  .home-hero::before { display: none; }                 /* no sun rays */
+  .home-hero::after { opacity: .12; }
+  .hero-blob { background: rgba(255,255,255,.32); }
+  :root[data-site-theme="night"] .hero-blob { background: rgba(255,255,255,.04); }
+  .hero-stamp-core { background: var(--surface); box-shadow: 0 3px 8px -5px rgba(60,40,20,.35); }
+  .home-hero-eyebrow { background: rgba(255,255,255,.45); }
+  :root[data-site-theme="night"] .home-hero-eyebrow { background: rgba(255,255,255,.06); }
+  .home-hero-title em { box-shadow: none; transform: rotate(-2deg); }
+  .home-hero-cta { box-shadow: none; }
+
+  .organic-leaves { opacity: .35; }
+
+  /* Dock and chips: a calm ink pill, the colour lives in a small dot. */
+  .tab-item.active { background: var(--text); color: var(--bg); box-shadow: none; }
+  .tab-item.active .tab-badge { background: var(--bg); color: var(--text); }
+  .cat-tab.active { background: var(--text); color: var(--bg); box-shadow: none; }
+  .cat-tab.active::before { background: var(--cc); }
+  .lang-btn.active { box-shadow: none; }
+
+  .section-header::before { background: var(--t-orange); color: var(--text); }
+  .home-section:nth-child(6n+2) .section-header::before { background: var(--t-leaf); }
+  .home-section:nth-child(6n+3) .section-header::before { background: var(--t-berry); }
+  .home-section:nth-child(6n+4) .section-header::before { background: var(--t-lilac); }
+  .home-section:nth-child(6n+5) .section-header::before { background: var(--t-mint); }
+  .home-section:nth-child(6n)   .section-header::before { background: var(--t-sky); }
+
+  .card-img-wrap::after { box-shadow: none; }
+  .card-img-wrap .discount-corner { box-shadow: none; }
+  .btn-checkout, .checkout-submit-btn, .add-to-cart-btn, .review-submit-btn, .game-next { box-shadow: none; }
+
+  /* Aksiya and 10% cards: soft tinted tickets with dark text. */
+  .promo-banner { background: var(--t-orange); color: var(--text); border: 1px solid var(--hairline); }
+  .promo-banner .pb-icon { background: var(--surface); }
+  .promo-banner .pb-title { color: var(--text); }
+  .promo-banner .pb-sub { opacity: .75; }
+  .promo-banner .pb-arrow { border-left-color: var(--hairline); color: var(--link); }
+  .promo-banner.bot-discount-banner { background: var(--t-leaf); }
+  :root[data-site-theme="night"] .promo-banner,
+  :root[data-site-theme="night"] .promo-banner.bot-discount-banner { background-color: var(--surface); }
+
+  /* Game tiles: tinted cards with dark text instead of bright gradients. */
+  .game-tile { --gt: var(--t-leaf); --gc: var(--c-leaf); background: linear-gradient(var(--gt), var(--gt)), var(--surface); color: var(--text); box-shadow: var(--shadow-1); border: 1px solid var(--hairline); }
+  .game-tile[data-game="duel"]   { --gt: var(--t-orange); --gc: var(--c-orange); }
+  .game-tile[data-game="quiz"]   { --gt: var(--t-berry);  --gc: var(--c-berry); }
+  .game-tile[data-game="memory"] { --gt: var(--t-lilac);  --gc: var(--c-lilac); }
+  .game-tile::after { background: var(--gc); opacity: .12; }
+  .game-tile-icon { background: var(--surface); color: var(--gc); }
+  .game-tile-sub { opacity: .75; }
+  .game-tile-best { background: var(--surface); }
+  .food-mono { box-shadow: none; }
+  .game-btn.yes { background: var(--c-leaf); box-shadow: none; }
+  .game-btn.no { background: var(--c-berry); box-shadow: none; }
+  .mem-back, .mem-card:nth-child(3n+2) .mem-back, .mem-card:nth-child(3n) .mem-back {
+    background: var(--t-lilac); color: var(--c-lilac); box-shadow: none; border: 1px solid var(--hairline);
+  }
+  .mem-card:nth-child(3n+2) .mem-back { background: var(--t-orange); color: var(--c-orange); }
+  .mem-card:nth-child(3n) .mem-back { background: var(--t-leaf); color: var(--c-leaf); }
+  .game-result::before { background: rgba(255,255,255,.3); }
+  :root[data-site-theme="night"] .game-result::before { background: rgba(255,255,255,.04); }
+
+  /* Recipe: same green, but matte. */
+  .recipe-hero .rh-cta, .rm-add { background: var(--leaf-deep); box-shadow: none; }
+  :root[data-site-theme="night"] .recipe-hero .rh-cta,
+  :root[data-site-theme="night"] .rm-add { background: #5E8358; }
+  .recipe-hero .rh-badge { background: var(--pop); box-shadow: none; }
+
+  #app-toast { box-shadow: 0 8px 20px -12px rgba(0,0,0,.45); }
 </style>
 </head>
 <body>
