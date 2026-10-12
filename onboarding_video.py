@@ -33,6 +33,7 @@ from aiogram.types import (
 )
 
 import database
+import shop_address
 from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ def _pick(entry: dict, lang: str) -> str:
 
 
 def caption(lang: str) -> str:
-    return _pick(CAPTION, lang)
+    return shop_address.add(_pick(CAPTION, lang), lang, 1024)
 
 
 def button_text(lang: str) -> str:

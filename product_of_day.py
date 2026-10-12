@@ -141,7 +141,7 @@ async def broadcast(bot: Bot, product: dict) -> tuple[int, int]:
     import product_ideas
     name = product.get("name") or ""
     captions = product_card.CaptionCache(
-        product, extra_for=lambda lang: product_ideas.idea_block(name, lang))
+        product, extra_for=lambda lang: product_ideas.idea_block(name, lang), address=True)
     sent = failed = 0
     for uid in user_ids:
         ok = await _send_to_user(bot, uid, product, langs.get(uid, "uz"), captions)
@@ -174,7 +174,7 @@ async def post_to_channel(bot: Bot, product: dict) -> bool:
         import product_ideas
         caption = await product_card.build_caption(
             product, CHANNEL_LANG, rate,
-            product_ideas.idea_block(product.get("name") or "", CHANNEL_LANG))
+            product_ideas.idea_block(product.get("name") or "", CHANNEL_LANG), address=True)
         markup = channel_keyboard(product["id"])
         if product.get("photo_id"):
             await bot.send_photo(REQUIRED_CHANNEL_ID, photo=product["photo_id"],

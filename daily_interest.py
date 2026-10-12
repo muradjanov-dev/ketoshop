@@ -43,6 +43,7 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest, Teleg
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import database
+import shop_address
 from config import ADMIN_IDS
 from locales import localize_product_text
 
@@ -187,7 +188,7 @@ async def send_batch(bot: Bot, only_user: int | None = None) -> tuple[int, int, 
             if not text:
                 skipped += 1
                 continue
-            text += await bot_discount.footer(lang)
+            text += await bot_discount.footer(lang) + shop_address.footer(lang)
             try:
                 await bot.send_message(uid, text, parse_mode=ParseMode.HTML,
                                         disable_web_page_preview=True, reply_markup=keyboard)

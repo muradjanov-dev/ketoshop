@@ -47,6 +47,7 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest, Teleg
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import database
+import shop_address
 from config import ADMIN_IDS
 from locales import get_display_unit
 
@@ -673,7 +674,10 @@ async def announce(bot: Bot, promo: dict) -> tuple[int, int]:
     sent = failed = 0
     for user_id in user_ids:
         lang = langs.get(user_id, "uz")
-        text = _cyr_if_needed(_announcement_text(promo, lang), lang)
+        body = _cyr_if_needed(_announcement_text(promo, lang), lang)
+        # 📍 manzil under the post (shop_address.py); the caption gets it only
+        # when it still fits in 1024, so the cut below never splits its tag.
+        text = shop_address.add(body, lang)
         try:
             if promo.get("image_url"):
                 # image_url is our own /img/N route; Telegram can't fetch a
@@ -681,11 +685,14 @@ async def announce(bot: Bot, promo: dict) -> tuple[int, int]:
                 # base URL configured.
                 photo = _absolute_image(promo["image_url"])
                 if photo:
-                    await bot.send_photo(user_id, photo, caption=text[:1024], parse_mode=ParseMode.HTML)
+                    caption = shop_address.add(body, lang, 1024)[:1024]
+                    await bot.send_photo(user_id, photo, caption=caption, parse_mode=ParseMode.HTML)
                 else:
-                    await bot.send_message(user_id, text, parse_mode=ParseMode.HTML)
+                    await bot.send_message(user_id, text, parse_mode=ParseMode.HTML,
+                                           disable_web_page_preview=True)
             else:
-                await bot.send_message(user_id, text, parse_mode=ParseMode.HTML)
+                await bot.send_message(user_id, text, parse_mode=ParseMode.HTML,
+                                       disable_web_page_preview=True)
             sent += 1
         except TelegramRetryAfter as exc:
             await asyncio.sleep(exc.retry_after + 1)
@@ -862,7 +869,7 @@ async def _showcase_tick(bot: Bot) -> None:
     langs = await database.get_user_languages(user_ids)
     # Both message bodies are identical for everyone reading the same
     # language, so render the three of them once instead of 844 times.
-    bodies = {lang: (_cyr_if_needed(showcase_text(promo, picked, lang), lang),
+    bodies = {lang: (shop_address.add(_cyr_if_needed(showcase_text(promo, picked, lang), lang), lang),
                      _cyr_keyboard(showcase_keyboard(picked, lang), lang))
               for lang in ("uz", "uz_cyr", "ru")}
 
@@ -876,6 +883,7 @@ async def _showcase_tick(bot: Bot) -> None:
                 text,
                 parse_mode=ParseMode.HTML,
                 reply_markup=keyboard,
+                disable_web_page_preview=True,   # no preview card for the 📍 link
             )
             sent += 1
         except TelegramRetryAfter as exc:

@@ -27,6 +27,7 @@ from aiogram.exceptions import (
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
 import database
+import shop_address
 from config import (BOT_USERNAME, FREE_DELIVERY_FROM, MYSTERY_GIFT_FROM,
                     REQUIRED_CHANNEL_ID, WEBAPP_URL)
 
@@ -107,7 +108,7 @@ def text_for(lang: str) -> str:
     if lang == "uz_cyr":
         from translit import lat_to_cyr
         out = lat_to_cyr(out)
-    return out
+    return shop_address.add(out, lang)
 
 
 def buyer_keyboard(lang: str) -> InlineKeyboardMarkup | None:
