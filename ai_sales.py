@@ -12,12 +12,14 @@ QAYERDA ISHLAYDI (egasi, 2026-10-12: "kanalga ulangan guruh va botga yozilgan
 xabarlarga AI o'zi javob berishi kerak, biz vaqt ajrata olmayapmiz")
   * Botda — hamma mijozga. Mijoz oddiy matn yozsa, support_relay ga emas,
     shu yerga tushadi. Admin /ai_holat dagi tugma bilan bir zumda o'chiradi
-    (bazada saqlanadi, server sozlamasi shart emas). Adminlar, kuryerlar va
-    ichki akkauntlarga AI o'zi javob bermaydi — admin /ai bilan sinab ko'radi.
+    (bazada saqlanadi, server sozlamasi shart emas). Kuryerlarga AI javob
+    bermaydi. Adminlar va ichki akkauntlarga — faqat /ai_holat dagi
+    "Adminlarga ham javob (sinov)" yoqilganda (hozircha yoqilgan, egasi
+    2026-10-13: "testlash uchun"); o'chirilsa admin /ai bilan sinaydi.
   * @ketoshop_uz kanaliga ulangan muhokama guruhida — guruh id si kanalning
     linked_chat_id sidan o'zi topiladi (+ AI_GROUP_CHATS dagi guruhlar).
-    Faqat begona odamning SAVOLIGA (adminlarga hech qachon). Guruhda SOTUV
-    YO'Q: savol-javob va botga yo'naltirish, xolos.
+    Faqat begona odamning SAVOLIGA (adminlarga — faqat sinov tugmasi
+    yoqilganda). Guruhda SOTUV YO'Q: savol-javob va botga yo'naltirish, xolos.
 
 TOKEN TEJASH (egasi: "maksimal token effektiv")
   * Guruhda savolga o'xshamagan xabar modelga umuman bormaydi (looks_like_question).
@@ -143,6 +145,10 @@ SESSION_TTL = 3 * 3600    # 3 soat jim tursa, suhbat unutiladi (xotira qoladi)
 HISTORY_LIMIT = 40        # oxirgi 40 xabar — undan oldingisi kesiladi
 GROUP_CONTEXT_TTL = 24 * 3600  # guruhdagi savol botdagi suhbatga shuncha ulanadi
 MIRROR_TEXT_MAX = 1500
+# Do'kon manzili (egasi, 2026-10-13: "manzil so'ralganda shu linkni bergin
+# hammaga" + mo'ljal). Mijoz DO'KON qayerda deb so'raganda — botda ham, guruhda ham.
+SHOP_ADDRESS_URL = os.getenv("SHOP_ADDRESS_URL", "https://t.me/ketoshop_uz/1071").strip()
+SHOP_LANDMARK = os.getenv("SHOP_LANDMARK", "Toshkent shahri, Ko'kcha masjidi ro'parasi").strip()
 
 # Mijoz tanlaydigan yetkazish -> bazadagi delivery_method. Tugmali checkout
 # bilan bir xil to'plam (keyboards.delivery_method_keyboard).
@@ -195,12 +201,17 @@ def _strip_html(text: str) -> str:
 # o'zgartiradi, deploy ham, server sozlamasi ham kerak emas. Default — yoqilgan
 # (egasi: "darhol test rejimida ishlatib ko'raylik").
 
-_SETTING_DEFAULTS = {"customers": True, "group": True, "mirror": True, "report": True}
+# "admins" — sinov uchun adminlarga ham javob (egasi, 2026-10-13: "hozircha
+# adminlarga ham javob bersin, testlash uchun"). Sinov tugagach /ai_holat dan
+# o'chiriladi — shunda adminlarga yana faqat /ai bilan.
+_SETTING_DEFAULTS = {"customers": True, "group": True, "mirror": True, "report": True,
+                     "admins": True}
 _SETTING_LABELS = {
     "customers": "Botda mijozlarga javob",
     "group": "Kanal guruhida javob",
     "mirror": "Suhbat nusxasi adminlarga",
     "report": "Kunlik sarf hisoboti (23:58)",
+    "admins": "Adminlarga ham javob (sinov)",
 }
 SETTINGS_TTL = 60
 _settings: dict = {"at": float("-inf"), "values": {}, "staff": set()}
@@ -640,6 +651,10 @@ def _shop_knowledge() -> str:
         "mahsulot puli faqat karta orqali oldindan. Muddatini pochta belgilaydi — aniq kun "
         "va'da qilma.\n"
         f"- Karta: {PAYMENT_CARD_NUMBER} — {PAYMENT_RECIPIENT_NAME}.\n"
+        "- DO'KON MANZILI: mijoz do'kon/ofis qayerda, manzilingiz, adres, lokatsiya, qanday "
+        f"borsa bo'ladi deb so'rasa — mo'ljalni ayt ({SHOP_LANDMARK}) va shu havolani ber: "
+        f"{SHOP_ADDRESS_URL} . Havolani o'zgartirmay, to'liq yoz. Buni mijozning o'z "
+        "yetkazish manzilini so'rash bilan adashtirma.\n"
     )
 
 
@@ -2005,10 +2020,11 @@ async def _has_session(message: Message) -> bool:
         return False
     if user.id in _sessions:
         return True
-    # Adminlarga AI o'zi javob bermaydi (egasi, 2026-10-12: "adminlar yozgan
-    # xabarga javob yozmasin") — sinash uchun /ai bilan ochiladi.
+    # Adminlarga AI faqat sinov tugmasi yoqilganda o'zi javob beradi (egasi:
+    # 2026-10-12 "adminlar yozganiga javob yozmasin", 2026-10-13 "hozircha
+    # adminlarga ham javob bersin, testlash uchun"). O'chiq bo'lsa — /ai bilan.
     if user.id in ADMIN_IDS:
-        return False
+        return await setting("admins") and user.id not in _opted_out
     # Mijoz /ai siz ham: yozsa suhbat o'zi ochiladi (_reply ichida _session()
     # yaratadi). /ai_off bosgan odam operatorga qaytgan bo'ladi.
     return AUTOSTART and user.id not in _opted_out
@@ -2264,9 +2280,9 @@ _QUESTION_RE = re.compile(
     # o'zbekcha -mi/-mu yuklamasi: bormi, bo'ladimi, kelasizmi, борми
     r"\w{2,}(?:mi|mu|mikan|ми|му|микан)\b|"
     r"\b(?:qancha|qanch|necha|nechi|narx|narh|qayer|qanday|qachon|qaysi|nima|nega|"
-    r"mumkin|kerak|olmoqchi|olsam|buyurtma|zakaz|dostavka|yetkaz|sotib|"
+    r"mumkin|kerak|olmoqchi|olsam|buyurtma|zakaz|dostavka|yetkaz|sotib|manzil|lokatsiya|adres|"
     r"сколько|почем|цена|цену|где|как|какой|какая|какие|когда|можно|нужн|хочу|"
-    r"заказ|доставк|есть ли|купить|"
+    r"заказ|доставк|есть ли|купить|адрес|локац|манзил|"
     r"қанча|канча|нарх|қаер|каер|қандай|кандай|қачон|качон|қайси|кайси|нима|нега|"
     r"мумкин|керак|буюртма|етказ|сотиб)",
     re.IGNORECASE,
@@ -2278,9 +2294,10 @@ def looks_like_question(text: str) -> bool:
 
 
 async def _group_trigger(message: Message, bot: Bot) -> bool:
-    """FILTR: bu guruh xabariga AI javob beradimi. Faqat begona (admin
-    bo'lmagan) odamning savoliga — adminlar yozganiga hech qachon, hatto
-    botni chaqirsa ham (egasi, 2026-10-12)."""
+    """FILTR: bu guruh xabariga AI javob beradimi. Begona odamning savoliga.
+    Adminlar (bot adminlari, ichki akkauntlar, guruh adminlari) yozganiga —
+    faqat "Adminlarga ham javob (sinov)" yoqilganda; o'chiq bo'lsa hech qachon,
+    hatto botni chaqirsa ham (egasi, 2026-10-12 / 2026-10-13)."""
     if message.chat.type not in ("group", "supergroup") or not await _ready():
         return False
     text = (message.text or message.caption or "").strip()
@@ -2291,7 +2308,9 @@ async def _group_trigger(message: Message, bot: Bot) -> bool:
         return False   # kanal posti, anonim admin, boshqa bot
     if message.chat.id not in await _group_chats(bot):
         return False
-    if user.id in ADMIN_IDS or user.id in database.LEADERBOARD_EXCLUDED_USER_IDS:
+    admins_too = await setting("admins")
+    staff = user.id in ADMIN_IDS or user.id in database.LEADERBOARD_EXCLUDED_USER_IDS
+    if staff and not admins_too:
         return False
     if not await setting("group") or not _group_budget_ok(message.chat.id):
         return False
@@ -2301,6 +2320,8 @@ async def _group_trigger(message: Message, bot: Bot) -> bool:
             return False   # odamlar bir-biriga javob yozyapti
         if not looks_like_question(text):
             return False   # savol emas — model chaqirilmaydi
+    if admins_too:
+        return True   # sinov: guruh adminiga ham
     import link_guard
     # Guruh admini (yoki ro'yxatni o'qib bo'lmadi) — o'zlari javob beradi.
     return await link_guard.is_privileged(bot, message) is False

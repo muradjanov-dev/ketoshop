@@ -340,8 +340,11 @@ class AiSalesGateTest(_ProviderSwap):
         _settings(customers="0")
         self.assertFalse(self.gate(_FakeMessage("salom")))
 
-    def test_admin_plain_text_is_not_answered_without_ai_command(self):
-        # Egasi, 2026-10-12: "adminlar yozgan xabarga javob yozmasin".
+    def test_admin_plain_text_is_answered_only_while_the_test_switch_is_on(self):
+        # Egasi, 2026-10-13: "hozircha adminlarga ham javob bersin, testlash uchun".
+        self.assertTrue(self.gate(_FakeMessage("salom", user_id=1)))
+        # O'chirilgach — 2026-10-12 qoidasi: "adminlar yozgan xabarga javob yozmasin".
+        _settings(admins="0")
         self.assertFalse(self.gate(_FakeMessage("salom", user_id=1)))
         ai_sales._session(1)                                   # /ai bilan ochdi
         self.assertTrue(self.gate(_FakeMessage("salom", user_id=1)))
@@ -891,7 +894,15 @@ class AiGroupModeTest(_ProviderSwap):
         for text in ("bugun havo issiq ekan", "+", "👍", "Zo'r post!", "rahmat"):
             self.assertFalse(self.trigger(self._msg(text)), text)
 
-    def test_admins_are_never_answered_even_when_they_call_the_bot(self):
+    def test_admins_get_answers_only_while_the_test_switch_is_on(self):
+        self.assertTrue(self.trigger(self._msg("narxi qancha?", user_id=1)))
+        self.privileged.return_value = True                    # guruh admini
+        self.assertTrue(self.trigger(self._msg("narxi qancha?")))
+        self.assertFalse(self.trigger(self._msg("bugun havo zo'r", user_id=1)))   # savol emas
+        self.privileged.return_value = False
+
+    def test_admins_are_never_answered_when_the_test_switch_is_off(self):
+        _settings(admins="0")
         self.assertFalse(self.trigger(self._msg("narxi qancha?", user_id=1)))
         self.assertFalse(self.trigger(self._msg(f"@{ai_sales.BOT_USERNAME} bormi?", user_id=1)))
         internal = next(iter(database.LEADERBOARD_EXCLUDED_USER_IDS))
@@ -1051,6 +1062,13 @@ class AiUsagePromoKnowledgeTest(_ProviderSwap):
         text = "\n".join(lines)
         for expected in ("gpt-5.5", "142 so'rov", "912.3K", "38.4K", "$2.56", "$31.40"):
             self.assertIn(expected, text)
+
+    def test_shop_address_link_and_landmark_reach_bot_and_group(self):
+        for rules in (ai_sales._sales_rules(), ai_sales._group_rules()):
+            self.assertIn("https://t.me/ketoshop_uz/1071", rules)
+            self.assertIn("Ko'kcha masjidi ro'parasi", rules)
+        for text in ("manzilingiz qayerda", "адрес магазина", "Do'kon lokatsiyasi"):
+            self.assertTrue(ai_sales.looks_like_question(text), text)
 
     def test_rules_carry_keto_knowledge_delivery_terms_and_brevity(self):
         rules = ai_sales._sales_rules()
