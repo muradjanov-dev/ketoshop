@@ -98,10 +98,15 @@ async def _show_search_results(message: Message, query: str, lang: str, page: in
 
     text = get_text("search_results", lang, query=query, count=total)
 
+    import bot_discount
+    bot_prices = await bot_discount.display_prices(products)
+
     buttons = []
-    for i, p in enumerate(products, start_num + 1):
+    for (i, p), bot_price in zip(enumerate(products, start_num + 1), bot_prices):
         discount = active_discount(p.get("discount_percent"), p.get("discount_until"))
         unit_price = effective_price(p["price"], discount, p.get("discount_until"))
+        if bot_price is not None:
+            discount, unit_price = bot_discount.shown_percent(p["price"], bot_price), bot_price
         price_str = f"{int(unit_price):,}".replace(",", " ")
         if discount > 0:
             price_str += f" 🔥-{discount}%"

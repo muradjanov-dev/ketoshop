@@ -91,7 +91,8 @@ def _loc(entry: dict, lang: str) -> str:
     return text
 
 
-def build_message(product: dict, lang: str, cycle: int, promo: dict | None):
+def build_message(product: dict, lang: str, cycle: int, promo: dict | None,
+                  bot_price: float | None = None):
     """(text, keyboard) for one person's daily nudge, or (None, None) when
     there's nothing worth sending (no product)."""
     import promotions
@@ -106,8 +107,12 @@ def build_message(product: dict, lang: str, cycle: int, promo: dict | None):
 
     discount = database.active_discount(product.get("discount_percent"), product.get("discount_until"))
     price = database.effective_price(product["price"], discount, product.get("discount_until"))
+    if bot_price is not None:
+        # 10% bot-order price, as on the product card (bot_discount.display_price).
+        import bot_discount
+        discount, price = bot_discount.shown_percent(product["price"], bot_price), bot_price
 
-    lines = [_loc(_INTROS[cycle % len(_INTROS)], lang), "", f"{emoji} <b>{name}</b>"]
+    lines =[_loc(_INTROS[cycle % len(_INTROS)], lang), "", f"{emoji} <b>{name}</b>"]
 
     currency = "сум" if lang == "ru" else "so'm"
     price_label = _PRICE_LABEL["ru" if lang == "ru" else "uz"]
@@ -176,11 +181,12 @@ async def send_batch(bot: Bot, only_user: int | None = None) -> tuple[int, int, 
                 skipped += 1
                 continue
             lang = langs.get(uid, "uz")
-            text, keyboard = build_message(products[0], lang, cycle, promo)
+            import bot_discount
+            text, keyboard = build_message(products[0], lang, cycle, promo,
+                                           await bot_discount.display_price(products[0]))
             if not text:
                 skipped += 1
                 continue
-            import bot_discount
             text += await bot_discount.footer(lang)
             try:
                 await bot.send_message(uid, text, parse_mode=ParseMode.HTML,
