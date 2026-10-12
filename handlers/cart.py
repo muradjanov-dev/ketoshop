@@ -641,6 +641,22 @@ async def show_cart(callback: CallbackQuery):
     await callback.answer()
 
 
+def cart_stock_note(item: dict, lang: str) -> str:
+    """Savat qatori ostidagi qoldiq izohi (database.get_cart qatori): savatda
+    ombordagidan ko'p bo'lsa — hozir aytiladi, buyurtma rad etilganda emas;
+    kam qolgan bo'lsa — nechta qolgani (egasi, 2026-10-12). Setlar — yo'q."""
+    if item.get("is_set"):
+        return ""
+    import stock_alerts
+    stock = float(item.get("stock") or 0)
+    if stock < float(item.get("cart_quantity") or 0):
+        left = int(stock)
+        return (get_text("cart_over_stock", lang, n=left) if left > 0
+                else get_text("cart_out_of_stock_line", lang))
+    left = stock_alerts.low_left({"quantity": stock, "low_stock_threshold": item.get("low_stock_threshold")})
+    return get_text("cart_low_stock", lang, n=left) if left else ""
+
+
 async def build_cart_view(user_id: int, lang: str):
     """(text, keyboard) for the cart, or (None, None) when it's empty.
 
@@ -690,6 +706,9 @@ async def build_cart_view(user_id: int, lang: str):
         # "🎁+250" — the Keto this line brings back, like a bonus tag.
         badge = gamification.reward_badge(gamification.keto_for(item_total, keto_rate)) if keto_rate else ""
         text += (line.rstrip("\n") + f"  {badge}\n") if badge else line
+        note = cart_stock_note(item, lang)
+        if note:
+            text += f"   {note}\n"
 
     # 10% bot-order discount (bot_discount.py): the list above stays at shelf
     # price, the saving and the sum to pay come under the total. Gift and

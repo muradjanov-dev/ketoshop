@@ -13,6 +13,7 @@ from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import database
+import stock_alerts
 from database import (
     active_discount, effective_price, get_cart_badge, get_cart_line_for_product,
     get_product_rating,
@@ -83,7 +84,7 @@ async def build_caption(product: dict, lang: str, rate: float | None,
         description=desc,
         price=f"{int(final_price):,}".replace(",", " "),
         unit=get_display_unit(product["unit"], lang),
-        available=product["quantity"],
+        stock=stock_alerts.stock_line(product, lang),
         seller=seller_name,
     )
     if tip:

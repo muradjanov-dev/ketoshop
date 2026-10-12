@@ -245,6 +245,18 @@
     text-align: left; font-family: inherit;
   }
   /* 🎁 pill on a product card / in the detail sheet */
+  /* "⚠️ 3 ta qoldi" — low stock on cards, the detail sheet and the cart. */
+  .card-low-stock, .detail-low-stock, .item-stock-low {
+    color: #C4571B; font-weight: 700;
+  }
+  .card-low-stock { font-size: 11px; margin-top: 4px; }
+  .detail-low-stock { font-size: 13px; margin-top: 6px; }
+  .item-stock-low, .item-stock-warn { font-size: 12px; margin-top: 3px; }
+  .item-stock-warn { color: var(--berry); font-weight: 700; }
+  /* Night is the default theme — the day orange is too dark on near-black. */
+  :root[data-site-theme="night"] .card-low-stock,
+  :root[data-site-theme="night"] .detail-low-stock,
+  :root[data-site-theme="night"] .item-stock-low { color: #F0A34D; }
   .bonus-badge {
     display: inline-block; margin-top: 5px; padding: 3px 8px; border-radius: 8px;
     background: rgba(232,114,44,0.14); color: #C4571B;
@@ -2565,6 +2577,7 @@
     <div class="detail-body">
       <div class="detail-tip" id="detail-tip" style="display:none"></div>
       <div><span class="detail-price" id="detail-price"></span> <span class="detail-unit" id="detail-unit"></span></div>
+      <div class="detail-low-stock" id="detail-low-stock" style="display:none"></div>
       <div class="detail-saving" id="detail-saving" style="display:none"></div>
       <div class="detail-discount-until" id="detail-discount-until" style="margin-top:6px;font-size:12px;color:var(--berry);font-weight:600"></div>
       <div class="detail-bonus" id="detail-bonus" style="display:none"></div>
@@ -2837,6 +2850,11 @@ const L = {
     loadMore: "Ko'proq ko'rsatish",
     cartEmpty: "Savat bo'sh",
     inStock: 'Mavjud: {qty}',
+    // Owner, 2026-10-12: buyers see what's running low before checkout.
+    lowStockBadge: '⚠️ {n} ta qoldi',
+    lowStockDetail: '⚠️ Kam qoldi: atigi {n} {unit}',
+    cartLowStock: '⚠️ {n} ta qoldi',
+    cartOverStock: '⚠️ Omborda atigi {n} ta bor — sonini {n} taga tushiring',
     tabHome: 'Bosh sahifa',
     tabCatalog: 'Katalog',
     tabCart: 'Savat',
@@ -2997,6 +3015,10 @@ const L = {
     loadMore: 'Показать ещё',
     cartEmpty: 'Корзина пуста',
     inStock: 'В наличии: {qty}',
+    lowStockBadge: '⚠️ Осталось {n} шт.',
+    lowStockDetail: '⚠️ Осталось всего {n} {unit}',
+    cartLowStock: '⚠️ Осталось {n} шт.',
+    cartOverStock: '⚠️ На складе только {n} шт. — уменьшите количество до {n}',
     tabHome: 'Главная',
     tabCatalog: 'Каталог',
     tabCart: 'Корзина',
@@ -4093,6 +4115,8 @@ function createProductCard(p) {
 
   const descHtml2 = p.description ? '<div class="card-desc">' + escapeHtml(p.description) + '</div>' : '';
   const soonBadge = p.out_of_stock ? '<div class="card-desc" style="color:var(--berry);font-weight:600">' + (t.comingSoon || '⏳') + '</div>' : '';
+  const lowBadge = (!p.out_of_stock && p.low_stock)
+    ? '<div class="card-low-stock">' + t.lowStockBadge.split('{n}').join(p.low_stock) + '</div>' : '';
   card.innerHTML =
     '<div class="card-img-wrap"' + (p.out_of_stock ? ' style="opacity:0.55"' : '') + '>' +
       discountCornerHtml(p) +
@@ -4105,6 +4129,7 @@ function createProductCard(p) {
     savingHtml(p) +
     bonusBadgeHtml(p) +
     ketoBadgeHtml(p.price) +
+    lowBadge +
     descHtml2 +
     soonBadge;
 
@@ -4208,6 +4233,13 @@ async function openDetail(productId, isSet = false) {
       bonusEl.style.display = 'none';
     }
     document.getElementById('detail-unit').textContent = t.perUnit.replace('{unit}', p.unit);
+    const lowEl = document.getElementById('detail-low-stock');
+    if (!p.out_of_stock && p.low_stock) {
+      lowEl.textContent = t.lowStockDetail.split('{n}').join(p.low_stock).split('{unit}').join(p.unit);
+      lowEl.style.display = 'block';
+    } else {
+      lowEl.style.display = 'none';
+    }
     const descEl = document.getElementById('detail-desc');
     if (p.description) {
       descEl.innerHTML = escapeHtml(p.description).replace(/\n/g, '<br>');
@@ -4526,6 +4558,17 @@ function renderCartPage() {
       priceMeta = qtyDisplay + ' ' + item.unit + ' &times; ' + formatPrice(item.price);
     }
 
+    // Owner, 2026-10-12: the buyer learns about short stock here, not when
+    // the order is refused. Sets report 999 and never trip this.
+    let stockNote = '';
+    if (typeof item.available === 'number' && item.available < item.quantity) {
+      const left = Math.max(0, Math.floor(item.available));
+      stockNote = '<div class="item-stock-warn">' +
+        (left > 0 ? t.cartOverStock.split('{n}').join(left) : t.outOfStock) + '</div>';
+    } else if (item.low_stock) {
+      stockNote = '<div class="item-stock-low">' + t.cartLowStock.split('{n}').join(item.low_stock) + '</div>';
+    }
+
     const stepper =
       '<div class="qty-stepper">' +
         '<button class="qty-step" data-action="dec" data-id="' + item.cart_id + '" aria-label="-">&minus;</button>' +
@@ -4537,6 +4580,7 @@ function renderCartPage() {
       '<div class="item-info">' +
         '<div class="item-name">' + escapeHtml(item.name) + '</div>' +
         '<div class="item-meta">' + priceMeta + ketoBadgeHtml(item.total) + '</div>' +
+        stockNote +
         stepper +
       '</div>' +
       '<div class="item-price">' + formatPrice(item.total) + '</div>' +

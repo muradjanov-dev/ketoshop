@@ -1904,7 +1904,7 @@ async def get_cart(user_id: int) -> list[dict]:
         prod_rows = await conn.fetch(
             """SELECT c.id as cart_id, c.quantity as cart_quantity, c.set_id,
                       p.id as product_id, p.name, p.name_ru, p.price, p.unit, p.seller_id, p.photo_id,
-                      COALESCE(p.quantity, 0) as stock,
+                      COALESCE(p.quantity, 0) as stock, p.low_stock_threshold,
                       COALESCE(p.discount_percent, 0) as discount_percent,
                       p.discount_until as discount_until
                FROM cart c

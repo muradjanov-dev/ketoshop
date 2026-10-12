@@ -21,6 +21,7 @@ from database import (
     get_user_delivered_order_count, admin_search_products,
 )
 from config import ADMIN_IDS
+import stock_alerts
 from locales import get_text, get_category_name, get_unit_name, get_order_status, get_delivery_method_name, localize_product_text, CATEGORIES, UNITS
 from keyboards import (
     seller_panel_keyboard, category_select_keyboard, unit_select_keyboard,
@@ -743,7 +744,7 @@ async def view_product(callback: CallbackQuery):
         description=localize_product_text(product.get("description"), product.get("description_ru"), lang) or "—",
         price=f"{int(product['price']):,}".replace(",", " "),
         unit=get_unit_name(product["unit"], lang),
-        available=product["quantity"],
+        stock=stock_alerts.stock_line(product, lang),
         seller=product.get("seller_name", "—"),
     )
     if product.get("b2b_only"):
