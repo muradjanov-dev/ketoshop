@@ -2,21 +2,23 @@
 
 Ikki qatlam alohida tekshiriladi:
 
-1. Suhbat mantiqi (ai_sales.py) — soxta provayder bilan: vosita to'g'ri
-   chaqiladimi, xato is_error bo'lib ketadimi, buyurtma haqiqiy
-   create_order() ga tushadimi, guruhda vosita umuman berilmaydimi.
+1. Suhbat mantiqi (ai_sales.py, ai_memory.py) — soxta provayder bilan: vosita
+   to'g'ri chaqiladimi, xato is_error bo'lib ketadimi, buyurtma haqiqiy
+   create_order() ga tushadimi, kimga AI javob beradi (mijoz / admin / kuryer
+   / guruh), guruhda vosita umuman berilmaydimi, xotira promptga tushadimi.
 2. Provayder formati (ai_provider.py) — soxta klient bilan: OpenAI Responses
    API ga to'g'ri shaklda so'rov ketadimi (function_call_output,
    previous_response_id, strict), Anthropic ga ham (bitta user xabaridagi
    tool_result lar, keshlanadigan tizim bloklari).
 
-Test na pul sarflaydi, na tarmoqqa chiqadi.
+Test na pul sarflaydi, na tarmoqqa chiqadi, na bazaga ulanadi.
 """
 import asyncio
 import json
 import os
 import time
 import unittest
+from datetime import datetime, timedelta
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock
 
@@ -24,10 +26,29 @@ os.environ.setdefault("DATABASE_URL", "postgresql://test/test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("OPENAI_API_KEY", "sk-test-not-used")
 
+import ai_memory
 import ai_provider
 import ai_sales
 import database
 from ai_provider import ToolCall, Turn
+
+_SAVED_MODULE = {}
+
+
+def setUpModule():
+    # Xotira va sozlamalar bazaga bormasin: xotira yozuvi jim yutiladi,
+    # profil bo'sh, sozlamalar keshi "yangi" (default — hammasi yoqilgan).
+    _SAVED_MODULE["remember"] = ai_memory.remember
+    _SAVED_MODULE["build_profile"] = ai_memory.build_profile
+    ai_memory.remember = AsyncMock(return_value=True)
+    ai_memory.build_profile = AsyncMock(return_value="")
+    ai_sales._settings.update(at=float("inf"), values={}, staff=set())
+
+
+def tearDownModule():
+    ai_memory.remember = _SAVED_MODULE["remember"]
+    ai_memory.build_profile = _SAVED_MODULE["build_profile"]
+    ai_sales._settings.update(at=float("-inf"), values={}, staff=set())
 
 
 class _FakeProvider:
@@ -43,25 +64,35 @@ class _FakeProvider:
     async def step(self, state, rules, catalog, tools, *, user=None, results=None,
                    max_tokens=800, history_limit=40):
         self.calls.append({"user": user, "results": results, "tools": tools,
-                           "rules": rules, "catalog": catalog})
+                           "rules": rules, "catalog": catalog, "state": state})
         return self._turns.pop(0)
 
 
 class _FakeUser:
-    id = 777
-    full_name = "Test Xaridor"
-    username = "testuser"
+    def __init__(self, user_id=777):
+        self.id = user_id
+        self.full_name = "Test Xaridor"
+        self.username = "testuser"
+        self.is_bot = False
+        self.first_name = "Test"
 
 
 class _FakeMessage:
-    def __init__(self, text="salom"):
+    def __init__(self, text="salom", user_id=777, chat_type="private"):
         self.text = text
-        self.from_user = _FakeUser()
+        self.from_user = _FakeUser(user_id)
+        self.chat = NS(id=user_id, type=chat_type)
         self.bot = None
+        self.answer = AsyncMock()
 
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def _settings(**values):
+    """Bazasiz sozlamalar: _settings(customers="0") — mijozlarga o'chiq."""
+    ai_sales._settings.update(at=float("inf"), values=dict(values), staff=set())
 
 
 class _ProviderSwap(unittest.TestCase):
@@ -74,15 +105,21 @@ class _ProviderSwap(unittest.TestCase):
         return ai_sales.PROVIDER
 
 
+def _patch(test, obj, name, value):
+    test.addCleanup(setattr, obj, name, getattr(obj, name))
+    setattr(obj, name, value)
+
+
 class AiSalesToolLoopTest(_ProviderSwap):
     def setUp(self):
         ai_sales._sessions.clear()
-        ai_sales._catalog_cache = (9e18, "10 | Kokos uni 1000gr | 55 000 so'm / kg | qoldiq 4")
+        ai_sales._catalog_cache = (9e18, "10 | Kokos uni 1000gr | 55 000 so'm / kg")
         self._saved = {}
         for name in ("get_product", "add_to_cart", "get_cart",
                      "get_cart_line_for_product", "remove_from_cart",
                      "create_order", "clear_cart", "get_user_language"):
             self._saved[name] = getattr(database, name)
+        ai_memory.remember.reset_mock()
 
     def tearDown(self):
         for name, fn in self._saved.items():
@@ -95,6 +132,7 @@ class AiSalesToolLoopTest(_ProviderSwap):
             "id": 10, "name": "Kokos uni 1000gr", "unit": "kg",
             "quantity": 4, "is_active": 1,
         })
+        database.get_cart_line_for_product = AsyncMock(return_value=(None, 0.0))
         database.add_to_cart = AsyncMock()
         provider = self.use([
             Turn(calls=[ToolCall("t1", "savatga_qoshish", {"mahsulot_id": 10, "miqdor": 2})]),
@@ -115,6 +153,19 @@ class AiSalesToolLoopTest(_ProviderSwap):
         result = provider.calls[1]["results"][0]
         self.assertEqual(result.id, "t1")
         self.assertFalse(result.is_error)
+        # Savatga solingan mahsulot — mijozning qiziqishi sifatida eslab qolindi.
+        ai_memory.remember.assert_awaited_with(777, "interest", "Kokos uni 1000gr", 10)
+
+    def test_changing_the_quantity_replaces_the_line_instead_of_adding(self):
+        database.get_product = AsyncMock(return_value={
+            "id": 10, "name": "Kokos uni 1000gr", "unit": "kg", "quantity": 9, "is_active": 1})
+        database.get_cart_line_for_product = AsyncMock(return_value=(55, 3.0))
+        database.remove_from_cart = AsyncMock()
+        database.add_to_cart = AsyncMock()
+        out = _run(ai_sales._tool_add(777, {"mahsulot_id": 10, "miqdor": 2}))
+        self.assertTrue(out.startswith("OK:"), out)
+        database.remove_from_cart.assert_awaited_once_with(55)
+        database.add_to_cart.assert_awaited_once_with(777, product_id=10, quantity=2.0)
 
     def test_stock_shortfall_returns_is_error(self):
         database.get_product = AsyncMock(return_value={
@@ -141,6 +192,9 @@ class AiSalesToolLoopTest(_ProviderSwap):
                   "price": 55000, "unit": "kg", "seller_id": 1}]
 
         async def fake_summary(user_id, data, lang):
+            # Haqiqiy _build_order_summary shu kalitlarni o'qiydi — bo'lmasa
+            # KeyError (2026-10-12 gacha AI buyurtmasi shu sababli yiqilardi).
+            data["phone"], data["address"], data["payment_method"]
             return "matn", 110000, items, 0
 
         notified = {}
@@ -178,11 +232,14 @@ class AiSalesToolLoopTest(_ProviderSwap):
         self.assertEqual(kwargs["payment_method"], "cash")
         self.assertEqual(kwargs["phone"], "+998901234567")
         self.assertEqual(kwargs["customer_name"], "Dilnoza")
+        self.assertEqual(kwargs["delivery_method"], "self")   # default — Toshkent kuryeri
 
     def test_turn_limit_stops_a_tool_loop_and_resets_the_chain(self):
         database.get_cart = AsyncMock(return_value=[])
         self.addCleanup(setattr, ai_sales, "MAX_TURNS", ai_sales.MAX_TURNS)
         ai_sales.MAX_TURNS = 3
+        import handlers.cart as cart
+        _patch(self, cart, "_build_order_summary", AsyncMock(return_value=(None, 0, [], 0)))
         provider = self.use([
             Turn(text="bir soniya", calls=[ToolCall(f"t{i}", "savatni_korish", {})])
             for i in range(3)
@@ -205,6 +262,55 @@ class AiSalesToolLoopTest(_ProviderSwap):
         reply = _run(ai_sales._respond(None, message, message.text))
         self.assertIn(ai_sales.SUPPORT_PHONES, reply)
 
+    def test_remember_tool_writes_feedback_to_the_customer_memory(self):
+        out = _run(ai_sales._run_tool(None, _FakeMessage(), "eslab_qol", {
+            "turi": "fikr", "matn": "Bodom uni — keks qildi, yoqdi", "mahsulot_id": 12}))
+        self.assertTrue(out.startswith("OK:"), out)
+        ai_memory.remember.assert_awaited_once_with(777, "fikr", "Bodom uni — keks qildi, yoqdi", 12)
+
+    def test_product_info_tool_returns_the_description_and_logs_interest(self):
+        database.get_product = AsyncMock(return_value={
+            "id": 12, "name": "Bodom uni 500gr", "unit": "dona", "quantity": 7, "is_active": 1,
+            "price": 89000, "discount_percent": 0, "discount_until": None,
+            "description": "Bodomdan tortilgan <b>mayin</b> un."})
+        out = _run(ai_sales._tool_info(777, {"mahsulot_id": 12}))
+        self.assertIn("89 000 so'm", out)
+        self.assertIn("Bodomdan tortilgan mayin un.", out)     # HTML tozalangan
+        ai_memory.remember.assert_awaited_once_with(777, "interest", "Bodom uni 500gr", 12)
+
+
+class AiSalesCartTotalTest(unittest.TestCase):
+    """savatni_korish jami summani checkout'ning o'z hisobidan beradi."""
+
+    def test_cart_uses_checkout_math_with_discount_gift_and_delivery_fee(self):
+        items = [
+            {"product_id": 10, "name": "Bodom uni 500gr", "quantity": 2, "unit": "dona",
+             "price": 80100, "original_price": 89000, "discount_percent": 10, "bot_discount": 10},
+            {"product_id": 95, "name": "Eritritol 100gr", "quantity": 1, "unit": "dona",
+             "price": 0, "is_bonus": True, "is_gift": True},
+        ]
+        import gift_campaign
+        import handlers.cart as cart
+        import mystery_gift
+        _patch(self, cart, "_build_order_summary",
+               AsyncMock(return_value=("matn", 160200 + 25000, items, 0)))
+        _patch(self, gift_campaign, "cart_hint", AsyncMock(return_value=""))
+        _patch(self, mystery_gift, "cart_hint", lambda subtotal, lang: "")
+        _patch(self, ai_sales, "_promo_hint", AsyncMock(return_value=""))
+
+        out = _run(ai_sales._tool_cart(777))
+
+        self.assertIn("160 200", out)                      # mahsulotlar, chegirma bilan
+        self.assertIn("botdan buyurtma chegirmasi -10%", out)
+        self.assertIn("SOVG'A: Eritritol 100gr", out)
+        self.assertIn("yetkazish 25 000", out)
+        self.assertIn("JAMI 185 200", out)
+
+    def test_empty_cart(self):
+        import handlers.cart as cart
+        _patch(self, cart, "_build_order_summary", AsyncMock(return_value=(None, 0, [], 0)))
+        self.assertEqual(_run(ai_sales._tool_cart(777)), "Savat bo'sh.")
+
 
 class AiSalesGateTest(_ProviderSwap):
     """Kim AI ga tushadi, kim operatorga (support_relay) — FILTR darajasida."""
@@ -212,46 +318,266 @@ class AiSalesGateTest(_ProviderSwap):
     def setUp(self):
         ai_sales._sessions.clear()
         ai_sales._opted_out.clear()
+        ai_sales._paused.clear()
         self.use([])                       # kalit bor holat (is_enabled True)
-        self.addCleanup(setattr, ai_sales, "ADMIN_ONLY", ai_sales.ADMIN_ONLY)
-        self.addCleanup(setattr, ai_sales, "AUTOSTART", ai_sales.AUTOSTART)
+        _patch(self, ai_sales, "ADMIN_IDS", [1])
+        _patch(self, ai_sales, "AUTOSTART", True)
+        _settings()
 
     def tearDown(self):
         ai_sales._sessions.clear()
         ai_sales._opted_out.clear()
+        ai_sales._paused.clear()
+        _settings()
 
-    def test_admin_plain_text_reaches_ai_without_typing_ai_first(self):
-        ai_sales.ADMIN_ONLY, ai_sales.AUTOSTART = True, True
-        self.addCleanup(setattr, ai_sales, "ADMIN_IDS", ai_sales.ADMIN_IDS)
-        ai_sales.ADMIN_IDS = [777]
-        self.assertTrue(ai_sales._has_session(_FakeMessage("salom")))
+    def gate(self, message):
+        return _run(ai_sales._has_session(message))
 
-    def test_customers_still_go_to_the_operators_in_admin_only_mode(self):
-        ai_sales.ADMIN_ONLY, ai_sales.AUTOSTART = True, True
-        self.addCleanup(setattr, ai_sales, "ADMIN_IDS", ai_sales.ADMIN_IDS)
-        ai_sales.ADMIN_IDS = [1]                        # 777 admin emas
-        self.assertFalse(ai_sales._has_session(_FakeMessage("salom")))
+    def test_customer_plain_text_reaches_ai_by_default(self):
+        self.assertTrue(self.gate(_FakeMessage("salom")))
 
-    def test_ai_off_sends_the_admin_back_to_the_operators(self):
-        ai_sales.ADMIN_ONLY, ai_sales.AUTOSTART = True, True
-        self.addCleanup(setattr, ai_sales, "ADMIN_IDS", ai_sales.ADMIN_IDS)
-        ai_sales.ADMIN_IDS = [777]
+    def test_customers_go_to_the_operators_when_switched_off(self):
+        _settings(customers="0")
+        self.assertFalse(self.gate(_FakeMessage("salom")))
+
+    def test_admin_plain_text_is_not_answered_without_ai_command(self):
+        # Egasi, 2026-10-12: "adminlar yozgan xabarga javob yozmasin".
+        self.assertFalse(self.gate(_FakeMessage("salom", user_id=1)))
+        ai_sales._session(1)                                   # /ai bilan ochdi
+        self.assertTrue(self.gate(_FakeMessage("salom", user_id=1)))
+
+    def test_couriers_and_internal_accounts_never_get_the_ai(self):
+        ai_sales._settings["staff"] = {555}
+        self.assertFalse(self.gate(_FakeMessage("salom", user_id=555)))
+        internal = next(iter(database.LEADERBOARD_EXCLUDED_USER_IDS))
+        self.assertFalse(self.gate(_FakeMessage("salom", user_id=internal)))
+
+    def test_paused_buyer_goes_to_the_admins_until_the_pause_ends(self):
+        ai_sales.pause_for_human(777, seconds=60)
+        self.assertFalse(self.gate(_FakeMessage("salom")))
+        ai_sales._paused[777] = time.time() - 1                # muddat tugadi
+        self.assertTrue(self.gate(_FakeMessage("salom")))
+
+    def test_ai_off_sends_the_customer_back_to_the_operators(self):
         ai_sales._opted_out.add(777)
-        self.assertFalse(ai_sales._has_session(_FakeMessage("salom")))
+        self.assertFalse(self.gate(_FakeMessage("salom")))
 
     def test_no_key_means_everything_goes_to_the_operators(self):
         ai_sales.PROVIDER = None
-        self.addCleanup(setattr, ai_sales, "ADMIN_IDS", ai_sales.ADMIN_IDS)
-        ai_sales.ADMIN_IDS = [777]
-        self.assertFalse(ai_sales._has_session(_FakeMessage("salom")))
+        self.assertFalse(self.gate(_FakeMessage("salom")))
 
-    def test_autostart_off_restores_the_ai_command_only_behaviour(self):
-        ai_sales.ADMIN_ONLY, ai_sales.AUTOSTART = True, False
-        self.addCleanup(setattr, ai_sales, "ADMIN_IDS", ai_sales.ADMIN_IDS)
-        ai_sales.ADMIN_IDS = [777]
-        self.assertFalse(ai_sales._has_session(_FakeMessage("salom")))
+    def test_group_messages_never_reach_the_private_sales_handler(self):
+        self.assertFalse(self.gate(_FakeMessage("salom", chat_type="supergroup")))
+
+    def test_admin_reply_through_support_relay_pauses_the_ai(self):
+        from handlers import support_relay
         ai_sales._session(777)
-        self.assertTrue(ai_sales._has_session(_FakeMessage("salom")))
+        support_relay._pause_ai(777)
+        self.assertTrue(ai_sales._is_paused(777))
+        self.assertNotIn(777, ai_sales._sessions)
+        self.assertFalse(self.gate(_FakeMessage("salom")))
+
+    def test_thanks_alone_costs_no_model_call(self):
+        for text in ("rahmat", "Katta rahmat!", "спасибо", "Раҳмат 🙏"):
+            self.assertTrue(ai_sales.is_thanks_only(text), text)
+        # Tasdiqlash bo'lishi mumkin bo'lganlar modelga boradi.
+        for text in ("ha", "ok", "xo'p", "rahmat, yana eritritol bormi?", "👍"):
+            self.assertFalse(ai_sales.is_thanks_only(text), text)
+
+
+class AiSalesBatchAndMirrorTest(unittest.TestCase):
+    """Ketma-ket xabarlar bitta javob oladi; adminlar har javobning nusxasini ko'radi."""
+
+    def setUp(self):
+        self.addCleanup(setattr, ai_sales, "DEBOUNCE", ai_sales.DEBOUNCE)
+        ai_sales.DEBOUNCE = 0.05
+        ai_sales._inboxes.clear()
+
+    def test_quick_messages_are_answered_once_together(self):
+        seen = []
+
+        async def handler(message, text):
+            seen.append(text)
+
+        async def scenario():
+            message = _FakeMessage()
+            first = asyncio.create_task(ai_sales._batch(("p", 777), message, "salom", handler))
+            await asyncio.sleep(0.01)
+            await ai_sales._batch(("p", 777), message, "eritritol bormi?", handler)
+            await first
+
+        _run(scenario())
+        self.assertEqual(seen, ["salom\neritritol bormi?"])
+
+    def test_message_arriving_mid_answer_gets_its_own_turn(self):
+        seen = []
+
+        async def scenario():
+            message = _FakeMessage()
+
+            async def handler(msg, text):
+                seen.append(text)
+                if len(seen) == 1:      # javob yozilayotganda yangi xabar keldi
+                    await ai_sales._batch(("p", 777), msg, "narxi qancha?", handler)
+
+            await ai_sales._batch(("p", 777), message, "bodom uni bormi?", handler)
+
+        _run(scenario())
+        self.assertEqual(seen, ["bodom uni bormi?", "narxi qancha?"])
+
+    def test_mirror_goes_silently_to_every_admin_with_takeover_buttons(self):
+        _patch(self, ai_sales, "ADMIN_IDS", [1, 2])
+        _settings()
+        bot = NS(send_message=AsyncMock())
+        _run(ai_sales._mirror(bot, _FakeMessage("<b>salom</b>"), "<b>salom</b>", "Vaalaykum assalom!"))
+        self.assertEqual(bot.send_message.await_count, 2)
+        args, kwargs = bot.send_message.await_args
+        self.assertIn("&lt;b&gt;salom", args[1])                  # mijoz matni xavfsiz
+        self.assertIn("Vaalaykum assalom!", args[1])
+        self.assertTrue(kwargs["disable_notification"])
+        buttons = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+        self.assertIn("freereply:777", buttons)
+        self.assertIn("aipause:777", buttons)
+        self.assertIn("aimem:777", buttons)
+
+    def test_mirror_off_and_admin_chats_send_nothing(self):
+        _patch(self, ai_sales, "ADMIN_IDS", [1])
+        bot = NS(send_message=AsyncMock())
+        _settings(mirror="0")
+        _run(ai_sales._mirror(bot, _FakeMessage(), "salom", "javob"))
+        _settings()
+        _run(ai_sales._mirror(bot, _FakeMessage(user_id=1), "salom", "javob"))
+        bot.send_message.assert_not_awaited()
+
+    def test_customer_texts_follow_the_buyer_language(self):
+        self.assertEqual(ai_sales._t("Rahmat", "Спасибо", "ru"), "Спасибо")
+        self.assertEqual(ai_sales._t("Rahmat", "Спасибо", "uz"), "Rahmat")
+        self.assertNotEqual(ai_sales._t("Rahmat", "Спасибо", "uz_cyr"), "Rahmat")
+
+
+class AiSalesSettingsAndModelTest(_ProviderSwap):
+    def tearDown(self):
+        _settings()
+
+    def test_switches_default_to_on_and_read_the_stored_value(self):
+        _settings()
+        self.assertTrue(_run(ai_sales.setting("customers")))
+        self.assertTrue(_run(ai_sales.setting("group")))
+        _settings(group="0")
+        self.assertFalse(_run(ai_sales.setting("group")))
+
+    def test_model_choice_switches_the_model_and_drops_stale_chains(self):
+        provider = self.use([])
+        provider.name, provider.model = "openai", "gpt-5.5"
+        _patch(self, ai_sales, "MODEL", "gpt-5.5")
+        session = ai_sales._session(4321)
+        session["ai"]["prev_id"] = "resp_old"
+        session["awaiting_cheque"] = 99
+        self.addCleanup(ai_sales._sessions.pop, 4321, None)
+
+        self.assertIn("gpt-5.4-mini", ai_sales.model_options())
+        ai_sales._apply_model("gpt-5.4-mini")
+
+        self.assertEqual(provider.model, "gpt-5.4-mini")
+        self.assertNotIn("prev_id", session["ai"])            # eski model zanjiri
+        self.assertEqual(session["awaiting_cheque"], 99)       # sessiya qoldi
+        ai_sales._apply_model("claude-opus-5")                 # boshqa provayder — e'tiborsiz
+        self.assertEqual(provider.model, "gpt-5.4-mini")
+
+
+class AiSalesMemoryContextTest(_ProviderSwap):
+    """Mijoz xotirasi suhbatning birinchi xabariga bir marta qo'shiladi."""
+
+    def setUp(self):
+        ai_sales._sessions.clear()
+        ai_sales._group_context.clear()
+        ai_sales._catalog_cache = (9e18, "10 | Kokos uni")
+        _patch(self, ai_sales, "_dynamic_block", AsyncMock(return_value="KATALOG"))
+
+    def tearDown(self):
+        ai_sales._sessions.clear()
+        ai_sales._group_context.clear()
+        ai_sales._catalog_cache = None
+        ai_memory.build_profile = AsyncMock(return_value="")
+
+    def test_profile_and_group_question_open_the_conversation_once(self):
+        ai_memory.build_profile = AsyncMock(return_value="[MIJOZ XOTIRASI] Bodom uni olgan")
+        ai_sales._group_context[777] = (time.time(), "bodom uni bormi?", "Bor, 89 000 so'm")
+        provider = self.use([Turn(text="Salom!"), Turn(text="Albatta.")])
+        message = _FakeMessage()
+
+        _run(ai_sales._respond(None, message, "salom"))
+        _run(ai_sales._respond(None, message, "yana bitta savol"))
+
+        first, second = provider.calls[0]["user"], provider.calls[1]["user"]
+        self.assertIn("[MIJOZ XOTIRASI] Bodom uni olgan", first)
+        self.assertIn("bodom uni bormi?", first)              # guruhdagi savoli ulandi
+        self.assertTrue(first.endswith("[MIJOZ XABARI]\nsalom"))
+        self.assertEqual(second, "yana bitta savol")           # ikkinchi marta yo'q
+        self.assertNotIn(777, ai_sales._group_context)
+
+
+class AiMemoryProfileTest(unittest.TestCase):
+    """ai_memory: qaysi mahsulot haqida fikr so'raladi, profil nimani aytadi."""
+
+    NOW = datetime(2026, 10, 12, 12, 0)
+
+    def _order(self, oid, status, days_ago, items, delivered_days_ago=None):
+        delivered = (self.NOW - timedelta(days=delivered_days_ago)
+                     if delivered_days_ago is not None else None)
+        return {"id": oid, "status": status, "created_at": self.NOW - timedelta(days=days_ago),
+                "delivered_at": delivered, "phone": "+998901112233",
+                "items": json.dumps(items)}
+
+    def test_feedback_is_asked_for_a_delivered_product_only_once(self):
+        orders = [self._order(5, "delivered", 6, [
+            {"product_id": 12, "name": "Bodom uni 500gr", "quantity": 1},
+            {"product_id": 95, "name": "Eritritol 100gr", "quantity": 1, "is_gift": True}],
+            delivered_days_ago=4)]
+        pick = ai_memory.feedback_candidate(orders, [], now=self.NOW)
+        self.assertEqual(pick["product_id"], 12)               # sovg'a emas
+        asked = [{"kind": "asked", "product_id": 12}]
+        self.assertIsNone(ai_memory.feedback_candidate(orders, asked, now=self.NOW))
+
+    def test_too_fresh_cancelled_or_undelivered_orders_are_skipped(self):
+        line = [{"product_id": 12, "name": "Bodom uni", "quantity": 1}]
+        orders = [self._order(1, "delivered", 2, line, delivered_days_ago=1),   # hali erta
+                  self._order(2, "cancelled", 9, line, delivered_days_ago=8),
+                  self._order(3, "shipped", 3, line)]
+        self.assertIsNone(ai_memory.feedback_candidate(orders, [], now=self.NOW))
+
+    def test_profile_names_orders_notes_last_address_and_the_feedback_ask(self):
+        orders = [self._order(5, "delivered", 6, [
+            {"product_id": 12, "name": "Bodom uni 500gr", "quantity": 2}], delivered_days_ago=4)]
+        notes = [{"kind": "interest", "text": "keto non pishirmoqchi",
+                  "created_at": self.NOW - timedelta(days=3)},
+                 {"kind": "asked", "text": "x", "created_at": self.NOW}]
+        feedback = ai_memory.feedback_candidate(orders, notes, now=self.NOW)
+        text = ai_memory.profile_text({"full_name": "Dilnoza"}, "uz_cyr", orders, notes,
+                                      {"address": "Chilonzor 9"}, feedback)
+        self.assertIn("Dilnoza", text)
+        self.assertIn("KIRILL", text)
+        self.assertIn("#5 (yetkazilgan", text)
+        self.assertIn("Bodom uni 500gr ×2", text)
+        self.assertIn("keto non pishirmoqchi", text)
+        self.assertIn("Chilonzor 9", text)
+        self.assertIn("+998901112233", text)
+        self.assertIn("FIKR SO'RA", text)
+        self.assertNotIn("· asked", text)                       # ichki belgi ko'rinmaydi
+
+    def test_new_customer_profile_says_so(self):
+        text = ai_memory.profile_text(None, "uz", [], [], None, None)
+        self.assertIn("yangi mijoz", text)
+        self.assertNotIn("FIKR SO'RA", text)
+
+
+    def test_a_product_already_rated_in_the_bot_is_not_asked_again(self):
+        orders = [self._order(5, "delivered", 6, [
+            {"product_id": 12, "name": "Bodom uni 500gr", "quantity": 1}], delivered_days_ago=4)]
+        self.assertIsNone(ai_memory.feedback_candidate(orders, [], now=self.NOW, reviewed={12}))
+        text = ai_memory.profile_text(None, "uz", orders, [], None, None, reviews=[
+            {"product_id": 12, "name": "Bodom uni 500gr", "rating": 5, "comment": "zo'r keks chiqdi"}])
+        self.assertIn("Bodom uni 500gr ★5 «zo'r keks chiqdi»", text)
 
 
 class AiSalesLocationAndPaymentTest(unittest.TestCase):
@@ -259,7 +585,6 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
 
     def setUp(self):
         ai_sales._sessions.clear()
-        ai_sales._catalog_cache = (9e18, "10 | Kokos uni 1000gr | 55 000 so'm / kg | qoldiq 4")
         self._saved = {n: getattr(database, n) for n in
                        ("create_order", "clear_cart", "get_user_language")}
         self._items = [{"product_id": 10, "name": "Kokos uni", "quantity": 2,
@@ -268,7 +593,6 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
     def tearDown(self):
         for name, fn in self._saved.items():
             setattr(database, name, fn)
-        ai_sales._catalog_cache = None
         ai_sales._sessions.clear()
 
     def _order(self, tool_input, location=None):
@@ -277,6 +601,7 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
         items = self._items
 
         async def fake_summary(user_id, data, lang):
+            data["phone"], data["address"], data["payment_method"]
             return "matn", 110000, items, 0
 
         notified = {}
@@ -300,7 +625,8 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
             result = _run(ai_sales._tool_order(None, message, tool_input))
         finally:
             cart._build_order_summary, cart._notify_sellers, cart.notify_low_stock = saved
-        return result, database.create_order.await_args.kwargs, notified
+        kwargs = database.create_order.await_args.kwargs if database.create_order.await_count else None
+        return result, kwargs, notified
 
     def test_shared_location_becomes_the_address_and_the_admin_pin(self):
         result, kwargs, notified = self._order(
@@ -313,6 +639,7 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
         # _notify_sellers o'shandan lokatsiya pin ini yuboradi.
         self.assertAlmostEqual(kwargs["latitude"], 41.311081)
         self.assertAlmostEqual(notified["longitude"], 69.240562)
+        self.assertIn("24 soat", result)
 
     def test_typed_address_and_location_are_both_kept(self):
         _, kwargs, _ = self._order(
@@ -324,25 +651,10 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
         self.assertIn("3-uy, 12-xonadon", kwargs["address"])
 
     def test_no_address_and_no_location_is_an_error_not_an_order(self):
-        items = self._items
-
-        async def fake_summary(user_id, data, lang):
-            return "matn", 110000, items, 0
-
-        import handlers.cart as cart
-        saved = cart._build_order_summary
-        cart._build_order_summary = fake_summary
-        database.create_order = AsyncMock()
-        database.get_user_language = AsyncMock(return_value="uz")
-        try:
-            message = _FakeMessage()
-            ai_sales._session(message.from_user.id)
-            result = _run(ai_sales._tool_order(None, message, {
-                "ism": "Dilnoza", "telefon": "+998901234567", "tolov_turi": "naqd"}))
-        finally:
-            cart._build_order_summary = saved
+        result, kwargs, _ = self._order(
+            {"ism": "Dilnoza", "telefon": "+998901234567", "tolov_turi": "naqd"})
         self.assertTrue(result.startswith("Xato:"), result)
-        database.create_order.assert_not_awaited()
+        self.assertIsNone(kwargs)
 
     def test_card_payment_returns_the_card_but_never_marks_the_order_paid(self):
         result, kwargs, notified = self._order(
@@ -359,60 +671,123 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
         # Endi chek kutilyapti — rasm kelsa adminlarga uzatiladi.
         self.assertEqual(ai_sales._sessions[777]["awaiting_cheque"], 4242)
 
+    def test_regional_post_is_card_only(self):
+        result, kwargs, _ = self._order(
+            {"ism": "Aziz", "telefon": "+998901234567", "manzil": "Samarqand, Registon 5",
+             "yetkazish": "bts", "tolov_turi": "naqd"})
+        self.assertTrue(result.startswith("Xato:"), result)
+        self.assertIsNone(kwargs)
+        result, kwargs, _ = self._order(
+            {"ism": "Aziz", "telefon": "+998901234567", "manzil": "Samarqand, Registon 5",
+             "yetkazish": "bts", "tolov_turi": "karta"})
+        self.assertTrue(result.startswith("OK:"), result)
+        self.assertEqual(kwargs["delivery_method"], "bts")
 
+    def test_tashkent_courier_refuses_a_location_outside_tashkent(self):
+        result, kwargs, _ = self._order(
+            {"ism": "Aziz", "telefon": "+998901234567", "tolov_turi": "naqd"},
+            location=(39.654, 66.975, "📍 Samarqand"))
+        self.assertTrue(result.startswith("Xato:"), result)
+        self.assertIn("BTS", result)
+        self.assertIsNone(kwargs)
 
 
 class AiGroupModeTest(_ProviderSwap):
-    """Guruhda: faqat murojaat qilinganda javob, va sotuv vositasi umuman yo'q."""
+    """Guruhda: faqat begona odamning savoliga, adminlarga hech qachon,
+    va sotuv vositasi umuman yo'q."""
+
+    CHAT = -1001234567890
 
     def setUp(self):
-        ai_sales._group_last.clear()
-        ai_sales._group_history.clear()
-        self._saved_chats = ai_sales.GROUP_CHATS
-        ai_sales.GROUP_CHATS = {-1001234567890}
-        ai_sales._catalog_cache = (9e18, "10 | Kokos uni 1000gr | 55 000 so'm / kg | qoldiq 4")
+        ai_sales._group_calls.clear()
+        ai_sales._group_context.clear()
+        _patch(self, ai_sales, "GROUP_CHATS", {self.CHAT})
+        _patch(self, ai_sales, "CHANNEL_GROUP", False)
+        _patch(self, ai_sales, "ADMIN_IDS", [1])
+        import link_guard
+        self.privileged = AsyncMock(return_value=False)
+        _patch(self, link_guard, "is_privileged", self.privileged)
+        _settings()
+        self.use([])
+        ai_sales._catalog_cache = (9e18, "10 | Kokos uni 1000gr | 55 000 so'm / kg")
 
     def tearDown(self):
-        ai_sales.GROUP_CHATS = self._saved_chats
-        ai_sales._group_last.clear()
-        ai_sales._group_history.clear()
+        ai_sales._group_calls.clear()
+        ai_sales._group_context.clear()
         ai_sales._catalog_cache = None
+        _settings()
 
-    def _msg(self, text, chat_id=-1001234567890, reply_from=None):
-        def user(username, is_bot):
-            return NS(username=username, is_bot=is_bot, first_name="Aziz")
-        reply = NS(from_user=user(reply_from, True)) if reply_from else None
-        return NS(text=text, chat=NS(id=chat_id), from_user=user("aziz", False),
-                  reply_to_message=reply)
+    def _msg(self, text, chat_id=CHAT, user_id=42, reply=None, sender_chat=None):
+        return NS(text=text, caption=None, chat=NS(id=chat_id, type="supergroup"),
+                  from_user=NS(id=user_id, username="aziz", is_bot=False, first_name="Aziz"),
+                  reply_to_message=reply, sender_chat=sender_chat, reply=AsyncMock())
 
-    def test_plain_group_chatter_is_ignored(self):
-        self.assertFalse(ai_sales._group_trigger(self._msg("bugun havo issiq ekan")))
+    def trigger(self, message):
+        return _run(ai_sales._group_trigger(message, None))
 
-    def test_mention_triggers_a_reply(self):
-        self.assertTrue(ai_sales._group_trigger(
-            self._msg(f"@{ai_sales.BOT_USERNAME} keto unlari bormi?")))
+    def test_a_customer_question_is_answered_without_a_mention(self):
+        self.assertTrue(self.trigger(self._msg("Bodom uni bormi?")))
+        self.assertTrue(self.trigger(self._msg("eritritol narxi qancha")))
+        self.assertTrue(self.trigger(self._msg("Сколько стоит доставка")))
 
-    def test_reply_to_the_bot_triggers_a_reply(self):
-        self.assertTrue(ai_sales._group_trigger(
-            self._msg("rahmat, narxi qancha?", reply_from=ai_sales.BOT_USERNAME)))
+    def test_chatter_that_is_not_a_question_costs_nothing(self):
+        for text in ("bugun havo issiq ekan", "+", "👍", "Zo'r post!", "rahmat"):
+            self.assertFalse(self.trigger(self._msg(text)), text)
 
-    def test_other_groups_are_never_answered(self):
-        self.assertFalse(ai_sales._group_trigger(
-            self._msg(f"@{ai_sales.BOT_USERNAME} salom", chat_id=-100999)))
+    def test_admins_are_never_answered_even_when_they_call_the_bot(self):
+        self.assertFalse(self.trigger(self._msg("narxi qancha?", user_id=1)))
+        self.assertFalse(self.trigger(self._msg(f"@{ai_sales.BOT_USERNAME} bormi?", user_id=1)))
+        internal = next(iter(database.LEADERBOARD_EXCLUDED_USER_IDS))
+        self.assertFalse(self.trigger(self._msg("narxi qancha?", user_id=internal)))
+        self.privileged.return_value = True                    # guruh admini
+        self.assertFalse(self.trigger(self._msg("narxi qancha?")))
 
-    def test_cooldown_blocks_the_next_question(self):
-        message = self._msg(f"@{ai_sales.BOT_USERNAME} salom")
-        ai_sales._group_last[message.chat.id] = time.time()
-        self.addCleanup(setattr, ai_sales, "GROUP_COOLDOWN", ai_sales.GROUP_COOLDOWN)
-        ai_sales.GROUP_COOLDOWN = 20
-        self.assertFalse(ai_sales._group_trigger(message))
+    def test_people_talking_to_each_other_are_left_alone(self):
+        other = NS(from_user=NS(id=43, is_bot=False, username="olim"),
+                   is_automatic_forward=False, sender_chat=None)
+        self.assertFalse(self.trigger(self._msg("sizda bormi?", reply=other)))
 
-    def test_group_answer_carries_no_tools_so_nothing_can_be_sold(self):
+    def test_a_comment_under_a_channel_post_is_answered(self):
+        post = NS(is_automatic_forward=True, sender_chat=NS(type="channel"),
+                  from_user=None, text="Yangi: Bodom uni 500gr", caption=None)
+        self.assertTrue(self.trigger(self._msg("narxi qancha?", reply=post)))
+
+    def test_a_mention_or_reply_to_the_bot_skips_the_question_check(self):
+        bot_msg = NS(from_user=NS(id=9, is_bot=True, username=ai_sales.BOT_USERNAME),
+                     is_automatic_forward=False, sender_chat=None, text="Bor, 89 000 so'm")
+        self.assertTrue(self.trigger(self._msg("yaxshi, olaman", reply=bot_msg)))
+        self.assertTrue(self.trigger(self._msg(f"@{ai_sales.BOT_USERNAME} salom")))
+
+    def test_channel_posts_other_groups_switch_and_budget_block_it(self):
+        self.assertFalse(self.trigger(self._msg("narxi?", sender_chat=NS(id=-100, type="channel"))))
+        self.assertFalse(self.trigger(self._msg("narxi?", chat_id=-100999)))
+        _settings(group="0")
+        self.assertFalse(self.trigger(self._msg("narxi?")))
+        _settings()
+        ai_sales._group_calls[self.CHAT] = [time.time()] * ai_sales.GROUP_MAX_PER_HOUR
+        self.assertFalse(self.trigger(self._msg("narxi?")))
+
+    def test_group_answer_carries_no_tools_and_no_chain(self):
         provider = self.use([Turn(text="Bodom uni bor, buyurtma uchun botga yozing.")])
-        reply = _run(ai_sales._group_respond(-1001234567890, "Aziz", "bodom uni bormi?"))
+        reply = _run(ai_sales._group_respond(self.CHAT, "Aziz", "bodom uni bormi?"))
         self.assertIn("botga", reply)
         self.assertIsNone(provider.calls[0]["tools"])     # guruhda savat/buyurtma yo'q
+        self.assertEqual(provider.calls[0]["state"], {})  # zanjirsiz — tarix to'lanmaydi
         self.assertIn("SOTUV JOYI EMAS", provider.calls[0]["rules"])
+
+    def test_skip_means_silence(self):
+        self.use([Turn(text="SKIP")])
+        self.assertEqual(_run(ai_sales._group_respond(self.CHAT, "Aziz", "zo'r")), "")
+
+    def test_answer_quotes_the_post_and_carries_over_to_the_bot(self):
+        provider = self.use([Turn(text="89 000 so'm. Buyurtma uchun @ketoshopbot ga yozing.")])
+        post = NS(is_automatic_forward=True, sender_chat=NS(type="channel"),
+                  from_user=None, text="Yangi: Bodom uni 500gr", caption=None)
+        message = self._msg("narxi qancha?", reply=post)
+        _run(ai_sales._group_answer(None, message, "narxi qancha?"))
+        self.assertIn("Yangi: Bodom uni 500gr", provider.calls[0]["user"])
+        message.reply.assert_awaited_once()
+        self.assertIn(42, ai_sales._group_context)
 
 
 class AiUsagePromoKnowledgeTest(_ProviderSwap):
@@ -421,13 +796,15 @@ class AiUsagePromoKnowledgeTest(_ProviderSwap):
 
     def setUp(self):
         ai_sales._sessions.clear()
-        ai_sales._catalog_cache = (9e18, "10 | Kokos uni 1000gr | 55 000 so'm / kg | qoldiq 4")
+        ai_sales._catalog_cache = (9e18, "10 | Kokos uni 1000gr | 55 000 so'm / kg")
         ai_sales.invalidate_knowledge()
         self._saved = {n: getattr(database, n) for n in (
             "record_ai_usage", "list_ai_facts", "log_ai_question", "get_cart")}
+        import bot_discount
         import promotions
         self._promotions = promotions
         self._saved_active = promotions.get_active
+        _patch(self, bot_discount, "is_active", AsyncMock(return_value=False))
 
     def tearDown(self):
         for name, fn in self._saved.items():
@@ -517,6 +894,38 @@ class AiUsagePromoKnowledgeTest(_ProviderSwap):
         text = "\n".join(lines)
         for expected in ("gpt-5.5", "142 so'rov", "912.3K", "38.4K", "$2.56", "$31.40"):
             self.assertIn(expected, text)
+
+    def test_rules_carry_keto_knowledge_delivery_terms_and_brevity(self):
+        rules = ai_sales._sales_rules()
+        for expected in ("KETO VA PP BILIMLARI", "YETKAZISH VA TO'LOV", "800 000",
+                         "MIJOZ XOTIRASI", "eslab_qol", "JUDA QISQA", "BTS"):
+            self.assertIn(expected, rules)
+        self.assertIn("SKIP", ai_sales._group_rules())
+
+    def test_catalog_has_no_exact_stock_so_the_prompt_cache_survives_orders(self):
+        ai_sales._catalog_cache = None
+        _patch(self, database, "get_all_products_paginated", AsyncMock(return_value=([
+            {"id": 12, "name": "Bodom uni 500gr", "price": 89000, "unit": "dona", "quantity": 14,
+             "category": "unlar", "discount_percent": 0, "discount_until": None},
+            {"id": 13, "name": "Kokos uni 1000gr", "price": 55000, "unit": "kg", "quantity": 2,
+             "category": "unlar", "discount_percent": 0, "discount_until": None},
+            {"id": 14, "name": "Tugagan narsa", "price": 1000, "unit": "dona", "quantity": 0,
+             "category": "unlar", "discount_percent": 0, "discount_until": None},
+        ], 3)))
+        _patch(self, database, "get_categories",
+               AsyncMock(return_value=[{"key": "unlar", "name_uz": "Keto unlar"}]))
+        _patch(self, database, "get_active_sets_for_catalog", AsyncMock(return_value=[
+            {"id": 3, "name": "Keto pishiriq seti", "set_price": 150000, "original_total": 170000,
+             "items": [{"name": "Bodom uni 500gr", "quantity": 1}]}]))
+        text = _run(ai_sales._catalog_text())
+        self.assertIn("# Keto unlar", text)
+        self.assertIn("12 | Bodom uni 500gr | 89 000 so'm / dona", text)
+        self.assertIn("kam qoldi", text)                    # 2 < chegara
+        self.assertNotIn("qoldiq", text)                     # aniq son yo'q
+        self.assertNotIn("Tugagan narsa", text)
+        self.assertIn("S3 | Keto pishiriq seti | 150 000 so'm (alohida olsa 170 000 so'm)", text)
+        # Barqaror bloklar (oilalar, setlar) mahsulotlardan oldin — kesh uchun.
+        self.assertLess(text.index("SETLAR"), text.index("MAHSULOTLAR"))
 
 
 # ─────────────────────────── provayder formatlari ───────────────────────────

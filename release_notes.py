@@ -24,7 +24,7 @@ from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
-RELEASE_KEY = "2026-10-oktyabr-yangiliklari"
+RELEASE_KEY = "2026-10-12-ai-sotuvchi"
 TZ_OFFSET = timedelta(hours=5)
 SEND_WINDOW = (8, 22)          # never wake admins at night
 # True bypasses the daytime window (used once, 2026-09-25). Normal releases
@@ -32,7 +32,7 @@ SEND_WINDOW = (8, 22)          # never wake admins at night
 SEND_NOW = False
 CHECK_EVERY = 300
 
-NOTES = "🆕 <b>Oktyabr — botga nimalar qo'shildi</b>\n\n📦 <b>Buyurtmalar</b>\n• Buyurtma holati o'zgarganda <b>barcha adminlarga</b> to'liq kartochka keladi: mijoz, mahsulotlar, summa, eski → yangi holat va kim o'zgartirgani.\n• Admin qo'lda (yoki B2B) buyurtma kiritsa — hamma adminlarga to'liq ma'lumot va kim kiritgani.\n• Holat o'zgargach bot menyuga emas, buyurtmalar sahifasiga qaytadi.\n\n🚚 <b>Kuryer</b>\n• Kuryer paneli botdan alohida oynada ochiladi (📦 Buyurtmalar → 🚚 Kuryer paneli), Dashboard'siz.\n• Telefonda kartochka endi faqat <b>bosib ushlab turilsa</b> ko'chadi — tasodifiy surish buyurtmani o'zgartirmaydi. «Yetkazildi», «Bekor» va sudrab tashlash tasdiq so'raydi.\n\n📊 <b>Sayt paneli</b>\n• Dashboard'da yalpi va sof marja — so'mda va foizda.\n• Mahsulotlarda B2B/chakana, aqlli qidiruv va «tannarxi yo'q» filtri.\n• Jadval sarlavhalari aylantirganda tepada qotib turadi.\n\n💚 <b>Mijozlar uchun</b>\n• Mahsulot kartochkasida <b>shaxsiy maslahat</b> — mijoz avval nima olganiga qarab (bot va do'kon ilovasida), har safar boshqa variant.\n• Yetkazilgandan 3 kun keyin bot mahsulotlar haqida <b>fikr so'raydi</b> (sifati, pishirib ko'rdingizmi).\n• Xaridlar orasida bitta <b>💡 shaxsiy tavsiya</b> xabari — 7 kunda bittadan ortiq shaxsiy xabar bormaydi.\n• Do'kon ilovasida <b>barcha mahsulotlar karuseli</b> endi eng tepada.\n• 3-oktyabr ertalab hammaga Eritritol sovg'asi eslatmasi (sovg'a olganlarga — «yana istaysizmi?»).\n\n😄 <b>Kayfiyat</b>\n• Har bir admin xabarida unga mos quvnoq gap, yangi a'zo xabarlarida esa 38 xil ibora.\n\nSavol yoki taklif bo'lsa — yozing 🤝"
+NOTES = "🆕 <b>AI sotuvchi ishga tushdi — sinov rejimi</b>\n\n• Botga yozgan mijozlarga va kanal guruhidagi savollarga endi AI o'zi javob beradi: mahsulot tanlaydi, narx aytadi va buyurtmani rasmiylashtiradi. To'lovni baribir siz tasdiqlaysiz.\n• Har bir AI javobining nusxasi sizga <b>ovozsiz</b> keladi:\n   ↩️ <b>Javob berish</b> — o'zingiz yozasiz;\n   ⏸ <b>AI to'xtasin</b> — shu mijozga AI 6 soat javob bermaydi;\n   🧠 <b>Mijoz xotirasi</b> — AI shu mijoz haqida nimani eslab turibdi.\n• Siz mijozga javob yozsangiz, AI o'sha mijozga o'zi jim turadi.\n• Adminlar yozganiga AI javob bermaydi. O'zingiz sinab ko'rish uchun: /ai\n• Yoqish/o'chirish, nusxalarni to'xtatish va arzonroq model tanlash: /ai_holat\n• AI bilmagan savollar: /ai_bilim · javobini o'rgatish: /ai_orgat\n\nNoto'g'ri javob ko'rsangiz — yozing 🤝"
 
 
 def _now_tk() -> datetime:
