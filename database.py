@@ -812,15 +812,6 @@ async def init_db():
                 summary_pending BOOLEAN NOT NULL DEFAULT TRUE
             )
         """)
-        # One full low/out list per day into the staff group (STOCK_GROUP_ID).
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS stock_group_posts (
-                chat_id BIGINT NOT NULL,
-                day DATE NOT NULL,
-                sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (chat_id, day)
-            )
-        """)
 
         # ===== Tashlab ketilgan savat (2026-09-17) =====
         # updated_at is added WITHOUT back-filling existing rows: carts that
@@ -3485,17 +3476,6 @@ async def claim_stock_summary() -> bool:
         row = await conn.fetchrow(
             """UPDATE stock_alert_meta SET summary_pending = FALSE
                 WHERE id = 1 AND summary_pending RETURNING id"""
-        )
-        return row is not None
-
-
-async def claim_stock_group_post(chat_id: int, day) -> bool:
-    """True once per (group, Tashkent day) — the daily list in the staff group."""
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """INSERT INTO stock_group_posts (chat_id, day) VALUES ($1, $2)
-               ON CONFLICT (chat_id, day) DO NOTHING RETURNING day""",
-            chat_id, day,
         )
         return row is not None
 

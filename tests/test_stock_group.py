@@ -1,4 +1,4 @@
-"""Ombor guruhi: kam qolgan / tugagan ro'yxat xodimlar guruhiga, hamma belgilab."""
+"""Ombor guruhi: o'zgarishlar hamma belgilab (kunduzi), 23:59 da to'liq holat belgilamasdan."""
 import asyncio
 import os
 import unittest
@@ -47,49 +47,51 @@ class GroupBase(unittest.TestCase):
             self.addCleanup(p.stop)
 
 
-class DailyListTest(GroupBase):
-    def run_daily(self, hour, claim=True, products=PRODUCTS):
+class NightReportTest(GroupBase):
+    def run_report(self, claim=True, products=PRODUCTS):
         bot = make_bot()
-        with at(hour), \
+        with patch.object(stock_alerts, "_now_tk", return_value=datetime(2026, 10, 12, 23, 59, 2)), \
              patch.object(stock_alerts.database, "get_stock_snapshot", AsyncMock(return_value=products)), \
-             patch.object(stock_alerts.database, "claim_stock_group_post",
+             patch.object(stock_alerts.database, "claim_release_notes",
                           AsyncMock(return_value=claim)) as claim_mock:
-            asyncio.run(stock_alerts._maybe_post_group_list(bot))
-        return bot, claim_mock
+            sent = asyncio.run(stock_alerts.send_night_report(bot))
+        return bot, claim_mock, sent
 
-    def test_posts_full_list_with_everyone_tagged(self):
-        bot, claim = self.run_daily(10)
-        claim.assert_awaited_once_with(GROUP, datetime(2026, 10, 12).date())
+    def test_full_status_nobody_tagged(self):
+        bot, claim, sent = self.run_report()
+        self.assertTrue(sent)
+        claim.assert_awaited_once_with(f"stock-night-{GROUP}-2026-10-12")
         bot.send_message.assert_awaited_once()
         chat, text = bot.send_message.call_args.args
         self.assertEqual(chat, GROUP)
+        self.assertIn("Kun yakuni — 12.10.2026", text)
         self.assertIn("Eritritol", text)
         self.assertIn("Stevia &lt;tabletka&gt;", text)
         self.assertNotIn("Bodom uni", text)
-        self.assertIn('<a href="tg://user?id=77">Guruh egasi</a>', text)
-        self.assertIn('<a href="tg://user?id=11">Ali</a>', text)
-        self.assertNotIn("tg://user?id=99", text)   # the bot itself
-        self.assertNotIn("tg://user?id=22", text)   # bot admin not in the group
+        self.assertNotIn("tg://user", text)
+        bot.get_chat_administrators.assert_not_awaited()
 
-    def test_once_a_day(self):
-        bot, _ = self.run_daily(10, claim=False)
+    def test_posts_even_when_all_is_fine(self):
+        bot, _, sent = self.run_report(products=PRODUCTS[2:])
+        self.assertTrue(sent)
+        self.assertIn("yetarli", bot.send_message.call_args.args[1])
+
+    def test_once_a_night(self):
+        bot, _, sent = self.run_report(claim=False)
+        self.assertFalse(sent)
         bot.send_message.assert_not_awaited()
 
-    def test_not_at_night(self):
-        bot, claim = self.run_daily(7)
-        claim.assert_not_awaited()
-        bot.send_message.assert_not_awaited()
-
-    def test_nothing_low_nothing_posted(self):
-        bot, claim = self.run_daily(10, products=PRODUCTS[2:])
-        claim.assert_not_awaited()
-        bot.send_message.assert_not_awaited()
+    def test_wait_until_2359(self):
+        wait = stock_alerts._seconds_until_night_report
+        self.assertEqual(wait(datetime(2026, 10, 12, 10, 0)), 13 * 3600 + 59 * 60)
+        self.assertEqual(wait(datetime(2026, 10, 12, 23, 59, 30)), 0)
+        self.assertEqual(wait(datetime(2026, 10, 13, 0, 0, 10)), 23 * 3600 + 58 * 60 + 50)
 
     def test_switched_off(self):
-        with patch.object(stock_alerts, "STOCK_GROUP_ID", 0):
-            bot, claim = self.run_daily(10)
-        claim.assert_not_awaited()
-        bot.send_message.assert_not_awaited()
+        with patch.object(stock_alerts, "STOCK_GROUP_ID", 0), \
+             patch.object(stock_alerts.asyncio, "sleep", AsyncMock()) as sleep:
+            asyncio.run(stock_alerts.night_report_loop(make_bot()))
+        sleep.assert_not_awaited()
 
 
 class ChangeAlertTest(GroupBase):
@@ -113,7 +115,10 @@ class ChangeAlertTest(GroupBase):
         self.assertIn("Tugadi", text)
         self.assertIn("Eritritol", text)
         self.assertIn("Stevia &lt;tabletka&gt; — <b>3", text)
-        self.assertIn("tg://user?id=11", text)
+        self.assertIn('<a href="tg://user?id=77">Guruh egasi</a>', text)
+        self.assertIn('<a href="tg://user?id=11">Ali</a>', text)
+        self.assertNotIn("tg://user?id=99", text)   # the bot itself
+        self.assertNotIn("tg://user?id=22", text)   # bot admin not in the group
         # Admins still get their own personal alerts.
         admin_chats = [c.args[0] for c in bot.send_message.call_args_list if c.args[0] != GROUP]
         self.assertEqual(sorted(admin_chats), [11, 11, 22, 22])

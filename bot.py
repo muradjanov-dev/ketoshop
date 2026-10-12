@@ -367,6 +367,9 @@ async def main():
     # or out, each time it reaches that level, from any code path.
     from stock_alerts import scheduler_loop as stock_alerts_loop
     stock_alerts_task = asyncio.create_task(stock_alerts_loop(bot))
+    # …and the full stock status to the staff group every night at 23:59.
+    from stock_alerts import night_report_loop as stock_night_loop
+    stock_night_task = asyncio.create_task(stock_night_loop(bot))
 
     # "Nima yangi" — this release's notes to every admin, once, in daytime.
     # Daily "Kun mahsuloti": one product to every buyer and to the channel.
@@ -406,6 +409,7 @@ async def main():
         bot_discount_countdown_task.cancel()
         bot_discount_margin_task.cancel()
         stock_alerts_task.cancel()
+        stock_night_task.cancel()
         product_of_day_task.cancel()
         channel_posts_task.cancel()
         release_notes_task.cancel()
