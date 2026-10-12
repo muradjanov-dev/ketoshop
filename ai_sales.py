@@ -72,15 +72,22 @@ hisoblab qaytaradi. Qoidasi: bir marta, bosimsiz eslatish.
 
 BUYRUQLAR (adminlar)
   /ai_holat  — holat, sarf va yoqish/o'chirish tugmalari
+  /ai_kalit sk-... — OpenAI kalitini serverga kirmasdan berish (xabar o'chiriladi)
   /ai, /ai_off — o'z suhbatingizni yangidan boshlash / o'chirish
   /ai_orgat, /ai_bilim, /ai_unut — do'kon bilimi
   /ai_mijoz <id> — mijoz xotirasi, /ai_mijoz_unut <id> — o'chirish
 
+KUNLIK SARF HISOBOTI — har kuni 23:58 (Toshkent) da barcha adminlarga ovozsiz:
+o'sha kungi so'rov, token va $ (so'mda ham), oy boshidan jami. Bot o'sha payt
+o'chiq bo'lsa, ertasi kuni kunduzi yuboriladi. /ai_holat dan o'chiriladi.
+
 Env vars
 --------
 OPENAI_API_KEY        yoki ANTHROPIC_API_KEY — bittasi majburiy, busiz modul o'chiq.
+                      /ai_kalit bilan botga berilgan OpenAI kaliti env dan ustun.
 AI_PROVIDER           openai | anthropic. Bo'sh = qaysi kalit bor bo'lsa (ai_provider.py).
-AI_SALES_MODEL        default: openai -> "gpt-5.5", anthropic -> "claude-opus-5".
+AI_SALES_MODEL        default: openai -> "gpt-5.4-mini", anthropic -> "claude-opus-5".
+                      /ai_holat dagi model tugmasi (bazada) ikkalasidan ustun.
 AI_SALES_EFFORT       default "low" — suhbat uchun tez va arzon.
 AI_SALES_MAX_TURNS    bitta javobdagi vosita chaqiruvlari chegarasi (default 8).
 AI_SALES_DEBOUNCE     ketma-ket xabarlarni bitta javobga yig'ish, soniya (default 2.5).
@@ -188,11 +195,12 @@ def _strip_html(text: str) -> str:
 # o'zgartiradi, deploy ham, server sozlamasi ham kerak emas. Default — yoqilgan
 # (egasi: "darhol test rejimida ishlatib ko'raylik").
 
-_SETTING_DEFAULTS = {"customers": True, "group": True, "mirror": True}
+_SETTING_DEFAULTS = {"customers": True, "group": True, "mirror": True, "report": True}
 _SETTING_LABELS = {
     "customers": "Botda mijozlarga javob",
     "group": "Kanal guruhida javob",
     "mirror": "Suhbat nusxasi adminlarga",
+    "report": "Kunlik sarf hisoboti (23:58)",
 }
 SETTINGS_TTL = 60
 _settings: dict = {"at": float("-inf"), "values": {}, "staff": set()}
@@ -228,6 +236,7 @@ async def _load_settings() -> dict:
         _settings["values"] = {r["key"]: r["value"] for r in rows}
     except Exception:
         logger.warning("AI settings could not be loaded", exc_info=True)
+    _apply_key(_settings["values"].get(KEY_SETTING))
     _apply_model(_settings["values"].get("model"))
     try:
         _settings["staff"] = set(await database.get_courier_ids())
@@ -253,7 +262,88 @@ async def set_setting(key: str, value: str, by: int | None = None) -> None:
                    changed_by = EXCLUDED.changed_by, changed_at = EXCLUDED.changed_at""",
             key, value, by)
     _settings["values"][key] = value
-    logger.info("AI setting %s -> %s by %s", key, value, by)
+    # Qiymat yozilmaydi — kalit sozlamasi ham shu yo'ldan o'tadi.
+    logger.info("AI setting %s changed by %s", key, by)
+
+
+async def _delete_setting(key: str) -> None:
+    async with database.pool.acquire() as conn:
+        await _ensure_settings(conn)
+        await conn.execute("DELETE FROM ai_settings WHERE key = $1", key)
+    _settings["values"].pop(key, None)
+
+
+async def _ready() -> bool:
+    """Filtrlar boshida: sozlamalar (va /ai_kalit bilan berilgan kalit)
+    yuklangan bo'lsin, keyin AI yoqilganmi. 60 soniya keshlanadi."""
+    await _load_settings()
+    return is_enabled()
+
+
+# ─────────────────────── OpenAI kaliti — bot orqali ───────────────────────
+# Egasi serverga kira olmaydi, env ni faqat dasturchi o'zgartiradi (meta_ads
+# /reklama_token bilan bir xil muammo va yechim). /ai_kalit sk-... — bot kalitni
+# OpenAI da tekshiradi (bepul models.retrieve), bazaga saqlaydi va kalitli
+# xabarni o'chiradi. Bot orqali berilgani env dagidan ustun — egasining eng
+# so'nggi qarori. Kalit hech qachon jurnalga yozilmaydi, faqat oxirgi 4 belgisi
+# ko'rsatiladi.
+
+KEY_SETTING = "openai_key"
+_KEY_OFF_WORDS = {"off", "o'chir", "ochir", "delete", "yoq", "0"}
+_key_source = {"from_bot": False}
+
+
+def _openai_model() -> str:
+    """Kalit almashganda qaysi model: hozirgi OpenAI modeli, bo'lmasa env
+    yoki default (gpt-5.4-mini)."""
+    if PROVIDER is not None and PROVIDER.name == "openai":
+        return PROVIDER.model
+    env = os.getenv("AI_SALES_MODEL", "").strip()
+    return env if env.startswith("gpt") else ai_provider.DEFAULT_MODELS["openai"]
+
+
+def _apply_key(key: str | None) -> None:
+    global PROVIDER, MODEL
+    key = (key or "").strip()
+    if not key:
+        return
+    _key_source["from_bot"] = True
+    if PROVIDER is not None and PROVIDER.name == "openai" and getattr(PROVIDER, "api_key", "") == key:
+        return
+    PROVIDER = ai_provider.OpenAIProvider(key, _openai_model(), EFFORT)
+    MODEL = PROVIDER.model
+    for session in _sessions.values():
+        ai_provider.reset(session.setdefault("ai", {}))
+    logger.info("AI: OpenAI key from the bot settings applied (…%s)", key[-4:])
+
+
+def _drop_bot_key() -> None:
+    """Bot orqali berilgan kalit o'chirildi — serverdagi env ga qaytamiz."""
+    global PROVIDER, MODEL
+    _key_source["from_bot"] = False
+    PROVIDER = ai_provider.build(os.getenv("AI_SALES_MODEL", "").strip(), EFFORT)
+    MODEL = PROVIDER.model if PROVIDER else ""
+    for session in _sessions.values():
+        ai_provider.reset(session.setdefault("ai", {}))
+
+
+def _key_status() -> str:
+    if PROVIDER is None:
+        return "yo'q — /ai_kalit bilan bering"
+    tail = html.escape((getattr(PROVIDER, "api_key", "") or "")[-4:])
+    where = "bot orqali berilgan" if _key_source["from_bot"] else "serverdagi env"
+    return f"{where} (…{tail})"
+
+
+async def _verify_key(key: str, model: str) -> str | None:
+    """None — kalit ishlaydi va model ochiq; aks holda qisqa xato matni.
+    models.retrieve token sarflamaydi."""
+    try:
+        from openai import AsyncOpenAI
+        await AsyncOpenAI(api_key=key, timeout=20).models.retrieve(model)
+        return None
+    except Exception as exc:
+        return f"{type(exc).__name__}: {str(exc)[:200]}"
 
 
 def model_options() -> list[str]:
@@ -1310,10 +1400,7 @@ async def _answer(bot: Bot, message: Message, user_text: str) -> None:
     except Exception:
         logger.exception("AI sales turn failed for user %s", user_id)
         ai_provider.reset(_session(user_id).setdefault("ai", {}))
-        await message.answer(_t("Kechirasiz, hozir javob bera olmadim.\n"
-                                "Batafsil ma'lumot olish uchun: ",
-                                "Извините, сейчас не получилось ответить.\n"
-                                "Подробнее по телефону: ", await _lang(user_id)) + SUPPORT_PHONES)
+        await _fallback_to_admins(bot, message, user_text)
         return
     if not reply:
         return
@@ -1321,6 +1408,20 @@ async def _answer(bot: Bot, message: Message, user_text: str) -> None:
         return   # javob tayyorlanguncha admin o'zi gapga kirdi — ustidan gapirmaymiz
     await message.answer(reply)
     await _mirror(bot, message, user_text, reply)
+
+
+async def _fallback_to_admins(bot: Bot | None, message: Message, user_text: str) -> None:
+    """Model javob bera olmadi (API o'chiq, kalit yoki model xatosi). Mijoz
+    uzr emas, odatdagi "xabaringiz qabul qilindi" ni oladi, savoli esa
+    support_relay kartochkasi bo'lib adminlarga boradi — hech narsa yo'qolmaydi."""
+    try:
+        from handlers.support_relay import relay_text
+        await relay_text(message, bot, user_text)
+    except Exception:
+        logger.exception("AI fallback relay failed for %s", message.from_user.id)
+        await message.answer(_t("Xabaringiz qabul qilindi. Batafsil ma'lumot olish uchun: ",
+                                "Сообщение получено. Подробнее по телефону: ",
+                                await _lang(message.from_user.id)) + SUPPORT_PHONES)
 
 
 # ───────────────────────── sinov rejimi: adminlarga nusxa ─────────────────────
@@ -1418,11 +1519,11 @@ async def cmd_ai_on(message: Message):
     user_id = message.from_user.id
     if not await _allowed(user_id):
         return
-    if not is_enabled():
+    if not await _ready():
         if user_id in ADMIN_IDS:
-            await message.answer("⚠️ AI kaliti (OPENAI_API_KEY) serverda o'rnatilmagan — AI sotuvchi "
-                                 "o'chiq. Dasturchi server sozlamalariga qo'shib, botni qayta "
-                                 "ishga tushirishi kerak.")
+            await message.answer("⚠️ AI kaliti yo'q — AI sotuvchi o'chiq. OpenAI kalitini botga "
+                                 "shaxsiy chatda yuboring: <code>/ai_kalit sk-...</code>",
+                                 parse_mode="HTML")
         return
     _opted_out.discard(user_id)
     resume(user_id)
@@ -1478,12 +1579,13 @@ def _settings_kb(values: dict) -> InlineKeyboardMarkup:
 
 async def _status_text() -> str:
     _prune_sessions()
-    catalog = await _catalog_text() if is_enabled() else ""
+    catalog = await _catalog_text() if await _ready() else ""
     linked = _linked["id"]
     groups = sorted(GROUP_CHATS | ({linked} if linked else set()))
     lines = [
         "🤖 <b>AI sotuvchi</b>", "",
         f"Holat: {'✅ yoqilgan' if is_enabled() else '⚠️ kalit yo`q (o`chiq)'}",
+        f"Kalit: {_key_status()}",
         f"Provayder: <b>{PROVIDER.name if PROVIDER else '—'}</b> · "
         f"model <code>{html.escape(MODEL or '—')}</code> (effort: {EFFORT})",
         f"Ochiq suhbatlar: {len(_sessions)} · to'xtatilgan mijozlar: "
@@ -1564,6 +1666,193 @@ async def cb_model(callback: CallbackQuery):
     except Exception:
         pass
     await callback.answer(f"Model: {name} ✅")
+
+
+@router.message(Command("ai_kalit"))
+async def cmd_ai_key(message: Message):
+    """/ai_kalit sk-... — kalitni berish; /ai_kalit — holat; /ai_kalit off —
+    bot orqali berilganini o'chirish (serverdagi env ga qaytadi)."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
+
+    if message.chat.type != "private":
+        # Guruhda kalit hammaga ko'rinadi — saqlamaymiz, xabarni o'chiramiz.
+        if arg:
+            try:
+                await message.delete()
+            except Exception:
+                pass
+        await message.answer("⚠️ Kalitni faqat bot bilan shaxsiy chatda yuboring.")
+        return
+
+    if not arg:
+        _settings["at"] = float("-inf")
+        await _load_settings()
+        await message.answer(f"🔑 <b>AI kaliti:</b> {_key_status()}\n"
+                             f"Model: <code>{html.escape(MODEL or '—')}</code>\n\n"
+                             "Yangi kalit: <code>/ai_kalit sk-...</code> · o'chirish: "
+                             "<code>/ai_kalit off</code>", parse_mode="HTML")
+        return
+
+    if arg.lower() in _KEY_OFF_WORDS:
+        await _delete_setting(KEY_SETTING)
+        _drop_bot_key()
+        await message.answer("🗑 Bot orqali berilgan kalit o'chirildi. Hozir: " + _key_status(),
+                             parse_mode="HTML")
+        return
+
+    # Avval xabarni o'chiramiz — kalit chat tarixida qolmasin.
+    try:
+        await message.delete()
+        deleted = True
+    except Exception:
+        deleted = False
+    candidate = arg.split()[0]
+    if not candidate.startswith("sk-"):
+        await message.answer("❌ Bu OpenAI kalitiga o'xshamaydi (u <code>sk-</code> bilan "
+                             "boshlanadi). Saqlanmadi.", parse_mode="HTML")
+        return
+    model = _openai_model()
+    error = await _verify_key(candidate, model)
+    if error:
+        await message.answer(f"❌ Kalit ishlamadi, saqlanmadi:\n<code>{html.escape(error)}</code>",
+                             parse_mode="HTML")
+        return
+    await set_setting(KEY_SETTING, candidate, message.from_user.id)
+    _apply_key(candidate)
+    text = (f"✅ Kalit saqlandi (…{html.escape(candidate[-4:])}). Model: <code>{html.escape(MODEL)}</code>.\n"
+            "AI sotuvchi ishlayapti — holat va tugmalar: /ai_holat")
+    if not deleted:
+        text += "\n\n⚠️ Kalitli xabaringizni o'chira olmadim — uni qo'lda o'chiring."
+    await message.answer(text, parse_mode="HTML")
+
+
+# ─────────────────────────── kunlik sarf hisoboti ────────────────────────────
+# Egasi, 2026-10-13: "har kuni adminlarga o'sha kun qancha token va $
+# ishlatilganini hisobotini berib bor". 20:00 dagi maqsad hisobotidagi AI
+# bloki kun tugamasdan yoziladi va maqsadlar o'chirilsa umuman chiqmaydi —
+# bu alohida, kun yakunidagi to'liq raqam.
+
+REPORT_AT = (23, 58)            # Toshkent vaqti
+REPORT_CATCHUP_FROM = 8         # o'tkazib yuborilgan kechagi hisobot — ertalabdan
+REPORT_DAY_SETTING = "usage_report_day"
+REPORT_CHECK_EVERY = 60
+
+
+def _now_tk():
+    from datetime import datetime, timedelta, timezone
+    return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)
+
+
+async def _usage_for_day(day) -> tuple[list[dict], dict, int]:
+    """(model bo'yicha qatorlar, oy boshidan shu kungacha jami, javobsiz savollar)."""
+    async with database.pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT model, provider, requests, input_tokens, cached_tokens,
+                      output_tokens, cost_usd
+                 FROM ai_usage WHERE day = $1 ORDER BY cost_usd DESC""", day)
+        month = await conn.fetchrow(
+            """SELECT COALESCE(SUM(requests), 0) AS requests,
+                      COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                      COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                      COALESCE(SUM(cost_usd), 0) AS cost_usd
+                 FROM ai_usage WHERE day >= $1 AND day <= $2""", day.replace(day=1), day)
+        questions = await conn.fetchval(
+            """SELECT COALESCE(SUM(times), 0) FROM ai_knowledge
+                WHERE kind = 'question' AND (created_at + INTERVAL '5 hours')::date = $1""", day)
+    return [dict(r) for r in rows], dict(month) if month else {}, int(questions or 0)
+
+
+def usage_report_text(day, rows: list[dict], month: dict, questions: int,
+                      usd_rate: float | None) -> str:
+    requests = sum(int(r["requests"]) for r in rows)
+    tokens_in = sum(int(r["input_tokens"]) for r in rows)
+    cached = sum(int(r["cached_tokens"]) for r in rows)
+    tokens_out = sum(int(r["output_tokens"]) for r in rows)
+    cost = sum(float(r["cost_usd"]) for r in rows)
+    lines = [f"🤖 <b>AI sarfi — {day:%d.%m.%Y}</b> (kun yakuni)", ""]
+    if not rows:
+        lines.append("Bugun AI ishlatilmadi — <b>$0.00</b>")
+    else:
+        som = f" ≈ {_fmt(cost * usd_rate)} so'm" if usd_rate else ""
+        lines += [
+            f"💵 Jami: <b>${cost:.2f}</b>{som}",
+            f"🔢 {requests} so'rov · {fmt_tokens(tokens_in)} kirish token "
+            f"({fmt_tokens(cached)} keshdan, arzon) · {fmt_tokens(tokens_out)} chiqish token",
+        ]
+        if len(rows) > 1:
+            for row in rows:
+                lines.append(f"   <code>{html.escape(row['model'])}</code> — {int(row['requests'])} so'rov · "
+                             f"${float(row['cost_usd']):.2f}")
+        else:
+            lines.append(f"🧠 Model: <code>{html.escape(rows[0]['model'])}</code>")
+    if month and int(month.get("requests") or 0):
+        lines.append(f"📅 Oy boshidan: {int(month['requests'])} so'rov · "
+                     f"{fmt_tokens(int(month['input_tokens']) + int(month['output_tokens']))} token · "
+                     f"<b>${float(month['cost_usd']):.2f}</b>")
+    if questions:
+        lines.append(f"❓ AI javob bera olmagan savollar: <b>{questions} ta</b> — /ai_bilim")
+    lines += ["", "<i>O'chirish: /ai_holat → Kunlik sarf hisoboti</i>"]
+    return "\n".join(lines)
+
+
+async def _usage_report_tick(bot: Bot, now_tk=None):
+    """Navbatdagi hisobot vaqti kelgan bo'lsa yuboradi; yuborilgan kunni
+    qaytaradi (yoki None). Kun bazada YUBORISHDAN OLDIN belgilanadi —
+    qayta ishga tushish hech qachon ikki marta yubormaydi."""
+    from datetime import timedelta
+    now = now_tk or _now_tk()
+    values = await _load_settings()
+    if not await setting("report"):
+        return None
+    today = now.date()
+    if (now.hour, now.minute) >= REPORT_AT:
+        due = today
+    elif now.hour >= REPORT_CATCHUP_FROM:
+        due = today - timedelta(days=1)
+    else:
+        return None
+    last = values.get(REPORT_DAY_SETTING)
+    if last is None and due != today:
+        # Birinchi ishga tushish — o'tgan kunlar uchun hisobot yubormaymiz.
+        await set_setting(REPORT_DAY_SETTING, due.isoformat())
+        return None
+    if last and last >= due.isoformat():
+        return None
+    await set_setting(REPORT_DAY_SETTING, due.isoformat())
+
+    rows, month, questions = await _usage_for_day(due)
+    if not rows and not is_enabled():
+        return None   # AI umuman ishlamaydi — "$0.00" ni har kuni yubormaymiz
+    rate = None
+    try:
+        from targets import current_usd_rate
+        rate, _ = await current_usd_rate()
+    except Exception:
+        logger.warning("USD rate for the AI usage report unavailable", exc_info=True)
+    text = usage_report_text(due, rows, month, questions, rate)
+    for admin_id in list(dict.fromkeys(ADMIN_IDS)):
+        try:
+            await bot.send_message(admin_id, text, parse_mode="HTML", disable_notification=True)
+        except Exception:
+            logger.debug("AI usage report to %s failed", admin_id)
+        await asyncio.sleep(0.05)
+    logger.info("AI usage report for %s sent", due)
+    return due
+
+
+async def usage_report_loop(bot: Bot) -> None:
+    await asyncio.sleep(30)   # bot to'liq ishga tushsin
+    while True:
+        try:
+            await _usage_report_tick(bot)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("AI usage report tick failed")
+        await asyncio.sleep(REPORT_CHECK_EVERY)
 
 
 def fmt_tokens(n) -> str:
@@ -1710,7 +1999,7 @@ async def _has_session(message: Message) -> bool:
     "ishlangan" hisoblanadi va support_relay ga yetib bormaydi. Ya'ni AI
     javob bermaydigan odamning savoli jimgina yo'qolardi."""
     user = message.from_user
-    if not (user and is_enabled()) or message.chat.type != "private":
+    if not user or message.chat.type != "private" or not await _ready():
         return False
     if _is_paused(user.id) or not await _allowed(user.id):
         return False
@@ -1992,7 +2281,7 @@ async def _group_trigger(message: Message, bot: Bot) -> bool:
     """FILTR: bu guruh xabariga AI javob beradimi. Faqat begona (admin
     bo'lmagan) odamning savoliga — adminlar yozganiga hech qachon, hatto
     botni chaqirsa ham (egasi, 2026-10-12)."""
-    if message.chat.type not in ("group", "supergroup") or not is_enabled():
+    if message.chat.type not in ("group", "supergroup") or not await _ready():
         return False
     text = (message.text or message.caption or "").strip()
     if not text or text.startswith("/"):

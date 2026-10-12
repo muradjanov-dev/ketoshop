@@ -278,7 +278,15 @@ async def relay_freeform_text(message: Message, bot: Bot):
     # Stray/mistyped commands aren't "chatting with the bot" — leave those alone.
     if not text or text.startswith("/"):
         return
+    await relay_text(message, bot, text)
 
+
+async def relay_text(message: Message, bot: Bot, text: str) -> None:
+    """Acknowledge the buyer and put `text` in front of every admin.
+
+    Split out of the handler so the AI seller (ai_sales.py) can fall back to
+    it when the model cannot answer — an API outage must leave the buyer with
+    the usual "operators will contact you", not an apology and a lost question."""
     lang = await get_user_language(message.from_user.id)
     await message.answer(
         get_text("freeform_received", lang),

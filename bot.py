@@ -385,6 +385,10 @@ async def main():
     from release_notes import scheduler_loop as release_notes_loop
     release_notes_task = asyncio.create_task(release_notes_loop(bot))
 
+    # AI sotuvchi: har kuni 23:58 da adminlarga o'sha kungi token va $ sarfi.
+    from ai_sales import usage_report_loop as ai_usage_report_loop
+    ai_usage_report_task = asyncio.create_task(ai_usage_report_loop(bot))
+
     # One-off channel post: the all-time top 20 (owner, 2026-10-04), sent
     # once right after this deploy — see top20_post.py.
     from top20_post import scheduler_loop as top20_loop
@@ -415,6 +419,7 @@ async def main():
         product_of_day_task.cancel()
         channel_posts_task.cancel()
         release_notes_task.cancel()
+        ai_usage_report_task.cancel()
         meta_leads_task.cancel()
         meta_ads_task.cancel()
         if runner:
