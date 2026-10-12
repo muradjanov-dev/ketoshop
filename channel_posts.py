@@ -31,6 +31,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import database
 import channel_posts_content as content
+import shop_address
 from config import ADMIN_IDS, BOT_USERNAME, REQUIRED_CHANNEL_ID
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,7 @@ async def post_to_channel(bot: Bot, slug: str) -> int | None:
     footer = await bot_discount.channel_footer()
     if len(text) + len(footer) <= 4096:
         text += footer
+    text = shop_address.add(text, "uz_cyr")      # 📍 manzil — eng oxirida
     try:
         msg = await bot.send_message(
             REQUIRED_CHANNEL_ID,

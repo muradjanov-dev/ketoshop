@@ -18,6 +18,7 @@ from aiogram import Bot
 from aiogram.enums import ParseMode
 
 import news_announce
+import shop_address
 from config import REQUIRED_CHANNEL_ID
 
 logger = logging.getLogger(__name__)
@@ -42,8 +43,13 @@ TEXT = (
 )
 
 
+def text() -> str:
+    """Kanalga chiqadigan to'liq matn — tagida 📍 manzil (shop_address.py)."""
+    return shop_address.add(TEXT, "uz_cyr")
+
+
 async def send_preview(bot: Bot, chat_id: int) -> None:
-    await bot.send_message(chat_id, TEXT, parse_mode=ParseMode.HTML,
+    await bot.send_message(chat_id, text(), parse_mode=ParseMode.HTML,
                            reply_markup=news_announce.channel_keyboard(),
                            disable_web_page_preview=True)
 
@@ -52,7 +58,7 @@ async def post_to_channel(bot: Bot) -> bool:
     if not REQUIRED_CHANNEL_ID:
         return False
     try:
-        await bot.send_message(REQUIRED_CHANNEL_ID, TEXT, parse_mode=ParseMode.HTML,
+        await bot.send_message(REQUIRED_CHANNEL_ID, text(), parse_mode=ParseMode.HTML,
                                reply_markup=news_announce.channel_keyboard(),
                                disable_web_page_preview=True)
         return True

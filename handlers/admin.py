@@ -3254,14 +3254,23 @@ async def confirm_broadcast(callback: CallbackQuery, state: FSMContext, bot: Bot
 
     users, total = await get_all_users(page=0, per_page=10000)
     body = f"📢 {broadcast_text}"
+    # 📍 Keto shop manzili under the post, in each reader's language
+    # (shop_address.py). A link the admin typed keeps its preview (Telegram
+    # previews the first link); with none, the 📍 link shows no preview card.
+    import shop_address
+    texts = {lang: shop_address.add(body, lang) for lang in ("uz", "uz_cyr", "ru")}
+    no_preview = not _re.search(r"https?://|www\.|t\.me/", broadcast_text, _re.I)
 
     BATCH_SIZE = 25
     BATCH_PAUSE = 1.0  # seconds
 
-    async def send_one(user_id: int) -> str:
+    async def send_one(user: dict) -> str:
         """Returns 'sent' / 'blocked' / 'failed' for a single recipient."""
+        user_id = user["user_id"]
+        text = texts.get(user.get("language") or "uz", texts["uz"])
         try:
-            await bot.send_message(chat_id=user_id, text=body, parse_mode="HTML")
+            await bot.send_message(chat_id=user_id, text=text, parse_mode="HTML",
+                                   disable_web_page_preview=no_preview)
             return "sent"
         except TelegramForbiddenError:
             return "blocked"  # User blocked the bot
@@ -3274,7 +3283,8 @@ async def confirm_broadcast(callback: CallbackQuery, state: FSMContext, bot: Bot
         except TelegramRetryAfter as exc:
             await asyncio.sleep(exc.retry_after)
             try:
-                await bot.send_message(chat_id=user_id, text=body, parse_mode="HTML")
+                await bot.send_message(chat_id=user_id, text=text, parse_mode="HTML",
+                                       disable_web_page_preview=no_preview)
                 return "sent"
             except Exception as retry_exc:
                 logger.warning("Broadcast retry to %s failed: %s", user_id, retry_exc)
@@ -3294,7 +3304,7 @@ async def confirm_broadcast(callback: CallbackQuery, state: FSMContext, bot: Bot
 
     for i in range(0, total, BATCH_SIZE):
         batch = users[i:i + BATCH_SIZE]
-        results = await asyncio.gather(*(send_one(u["user_id"]) for u in batch))
+        results = await asyncio.gather(*(send_one(u) for u in batch))
         for r in results:
             if r == "sent":
                 sent += 1

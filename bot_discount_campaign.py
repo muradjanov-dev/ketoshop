@@ -48,6 +48,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, W
 
 import bot_discount
 import database
+import shop_address
 from config import ADMIN_IDS, BOT_USERNAME, REQUIRED_CHANNEL_ID, WEBAPP_URL
 from locales import get_category_name, localize_product_text
 
@@ -279,9 +280,15 @@ def build_list_messages(step: str, lang: str, items: list[dict],
 
 def _messages(step: str, lang: str, items: list[dict] | None,
               channel: bool = False) -> list[tuple[str, InlineKeyboardMarkup | None]]:
+    lang = CHANNEL_LANG if channel else lang
     if step in LIST_STEPS:
-        return build_list_messages(step, CHANNEL_LANG if channel else lang, items or [], channel)
-    return [build_channel_message(step) if channel else build_message(step, lang)]
+        messages = build_list_messages(step, lang, items or [], channel)
+    else:
+        messages = [build_channel_message(step) if channel else build_message(step, lang)]
+    # 📍 manzil — oxirgi qism tagida, tugma bilan birga (shop_address.py).
+    text, markup = messages[-1]
+    messages[-1] = (shop_address.add(text, lang), markup)
+    return messages
 
 
 # ───────────────────────────── baza ─────────────────────────────

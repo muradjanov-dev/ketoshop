@@ -35,6 +35,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
 import bot_discount
 import database
+import shop_address
 from config import ADMIN_IDS, WEBAPP_URL
 from locales import get_text, localize_product_text
 
@@ -521,7 +522,7 @@ async def send_personal_batch(bot: Bot, only_user: int | None = None) -> tuple[i
             delivered = False
             # After the hash above, so the reminder never makes an old
             # recipe look new (bot_discount.py — "" while it is off).
-            text += await bot_discount.footer(lang)
+            text += await bot_discount.footer(lang) + shop_address.footer(lang)
             # CTA under every personal reco — the recipe above is one tap from
             # the products it calls for (owner request 2026-09-17).
             markup = reco_keyboard(lang, orders)
@@ -584,7 +585,7 @@ async def send_personal_batch(bot: Bot, only_user: int | None = None) -> tuple[i
                     continue
 
                 delivered = False
-                text += await bot_discount.footer(lang)
+                text += await bot_discount.footer(lang) + shop_address.footer(lang)
                 markup = _product_button(product, lang)
                 try:
                     await bot.send_message(uid, text, parse_mode=ParseMode.HTML, disable_web_page_preview=True,

@@ -25,6 +25,7 @@ from aiogram.exceptions import (
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
 import database
+import shop_address
 from broadcast_tips import TIPS
 from config import ADMIN_IDS, WEBAPP_URL
 
@@ -151,7 +152,7 @@ async def _broadcast_to_all(bot: Bot, text: str | dict) -> tuple[int, int]:
         # "Bot orqali buyurtma qilib, 10% chegirma" under every tip while it
         # is on — once per language, not a DB read per recipient.
         if lang not in footers:
-            footers[lang] = await bot_discount.footer(lang)
+            footers[lang] = await bot_discount.footer(lang) + shop_address.footer(lang)
         body += footers[lang]
         markup = shop_button(lang)
         try:
