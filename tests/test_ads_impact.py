@@ -145,6 +145,35 @@ class WindowTest(unittest.TestCase):
         self.assertEqual(last, today - timedelta(days=1))
 
 
+class TimezoneTest(unittest.TestCase):
+    """Reklama hisobi America/Los_Angeles (UTC−7): Meta kuni Toshkentda 12:00 da boshlanadi."""
+
+    def test_window_follows_the_ad_account_day(self):
+        start, end = ads_impact.utc_window(date(2026, 8, 27), date(2026, 8, 27),
+                                           datetime(2026, 9, 1), -7.0)
+        self.assertEqual((start, end), (datetime(2026, 8, 27, 7, 0), datetime(2026, 8, 28, 7, 0)))
+
+    def test_note_only_when_days_differ(self):
+        self.assertEqual(ads_impact.tz_note(5.0), "")
+        self.assertIn("12:00 dan 12:00 gacha", ads_impact.tz_note(-7.0))
+        text = ads_impact.format_sales_block("last_7d", date(2026, 10, 5), date(2026, 10, 11),
+                                             _totals(1, 1), _totals(1, 1), 0, 0, 7, -7.0)
+        self.assertIn("12:00 dan 12:00 gacha", text)
+
+    def test_no_token_means_no_graph_call(self):
+        with patch.object(meta_ads, "is_enabled", return_value=False), \
+             patch.object(meta_ads, "_get", AsyncMock(side_effect=AssertionError("network"))):
+            self.assertEqual(asyncio.run(ads_impact.account_tz_hours()), 5.0)
+
+    def test_sales_days_grouped_in_account_time(self):
+        conn = _Conn()
+        with patch.object(database, "pool", _Pool(conn)):
+            out = asyncio.run(database.get_sales_daily(datetime(2026, 10, 1),
+                                                       datetime(2026, 10, 12), -7.0))
+        # 10.10 20:30 UTC → LA 13:30; 10.10 10:00 UTC → LA 03:00 — ikkalasi ham 10.10
+        self.assertEqual(out["days"]["2026-10-10"]["orders"], 2)
+
+
 class SalesBlockTest(unittest.TestCase):
     def _block(self, cur, prev, spend=100.0, preset="last_7d"):
         return ads_impact.format_sales_block(preset, date(2026, 10, 5), date(2026, 10, 11),
@@ -437,6 +466,7 @@ class ReportTest(unittest.TestCase):
         rows = [{"spend": "10", "impressions": "1000", "reach": "800",
                  "date_start": "2026-10-12", "date_stop": "2026-10-12"}]
         with patch.object(meta_ads, "fetch_insights", AsyncMock(return_value=rows)), \
+             patch.object(ads_impact, "account_tz_hours", AsyncMock(return_value=5.0)), \
              patch.object(database, "get_sales_daily", AsyncMock(side_effect=RuntimeError("db"))):
             with self.assertLogs("meta_ads", "ERROR"):
                 text = asyncio.run(meta_ads.build_report("today"))
@@ -449,6 +479,7 @@ class ReportTest(unittest.TestCase):
         sales = {"days": {"2026-10-06": {"orders": 3, "revenue": 300_000.0, "new_users": 4,
                                          "ad_users": 0, "products": {}}}, "catalog": {}}
         with patch.object(meta_ads, "fetch_insights", AsyncMock(return_value=rows)), \
+             patch.object(ads_impact, "account_tz_hours", AsyncMock(return_value=5.0)), \
              patch.object(database, "get_sales_daily", AsyncMock(return_value=sales)), \
              patch.object(ads_impact, "_usd_rate", AsyncMock(return_value=12_000.0)):
             text = asyncio.run(meta_ads.build_report("last_7d"))

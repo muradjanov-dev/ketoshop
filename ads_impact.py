@@ -44,7 +44,12 @@ from config import ADMIN_IDS
 logger = logging.getLogger(__name__)
 router = Router()
 
-TZ_OFFSET = timedelta(hours=5)  # Asia/Tashkent, meta_ads.TZ bilan bir xil
+TASHKENT_HOURS = 5.0
+# Reklama hisobining vaqt zonasi Meta'da qotib qolgan (bizniki — America/
+# Los_Angeles, UTC−7): Meta "kuni" Toshkentda 12:00 da boshlanadi. Sotuv
+# oynalari va kunlari shu zonada olinadi, aks holda sarf va sotuv 12 soat
+# siljib solishtiriladi.
+TZ_TTL = 6 * 3600
 CACHE_TTL = 120                 # tugmalar orasida yurganda Graph'ni qayta so'ramaslik
 MIN_SPEND = 1.0                 # $1 dan kam sarflagan reklama solishtirilmaydi
 MAX_ADS = 6
@@ -83,6 +88,7 @@ _APOS_RE = re.compile(r"[‘’`ʻʼ']")
 _WORD_RE = re.compile(r"[\w']+")
 
 _cache: dict[str, tuple[float, dict]] = {}
+_tz_cache: tuple[float, float | None] = (0.0, None)
 
 
 # ---------------------------------------------------------------- pure helpers
@@ -296,8 +302,16 @@ def short(name: str, width: int = 40) -> str:
 
 # ---------------------------------------------------------------- windows
 
-def _today_tk() -> date:
-    return (datetime.now(timezone.utc) + TZ_OFFSET).date()
+def today_in(tz_hours: float) -> date:
+    return (datetime.now(timezone.utc) + timedelta(hours=tz_hours)).date()
+
+
+def tz_note(tz_hours: float) -> str:
+    """Meta kuni Toshkent kuni bilan bir xil bo'lmasa — o'quvchiga aytamiz."""
+    if tz_hours == TASHKENT_HOURS:
+        return ""
+    h = int((TASHKENT_HOURS - tz_hours) % 24)
+    return f"Kunlar reklama hisobi vaqtida: Toshkent bo'yicha {h:02d}:00 dan {h:02d}:00 gacha."
 
 
 def preset_dates(preset: str, account_row: dict | None, today: date) -> tuple[date, date]:
@@ -317,11 +331,13 @@ def preset_dates(preset: str, account_row: dict | None, today: date) -> tuple[da
     }.get(preset, (today - timedelta(days=30), today))
 
 
-def utc_window(first: date, last: date, now_utc: datetime) -> tuple[datetime, datetime]:
-    """Mahalliy kunlar → bazadagi naive-UTC [start, end). Bugungi kun hozirgi
-    soatda tugaydi — oldingi davr ham xuddi shuncha uzun bo'lishi uchun."""
-    start = datetime.combine(first, datetime.min.time()) - TZ_OFFSET
-    end = datetime.combine(last + timedelta(days=1), datetime.min.time()) - TZ_OFFSET
+def utc_window(first: date, last: date, now_utc: datetime,
+               tz_hours: float = TASHKENT_HOURS) -> tuple[datetime, datetime]:
+    """`tz_hours` zonasidagi kunlar → bazadagi naive-UTC [start, end). Bugungi
+    kun hozirgi soatda tugaydi — oldingi davr ham xuddi shuncha uzun bo'lishi uchun."""
+    shift = timedelta(hours=tz_hours)
+    start = datetime.combine(first, datetime.min.time()) - shift
+    end = datetime.combine(last + timedelta(days=1), datetime.min.time()) - shift
     return start, min(end, now_utc)
 
 
@@ -369,6 +385,30 @@ async def _ad_texts(session) -> dict[str, str]:
     return out
 
 
+async def account_tz_hours(session=None) -> float:
+    """Reklama hisobining UTC siljishi (soat). Topilmasa — Toshkent."""
+    global _tz_cache
+    if not meta_ads.is_enabled():
+        return TASHKENT_HOURS
+    ts, hours = _tz_cache
+    if hours is not None and time.monotonic() - ts < TZ_TTL:
+        return hours
+    try:
+        if session is None:
+            async with aiohttp.ClientSession() as own:
+                data = await meta_ads._get(own, f"act_{meta_ads.AD_ACCOUNT_ID}",
+                                           fields="timezone_offset_hours_utc")
+        else:
+            data = await meta_ads._get(session, f"act_{meta_ads.AD_ACCOUNT_ID}",
+                                       fields="timezone_offset_hours_utc")
+        hours = float(data["timezone_offset_hours_utc"])
+    except Exception:
+        logger.warning("Ad account timezone unavailable — using Tashkent", exc_info=True)
+        return TASHKENT_HOURS
+    _tz_cache = (time.monotonic(), hours)
+    return hours
+
+
 async def _usd_rate() -> float:
     try:
         import targets
@@ -393,19 +433,20 @@ async def collect(preset: str) -> dict:
         return hit
     async with aiohttp.ClientSession() as session:
         path = f"act_{meta_ads.AD_ACCOUNT_ID}/insights"
-        account_rows, ad_rows, texts = await asyncio.gather(
+        account_rows, ad_rows, texts, tz = await asyncio.gather(
             _get_all(session, path, fields="spend,impressions,reach,inline_link_clicks,actions",
                      date_preset=preset, level="account"),
             _get_all(session, path, fields=AD_FIELDS, date_preset=preset, level="ad", limit=100),
             _ad_texts(session),
+            account_tz_hours(session),
         )
     account = account_rows[0] if account_rows else None
-    first, last = preset_dates(preset, account, _today_tk())
+    first, last = preset_dates(preset, account, today_in(tz))
     now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-    start, end = utc_window(first, last, now_utc)
+    start, end = utc_window(first, last, now_utc, tz)
     p_start, p_end = prev_window(start, end)
-    cur, prev = await asyncio.gather(database.get_sales_daily(start, end),
-                                     database.get_sales_daily(p_start, p_end))
+    cur, prev = await asyncio.gather(database.get_sales_daily(start, end, tz),
+                                     database.get_sales_daily(p_start, p_end, tz))
     families = build_families(cur["catalog"])
     ads = []
     for row in ad_rows:
@@ -436,10 +477,11 @@ async def collect_daily(preset: str) -> dict:
     key = "daily:" + preset
     if (hit := _cached(key)) is not None:
         return hit
-    today = _today_tk()
     first_seen = None
     async with aiohttp.ClientSession() as session:
         path = f"act_{meta_ads.AD_ACCOUNT_ID}/insights"
+        tz = await account_tz_hours(session)
+        today = today_in(tz)
         if preset == "maximum":
             rows = await _get_all(session, path, fields="spend", date_preset="maximum",
                                   level="account")
@@ -456,8 +498,8 @@ async def collect_daily(preset: str) -> dict:
     now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
     # Sotuv LAUNCH_WINDOW kun oldinroqdan — oraliqdagi birinchi videoning ham
     # "oldingi haftasi" bo'lsin (🚀 Videodan keyin).
-    start, end = utc_window(first - timedelta(days=LAUNCH_WINDOW), last, now_utc)
-    sales = await database.get_sales_daily(start, end)
+    start, end = utc_window(first - timedelta(days=LAUNCH_WINDOW), last, now_utc, tz)
+    sales = await database.get_sales_daily(start, end, tz)
     families = build_families(sales["catalog"])
     dates = [first + timedelta(days=i) for i in range((last - first).days + 1)]
     per_ad: dict[str, dict] = {}
@@ -473,7 +515,7 @@ async def collect_daily(preset: str) -> dict:
             "catalog": sales["catalog"], "families": families, "rate": await _usd_rate(),
             # Oraliq 90 kunga qirqilgan bo'lsa, birinchi kuni "ko'ringan" video aslida
             # ancha oldin boshlangan bo'lishi mumkin — uning boshlanishi noma'lum.
-            "capped": bool(first_seen and first > first_seen)}
+            "capped": bool(first_seen and first > first_seen), "tz_hours": tz}
     _cache[key] = (time.monotonic(), data)
     return data
 
@@ -482,17 +524,18 @@ async def collect_daily(preset: str) -> dict:
 
 async def sales_block(preset: str, account_row: dict | None) -> str:
     """/reklama hisobotining davomi: shu davrda do'kon nima sotdi."""
-    first, last = preset_dates(preset, account_row, _today_tk())
+    tz = await account_tz_hours()
+    first, last = preset_dates(preset, account_row, today_in(tz))
     now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-    start, end = utc_window(first, last, now_utc)
+    start, end = utc_window(first, last, now_utc, tz)
     p_start, p_end = prev_window(start, end)
-    cur_raw, prev_raw = await asyncio.gather(database.get_sales_daily(start, end),
-                                             database.get_sales_daily(p_start, p_end))
+    cur_raw, prev_raw = await asyncio.gather(database.get_sales_daily(start, end, tz),
+                                             database.get_sales_daily(p_start, p_end, tz))
     cur, prev = totals(cur_raw["days"]), totals(prev_raw["days"])
     spend = _f(account_row.get("spend")) if account_row else 0.0
     rate = await _usd_rate() if spend else 0.0
     return format_sales_block(preset, first, last, cur, prev, spend, rate,
-                              (p_end - p_start).days)
+                              (p_end - p_start).days, tz)
 
 
 def _prev_label(preset: str, prev_days: int) -> str:
@@ -516,7 +559,8 @@ def sales_verdict(cur: dict, prev: dict, spend: float) -> str:
     return f"⚠️ Reklama ishlayapti, lekin buyurtmalar oldingi davrdan <b>{abs(p):.0f}% kam</b>."
 
 
-def format_sales_block(preset, first, last, cur, prev, spend, rate, prev_days) -> str:
+def format_sales_block(preset, first, last, cur, prev, spend, rate, prev_days,
+                       tz_hours: float = TASHKENT_HOURS) -> str:
     period = _fmt_day(first) if first == last else f"{_fmt_day(first)}–{_fmt_day(last)}"
     lines = ["", "━━━━━━━━━━━━", f"💰 <b>Sotuvga ta'siri</b> · {period}",
              sales_verdict(cur, prev, spend), ""]
@@ -541,8 +585,10 @@ def format_sales_block(preset, first, last, cur, prev, spend, rate, prev_days) -
         if extra_rev > 0 and rate:
             lines.append(f"🧮 Qo'shimcha tushum {som(extra_rev)} so'm → reklamaga 1 so'm ≈ "
                          f"<b>{extra_rev / (spend * rate):.1f} so'm</b> qaytdi")
+    note = tz_note(tz_hours)
     lines.append(f"<i>Taqqoslash: {_prev_label(preset, prev_days)}. "
-                 "Ulgurji (B2B) va ichki akkauntlar hisobga olinmagan.</i>")
+                 "Ulgurji (B2B) va ichki akkauntlar hisobga olinmagan."
+                 f"{' ' + note if note else ''}</i>")
     return "\n".join(lines)
 
 
@@ -799,8 +845,10 @@ def format_correlation(data: dict) -> str:
         ad_lines.append(f"• «{short(a['name'], 32)}» — " + "; ".join(parts))
     if ad_lines:
         body += ["", "🎬 <b>Videolar bo'yicha</b>"] + ad_lines
+    note = tz_note(data.get("tz_hours", TASHKENT_HOURS))
     body += ["", "<i>Bog'liqlik — sarf ko'paygan kunlari sotuv ham ko'payganini ko'rsatadi. "
-                 "Bu taxmin: bayram, kanal posti, aksiya ham ta'sir qiladi.</i>", ""]
+                 "Bu taxmin: bayram, kanal posti, aksiya ham ta'sir qiladi."
+                 f"{' ' + note if note else ''}</i>", ""]
 
     if not steady and best_r < 0.3:
         todo.append("Reklama sotuvni ko'tarmayapti — auditoriya yoki videoni almashtiring, "
@@ -918,7 +966,8 @@ def format_after(data: dict) -> str:
         body.append("")
     body.append("<i>🎬 — shu videoda ko'rsatilgan mahsulot. «Keyin» — «sabab» degani emas: "
                 "bayram, aksiya, kanal posti ham ta'sir qiladi. Ulgurji (B2B), sovg'a va "
-                "bonuslar hisobga olinmagan.</i>")
+                "bonuslar hisobga olinmagan."
+                f"{' ' + tz_note(data.get('tz_hours', TASHKENT_HOURS)) if tz_note(data.get('tz_hours', TASHKENT_HOURS)) else ''}</i>")
     body.append("")
     return fit("\n".join(head + body + _todo(todo[:4])))
 

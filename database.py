@@ -6606,7 +6606,8 @@ async def get_ad_source_users(source: str, limit: int = 50) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-async def get_sales_daily(start: datetime, end: datetime) -> dict:
+async def get_sales_daily(start: datetime, end: datetime,
+                          tz_hours: float | None = None) -> dict:
     """Retail sales per local (Tashkent) day in [start, end) — naive UTC
     bounds — for setting ad spend against what the shop sold (ads_impact.py).
 
@@ -6618,9 +6619,13 @@ async def get_sales_daily(start: datetime, end: datetime) -> dict:
     placed themself. Gift and aksiya bonus lines are not sales of that product
     and are skipped, or the Eritritol-on-every-order gift would look like ad
     demand for Eritritol.
+
+    `tz_hours` groups the days in another UTC offset — the Meta ad account's
+    (America/Los_Angeles, UTC−7), so a sales day lines up with the ad day it
+    is compared with. Default: Tashkent.
     """
     from datetime import timedelta
-    shift = timedelta(hours=DISPLAY_TZ_OFFSET_HOURS)
+    shift = timedelta(hours=DISPLAY_TZ_OFFSET_HOURS if tz_hours is None else tz_hours)
     excluded = _customer_filter_ids()
 
     def _local_day(ts) -> str:
