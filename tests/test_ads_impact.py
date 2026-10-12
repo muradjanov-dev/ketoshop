@@ -64,9 +64,17 @@ class GraphRowTest(unittest.TestCase):
         self.assertEqual(m["messages"], 0)
 
     def test_result_type_is_shared_by_all_ads(self):
-        ads = [_ad("a", 5, messages=10, clicks=50), _ad("b", 5, clicks=80)]
+        # Ko'pchilik xabarga ishlagan — bitta natijasiz reklama o'lchovni o'zgartirmaydi
+        ads = [_ad("a", 5, messages=10, clicks=50), _ad("b", 5, messages=3, clicks=80),
+               _ad("c", 5, clicks=20)]
         self.assertEqual(ads_impact.pick_result(ads)[0], "messages")
         self.assertEqual(ads_impact.pick_result([_ad("b", 5, clicks=80)])[0], "clicks")
+
+    def test_lead_form_and_instagram_boosts_compare_by_clicks(self):
+        ads = [_ad("Eritritol 1.1", 85, messages=301, clicks=1176),
+               _ad("Instagram post: Bodom uni", 22, clicks=1658),
+               _ad("Instagram post: Eritritol", 35, clicks=2018)]
+        self.assertEqual(ads_impact.pick_result(ads)[0], "clicks")
 
     def test_ranking_puts_cheapest_first_and_resultless_last(self):
         ads = [_ad("dear", 10, messages=5), _ad("none", 8), _ad("cheap", 10, messages=20)]
@@ -383,6 +391,93 @@ class AfterVideoTest(unittest.TestCase):
         data = _launch_data()
         data["ads"] = {}
         self.assertIn("topilmadi", ads_impact.format_after(data))
+
+
+class MultiAccountTest(unittest.TestCase):
+    """Ads Manager hisobi + Instagram ilovasidan boost qilinganlar turgan hisob."""
+
+    def setUp(self):
+        meta_ads._accounts_cache = (0.0, [])
+
+    def _get(self, responses):
+        calls = []
+
+        async def fake_get(session, path, **params):
+            calls.append(path)
+            res = responses[path]
+            if isinstance(res, Exception):
+                raise res
+            return res
+        return fake_get, calls
+
+    def test_discovers_every_account_the_token_sees(self):
+        fake, _ = self._get({"me/adaccounts": {"data": [{"account_id": "555", "currency": "USD"},
+                                                        {"account_id": "840216037679254"}]}})
+        with patch.object(meta_ads, "ENV_AD_ACCOUNTS", []), patch.object(meta_ads, "_get", fake):
+            ids = asyncio.run(meta_ads.account_ids(None))
+        self.assertEqual(ids, ["840216037679254", "555"])     # asosiy hisob birinchi
+
+    def test_env_list_wins_and_discovery_failure_falls_back(self):
+        with patch.object(meta_ads, "ENV_AD_ACCOUNTS", ["1", "2"]):
+            self.assertEqual(asyncio.run(meta_ads.account_ids(None)), ["1", "2"])
+        fake, _ = self._get({"me/adaccounts": meta_ads.GraphError(100, "no")})
+        with patch.object(meta_ads, "ENV_AD_ACCOUNTS", []), patch.object(meta_ads, "_get", fake):
+            self.assertEqual(asyncio.run(meta_ads.account_ids(None)), ["840216037679254"])
+
+    def test_account_rows_are_merged(self):
+        merged = meta_ads.merge_account_rows([
+            {"spend": "10", "impressions": "1000", "reach": "800", "clicks": "50",
+             "inline_link_clicks": "40", "date_start": "2026-09-01", "date_stop": "2026-09-30",
+             "actions": [{"action_type": "lead", "value": "5"}]},
+            {"spend": "30", "impressions": "3000", "reach": "2000", "clicks": "150",
+             "inline_link_clicks": "120", "date_start": "2026-08-20", "date_stop": "2026-09-30",
+             "actions": [{"action_type": "lead", "value": "15"},
+                         {"action_type": "link_click", "value": "120"}]},
+        ])
+        self.assertEqual(float(merged["spend"]), 40)
+        self.assertEqual(merged["date_start"], "2026-08-20")
+        self.assertAlmostEqual(float(merged["ctr"]), 5.0)
+        self.assertAlmostEqual(float(merged["cpm"]), 10.0)
+        leads = {a["action_type"]: float(a["value"]) for a in merged["actions"]}
+        self.assertEqual(leads["lead"], 20)
+        self.assertEqual(meta_ads._leads_from(merged), (20, 2.0))
+
+    def test_insights_from_all_accounts_and_partial_failure(self):
+        fake, _ = self._get({
+            "act_1/insights": {"data": [{"ad_name": "Eritritol 1.1", "spend": "85"}]},
+            "act_2/insights": {"data": [{"ad_name": "Instagram post: Bodom", "spend": "22"}]},
+            "act_3/insights": meta_ads.GraphError(200, "no permission"),
+        })
+        with patch.object(meta_ads, "ENV_AD_ACCOUNTS", ["1", "2", "3"]), \
+             patch.object(meta_ads, "_get", fake):
+            rows = asyncio.run(meta_ads.fetch_insights(None, "maximum", "ad"))
+        self.assertEqual([r["ad_name"] for r in rows], ["Eritritol 1.1", "Instagram post: Bodom"])
+        self.assertEqual(meta_ads.last_failed, ["3"])
+        text = meta_ads.format_report([{"spend": "107", "impressions": "1"}], rows, "Butun davr")
+        self.assertIn("📱 Instagram post: Bodom", text)
+        self.assertIn("act_3", text)
+
+    def test_all_accounts_failing_is_an_error(self):
+        fake, _ = self._get({"act_1/insights": meta_ads.GraphError(190, "token expired")})
+        with patch.object(meta_ads, "ENV_AD_ACCOUNTS", ["1"]), patch.object(meta_ads, "_get", fake):
+            with self.assertRaises(meta_ads.GraphError):
+                asyncio.run(meta_ads.fetch_insights(None, "today"))
+
+    def test_impact_reads_every_account(self):
+        async def fake_all(session, path, max_pages=10, **params):
+            return {"act_1/insights": [{"ad_id": "a", "spend": "5"}],
+                    "act_2/insights": [{"ad_id": "b", "spend": "7"}]}[path]
+        with patch.object(meta_ads, "ENV_AD_ACCOUNTS", ["1", "2"]), \
+             patch.object(ads_impact, "_get_all", fake_all):
+            rows = asyncio.run(ads_impact._insights_all(None, level="ad"))
+        self.assertEqual([r["ad_id"] for r in rows], ["a", "b"])
+
+    def test_source_tag(self):
+        self.assertTrue(meta_ads.is_ig_boost("Instagram post: Eritritol kompot"))
+        self.assertTrue(meta_ads.is_ig_boost("Публикация в Instagram: Yaqinlashib..."))
+        self.assertFalse(meta_ads.is_ig_boost("Eritritol kompot 1"))
+        text = ads_impact.format_videos(_period_data([_ad("Instagram post: Bodom", 5, clicks=30)], {}, {}))
+        self.assertIn("📱 Instagram boost", text)
 
 
 class KeyboardTest(unittest.TestCase):

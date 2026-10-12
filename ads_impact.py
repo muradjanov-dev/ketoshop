@@ -125,9 +125,16 @@ def ad_metrics(row: dict) -> dict:
 
 
 def pick_result(ads: list[dict]) -> tuple[str, str]:
-    """Hamma reklama uchun bitta "natija" turi — xabar bo'lsa xabar, bo'lmasa
-    lead, bosish... Har reklamaga boshqa o'lchov tanlansa, ularni bir-biri
-    bilan solishtirib bo'lmay qoladi."""
+    """Hamma reklama uchun bitta "natija" turi — har reklamaga boshqa o'lchov
+    tanlansa, ularni bir-biri bilan solishtirib bo'lmaydi. Natija turi
+    reklamalarning kamida 60% ida bo'lsa olinadi: bitta natijasiz reklama
+    o'lchovni o'zgartirmaydi (u shunchaki yomon), lekin lead formali reklama
+    va saytga o'tkazadigan Instagram boost aralash bo'lsa — umumiy o'lchov
+    "bosish"."""
+    spending = [a for a in ads if a.get("spend", 0) >= MIN_SPEND] or ads
+    for key, label in RESULTS:
+        if spending and sum(1 for a in spending if a.get(key, 0) > 0) / len(spending) >= 0.6:
+            return key, label
     for key, label in RESULTS:
         if sum(a.get(key, 0) for a in ads) > 0:
             return key, label
@@ -370,14 +377,35 @@ async def _get_all(session, path: str, max_pages: int = 10, **params) -> list[di
     return rows
 
 
+async def _insights_all(session, max_pages: int = 10, **params) -> list[dict]:
+    """act_*/insights hamma reklama hisoblari bo'yicha (meta_ads.account_ids):
+    Ads Manager hisobi ham, Instagram ilovasidan boost qilinganlar turgan
+    hisob ham. Bittasi o'qilmasa — qolganlari bilan; hammasi yiqilsa — xato."""
+    ids = await meta_ads.account_ids(session)
+    results = await asyncio.gather(
+        *[_get_all(session, f"act_{a}/insights", max_pages=max_pages, **params) for a in ids],
+        return_exceptions=True)
+    rows, errors = [], []
+    for acc, res in zip(ids, results):
+        if isinstance(res, BaseException):
+            logger.warning("Insights for act_%s failed: %s", acc, res)
+            errors.append(res)
+            continue
+        rows += res
+    if errors and len(errors) == len(ids):
+        raise errors[0]
+    return rows
+
+
 async def _ad_texts(session) -> dict[str, str]:
     """{ad_id: nom + sarlavha + matn}. Ruxsat yetmasa — faqat nomlar bilan ishlaymiz."""
-    try:
-        rows = await _get_all(session, f"act_{meta_ads.AD_ACCOUNT_ID}/ads", max_pages=3,
-                              fields="id,name,creative{title,body}", limit=100)
-    except Exception:
-        logger.warning("Ad creative texts unavailable", exc_info=True)
-        return {}
+    rows = []
+    for acc in await meta_ads.account_ids(session):
+        try:
+            rows += await _get_all(session, f"act_{acc}/ads", max_pages=3,
+                                   fields="id,name,creative{title,body}", limit=100)
+        except Exception:
+            logger.warning("Ad creative texts unavailable for act_%s", acc, exc_info=True)
     out = {}
     for r in rows:
         c = r.get("creative") or {}
@@ -432,15 +460,14 @@ async def collect(preset: str) -> dict:
     if (hit := _cached(key)) is not None:
         return hit
     async with aiohttp.ClientSession() as session:
-        path = f"act_{meta_ads.AD_ACCOUNT_ID}/insights"
         account_rows, ad_rows, texts, tz = await asyncio.gather(
-            _get_all(session, path, fields="spend,impressions,reach,inline_link_clicks,actions",
-                     date_preset=preset, level="account"),
-            _get_all(session, path, fields=AD_FIELDS, date_preset=preset, level="ad", limit=100),
+            _insights_all(session, fields="spend,impressions,reach,inline_link_clicks,actions",
+                          date_preset=preset, level="account"),
+            _insights_all(session, fields=AD_FIELDS, date_preset=preset, level="ad", limit=100),
             _ad_texts(session),
             account_tz_hours(session),
         )
-    account = account_rows[0] if account_rows else None
+    account = meta_ads.merge_account_rows(account_rows)
     first, last = preset_dates(preset, account, today_in(tz))
     now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
     start, end = utc_window(first, last, now_utc, tz)
@@ -479,20 +506,20 @@ async def collect_daily(preset: str) -> dict:
         return hit
     first_seen = None
     async with aiohttp.ClientSession() as session:
-        path = f"act_{meta_ads.AD_ACCOUNT_ID}/insights"
         tz = await account_tz_hours(session)
         today = today_in(tz)
         if preset == "maximum":
-            rows = await _get_all(session, path, fields="spend", date_preset="maximum",
-                                  level="account")
-            if rows and rows[0].get("date_start"):
-                first_seen = date.fromisoformat(rows[0]["date_start"])
+            rows = await _insights_all(session, fields="spend", date_preset="maximum",
+                                       level="account")
+            starts = [r["date_start"] for r in rows if r.get("date_start")]
+            if starts:
+                first_seen = date.fromisoformat(min(starts))
         first, last = daily_range(preset, first_seen, today)
         import json
         time_range = json.dumps({"since": first.isoformat(), "until": last.isoformat()})
         ad_rows, texts = await asyncio.gather(
-            _get_all(session, path, max_pages=20, fields=DAILY_FIELDS, level="ad",
-                     time_increment=1, time_range=time_range, limit=500),
+            _insights_all(session, max_pages=20, fields=DAILY_FIELDS, level="ad",
+                          time_increment=1, time_range=time_range, limit=500),
             _ad_texts(session),
         )
     now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -620,7 +647,7 @@ def format_videos(data: dict) -> str:
     body = []
     for i, a in enumerate(ranked[:MAX_ADS]):
         mark = medals[i] if i < 3 and cost_per(a, key) is not None else "•"
-        body.append(f"{mark} <b>{short(a['name'])}</b>")
+        body.append(f"{mark} <b>{short(a['name'])}</b> · {meta_ads.source_tag(a['name'])}")
         body.append(f"💵 {usd(a['spend'])} · 👥 {num(a['reach'])} kishi ko'rdi")
         if a["views"]:
             tp = f" · {num(a['thruplays'])} tasi oxirigacha" if a["thruplays"] else ""
@@ -842,7 +869,8 @@ def format_correlation(data: dict) -> str:
             if best_fr >= 0.6:
                 todo.append(f"«{short(a['name'])}» {title} sotuvini ko'taryapti — shu mahsulot "
                             "bilan yana video qiling.")
-        ad_lines.append(f"• «{short(a['name'], 32)}» — " + "; ".join(parts))
+        ig = "📱 " if meta_ads.is_ig_boost(a["name"]) else ""
+        ad_lines.append(f"• {ig}«{short(a['name'], 32)}» — " + "; ".join(parts))
     if ad_lines:
         body += ["", "🎬 <b>Videolar bo'yicha</b>"] + ad_lines
     note = tz_note(data.get("tz_hours", TASHKENT_HOURS))
@@ -932,7 +960,8 @@ def format_after(data: dict) -> str:
     body, todo = [], []
     for e in effects[:MAX_ADS]:
         a = e["ad"]
-        body.append(f"🎬 <b>{short(a['name'])}</b> · {_fmt_day(e['launch'])} dan")
+        ig = " 📱" if meta_ads.is_ig_boost(a["name"]) else ""
+        body.append(f"🎬 <b>{short(a['name'])}</b>{ig} · {_fmt_day(e['launch'])} dan")
         if e.get("too_new"):
             body += ["⏳ Hali 3 kun ishlamagan — xulosa erta.", ""]
             continue
