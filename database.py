@@ -1040,6 +1040,18 @@ async def init_db():
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_ad_referrals_source ON ad_referrals(source, created_at)"
         )
+        # Meta reklama statistikasi tokeni (meta_ads.py, /reklama_token). Env
+        # serverda turadi va uni faqat SSH bilan o'zgartirsa bo'ladi; ega esa
+        # tokenni botning o'ziga yuboradi — shu yerda saqlanadi.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS meta_ads_state (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                ads_token TEXT,
+                updated_by BIGINT,
+                updated_at TIMESTAMP,
+                CONSTRAINT meta_ads_state_single CHECK (id = 1)
+            )
+        """)
         # AI sotuvchi (ai_sales.py): kunlik token/$ sarfi — kun+model bo'yicha
         # bitta qator, kunlik hisobot (targets.py) shundan o'qiydi.
         await conn.execute("""
@@ -6540,6 +6552,23 @@ async def record_ad_referral(user_id: int, source: str, payload: str | None = No
             return True
         except (asyncpg.UniqueViolationError, asyncpg.ForeignKeyViolationError):
             return False
+
+
+async def get_meta_ads_token() -> str | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchval("SELECT ads_token FROM meta_ads_state WHERE id = 1")
+
+
+async def set_meta_ads_token(token: str | None, admin_id: int) -> None:
+    """None — o'chiradi (env'dagi token, bo'lsa, yana ishlay boshlaydi)."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO meta_ads_state (id, ads_token, updated_by, updated_at)
+               VALUES (1, $1, $2, NOW() AT TIME ZONE 'UTC')
+               ON CONFLICT (id) DO UPDATE
+                   SET ads_token = $1, updated_by = $2, updated_at = NOW() AT TIME ZONE 'UTC'""",
+            token, admin_id,
+        )
 
 
 async def get_ad_source_for_user(user_id: int) -> dict | None:
