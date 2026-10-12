@@ -75,6 +75,11 @@ SUPPORT_PHONES = os.getenv("SUPPORT_PHONES", "+998993641343")
 # after an order. Fires only on the *crossing* — not on every subsequent order.
 LOW_STOCK_THRESHOLD = int(os.getenv("LOW_STOCK_THRESHOLD", "5"))
 
+# Ombor guruhi (owner, 2026-10-12): the low / out-of-stock list also goes to
+# this staff group — once a day and whenever a product runs low or out — with
+# everyone the bot can tag mentioned. Empty or 0 switches it off.
+STOCK_GROUP_ID = int(os.getenv("STOCK_GROUP_ID", "-1004478720239").strip() or 0)
+
 # Admin website (/admin) password. REQUIRED for the panel to work: when unset,
 # /admin returns 503 instead of falling back to a guessable default.
 ADMIN_WEB_PASSWORD = os.getenv("ADMIN_WEB_PASSWORD", "")

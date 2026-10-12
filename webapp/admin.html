@@ -758,7 +758,7 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
     <p class="hint" style="margin:-6px 0 16px">
       Aksiya yaratganingizda u <b>hech kimga ko'rinmaydi</b> — faqat "🚀 Boshlash" bosilganda ishga tushadi va
       botda ham, saytda ham hamma joyda chiqa boshlaydi. Bir vaqtda faqat bitta aksiya faol bo'ladi:
-      yangisini boshlasangiz, eskisi avtomatik to'xtaydi. Belgilangan kun tugagach o'zi yakunlanadi.
+      yangisini boshlasangiz, eskisi avtomatik to'xtaydi. Belgilangan kun tugagach o'zi yakunlanadi; muddatsiz aksiya qo'lda to'xtatiladi.
     </p>
     <div class="promo-grid" id="promoGrid"></div>
     <div class="empty" id="promoEmpty" style="display:none">
@@ -1166,7 +1166,12 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
     <div class="form-grid">
       <div class="full"><label>Aksiya nomi (UZ) *</label><input name="name" required maxlength="200" placeholder="Masalan: Bodom uni haftaligi"></div>
       <div class="full"><label>Aksiya nomi (RU)</label><input name="name_ru" maxlength="200"></div>
-      <div><label>Davomiyligi (kun) *</label><input name="days" type="number" min="1" step="1" value="7" required></div>
+      <div><label>Davomiyligi (kun) *</label><input name="days" type="number" min="0" step="1" value="7" required>
+        <div class="hint">0 — o'chirilguncha doimiy. Davomiylik o'zgarishi aksiyani qayta boshlaganda kuchga kiradi.</div></div>
+      <div><label>Bonus hisoblash tartibi</label><select name="bonus_mode">
+        <option value="scaled">Miqdorga qarab ko'payadi</option>
+        <option value="tiered">Faqat eng yuqori bosqich</option>
+      </select></div>
       <div class="full"><label>Aksiya shartlari (UZ)</label>
         <textarea name="conditions" rows="3" maxlength="2000" placeholder="Masalan: Aksiya faqat yetkazib berish buyurtmalarida amal qiladi. Bonus savatga avtomatik qo'shiladi."></textarea></div>
       <div class="full"><label>Aksiya shartlari (RU)</label><textarea name="conditions_ru" rows="3" maxlength="2000"></textarea></div>
@@ -1184,7 +1189,7 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
     <p class="hint" style="margin:2px 0 8px">
       Har bir qator bitta qoida: <b>qaysi mahsulotdan qancha olinsa</b> → <b>qaysi bonus qancha beriladi</b>.
       Bonus miqdorga qarab ko'payadi (1 kg → 100 gr bo'lsa, 3 kg → 300 gr). Xohlasangiz "Maks." ustuniga
-      chegara qo'ying. Bonus buyurtmaga 0 so'mlik qator bo'lib avtomatik qo'shiladi.
+      chegara qo'ying. Eng yuqori bosqich tartibida bir mahsulotning faqat erishilgan eng katta miqdor qoidasi ishlaydi, bonuslar qo'shilmaydi. Bonus buyurtmaga 0 so'mlik qator bo'lib avtomatik qo'shiladi.
     </p>
     <div class="r-head">
       <span>Qaysi mahsulot</span><span>Miqdor</span><span></span>
@@ -2005,10 +2010,15 @@ function promoDaysLeft(p){
   return Math.max(0,Math.ceil((new Date(p.ends_at)-new Date())/86400000));
 }
 
+function promoTimeLabel(p){
+  const permanent=p.active?!p.ends_at:+p.days===0;
+  return permanent?"O'chirilguncha":`${promoDaysLeft(p)} kun qoldi`;
+}
+
 function renderPromos(){
   const live=PROMOS.find(p=>p.active);
   $('#promoStatusPill').textContent=live
-    ?`🟢 Faol: ${live.name} — ${promoDaysLeft(live)} kun qoldi`
+    ?`🟢 Faol: ${live.name} — ${promoTimeLabel(live)}`
     :'⚪ Hozircha faol aksiya yo\'q';
   $('#promoEmpty').style.display=PROMOS.length?'none':'block';
   $('#promoGrid').innerHTML=PROMOS.map(p=>{
@@ -2017,13 +2027,13 @@ function renderPromos(){
       +(b.max_bonus_amount?` <span style="color:var(--ink-3)">(maks. ${(+b.max_bonus_amount)} ${esc(b.bonus_unit)})</span>`:'')
       +`</li>`).join('');
     const pill=p.active
-      ?`<span class="promo-pill on">🟢 Faol · ${promoDaysLeft(p)} kun qoldi</span>`
+      ?`<span class="promo-pill on">🟢 Faol · ${promoTimeLabel(p)}</span>`
       :`<span class="promo-pill off">${p.started_at?'⏹ Yakunlangan':'⚪ Boshlanmagan'}</span>`;
     const announced=p.announced_at
       ?`<span class="promo-pill off">📤 E'lon qilingan</span>`:'';
     return `<div class="promo-card${p.active?' live':''}">
       <h4>🎁 ${esc(p.name)} ${pill} ${announced}</h4>
-      <div style="font-size:12.5px;color:var(--ink-3)">Davomiyligi: ${p.days} kun${p.ends_at&&p.active?' · tugaydi: '+new Date(p.ends_at).toLocaleString('ru-RU'):''}</div>
+      <div style="font-size:12.5px;color:var(--ink-3)">Davomiyligi: ${+p.days===0?"O'chirilguncha":`${p.days} kun`} · ${p.bonus_mode==='tiered'?'Eng yuqori bosqich':"Miqdorga qarab ko'payadi"}${p.ends_at&&p.active?' · tugaydi: '+new Date(p.ends_at).toLocaleString('ru-RU'):''}</div>
       ${p.image_url?`<img src="${p.image_url}" style="width:100%;max-height:150px;object-fit:cover;border-radius:10px">`:''}
       ${p.conditions?`<div class="promo-terms">${esc(p.conditions)}</div>`:''}
       ${rules?`<ul class="promo-rules">${rules}</ul>`:'<div class="hint">⚠️ Bonus qoidasi qo\'shilmagan</div>'}
@@ -2072,7 +2082,7 @@ window.openPromoModal=function(id){
   if(id){
     const p=PROMOS.find(x=>x.id===id);if(!p)return;
     f.name.value=p.name||'';f.name_ru.value=p.name_ru||'';
-    f.days.value=p.days||7;
+    f.days.value=p.days??7;f.bonus_mode.value=p.bonus_mode||'scaled';
     f.conditions.value=p.conditions||'';f.conditions_ru.value=p.conditions_ru||'';
     if(p.image_url){$('#promoImgUrl').value=p.image_url;$('#promoImgPrev').innerHTML=`<img src="${p.image_url}">`;}
     (p.bonuses||[]).forEach(b=>$('#ruleList').appendChild(ruleRow(b)));
@@ -2093,7 +2103,7 @@ $('#promoForm').addEventListener('submit',async e=>{
     max_bonus_amount:+r.querySelector('.r-bmax').value||null,
   })).filter(b=>b.bonus_amount>0);
   btn.disabled=true;
-  const body={name:f.name.value,name_ru:f.name_ru.value,days:+f.days.value||7,
+  const body={name:f.name.value,name_ru:f.name_ru.value,days:f.days.value===''?7:+f.days.value,bonus_mode:f.bonus_mode.value,
     conditions:f.conditions.value,conditions_ru:f.conditions_ru.value,
     image_url:$('#promoImgUrl').value||null,bonuses};
   try{
@@ -2105,7 +2115,7 @@ $('#promoForm').addEventListener('submit',async e=>{
 
 window.startPromo=async id=>{
   const p=PROMOS.find(x=>x.id===id);
-  if(!confirm(`"${p.name}" aksiyasi hoziroq boshlansinmi?\n\n${p.days} kun davom etadi. Bot va saytda hamma joyda ko'rinadi, bonuslar savatga avtomatik qo'shila boshlaydi.`+(PROMOS.some(x=>x.active&&x.id!==id)?'\n\n⚠️ Hozirgi faol aksiya to\'xtatiladi.':'')))return;
+  if(!confirm(`"${p.name}" aksiyasi hoziroq boshlansinmi?\n\n${+p.days===0?"O‘chirilguncha ishlaydi":`${p.days} kun davom etadi`}. Bot va saytda hamma joyda ko'rinadi, bonuslar savatga avtomatik qo'shila boshlaydi.`+(PROMOS.some(x=>x.active&&x.id!==id)?'\n\n⚠️ Hozirgi faol aksiya to\'xtatiladi.':'')))return;
   try{await api('/admin/api/promos/'+id+'/start',{method:'POST',body:JSON.stringify({days:p.days})});toast('🚀 Aksiya boshlandi');await loadPromos();}
   catch(err){toast('⚠️ '+err.message);}
 };

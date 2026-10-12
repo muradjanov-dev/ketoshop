@@ -40,6 +40,7 @@ from handlers.courier import router as courier_router
 from bloggers import router as bloggers_router
 from meta_leads import router as meta_leads_router
 from meta_ads import router as meta_ads_router
+from ads_impact import router as ads_impact_router
 from ad_sources import router as ad_sources_router
 from ai_sales import router as ai_sales_router
 from abandoned_cart import router as abandoned_cart_router
@@ -235,6 +236,8 @@ async def main():
     # brauzerdagi FB profiliga bog'liq; bu esa token bilan ishlaydi,
     # shuning uchun statistika har doim qo'l ostida bo'ladi.
     dp.include_router(meta_ads_router)
+    # /reklama ichidagi 🎬 Videolar / 📦 Mahsulotlar / 📈 Bog'liqlik tugmalari.
+    dp.include_router(ads_impact_router)
     dp.include_router(ad_sources_router)
     dp.include_router(referral_stats_router)
     dp.include_router(referral_program_router)
@@ -351,6 +354,10 @@ async def main():
     # bot-order discount is switched on and announced (bot_discount_campaign.py).
     from bot_discount_campaign import scheduler_loop as bot_discount_campaign_loop
     bot_discount_campaign_task = asyncio.create_task(bot_discount_campaign_loop(bot))
+    # The 10% ends 14.10 23:59 (owner, 2026-10-12): "2 kun qoldi" the day
+    # before, "oxirgi kun" on the day, then one note to the admins.
+    from bot_discount_campaign import countdown_loop as bot_discount_countdown_loop
+    bot_discount_countdown_task = asyncio.create_task(bot_discount_countdown_loop(bot))
     # Once, by day: which products the 10% can't fully apply to without
     # selling under cost, and which have no cost price at all (bot_discount.py).
     from bot_discount import margin_report_once
@@ -360,6 +367,9 @@ async def main():
     # or out, each time it reaches that level, from any code path.
     from stock_alerts import scheduler_loop as stock_alerts_loop
     stock_alerts_task = asyncio.create_task(stock_alerts_loop(bot))
+    # …and the full stock status to the staff group every night at 23:59.
+    from stock_alerts import night_report_loop as stock_night_loop
+    stock_night_task = asyncio.create_task(stock_night_loop(bot))
 
     # "Nima yangi" — this release's notes to every admin, once, in daytime.
     # Daily "Kun mahsuloti": one product to every buyer and to the channel.
@@ -396,8 +406,10 @@ async def main():
         retention_task.cancel()
         keto_explainer_task.cancel()
         bot_discount_campaign_task.cancel()
+        bot_discount_countdown_task.cancel()
         bot_discount_margin_task.cancel()
         stock_alerts_task.cancel()
+        stock_night_task.cancel()
         product_of_day_task.cancel()
         channel_posts_task.cancel()
         release_notes_task.cancel()

@@ -2715,6 +2715,7 @@
     background: linear-gradient(115deg, #2FA35A 0%, #13AE96 100%);
   }
   .promo-banner.bot-discount-banner .pb-title { white-space: normal; }
+  .promo-banner.bot-discount-banner .pb-sub { white-space: pre-line; }
 
   /* Product screen: full height, photo shown whole (contain), nothing
      cropped; the bottom-sheet look stays for the other sheets. */
@@ -4660,7 +4661,10 @@ function renderBotDiscountBanner() {
   const b = promo && promo.perks && promo.perks.bot_discount_banner;
   if (!b) { el.style.display = 'none'; return; }
   document.getElementById('home-bot-discount-title').textContent = b.title;
-  document.getElementById('home-bot-discount-sub').textContent = b.sub;
+  // "⏳ 14-oktabr kuni oxirigacha — N kun qoldi" on its own first line
+  // (owner, 2026-10-12: the 10% lasts 7 days and people should see that).
+  document.getElementById('home-bot-discount-sub').textContent =
+    b.deadline ? b.deadline + '\n' + b.sub : b.sub;
   el.style.display = 'flex';
 }
 

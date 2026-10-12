@@ -1,7 +1,14 @@
 """
 Bot orqali buyurtmaga 10% chegirma — egasi so'rovi 2026-10-08:
 "bot orqali buyurtma qilgan har bir mijoz (admin orqali emas, o'zi qilsa)
-10% lik chegirma, barchaga, har qanday summaga". Hozircha muddatsiz.
+10% lik chegirma, barchaga, har qanday summaga".
+
+Muddati: 2026-10-12 egasi — "bu chegirma 7 kun amal qilishi kerak umumiy,
+odamlar vaqt kam qolayotganini bilishlari kerak". 8-oktabr 13:10 da
+boshlangan, ENDS_AT — 14-oktabr 23:59 (Toshkent) da o'zi tugaydi: bazadagi
+yoqilgan/o'chiq holatidan qat'i nazar, shu paytdan buyurtmalar katalog
+narxida, eslatmalar hamma joydan yo'qoladi. Eslatma qatori tugash sanasi va
+"N kun qoldi"ni ham ko'rsatadi; ikki alohida xabar — bot_discount_campaign.py.
 
 Kimga: botdagi tugmali checkout, sayt (Mini App) va AI sotuvchi orqali O'ZI
 buyurtma bergan har bir mijozga. Adminlar va ichki akkauntlar — yo'q: ular
@@ -38,6 +45,7 @@ import html
 import logging
 import math
 import time
+from datetime import datetime, timedelta
 
 from aiogram import F, Router
 from aiogram.enums import ParseMode
@@ -52,9 +60,77 @@ router = Router(name="bot_discount")
 
 PERCENT = 10
 CACHE_TTL = 30          # holat shuncha soniya eslab qolinadi — har narxda bazaga bormaslik uchun
+TZ_OFFSET = timedelta(hours=5)
+# Oxirgi daqiqa — Toshkent vaqti. Uzaytirish kerak bo'lsa, shu qator o'zgaradi.
+ENDS_AT_TK = datetime(2026, 10, 14, 23, 59, 59)
+ENDS_AT_UTC = ENDS_AT_TK - TZ_OFFSET
 
 _cache = {"at": 0.0, "active": False}
 _table_ready = False
+
+_MONTHS = {
+    "uz": ("yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust",
+           "sentabr", "oktabr", "noyabr", "dekabr"),
+    # Kirillda alohida: lotindan o'girish "oktabr" ni "октабр" qilib qo'yadi.
+    "uz_cyr": ("январ", "феврал", "март", "апрел", "май", "июн", "июл", "август",
+               "сентябр", "октябр", "ноябр", "декабр"),
+    "ru": ("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
+           "сентября", "октября", "ноября", "декабря"),
+}
+_DATE_MARK = "§"   # o'girishdan omon qoladigan joy — sana keyin qo'yiladi
+
+
+def _now_utc() -> datetime:
+    return datetime.utcnow()
+
+
+def ended(now_utc: datetime | None = None) -> bool:
+    """Muddat o'tdimi — o'tgan bo'lsa chegirma hech kimga yo'q."""
+    return (now_utc or _now_utc()) > ENDS_AT_UTC
+
+
+def days_left(now_utc: datetime | None = None) -> int:
+    """Bugunni ham qo'shib, nechta kalendar kun qoldi: 12-okt → 3, 14-okt → 1."""
+    today = ((now_utc or _now_utc()) + TZ_OFFSET).date()
+    return max(0, (ENDS_AT_TK.date() - today).days + 1)
+
+
+def end_date_text(lang: str) -> str:
+    """"14-oktabr" / "14-октябр" / "14 октября"."""
+    day, month = ENDS_AT_TK.day, ENDS_AT_TK.month - 1
+    if lang == "ru":
+        return f"{day} {_MONTHS['ru'][month]}"
+    return f"{day}-{_MONTHS['uz_cyr' if lang == 'uz_cyr' else 'uz'][month]}"
+
+
+def with_end_date(uz_text: str, lang: str) -> str:
+    """Lotin matndagi "{date}" ga tugash sanasini qo'yadi; uz_cyr da avval
+    matn o'giriladi, sana esa to'g'ri kirill shaklida keyin qo'yiladi."""
+    if lang != "uz_cyr":
+        return uz_text.replace("{date}", end_date_text(lang))
+    from translit import lat_to_cyr
+    return lat_to_cyr(uz_text.replace("{date}", _DATE_MARK)).replace(_DATE_MARK, end_date_text(lang))
+
+
+def _ru_days(n: int) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return f"{n} день"
+    if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
+        return f"{n} дня"
+    return f"{n} дней"
+
+
+def deadline_line(lang: str, now_utc: datetime | None = None) -> str:
+    """Faqat haqiqiy sana va qolgan kunlar — "shoshiling"siz (egasi: vaqt kam
+    qolayotganini bilishsin, lekin bosim emas)."""
+    left = days_left(now_utc)
+    if lang == "ru":
+        if left <= 1:
+            return "⏳ Сегодня последний день — до 23:59"
+        return f"⏳ Действует до {end_date_text('ru')} включительно — осталось {_ru_days(left)}"
+    text = ("⏳ Bugun oxirgi kun — soat 23:59 gacha" if left <= 1
+            else f"⏳ {{date}} kuni oxirigacha amal qiladi — {left} kun qoldi")
+    return with_end_date(text, lang)
 
 
 def _pick(entry: dict, lang: str) -> str:
@@ -89,6 +165,8 @@ async def _ensure_table(conn) -> None:
 
 
 async def is_active() -> bool:
+    if ended():
+        return False
     now = time.monotonic()
     if now - _cache["at"] < CACHE_TTL:
         return _cache["active"]
@@ -267,6 +345,35 @@ async def margin_report() -> dict:
     return {"capped": capped, "no_cost": no_cost, "total": len(rows) + len(sets)}
 
 
+async def price_list() -> list[dict]:
+    """Sotuvdagi (omborda bor) mahsulotlar va setlar: asl narx va bot orqali
+    buyurtmadagi narx — checkout bilan bir xil qoida (line_price, tannarx
+    chegarasi bilan). Egasi, 2026-10-12: eslatmada "barcha maxsulotlar
+    ro'yxati asl narxi va chegirmadagi narxi bilan"."""
+    async with database.pool.acquire() as conn:
+        rows = [dict(r) for r in await conn.fetch(
+            """SELECT id, name, name_ru, category, price, discount_percent, discount_until
+                 FROM products
+                WHERE is_active = 1 AND (b2b_only IS NOT TRUE)
+                  AND COALESCE(price, 0) > 0 AND COALESCE(quantity, 0) > 0
+                ORDER BY category, LOWER(name)""")]
+        sets = [dict(r) for r in await conn.fetch(
+            """SELECT id AS set_id, name, name_ru, set_price AS price, TRUE AS is_set
+                 FROM product_sets WHERE is_active = 1 AND COALESCE(set_price, 0) > 0
+                ORDER BY LOWER(name)""")]
+        product_costs, set_costs = await database._order_cost_maps(conn, rows + sets)
+    out = []
+    for item in rows + sets:
+        base = float(item["price"])
+        current = base if item.get("is_set") else database.effective_price(
+            base, item.get("discount_percent"), item.get("discount_until"))
+        new = line_price(base, current, PERCENT, _unit_cost(item, product_costs, set_costs))
+        out.append({"name": item["name"], "name_ru": item.get("name_ru"),
+                    "category": None if item.get("is_set") else item.get("category"),
+                    "is_set": bool(item.get("is_set")), "base": base, "new": new})
+    return out
+
+
 def margin_report_text(report: dict, limit: int = 40) -> str:
     def _cut(lines: list[str]) -> str:
         more = f"\n… yana {len(lines) - limit} ta" if len(lines) > limit else ""
@@ -341,8 +448,11 @@ def reminder_text(lang: str) -> str:
 
 
 async def reminder(lang: str) -> str:
-    """Eslatma qatori yoki "" (chegirma o'chiq bo'lsa)."""
-    return reminder_text(lang) if await is_active() else ""
+    """Eslatma (ikki qator: taklif + tugash sanasi) yoki "" (chegirma o'chiq
+    bo'lsa). Saytdagi qatorda yangi qator bo'sh joyga aylanadi."""
+    if not await is_active():
+        return ""
+    return f"{reminder_text(lang)}\n{deadline_line(lang)}"
 
 
 async def footer(lang: str) -> str:
@@ -362,7 +472,8 @@ async def site_banner(lang: str) -> dict | None:
     """Mini App bosh sahifasidagi e'lon kartochkasi; o'chiq bo'lsa None."""
     if not await is_active():
         return None
-    return {"title": _pick(_TEXT["banner_title"], lang), "sub": _pick(_TEXT["banner_sub"], lang)}
+    return {"title": _pick(_TEXT["banner_title"], lang), "sub": _pick(_TEXT["banner_sub"], lang),
+            "deadline": deadline_line(lang)}
 
 
 def saving_label(lang: str, percent: int) -> str:
@@ -402,10 +513,15 @@ async def cmd_status(message: Message):
     on = bool(state.get("active"))
     changed = state.get("changed_at")
     when = f"\nOxirgi o'zgarish: {changed:%d.%m.%Y %H:%M} UTC" if changed else ""
+    if ended():
+        status, deadline = "⏹ muddati tugagan", f"\nMuddat: {ENDS_AT_TK:%d.%m.%Y %H:%M} da tugadi"
+    else:
+        status = "✅ yoqilgan" if on else "⚪ o‘chiq"
+        deadline = f"\nMuddat: {ENDS_AT_TK:%d.%m.%Y %H:%M} gacha (Toshkent), {days_left()} kun qoldi"
     import bot_discount_campaign
     await message.answer(
         f"🎁 <b>Bot orqali buyurtmaga {PERCENT}% chegirma</b>\n"
-        f"Holat: {'✅ yoqilgan' if on else '⚪ o‘chiq'}{when}\n"
+        f"Holat: {status}{when}{deadline}\n"
         "Kimga: botda va saytda o'zi buyurtma bergan mijozlarga (adminlarga emas).\n"
         f"{await margin_summary_line()}\n\n"
         f"{await bot_discount_campaign.status_text()}\n\n"
@@ -468,6 +584,13 @@ async def margin_report_once(bot) -> None:
 
 @router.message(Command("chegirma_on"), F.from_user.id.in_(ADMIN_IDS))
 async def cmd_on(message: Message):
+    if ended():
+        # Yoqish 🔥 chegirmalarni to'xtatadi, lekin muddat o'tgani uchun 10%
+        # baribir ishlamaydi — mahsulotlar hech narsasiz qolardi.
+        await message.answer(
+            f"⏹ {PERCENT}% chegirma muddati {ENDS_AT_TK:%d.%m.%Y %H:%M} da tugagan, yoqilmadi. "
+            "Uzaytirish uchun bot_discount.ENDS_AT_TK o'zgartiriladi.")
+        return
     stopped = await set_active(True, message.from_user.id)
     await message.answer(f"✅ {PERCENT}% chegirma yoqildi.\n{_stopped_text(stopped)}")
 
