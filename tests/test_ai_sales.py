@@ -466,7 +466,7 @@ class AiUsagePromoKnowledgeTest(_ProviderSwap):
         database.list_ai_facts = AsyncMock(return_value=[
             {"id": 1, "text": "Yetkazish Toshkent ichida 25 000 so'm"}])
         self._promotions.get_active = AsyncMock(return_value={
-            "name": "Mavlid Aksiyasi", "ends_at": None, "bonuses": []})
+            "name": "Mavlid Aksiyasi", "ends_at": "2026-10-15T00:00:00", "bonuses": []})
         saved = (self._promotions.promo_name, self._promotions.days_left,
                  self._promotions.promo_conditions)
         self._promotions.promo_name = lambda p, lang: p["name"]

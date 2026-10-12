@@ -201,7 +201,8 @@ async def _promo_text() -> str:
         if not promo:
             return ""
         lines = [f"Nomi: {promotions.promo_name(promo, 'uz')}",
-                 f"Tugashiga: {promotions.days_left(promo)} kun"]
+                 ("Muddati: o'chirilguncha" if not promo.get("ends_at")
+                  else f"Tugashiga: {promotions.days_left(promo)} kun")]
         conditions = (promotions.promo_conditions(promo, "uz") or "").strip()
         if conditions:
             lines.append(f"Shartlari: {conditions}")

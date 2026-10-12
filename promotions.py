@@ -10,6 +10,9 @@ A bonus rule is read literally as:
 
 e.g. "1 kg Bodom uni -> 100 gr Eritritol". The bonus SCALES with the amount
 bought (3 kg -> 300 gr), optionally capped per rule by max_bonus_amount.
+Campaigns with bonus_mode="tiered" instead award the highest qualifying
+threshold for each trigger product exactly once; lower tiers do not stack.
+A campaign with days=0 runs until an admin stops it.
 
 Only one campaign runs at a time (see database.start_promotion) because the
 bot and the Mini App both show "the current aksiya" in a single banner slot.
@@ -102,13 +105,22 @@ def fmt_amount(value: float) -> str:
     return str(int(value)) if abs(value - round(value)) < 1e-9 else f"{value:g}"
 
 
-def to_stock_qty(amount: float, unit: str, product_unit: str) -> float:
+def to_stock_qty(amount: float, unit: str, product_unit: str, product_name: str = "") -> float:
     """Convert a bonus amount as the admin typed it into the bonus product's
     own stock unit, so create_order can take it off products.quantity.
     Computed once when the rule is saved (not at checkout) so a later unit
     change on the product can't silently rewrite orders already placed."""
     src = _UNIT_BASE.get((unit or "").lower())
     dst = _UNIT_BASE.get((product_unit or "").lower())
+    if src and dst and dst[0] == "count" and src[0] in ("mass", "volume"):
+        # Retail stock is counted in packs: 200 gr from a 200 gr pack is
+        # one item, not 200 items. Only an explicit trailing size is used.
+        size = re.search(r"\b(\d+(?:[.,]\d+)?)\s*(gr|g|kg|ml|l)\.?\s*$", product_name, re.I)
+        if size:
+            pack_amount = float(size[1].replace(",", "."))
+            pack_unit = _UNIT_BASE[size[2].lower()]
+            if pack_amount > 0 and pack_unit[0] == src[0]:
+                return float(amount) * src[1] / (pack_amount * pack_unit[1])
     if not src or not dst or src[0] != dst[0]:
         return float(amount)
     return float(amount) * src[1] / dst[1]
@@ -238,9 +250,11 @@ def bonus_hint(promo: dict | None, product_id: int, lang: str) -> str | None:
     the bot's product card, in the catalog list, and on the Mini App card."""
     if not promo:
         return None
-    for rule in promo.get("bonuses") or []:
-        if rule["trigger_product_id"] == product_id:
-            return "🎁 " + rule_line(rule, lang)
+    rules = [r for r in promo.get("bonuses") or [] if r["trigger_product_id"] == product_id]
+    if rules:
+        if promo.get("bonus_mode") == "tiered":
+            return "\n".join("🎁 " + rule_line(r, lang) for r in sorted(rules, key=lambda r: r["trigger_quantity"]))
+        return "🎁 " + rule_line(rules[0], lang)
     return None
 
 
@@ -315,11 +329,22 @@ def compute_bonuses(promo: dict | None, items: list[dict]) -> list[dict]:
         bought[int(pid)] = bought.get(int(pid), 0.0) + float(item.get("quantity") or 0)
 
     merged: dict[tuple[int, str], dict] = {}
+    tiered = promo.get("bonus_mode") == "tiered"
+    if tiered:
+        chosen = {}
+        for rule in rules:
+            pid = int(rule["trigger_product_id"])
+            threshold = float(rule["trigger_quantity"])
+            if bought.get(pid, 0.0) + 1e-9 >= threshold and (
+                pid not in chosen or threshold > float(chosen[pid]["trigger_quantity"])
+            ):
+                chosen[pid] = rule
+        rules = list(chosen.values())
     for rule in rules:
         trigger_qty = float(rule["trigger_quantity"]) or 1.0
         have = bought.get(int(rule["trigger_product_id"]), 0.0)
         # +1e-9 so float noise (0.30000000000000004 // 0.1) can't eat a step.
-        times = int((have + 1e-9) // trigger_qty)
+        times = 1 if tiered else int((have + 1e-9) // trigger_qty)
         if times <= 0:
             continue
 
@@ -397,7 +422,20 @@ def compute_near_misses(promo: dict | None, items: list[dict]) -> list[dict]:
         bought[int(pid)] = bought.get(int(pid), 0.0) + float(item.get("quantity") or 0)
 
     out = []
-    for rule in promo.get("bonuses") or []:
+    tiered = promo.get("bonus_mode") == "tiered"
+    rules = promo.get("bonuses") or []
+    if tiered:
+        next_rules = {}
+        for rule in rules:
+            pid = int(rule["trigger_product_id"])
+            threshold = float(rule["trigger_quantity"])
+            have = bought.get(pid, 0.0)
+            if have > 0 and threshold > have + 1e-9 and (
+                pid not in next_rules or threshold < float(next_rules[pid]["trigger_quantity"])
+            ):
+                next_rules[pid] = rule
+        rules = list(next_rules.values())
+    for rule in rules:
         pid = int(rule["trigger_product_id"])
         have = bought.get(pid, 0.0)
         if have <= 0:
@@ -410,7 +448,7 @@ def compute_near_misses(promo: dict | None, items: list[dict]) -> list[dict]:
         if cap and per_step > 0 and times * per_step >= float(cap):
             continue  # already at the cap — one more unit earns nothing
 
-        needed = trigger_qty * (times + 1) - have
+        needed = trigger_qty - have if tiered else trigger_qty * (times + 1) - have
         if needed <= 1e-9:
             continue
         out.append({
@@ -590,8 +628,11 @@ async def screen_pages(lang: str) -> list[str] | None:
         ("✅ Sovg'a savatingizga <b>avtomatik</b> qo'shiladi — hech narsa qilishingiz shart emas."
          if not ru else
          "✅ Подарок добавляется в корзину <b>автоматически</b> — ничего делать не нужно."),
-        ("➕ Ko'proq olsangiz — sovg'a ham ko'payadi." if not ru
-         else "➕ Возьмёте больше — и подарков больше."),
+        (("✅ Faqat erishilgan eng yuqori bosqich bonusi beriladi." if not ru
+          else "✅ Вы получаете только подарок достигнутой высшей ступени.")
+         if promo.get("bonus_mode") == "tiered" else
+         ("➕ Ko'proq olsangiz — sovg'a ham ko'payadi." if not ru
+          else "➕ Возьмёте больше — и подарков больше.")),
         "",
         ("🛒 <b>Buyurtma bering va sovg'angizni oling!</b>" if not ru
          else "🛒 <b>Оформите заказ и получите подарок!</b>"),
@@ -730,7 +771,14 @@ def showcase_text(promo: dict, rules: list[dict], lang: str) -> str:
     on today's table, the days left, and the buttons underneath."""
     left = days_left(promo)
     ru = lang == "ru"
-    total = sum(rule_bonus_value(r) for r in rules)
+    if promo.get("bonus_mode") == "tiered":
+        values = {}
+        for rule in rules:
+            pid = int(rule["trigger_product_id"])
+            values[pid] = max(values.get(pid, 0.0), rule_bonus_value(rule))
+        total = sum(values.values())
+    else:
+        total = sum(rule_bonus_value(r) for r in rules)
 
     parts = ["🎁🎁🎁",
              "<b>BUGUNGI SOVG'ALAR</b>" if not ru else "<b>ПОДАРКИ ДНЯ</b>",
@@ -738,6 +786,10 @@ def showcase_text(promo: dict, rules: list[dict], lang: str) -> str:
     for rule in rules:
         parts.append(rule_block(rule, lang))
         parts.append("")
+
+    if promo.get("bonus_mode") == "tiered":
+        parts.append("✅ Faqat erishilgan eng yuqori bosqich bonusi beriladi." if not ru
+                     else "✅ Вы получаете только подарок достигнутой высшей ступени.")
 
     if total > 0:
         parts.append(
