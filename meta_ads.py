@@ -467,7 +467,7 @@ async def cmd_report(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
     if not is_enabled():
-        await message.answer("⚠️ META_PAGE_TOKEN o'rnatilmagan — statistika o'chiq.")
+        await message.answer("⚠️ META_ADS_TOKEN o'rnatilmagan — statistika o'chiq.")
         return
     await message.answer("⏳ Meta'dan olinmoqda…")
     try:
@@ -504,7 +504,7 @@ async def cmd_status(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
     if not is_enabled():
-        await message.answer("⚠️ META_PAGE_TOKEN o'rnatilmagan — statistika o'chiq.")
+        await message.answer("⚠️ META_ADS_TOKEN o'rnatilmagan — statistika o'chiq.")
         return
     await message.answer("⏳ Hisob holati tekshirilmoqda…")
     # Har bir reklama hisobi alohida xabar: Instagram boost'lari turgan hisobda

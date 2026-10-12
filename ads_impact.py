@@ -1041,7 +1041,7 @@ async def cb_view(callback: CallbackQuery):
         await callback.answer()
         return
     if not meta_ads.is_enabled():
-        await callback.answer("META_PAGE_TOKEN o'rnatilmagan", show_alert=True)
+        await callback.answer("META_ADS_TOKEN o'rnatilmagan", show_alert=True)
         return
     await callback.answer("Yuklanmoqda…")
     try:
