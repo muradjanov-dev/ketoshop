@@ -40,7 +40,9 @@ from config import ADMIN_IDS, BOT_USERNAME, WEBAPP_URL
 
 logger = logging.getLogger(__name__)
 
-REFERRAL_KETO_REWARD = 10
+# The new user's own start bonus when they came through a ref link — the same
+# 100 as everyone else's (referral_program.WELCOME_KETO, owner 2026-10-13).
+REFERRAL_KETO_REWARD = 100
 TZ_OFFSET = timedelta(hours=5)  # Asia/Tashkent, fixed UTC+5, no DST
 REMINDER_HOUR = 9               # daily nudge fires shortly after 09:00 Tashkent
 CHECK_EVERY = 900               # re-check every 15 minutes, same cadence as broadcast.py
@@ -141,10 +143,15 @@ async def award_referral(referrer_id: int, referred_id: int, bot: Bot) -> None:
         # 2026-10-02: taklif qiluvchi endi qo'shilish uchun Keto olmaydi —
         # faqat taklif qilinganning birinchi xaridi uchun 3% keshbek
         # (referral_program.py). 10 Keto faqat yangi foydalanuvchining o'ziga.
-        await database.credit_keto(
+        if await database.credit_keto(
             referred_id, order_id=None, amount=REFERRAL_KETO_REWARD, kind="referral",
             note=f"Taklif orqali qo'shildi: referrer {referrer_id}",
-        )
+        ):
+            # Handed over with the ceremony once they pick a language
+            # (referral_program.celebrate) — not here, in a language they
+            # haven't chosen yet.
+            import referral_program
+            await referral_program.mark_welcome_pending(referred_id, REFERRAL_KETO_REWARD)
 
         referrer_user = await database.get_user(referrer_id)
         referred_user = await database.get_user(referred_id)
@@ -182,17 +189,14 @@ async def award_referral(referrer_id: int, referred_id: int, bot: Bot) -> None:
         except Exception:
             logger.warning("Referral award message failed for referrer %s", referrer_id, exc_info=True)
 
-        # The newly joined side of the same event — their own welcome + bonus.
-        referred_balance = int(referred_user["keto_balance"])
+        # The newly joined side of the same event — who brought them in. The
+        # Keto gift itself comes with the ceremony after the language pick.
         referred_lang = referred_user.get("language") or "uz"
         who_invited = _display_name(referrer_user.get("username"), referrer_user.get("full_name"), referrer_id)
         L2 = lambda uz, ru: uz if referred_lang != "ru" else ru
-        referred_text = "\n\n".join([
-            L2(f"🎉 <b>Xush kelibsiz!</b> Siz <b>{who_invited}</b> taklifi bilan Ketoshop oilasiga qo'shildingiz!",
-               f"🎉 <b>Добро пожаловать!</b> Вы присоединились к Ketoshop по приглашению <b>{who_invited}</b>!"),
-            L2(f"🎁 Sovg'a sifatida +{REFERRAL_KETO_REWARD} Keto tanga oldingiz! Balansingiz: <b>{_fmt(referred_balance)} Keto</b>",
-               f"🎁 В подарок вы получили +{REFERRAL_KETO_REWARD} монет Keto! Ваш баланс: <b>{_fmt(referred_balance)} Keto</b>"),
-        ])
+        referred_text = L2(
+            f"🎉 <b>Xush kelibsiz!</b> Siz <b>{who_invited}</b> taklifi bilan Ketoshop oilasiga qo'shildingiz!",
+            f"🎉 <b>Добро пожаловать!</b> Вы присоединились к Ketoshop по приглашению <b>{who_invited}</b>!")
         try:
             await bot.send_message(referred_id, referred_text, parse_mode=ParseMode.HTML)
         except Exception:
