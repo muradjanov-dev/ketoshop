@@ -240,12 +240,14 @@ def format_status(account: dict, ads: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _period_keyboard() -> InlineKeyboardMarkup:
+def _period_keyboard(preset: str = "today") -> InlineKeyboardMarkup:
     row1 = [InlineKeyboardButton(text=PRESETS[k][0], callback_data=f"ads:{k}")
             for k in ("today", "yesterday")]
     row2 = [InlineKeyboardButton(text=PRESETS[k][0], callback_data=f"ads:{k}")
             for k in ("last_7d", "last_30d", "maximum")]
-    return InlineKeyboardMarkup(inline_keyboard=[row1, row2])
+    # 🎬 Videolar / 📦 Mahsulotlar / 📈 Bog'liqlik — ads_impact.py
+    import ads_impact
+    return InlineKeyboardMarkup(inline_keyboard=[row1, row2] + ads_impact.view_rows(preset))
 
 
 # ---------------------------------------------------------------- core
@@ -258,7 +260,15 @@ async def build_report(date_preset: str) -> str:
             ad_rows = await fetch_insights(session, date_preset, "ad")
         except GraphError:
             ad_rows = []
-    return format_report(account_rows, ad_rows, label)
+    text = format_report(account_rows, ad_rows, label)
+    # Shu davrda do'kon nima sotdi — bazadan; u yiqilsa Meta hisoboti baribir chiqadi.
+    try:
+        import ads_impact
+        text += "\n" + await ads_impact.sales_block(
+            date_preset, account_rows[0] if account_rows else None)
+    except Exception:
+        logger.exception("Ads sales block failed")
+    return text
 
 
 async def _notify_admins(bot: Bot, text: str, kb=None):
@@ -286,7 +296,8 @@ async def scheduler_loop(bot: Bot):
 
             # Kunlik xulosa — kechagi kun bo'yicha, chunki u to'liq yopilgan.
             if last_daily_date != today and now.hour >= DAILY_HOUR:
-                await _notify_admins(bot, await build_report("yesterday"), _period_keyboard())
+                await _notify_admins(bot, await build_report("yesterday"),
+                                     _period_keyboard("yesterday"))
                 last_daily_date = today
                 logger.info("Daily ads summary sent")
 
@@ -352,10 +363,10 @@ async def cb_period(callback: CallbackQuery):
         text = f"❌ <code>{html.escape(str(e))}</code>"
     try:
         await callback.message.edit_text(text, parse_mode="HTML",
-                                         reply_markup=_period_keyboard())
+                                         reply_markup=_period_keyboard(preset))
     except Exception:
         await callback.message.answer(text, parse_mode="HTML",
-                                      reply_markup=_period_keyboard())
+                                      reply_markup=_period_keyboard(preset))
 
 
 @router.message(Command("reklama_holat"))

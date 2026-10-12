@@ -6606,6 +6606,77 @@ async def get_ad_source_users(source: str, limit: int = 50) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+async def get_sales_daily(start: datetime, end: datetime) -> dict:
+    """Retail sales per local (Tashkent) day in [start, end) — naive UTC
+    bounds — for setting ad spend against what the shop sold (ads_impact.py).
+
+    Same money basis as the dashboards (SALE_SQL on created_at, `total`).
+    Wholesale is left out: a B2B sack of Eritritol is not ad demand and would
+    swamp every retail figure. Admin-keyed manual orders stay in, because an
+    Instagram ad mostly sells through Direct and an admin then types the order
+    in — so the admin/internal-account filter applies only to orders the buyer
+    placed themself. Gift and aksiya bonus lines are not sales of that product
+    and are skipped, or the Eritritol-on-every-order gift would look like ad
+    demand for Eritritol.
+    """
+    from datetime import timedelta
+    shift = timedelta(hours=DISPLAY_TZ_OFFSET_HOURS)
+    excluded = _customer_filter_ids()
+
+    def _local_day(ts) -> str:
+        return (ts + shift).date().isoformat()
+
+    async with pool.acquire() as conn:
+        orders = await conn.fetch(
+            f"""SELECT created_at, total, items
+                  FROM orders
+                 WHERE {SALE_SQL}
+                   AND COALESCE(source, 'bot') <> 'b2b'
+                   AND (source = 'manual' OR user_id <> ALL($3::bigint[]))
+                   AND created_at >= $1 AND created_at < $2""",
+            start, end, excluded,
+        )
+        users = await conn.fetch(
+            "SELECT created_at FROM users WHERE created_at >= $1 AND created_at < $2"
+            " AND user_id <> ALL($3::bigint[])",
+            start, end, excluded,
+        )
+        ad_users = await conn.fetch(
+            "SELECT created_at FROM ad_referrals WHERE created_at >= $1 AND created_at < $2",
+            start, end,
+        )
+        catalog = {r["id"]: dict(r) for r in
+                   await conn.fetch("SELECT id, name, name_ru, quantity FROM products")}
+
+    days: dict[str, dict] = {}
+
+    def _day(key: str) -> dict:
+        return days.setdefault(key, {"orders": 0, "revenue": 0.0, "new_users": 0,
+                                     "ad_users": 0, "products": {}})
+
+    for o in orders:
+        d = _day(_local_day(o["created_at"]))
+        d["orders"] += 1
+        d["revenue"] += float(o["total"] or 0)
+        raw = o["items"]
+        items = json.loads(raw) if isinstance(raw, str) else (raw or [])
+        for it in items:
+            if not isinstance(it, dict) or it.get("is_gift") or it.get("is_bonus"):
+                continue
+            pid = it.get("product_id")
+            key = pid if pid is not None else "set:" + str(it.get("name") or "—")
+            qty = float(it.get("quantity") or 0)
+            line = d["products"].setdefault(key, {"name": it.get("name") or "—",
+                                                  "qty": 0.0, "revenue": 0.0})
+            line["qty"] += qty
+            line["revenue"] += qty * float(it.get("price") or 0)
+    for u in users:
+        _day(_local_day(u["created_at"]))["new_users"] += 1
+    for a in ad_users:
+        _day(_local_day(a["created_at"]))["ad_users"] += 1
+    return {"days": days, "catalog": catalog}
+
+
 # ===== REFERAL VA QAYTA SOTUV STATISTIKASI (2026-09-12) =====
 # Ikkala panel ham (bot: referral_stats.py, sayt: admin_web.py) shu
 # funksiyalarni chaqiradi — hisob bir joyda tursin, ikki xil raqam chiqmasin.
