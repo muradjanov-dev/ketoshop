@@ -894,12 +894,18 @@ class AiGroupModeTest(_ProviderSwap):
         for text in ("bugun havo issiq ekan", "+", "👍", "Zo'r post!", "rahmat"):
             self.assertFalse(self.trigger(self._msg(text)), text)
 
-    def test_admins_get_answers_only_while_the_test_switch_is_on(self):
-        self.assertTrue(self.trigger(self._msg("narxi qancha?", user_id=1)))
+    def test_admins_are_never_answered_in_the_group_even_with_the_test_switch_on(self):
+        # Egasi, 2026-10-13: "guruhda adminlar yozsa umuman javob berma" —
+        # "Adminlarga ham javob (sinov)" faqat botdagi shaxsiy chatga tegishli.
+        _settings(admins="1")
+        other = NS(from_user=NS(id=43, is_bot=False, username="olim"),
+                   is_automatic_forward=False, sender_chat=None)
+        self.assertFalse(self.trigger(self._msg("narxi qancha?", user_id=1)))
+        self.assertFalse(self.trigger(self._msg("bormi?", user_id=1, reply=other)))
         self.privileged.return_value = True                    # guruh admini
-        self.assertTrue(self.trigger(self._msg("narxi qancha?")))
-        self.assertFalse(self.trigger(self._msg("bugun havo zo'r", user_id=1)))   # savol emas
+        self.assertFalse(self.trigger(self._msg("narxi qancha?")))
         self.privileged.return_value = False
+        _settings()
 
     def test_admins_are_never_answered_when_the_test_switch_is_off(self):
         _settings(admins="0")
@@ -1073,8 +1079,12 @@ class AiUsagePromoKnowledgeTest(_ProviderSwap):
     def test_rules_carry_keto_knowledge_delivery_terms_and_brevity(self):
         rules = ai_sales._sales_rules()
         for expected in ("KETO VA PP BILIMLARI", "YETKAZISH VA TO'LOV", "800 000",
-                         "MIJOZ XOTIRASI", "eslab_qol", "JUDA QISQA", "BTS"):
+                         "MIJOZ XOTIRASI", "eslab_qol", "QISQA, lekin QURUQ EMAS", "BTS",
+                         "MIJOZ TOMONIDAN O'YLA", "ENG MOSINI", "'Qaysi biri kerak?'",
+                         "Savatga qo'shamizmi? 🛒", "1-2 ta muloyim emoji", "MAKSIMAL ODOB"):
             self.assertIn(expected, rules)
+        for expected in ("MAKSIMAL ODOB", "muloyim emoji"):
+            self.assertIn(expected, ai_sales._group_rules())
         self.assertIn("SKIP", ai_sales._group_rules())
 
     def test_catalog_has_no_exact_stock_so_the_prompt_cache_survives_orders(self):

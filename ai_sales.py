@@ -18,8 +18,9 @@ xabarlarga AI o'zi javob berishi kerak, biz vaqt ajrata olmayapmiz")
     2026-10-13: "testlash uchun"); o'chirilsa admin /ai bilan sinaydi.
   * @ketoshop_uz kanaliga ulangan muhokama guruhida — guruh id si kanalning
     linked_chat_id sidan o'zi topiladi (+ AI_GROUP_CHATS dagi guruhlar).
-    Faqat begona odamning SAVOLIGA (adminlarga — faqat sinov tugmasi
-    yoqilganda). Guruhda SOTUV YO'Q: savol-javob va botga yo'naltirish, xolos.
+    Faqat begona odamning SAVOLIGA — guruhda adminlar yozganiga hech qachon
+    (egasi, 2026-10-13), sinov tugmasi ham bunga ta'sir qilmaydi. Guruhda SOTUV
+    YO'Q: savol-javob va botga yo'naltirish, xolos.
 
 TOKEN TEJASH (egasi: "maksimal token effektiv")
   * Guruhda savolga o'xshamagan xabar modelga umuman bormaydi (looks_like_question).
@@ -211,7 +212,7 @@ _SETTING_LABELS = {
     "group": "Kanal guruhida javob",
     "mirror": "Suhbat nusxasi adminlarga",
     "report": "Kunlik sarf hisoboti (23:58)",
-    "admins": "Adminlarga ham javob (sinov)",
+    "admins": "Adminlarga ham javob (sinov, faqat botda)",
 }
 SETTINGS_TTL = 60
 _settings: dict = {"at": float("-inf"), "values": {}, "staff": set()}
@@ -678,11 +679,28 @@ def _sales_rules() -> str:
         "xodimimiz bilan bevosita ham gaplashsangiz bo'ladi' de va raqamni ber:\n"
         "  " + SUPPORT_PHONES + "\n\n"
         "GAPIRISH USLUBI\n"
-        "- JUDA QISQA yoz: odatda 1-2 jumla, ortiqcha muqaddimasiz va takrorsiz. Bu "
-        "Telegram chat, maqola emas. Ro'yxat kerak bo'lsa — 3 qatordan oshmasin.\n"
+        "- QISQA, lekin QURUQ EMAS: odatda 2-3 jumla, ortiqcha muqaddimasiz va takrorsiz. "
+        "Bu Telegram chat, maqola emas. Ro'yxat kerak bo'lsa — 3 qatordan oshmasin.\n"
+        "- OHANG — MAKSIMAL ODOB: muloyim va g'amxo'r sotuvchi. Mijozga doim 'siz' deb "
+        "murojaat qil; 'albatta', 'mamnuniyat bilan', 'marhamat', 'iltimos', 'rahmat' kabi "
+        "hurmatli so'zlar ishlat; savoli va xaridi uchun minnatdorchilik bildir. Bir so'zli "
+        "quruq javob ('Ha, bor.'), buyruq ohangi, to'mtoq yoki sovuq gap yo'q — mijoz "
+        "norozi bo'lsa ham.\n"
+        "- MIJOZ TOMONIDAN O'YLA: u nima uchun so'rayapti, unga nima eng qulay? Bir nechta "
+        "variant bo'lsa, har birini narxi va nimaga mosligi bilan bir qatorda ayt, keyin "
+        "maqsadini bitta savol bilan aniqlab, ENG MOSINI tavsiya qil ('pishiriq uchun "
+        "bo'lsa — ..., ichish uchun bo'lsa — ... ni tavsiya qilaman').\n"
+        "- Adabiy, grammatik to'g'ri o'zbek tilida yoz ('Qaysi biri kerak?' — to'g'ri, "
+        "'Qaysi birini kerak?' — xato). Mahsulot nomini katalogdagidek yoz.\n"
+        "- Misol. Mijoz: 'psillium bormi'. YOMON: 'Ha, bor — Psillium sheluxa va Psillium "
+        "uni bor. Qaysi birini kerak?' YAXSHI: 'Ha, albatta bor 😊 Ikki xil: Psillium "
+        "sheluxa — (narxi) — suv yoki kefirga qo'shib ichishga qulay; Psillium uni — "
+        "(narxi) — keto non va pishiriqda xamirni bog'laydi. Nima uchun kerak edi — "
+        "ichishgami yoki pishiriqqa? Shunga qarab eng mosini aytaman.' (Narxni doim "
+        "katalogdan ol.)\n"
         "- Mijoz qaysi tilda yozsa, o'sha tilda javob ber: o'zbekcha lotin, o'zbekcha "
         "kirill yoki ruscha. Kirillda yozsa — kirillda javob ber.\n"
-        "- Iliq va sodda gapir, emoji ni oz ishlat (javobiga bittadan ko'p emas).\n"
+        "- Iliq gapir va har javobda 1-2 ta muloyim emoji qo'y (😊 🌿 🤗 💚 ✨ 🛒) — ko'p emas. Shikoyat, muammo yoki uzr paytida emoji ishlatma.\n"
         "- Bir vaqtda bitta narsa so'ra: hammasini birdan so'rab ro'yxat yozma.\n"
         "- Mijoz ketma-ket bir nechta xabar yozgan bo'lsa, ular birga keladi — hammasiga "
         "bitta javobda javob ber.\n"
@@ -698,7 +716,7 @@ def _sales_rules() -> str:
         "katalogdan 2-3 ta mosini narxi bilan taklif qil, ro'yxatni to'kib tashlama.\n\n"
         "SOTUVGA YO'NALTIRISH\n"
         "- Avval ehtiyojni bitta savol bilan aniqla (nima tayyorlamoqchi, keto'dami yoki "
-        "PP, kim uchun), keyin aniq mahsulot va narx ayt, yoqsa 'savatga qo'shaymi?' de.\n"
+        "PP, kim uchun), keyin aniq mahsulot va narx ayt va aniq so'ra: 'Savatga qo'shamizmi? 🛒' ('qo'shib qo'yaymi?' kabi noaniq so'z emas).\n"
         "- Tanlagan mahsulotiga mos bitta qo'shimcha narsani taklif qilsang bo'ladi "
         "(masalan bodom uni -> eritritol yoki psillium), bir marta, bosimsiz.\n"
         "- savatni_korish 'bepul yetkazishga yana N so'm' yoki sovg'a haqida aytsa, buni "
@@ -2221,10 +2239,13 @@ def _group_rules() -> str:
         "'Batafsil ma\'lumot olish uchun: " + SUPPORT_PHONES + "' deb yoz va "
         "shaxsiy yozishga taklif qil.\n\n"
         "GAPIRISH USLUBI\n"
-        "- Odamdek, muloyim va samimiy yoz. Quruq robot javobi emas.\n"
-        "- JUDA QISQA: 1-2 jumla. Guruhda uzun matn o'qilmaydi. HTML/markdown yo'q.\n"
+        "- MAKSIMAL ODOB: odamdek, muloyim va samimiy yoz — 'siz' deb murojaat, "
+        "'albatta', 'marhamat', 'rahmat'. Quruq bir so'zli javob ('Ha, bor.') yo'q.\n"
+        "- Mijoz tomonidan o'yla: variantlar bo'lsa narxi va nimaga mosligini qisqa ayt, "
+        "eng mosini tavsiya qil. Adabiy, grammatik to'g'ri o'zbek tilida yoz.\n"
+        "- QISQA: 2-3 jumla. Guruhda uzun matn o'qilmaydi. HTML/markdown yo'q.\n"
         "- Kim qaysi tilda yozsa, o'sha tilda javob ber (o'zbekcha lotin, kirill yoki ruscha).\n"
-        "- Emoji ni oz ishlat — javobiga bittadan ko'p emas.\n"
+        "- Har javobda 1-2 ta muloyim emoji (😊 🌿 🤗 💚) — ko'p emas; shikoyatda yo'q.\n"
         "- Suhbatni davom ettir: oldingi xabarlarni hisobga ol, savol berilsa "
         "javob ber, hazilga hazil bilan javob berishing mumkin.\n\n"
         "AKSIYA\n"
@@ -2294,10 +2315,11 @@ def looks_like_question(text: str) -> bool:
 
 
 async def _group_trigger(message: Message, bot: Bot) -> bool:
-    """FILTR: bu guruh xabariga AI javob beradimi. Begona odamning savoliga.
-    Adminlar (bot adminlari, ichki akkauntlar, guruh adminlari) yozganiga —
-    faqat "Adminlarga ham javob (sinov)" yoqilganda; o'chiq bo'lsa hech qachon,
-    hatto botni chaqirsa ham (egasi, 2026-10-12 / 2026-10-13)."""
+    """FILTR: bu guruh xabariga AI javob beradimi. Faqat begona odamning
+    savoliga. Adminlar (bot adminlari, ichki akkauntlar, guruh adminlari)
+    yozganiga HECH QACHON — reply qilib yozsa ham, botni chaqirsa ham (egasi,
+    2026-10-13: "guruhda adminlar yozsa umuman javob berma"). Sinov tugmasi
+    "Adminlarga ham javob" faqat botdagi shaxsiy chatga tegishli."""
     if message.chat.type not in ("group", "supergroup") or not await _ready():
         return False
     text = (message.text or message.caption or "").strip()
@@ -2308,9 +2330,7 @@ async def _group_trigger(message: Message, bot: Bot) -> bool:
         return False   # kanal posti, anonim admin, boshqa bot
     if message.chat.id not in await _group_chats(bot):
         return False
-    admins_too = await setting("admins")
-    staff = user.id in ADMIN_IDS or user.id in database.LEADERBOARD_EXCLUDED_USER_IDS
-    if staff and not admins_too:
+    if user.id in ADMIN_IDS or user.id in database.LEADERBOARD_EXCLUDED_USER_IDS:
         return False
     if not await setting("group") or not _group_budget_ok(message.chat.id):
         return False
@@ -2320,8 +2340,6 @@ async def _group_trigger(message: Message, bot: Bot) -> bool:
             return False   # odamlar bir-biriga javob yozyapti
         if not looks_like_question(text):
             return False   # savol emas — model chaqirilmaydi
-    if admins_too:
-        return True   # sinov: guruh adminiga ham
     import link_guard
     # Guruh admini (yoki ro'yxatni o'qib bo'lmadi) — o'zlari javob beradi.
     return await link_guard.is_privileged(bot, message) is False
