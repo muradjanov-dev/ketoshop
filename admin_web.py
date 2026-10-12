@@ -727,7 +727,7 @@ async def _parse_bonus_rules(raw) -> list[dict]:
             "bonus_product_id": bonus_id,
             "bonus_amount": bonus_amount,
             "bonus_unit": bonus_unit,
-            "bonus_stock_qty": promotions.to_stock_qty(bonus_amount, bonus_unit, bonus_product.get("unit") or "kg"),
+            "bonus_stock_qty": promotions.to_stock_qty(bonus_amount, bonus_unit, bonus_product.get("unit") or "kg", bonus_product.get("name") or ""),
             "max_bonus_amount": max_amount,
         })
     return rules
@@ -739,22 +739,30 @@ async def api_promos_list(request: web.Request):
     return _json({"promos": [_promo_json(p) for p in promos]})
 
 
+def _promotion_days(raw) -> int:
+    """Zero is permanent; fractions must never truncate into permanence."""
+    days = int(raw)
+    if isinstance(raw, bool) or days < 0 or float(raw) != days:
+        raise ValueError("days must be a non-negative integer")
+    return days
+
+
 @require_auth
 async def api_promos_create(request: web.Request):
     b = await request.json()
     name = _clean_str(b.get("name"), 200)
     if not name:
         return _json({"error": "aksiya nomi kiritilmagan"}, status=400)
-    # `or 7` would swallow an explicit 0 and silently run the campaign for a
-    # week the admin never asked for — only an ABSENT/blank days field falls
-    # back to the default; a supplied one has to be valid.
+    # Zero means until stopped; only an absent/blank days field defaults to 7.
     raw_days = b.get("days")
     try:
-        days = 7 if raw_days in (None, "") else int(raw_days)
-        if days <= 0:
-            raise ValueError
-    except (TypeError, ValueError):
-        return _json({"error": "kunlar soni musbat butun son bo'lishi kerak"}, status=400)
+        days = 7 if raw_days in (None, "") else _promotion_days(raw_days)
+    except (TypeError, ValueError, OverflowError):
+        return _json({"error": "kunlar soni 0 yoki musbat butun son bo'lishi kerak"}, status=400)
+
+    bonus_mode = b.get("bonus_mode", "scaled")
+    if bonus_mode not in ("scaled", "tiered"):
+        return _json({"error": "bonus hisoblash tartibi noto'g'ri"}, status=400)
 
     try:
         rules = await _parse_bonus_rules(b.get("bonuses") or [])
@@ -768,6 +776,7 @@ async def api_promos_create(request: web.Request):
         conditions_ru=_clean_str(b.get("conditions_ru"), 2000),
         days=days,
         image_url=_clean_str(b.get("image_url"), 300),
+        bonus_mode=bonus_mode,
     )
     await database.set_promotion_bonuses(promo_id, rules)
     return _json({"ok": True, "id": promo_id})
@@ -779,6 +788,10 @@ async def api_promos_update(request: web.Request):
     b = await request.json()
 
     fields = {}
+    if "bonus_mode" in b:
+        if b["bonus_mode"] not in ("scaled", "tiered"):
+            return _json({"error": "bonus hisoblash tartibi noto'g'ri"}, status=400)
+        fields["bonus_mode"] = b["bonus_mode"]
     if "name" in b:
         name = _clean_str(b.get("name"), 200)
         if not name:
@@ -789,12 +802,10 @@ async def api_promos_update(request: web.Request):
             fields[key] = _clean_str(b.get(key), limit)
     if "days" in b:
         try:
-            days = int(b.get("days") or 0)
-            if days <= 0:
-                raise ValueError
+            days = _promotion_days(b["days"])
             fields["days"] = days
-        except (TypeError, ValueError):
-            return _json({"error": "kunlar soni musbat butun son bo'lishi kerak"}, status=400)
+        except (TypeError, ValueError, OverflowError):
+            return _json({"error": "kunlar soni 0 yoki musbat butun son bo'lishi kerak"}, status=400)
 
     if fields:
         await database.update_promotion(promo_id, **fields)
@@ -827,11 +838,9 @@ async def api_promos_start(request: web.Request):
     days = body.get("days")
     if days is not None:
         try:
-            days = int(days)
-            if days <= 0:
-                raise ValueError
-        except (TypeError, ValueError):
-            return _json({"error": "kunlar soni musbat butun son bo'lishi kerak"}, status=400)
+            days = _promotion_days(days)
+        except (TypeError, ValueError, OverflowError):
+            return _json({"error": "kunlar soni 0 yoki musbat butun son bo'lishi kerak"}, status=400)
 
     promo = await database.start_promotion(promo_id, days)
     if promo is None:
