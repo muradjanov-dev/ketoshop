@@ -172,14 +172,17 @@ async def _sent_count() -> int:
 
 async def send_videos(bot: Bot, chat_id: int, lang: str, file_ids: list[str]) -> None:
     """One video → a captioned video; several → one album with the caption
-    under it, so a buyer gets one block rather than a stream of messages."""
+    under it, so a buyer gets one block rather than a stream of messages.
+    Buyer content — no admin mood line even when the chat is an admin's."""
+    import admin_mood
     text = caption(lang)
-    if len(file_ids) == 1:
-        await bot.send_video(chat_id, file_ids[0], caption=text, parse_mode=ParseMode.HTML)
-        return
-    media = [InputMediaVideo(media=fid) for fid in file_ids]
-    media[0] = InputMediaVideo(media=file_ids[0], caption=text, parse_mode=ParseMode.HTML)
-    await bot.send_media_group(chat_id, media)
+    with admin_mood.quiet():
+        if len(file_ids) == 1:
+            await bot.send_video(chat_id, file_ids[0], caption=text, parse_mode=ParseMode.HTML)
+            return
+        media = [InputMediaVideo(media=fid) for fid in file_ids]
+        media[0] = InputMediaVideo(media=file_ids[0], caption=text, parse_mode=ParseMode.HTML)
+        await bot.send_media_group(chat_id, media)
 
 
 async def _deliver(bot: Bot, user_id: int, lang: str, file_ids: list[str]) -> bool:
@@ -435,6 +438,9 @@ async def show_to_user(callback: CallbackQuery):
     if not file_ids:
         await callback.answer("🎬", show_alert=False)
         return
-    await send_videos(callback.bot, callback.from_user.id, lang, file_ids)
-    await _mark_sent(callback.from_user.id)
+    try:
+        await send_videos(callback.bot, callback.from_user.id, lang, file_ids)
+        await _mark_sent(callback.from_user.id)
+    except Exception:
+        logger.exception("howto video for %s failed", callback.from_user.id)
     await callback.answer()

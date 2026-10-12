@@ -48,6 +48,15 @@ class SendVideosTest(unittest.TestCase):
         self.assertEqual(media[0].caption, ov.caption("ru"))
         self.assertIsNone(media[1].caption)
 
+    def test_no_admin_mood_line_on_buyer_video(self):
+        import admin_mood
+        seen = []
+        bot = mock.AsyncMock()
+        bot.send_video.side_effect = lambda *a, **k: seen.append(admin_mood._quiet.get())
+        run(ov.send_videos(bot, 5, "uz", ["A"]))
+        self.assertEqual(seen, [True])
+        self.assertFalse(admin_mood._quiet.get())
+
 
 class NewUserTest(unittest.TestCase):
     def _go(self, state, was_sent=False):
