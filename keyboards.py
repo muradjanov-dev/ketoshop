@@ -46,10 +46,14 @@ ADMIN_COMMANDS = [
     BotCommand(command="reklama", description="📣 Reklama statistikasi"),
     BotCommand(command="reklama_manba", description="🔗 Reklama manbalari (kim keldi)"),
     BotCommand(command="reklama_havola", description="🔗 Reklama havolasi yasash"),
+    BotCommand(command="reklama_token", description="🔑 Meta reklama tokeni"),
     BotCommand(command="leads", description="📋 Yangi leadlar"),
-    BotCommand(command="ai", description="🤖 AI sotuvchi bilan suhbat"),
-    BotCommand(command="ai_off", description="🤖 AI sotuvchini o'chirish"),
-    BotCommand(command="ai_holat", description="🤖 AI sotuvchi holati"),
+    BotCommand(command="ai_holat", description="🤖 AI sotuvchi: holat, yoqish/o'chirish, model"),
+    BotCommand(command="ai_kalit", description="🔑 OpenAI (GPT) kaliti — serverga kirmasdan"),
+    BotCommand(command="ai_mavzu", description="💬 Mijoz suhbatlari shu guruh mavzusiga (topic ichida yozing)"),
+    BotCommand(command="ai", description="🤖 AI bilan yangi suhbat (o'zingiz sinash)"),
+    BotCommand(command="ai_off", description="🤖 AI ni o'z chatingizda o'chirish"),
+    BotCommand(command="ai_mijoz", description="🧠 AI mijoz haqida nimani eslaydi (ID bilan)"),
     BotCommand(command="ai_orgat", description="🧠 AI ga yangi narsa o'rgatish"),
     BotCommand(command="ai_bilim", description="🧠 AI bilimlari va javobsiz savollar"),
     BotCommand(command="tips_status", description="💡 Maslahatlar holati"),
@@ -703,6 +707,8 @@ def admin_marketing_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="📢 Blogerlar", callback_data="admin:bloger"),
             InlineKeyboardButton(text="📊 Referallar", callback_data="admin:referrals"),
         ],
+        # How-to-order videos for new and existing buyers (onboarding_video.py).
+        [InlineKeyboardButton(text="🎬 Video qo'llanma", callback_data="admin:video")],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")],
     ])
 

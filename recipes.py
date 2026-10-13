@@ -165,7 +165,7 @@ async def view(recipe: dict, lang: str, *, full: bool = True) -> dict:
     if not full:
         return out
     catalog = await _catalog()
-    ingredients = []
+    ingredients, shown = [], []
     for item in recipe["ingredients"]:
         row = {"amount": _pick(item["amount"], lang), "name": _pick(item["name"], lang)}
         if item.get("why"):
@@ -173,7 +173,15 @@ async def view(recipe: dict, lang: str, *, full: bool = True) -> dict:
         if item.get("match"):
             p = match_product(item["match"], catalog)
             row["product"] = _product_view(p, lang) if p else None
+            if p:
+                shown.append((row["product"], p))
         ingredients.append(row)
+    # 10% bot-order price, the same as on every product card (bot_discount.py).
+    import bot_discount
+    for (card, p), bot_price in zip(shown, await bot_discount.display_prices([p for _, p in shown])):
+        if bot_price is not None:
+            card.update(price=bot_price, original_price=float(p["price"]),
+                        discount_percent=bot_discount.shown_percent(p["price"], bot_price))
     out.update(
         ingredients=ingredients,
         steps=[_pick(s, lang) for s in recipe["steps"]],

@@ -18,6 +18,7 @@ from keyboards import (
     persistent_menu_keyboard,
 )
 from config import ADMIN_IDS, SUPPORT_USERNAME
+import onboarding_video
 
 _LANG_LABELS = {
     "uz": "🇺🇿 O'zbek (Lotin)", "uz_cyr": "🇺🇿 Ўзбек (Кирилл)", "ru": "🇷🇺 Русский",
@@ -128,7 +129,7 @@ async def cmd_help(message: Message, state: FSMContext):
     lang = await get_user_language(message.from_user.id)
     await message.answer(
         get_text("help_text", lang, support_username=SUPPORT_USERNAME),
-        reply_markup=build_help_keyboard(lang),
+        reply_markup=build_help_keyboard(lang, video=await onboarding_video.has_videos()),
         parse_mode="HTML",
     )
 
@@ -341,6 +342,16 @@ async def set_language(callback: CallbackQuery):
         parse_mode="HTML"
     )
     await callback.answer(get_text("language_set", lang))
+    # The 100 Keto start gift, handed over with ceremony in the language just
+    # picked (owner, 2026-10-13) — only for a brand-new user, once; a no-op
+    # for anyone else, including a returning user switching language.
+    import referral_program
+    await referral_program.celebrate(callback.bot, callback.from_user.id, lang,
+                                     callback.from_user.first_name)
+    # How-to-order videos (owner, 2026-10-11) — in the language just picked,
+    # once per user ever; a no-op until the admin uploads them or if they
+    # switched auto-send off. Never raises.
+    await onboarding_video.maybe_send_to_new_user(callback.bot, callback.from_user.id, lang)
 
 
 @router.callback_query(F.data == "change_lang")
@@ -513,9 +524,16 @@ async def show_achievements(callback: CallbackQuery):
     await callback.answer()
 
 
-def build_help_keyboard(lang: str) -> InlineKeyboardMarkup:
-    """Shared by the Qo'llanma button and the /yordam command."""
-    return InlineKeyboardMarkup(inline_keyboard=[
+def build_help_keyboard(lang: str, video: bool = False) -> InlineKeyboardMarkup:
+    """Shared by the Qo'llanma button and the /yordam command. `video` adds
+    «🎬 Qanday buyurtma beriladi?» — only once the admin has uploaded the
+    how-to-order videos (onboarding_video.py), never a dead button."""
+    rows = []
+    if video:
+        import onboarding_video
+        rows.append([InlineKeyboardButton(text=onboarding_video.button_text(lang),
+                                          callback_data="howto_video")])
+    return InlineKeyboardMarkup(inline_keyboard=rows + [
         # Language switch moved here from the main menu (per request): the
         # guide is where users look for "how do I change things".
         [InlineKeyboardButton(
@@ -539,7 +557,7 @@ async def show_help(callback: CallbackQuery):
     lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
         get_text("help_text", lang, support_username=SUPPORT_USERNAME),
-        reply_markup=build_help_keyboard(lang),
+        reply_markup=build_help_keyboard(lang, video=await onboarding_video.has_videos()),
         parse_mode="HTML"
     )
     await callback.answer()

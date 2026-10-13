@@ -32,7 +32,10 @@ logger = logging.getLogger(__name__)
 OPENAI_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 
-DEFAULT_MODELS = {"openai": "gpt-5.5", "anthropic": "claude-opus-5"}
+# OpenAI default — gpt-5.4-mini (egasi, 2026-10-13: "tavsiya qilgan modelni
+# ishlat"): gpt-5.5 dan ~7 baravar arzon, Responses API da reasoning.effort
+# va function calling bor. /ai_holat dagi tugma yoki AI_SALES_MODEL ustun.
+DEFAULT_MODELS = {"openai": "gpt-5.4-mini", "anthropic": "claude-opus-5"}
 
 # 1M token uchun $ narx: (kirish, keshlangan kirish, chiqish).
 # OpenAI — developers.openai.com/api/docs/pricing dan 2026-09-13 da olingan,

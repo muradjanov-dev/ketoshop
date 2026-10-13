@@ -4914,7 +4914,7 @@ function renderRecipe(r) {
         : '<div class="rm-noimg">📦</div>';
       const price = p.out_of_stock
         ? '<div class="rm-prod-out">' + escapeHtml(L.out_of_stock) + '</div>'
-        : '<div class="rm-prod-price">' + formatPrice(p.price) + ' UZS</div>';
+        : '<div class="rm-prod-price">' + priceHtml(p) + '</div>';
       html += '<div class="rm-prod" onclick="openDetail(' + p.id + ')">' + img +
         '<div><div class="rm-prod-name">' + escapeHtml(p.name) + '</div>' + price + '</div></div>';
     }

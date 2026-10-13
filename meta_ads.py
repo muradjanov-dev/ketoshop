@@ -22,6 +22,8 @@ Env vars
 --------
 META_ADS_TOKEN        ixtiyoriy; berilmasa META_PAGE_TOKEN ishlatiladi.
                       Kerakli ruxsat: ads_read (ads_management ham bo'ladi).
+                      Serverga kirmasdan: admin botga /reklama_token <token>
+                      yuboradi — bazada saqlanadi va env'dan ustun turadi.
 META_AD_ACCOUNT_ID    ixtiyoriy; reklama hisobi ID(lari), vergul bilan (act_ siz).
                       Berilmasa — token ko'radigan HAMMA hisob (me/adaccounts):
                       Instagram ilovasidan "Boost" qilinganlar ko'pincha alohida
@@ -46,7 +48,10 @@ from config import ADMIN_IDS
 logger = logging.getLogger(__name__)
 router = Router()
 
-TOKEN = (os.getenv("META_ADS_TOKEN") or os.getenv("META_PAGE_TOKEN", "")).strip()
+ENV_TOKEN = (os.getenv("META_ADS_TOKEN") or os.getenv("META_PAGE_TOKEN", "")).strip()
+# /reklama_token bilan bazaga saqlangan token (load_token / set_token).
+_db_token = ""
+TOKEN_POLL = 300  # token yo'q paytda bazani shuncha soniyada bir tekshiramiz
 DEFAULT_AD_ACCOUNT = "840216037679254"
 ENV_AD_ACCOUNTS = [a.strip().replace("act_", "")
                    for a in os.getenv("META_AD_ACCOUNT_ID", "").split(",") if a.strip()]
@@ -93,8 +98,31 @@ IG_BOOST_PREFIXES = ("instagram post", "публикация в instagram", "ins
                      "instagram posti", "instagram publication")
 
 
+def token() -> str:
+    """Botga /reklama_token bilan berilgani ustun — egasi env'ni o'zgartira
+    olmaydi, bot orqali bergani esa doim eng so'nggi qarori."""
+    return _db_token or ENV_TOKEN
+
+
 def is_enabled() -> bool:
-    return bool(TOKEN)
+    return bool(token())
+
+
+async def load_token() -> None:
+    global _db_token
+    try:
+        import database
+        _db_token = (await database.get_meta_ads_token() or "").strip()
+    except Exception:
+        logger.warning("Could not read the stored Meta ads token", exc_info=True)
+
+
+async def set_token(new_token: str | None, admin_id: int) -> None:
+    global _db_token, _accounts_cache
+    import database
+    await database.set_meta_ads_token(new_token, admin_id)
+    _db_token = (new_token or "").strip()
+    _accounts_cache = (0.0, [])  # yangi token boshqa hisoblarni ko'rishi mumkin
 
 
 def _now_tk() -> datetime:
@@ -110,7 +138,7 @@ class GraphError(Exception):
 
 
 async def _get(session: aiohttp.ClientSession, path: str, **params) -> dict:
-    params["access_token"] = TOKEN
+    params.setdefault("access_token", token())
     async with session.get(GRAPH + path, params=params,
                            timeout=aiohttp.ClientTimeout(total=45)) as resp:
         data = await resp.json(content_type=None)
@@ -411,9 +439,14 @@ async def _notify_admins(bot: Bot, text: str, kb=None):
 
 
 async def scheduler_loop(bot: Bot):
+    await load_token()
     if not is_enabled():
-        logger.info("Meta ads reporting disabled (no token)")
-        return
+        logger.info("Meta ads reporting disabled (no token) — waiting for /reklama_token")
+    # Token keyinroq /reklama_token bilan berilishi mumkin — qayta ishga
+    # tushirishsiz shu yerda kutamiz.
+    while not is_enabled():
+        await asyncio.sleep(TOKEN_POLL)
+        await load_token()
 
     logger.info("Meta ads reporting started (daily at %02d:00 Asia/Tashkent)", DAILY_HOUR)
     global _last_watchdog_date
@@ -462,12 +495,109 @@ async def scheduler_loop(bot: Bot):
 
 # ---------------------------------------------------------------- handlers
 
+NO_TOKEN_TEXT = ("⚠️ Reklama tokeni o'rnatilmagan — statistika o'chiq.\n\n"
+                 "Tokenni botning o'ziga yuboring (shaxsiy chatda):\n"
+                 "<code>/reklama_token EAA...</code>")
+OFF_WORDS = ("off", "o'chir", "ochir", "delete")
+
+
+def _accounts_text(rows: list[dict]) -> list[str]:
+    lines = []
+    for a in rows:
+        emoji, label = ACCOUNT_STATUS.get(a.get("account_status"), ("❔", "?"))
+        lines.append(f"{emoji} {html.escape(str(a.get('name') or a.get('account_id')))} — "
+                     f"<code>{a.get('account_id')}</code> · {label}")
+    return lines or ["<i>Hech biri — ketoshop-bot'ga reklama hisobini ulang.</i>"]
+
+
+@router.message(Command("reklama_token"))
+async def cmd_token(message: Message):
+    """Tokenni serverga kirmasdan berish: /reklama_token EAA... — bot tokenni
+    Meta'da tekshiradi, bazaga saqlaydi va tokenli xabarni o'chiradi.
+    /reklama_token — holat va ko'rinayotgan hisoblar; /reklama_token off — o'chirish."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
+
+    if message.chat.type != "private":
+        # Guruhda token hammaga ko'rinadi — saqlamaymiz, xabarni o'chiramiz.
+        if arg:
+            try:
+                await message.delete()
+            except Exception:
+                pass
+        await message.answer("⚠️ Tokenni faqat bot bilan shaxsiy chatda yuboring.")
+        return
+
+    if not arg:
+        await load_token()
+        if not is_enabled():
+            await message.answer(NO_TOKEN_TEXT, parse_mode="HTML")
+            return
+        source = "bot orqali berilgan" if _db_token else "serverdagi env"
+        lines = [f"🔑 <b>Token:</b> {source} (…{html.escape(token()[-4:])})", "",
+                 "<b>Ko'rinayotgan reklama hisoblari:</b>"]
+        try:
+            async with aiohttp.ClientSession() as session:
+                data = await _get(session, "me/adaccounts",
+                                  fields="account_id,name,account_status", limit=50)
+            lines += _accounts_text(data.get("data", []))
+        except GraphError as e:
+            lines.append(f"❌ <code>{html.escape(str(e))}</code>")
+        await message.answer("\n".join(lines), parse_mode="HTML")
+        return
+
+    if arg.lower() in OFF_WORDS:
+        await set_token(None, message.from_user.id)
+        await message.answer("🗑 Bot orqali berilgan token o'chirildi.")
+        return
+
+    # Avval xabarni o'chiramiz — token chat tarixida qolmasin.
+    try:
+        await message.delete()
+        deleted = True
+    except Exception:
+        deleted = False
+    candidate = arg.split()[0]
+    try:
+        async with aiohttp.ClientSession() as session:
+            me = await _get(session, "me", fields="id,name", access_token=candidate)
+            try:
+                accounts = (await _get(session, "me/adaccounts", access_token=candidate,
+                                       fields="account_id,name,account_status",
+                                       limit=50)).get("data", [])
+            except GraphError:
+                accounts = []
+    except GraphError as e:
+        await message.answer(f"❌ Token ishlamadi, saqlanmadi:\n<code>{html.escape(str(e))}</code>",
+                             parse_mode="HTML")
+        return
+    except Exception:
+        logger.exception("Token check failed")
+        await message.answer("❌ Meta bilan bog'lanib bo'lmadi — birozdan keyin qayta yuboring.")
+        return
+
+    await set_token(candidate, message.from_user.id)
+    logger.info("Meta ads token set via bot by admin %s", message.from_user.id)
+    lines = [f"✅ Token saqlandi — {html.escape(str(me.get('name') or '?'))}.", "",
+             "<b>Ko'rinayotgan reklama hisoblari:</b>"] + _accounts_text(accounts)
+    lines += ["", "Instagram'dan boost qilingan reklamalar hisobi bu ro'yxatda bo'lmasa — "
+                  "uni ketoshop-bot'ga <b>View performance</b> bilan ulang, bot o'zi topadi "
+                  "(<code>/reklama_token</code> bilan qayta tekshiring).",
+              "", "Statistika: /reklama"]
+    if not deleted:
+        lines += ["", "⚠️ Tokenli xabaringizni o'chira olmadim — uni qo'lda o'chiring."]
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
 @router.message(Command("reklama"))
 async def cmd_report(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
     if not is_enabled():
-        await message.answer("⚠️ META_ADS_TOKEN o'rnatilmagan — statistika o'chiq.")
+        await load_token()
+    if not is_enabled():
+        await message.answer(NO_TOKEN_TEXT, parse_mode="HTML")
         return
     await message.answer("⏳ Meta'dan olinmoqda…")
     try:
@@ -504,7 +634,9 @@ async def cmd_status(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
     if not is_enabled():
-        await message.answer("⚠️ META_ADS_TOKEN o'rnatilmagan — statistika o'chiq.")
+        await load_token()
+    if not is_enabled():
+        await message.answer(NO_TOKEN_TEXT, parse_mode="HTML")
         return
     await message.answer("⏳ Hisob holati tekshirilmoqda…")
     # Har bir reklama hisobi alohida xabar: Instagram boost'lari turgan hisobda

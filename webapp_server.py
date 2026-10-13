@@ -230,7 +230,7 @@ async def api_products(request: web.Request):
     if category == "discounts":
         products, total = await get_discounted_products(page=page, per_page=ITEMS_PER_PAGE)
         return _json({
-            "products": _serialize_products(products, lang),
+            "products": await _serialize_products(products, lang),
             "total": total,
             "page": page,
             "pages": (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE,
@@ -240,18 +240,9 @@ async def api_products(request: web.Request):
     if category == "sets":
         from database import get_active_sets_for_catalog
         sets = await get_active_sets_for_catalog()
-        serialized = []
-        for s in sets:
-            serialized.append({
-                "id": s["id"],
-                "name": s["name_ru"] if lang == "ru" and s.get("name_ru") else s["name"],
-                "price": s["set_price"],
-                "photo_id": s["image_url"],
-                "photo_url": photo_url(s["image_url"]),
-                "unit": "piece",
-                "quantity": 999,
-                "is_set": True,
-            })
+        import bot_discount
+        bot_prices = await bot_discount.display_prices([dict(s, is_set=True) for s in sets])
+        serialized = [_serialize_set(s, lang, bp) for s, bp in zip(sets, bot_prices)]
         
         # Paginate sets
         total = len(serialized)
@@ -270,7 +261,7 @@ async def api_products(request: web.Request):
         # just a first-page slice, so infinite scroll actually reaches everything.
         products, total = await get_all_products_paginated(page=page, per_page=per_page)
         return _json({
-            "products": _serialize_products(products, lang),
+            "products": await _serialize_products(products, lang),
             "total": total,
             "page": page,
             "pages": (total + per_page - 1) // per_page,
@@ -278,7 +269,7 @@ async def api_products(request: web.Request):
 
     products, total = await get_products_by_category(category, page=page, per_page=per_page)
     return _json({
-        "products": _serialize_products(products, lang),
+        "products": await _serialize_products(products, lang),
         "total": total,
         "page": page,
         "pages": (total + per_page - 1) // per_page,
@@ -300,7 +291,7 @@ async def api_product_detail(request: web.Request):
 
     avg_rating, review_count = await get_product_rating(product_id)
     media = await get_product_media(product_id)
-    data = _serialize_product(p, lang)
+    data = (await _serialize_products([p], lang))[0]
     data["rating"] = avg_rating
     data["review_count"] = review_count
     data["description"] = localize_product_text(
@@ -336,18 +327,11 @@ async def api_set_detail(request: web.Request):
         return _json({"error": "not_found"}, status=404)
     
     # serialize set like a product
-    return _json({
-        "id": s["id"],
-        "name": s["name_ru"] if lang == "ru" and s.get("name_ru") else s["name"],
-        "description": "Tarkibi: " + ", ".join([f"{i['name_ru'] if lang == 'ru' and i.get('name_ru') else i['name']} ({i['quantity']})" for i in s["items"]]),
-        "price": s["set_price"],
-        "photo_id": s["image_url"],
-        "photo_url": photo_url(s["image_url"]),
-        "unit": "piece",
-        "quantity": 999,
-        "is_set": True,
-        "out_of_stock": False
-    })
+    import bot_discount
+    data = _serialize_set(s, lang, await bot_discount.display_price(dict(s, is_set=True)))
+    data["description"] = "Tarkibi: " + ", ".join([f"{i['name_ru'] if lang == 'ru' and i.get('name_ru') else i['name']} ({i['quantity']})" for i in s["items"]])
+    data["out_of_stock"] = False
+    return _json(data)
 
 
 def _review_display_name(full_name: str | None, username: str | None) -> str:
@@ -428,7 +412,7 @@ async def api_top(request: web.Request):
         products = await get_top_ordered_products(limit=3)
         _TOP_CACHE.clear()
         _TOP_CACHE[day] = products
-    return _json(_serialize_products(products, lang))
+    return _json(await _serialize_products(products, lang))
 
 
 def _leaderboard_display_name(full_name: str | None) -> str | None:
@@ -462,7 +446,7 @@ async def api_search(request: web.Request):
     if len(q) < 2:
         return _json([])
     products, total = await search_products(q, page=0, per_page=20)
-    return _json(_serialize_products(products, lang))
+    return _json(await _serialize_products(products, lang))
 
 
 async def api_cart(request: web.Request):
@@ -621,12 +605,24 @@ async def api_cart_add(request: web.Request):
         for value in (telegram_user.get("first_name"), telegram_user.get("last_name"))
         if isinstance(value, str) and value.strip()
     ]
+    is_new = await get_user(user_id) is None
     await create_user(
         user_id,
         username=telegram_user.get("username"),
         full_name=" ".join(name_parts) or None,
         language=request.get("user_lang", "uz"),
     )
+    if is_new:
+        # A Mini App-first buyer is a new joiner too: the admins' "who
+        # joined" note and the 100 Keto start gift, the same as a /start
+        # (handlers/start._process_new_user). The gift's ceremony waits for
+        # their first language pick in the bot. Best-effort, off the hot path.
+        import asyncio
+        from types import SimpleNamespace
+        from handlers.start import _process_new_user
+        tg_user = SimpleNamespace(id=user_id, username=telegram_user.get("username"),
+                                  full_name=" ".join(name_parts) or None)
+        asyncio.create_task(_process_new_user(request.app["bot"], tg_user, None))
     await add_to_cart(user_id, product_id=product_id, quantity=quantity, set_id=set_id)
 
     if not before:
@@ -1525,7 +1521,7 @@ def photo_url(ref) -> str | None:
     return f"/api/photo/{ref}"
 
 
-def _serialize_product(p: dict, lang: str) -> dict:
+def _serialize_product(p: dict, lang: str, bot_price: float | None = None) -> dict:
     # Russian translation when available; Latin → Cyrillic transliteration
     # for "uz_cyr" users; Latin source as-is for everyone else.
     name = localize_product_text(p.get("name"), p.get("name_ru"), lang)
@@ -1534,6 +1530,13 @@ def _serialize_product(p: dict, lang: str) -> dict:
     discount_until = p.get("discount_until")
     discount = active_discount(p.get("discount_percent"), discount_until)
     final_price = effective_price(p["price"], discount, discount_until)
+    # 10% bot/site-order price (bot_discount.display_prices) — the card shows
+    # it the way it shows a 🔥 discount: struck shelf price, new price, −10%.
+    # Display only: the cart and checkout price from the database.
+    if bot_price is not None:
+        import bot_discount
+        discount = bot_discount.shown_percent(p["price"], bot_price)
+        final_price, discount_until = bot_price, None
 
     # Aksiya bonus this product triggers, if any — read from the shared
     # in-process cache (no query, no await) so it costs nothing on the hot
@@ -1557,8 +1560,29 @@ def _serialize_product(p: dict, lang: str) -> dict:
     }
 
 
-def _serialize_products(products: list[dict], lang: str) -> list[dict]:
-    return [_serialize_product(p, lang) for p in products]
+async def _serialize_products(products: list[dict], lang: str) -> list[dict]:
+    import bot_discount
+    bot_prices = await bot_discount.display_prices(products)
+    return [_serialize_product(p, lang, bp) for p, bp in zip(products, bot_prices)]
+
+
+def _serialize_set(s: dict, lang: str, bot_price: float | None = None) -> dict:
+    """A set as a product card; the 10% shows the same way as on products."""
+    import bot_discount
+    data = {
+        "id": s["id"],
+        "name": s["name_ru"] if lang == "ru" and s.get("name_ru") else s["name"],
+        "price": s["set_price"],
+        "photo_id": s["image_url"],
+        "photo_url": photo_url(s["image_url"]),
+        "unit": "piece",
+        "quantity": 999,
+        "is_set": True,
+    }
+    if bot_price is not None:
+        data.update(price=bot_price, original_price=s["set_price"],
+                    discount_percent=bot_discount.shown_percent(s["set_price"], bot_price))
+    return data
 
 
 async def api_pickup_config(request: web.Request):

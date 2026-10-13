@@ -112,6 +112,17 @@ async def _rewrite_cards(bot: Bot, buyer_id: int, footer: str,
             logger.debug("Could not update support card for admin %s", copy["admin_id"])
 
 
+def _pause_ai(buyer_id: int) -> None:
+    """A person has taken this conversation over, so the AI seller
+    (ai_sales.py) steps back for this buyer instead of talking over them.
+    Best-effort: the reply itself must never fail because of it."""
+    try:
+        import ai_sales
+        ai_sales.pause_for_human(buyer_id)
+    except Exception:
+        logger.exception("Could not pause the AI seller for %s", buyer_id)
+
+
 async def announce_support_answer(bot: Bot, buyer_id: int, admin_id: int, reply_text: str) -> None:
     """Close this buyer's question out across every admin's chat.
 
@@ -120,6 +131,12 @@ async def announce_support_answer(bot: Bot, buyer_id: int, admin_id: int, reply_
     an answer sent from either place stops the other admins seeing a live
     reply button for something already handled. Purely bookkeeping: never
     raises, because the buyer's message has already gone out by this point."""
+    _pause_ai(buyer_id)
+    try:
+        import ai_sales
+        await ai_sales.log_admin_reply(bot, buyer_id, await admin_display_name(admin_id), reply_text)
+    except Exception:
+        logger.exception("Could not log the admin reply to %s", buyer_id)
     try:
         await release_support_claim(buyer_id, admin_id)
         preview = (reply_text or "").strip()
@@ -168,6 +185,7 @@ async def start_freeform_reply(callback: CallbackQuery, state: FSMContext, bot: 
 
     await state.set_state(SupportReplyStates.waiting_text)
     await state.update_data(buyer_id=buyer_id, from_card=from_card)
+    _pause_ai(buyer_id)   # the admin is about to write — the AI must not answer meanwhile
 
     # Tell the other admins the question is taken before anything is typed —
     # that is the whole point of claiming it early rather than at send time.
@@ -256,7 +274,14 @@ async def send_freeform_reply(message: Message, state: FSMContext, bot: Bot):
         logger.exception("Could not log support reply to %s", buyer_id)
 
     await announce_support_answer(bot, buyer_id, me, reply_text)
-    await message.answer("✅ Yuborildi.")
+    # "🧠 AI ga o'rgat" — the buyer's question + this answer can become AI knowledge.
+    teach = None
+    try:
+        import ai_sales
+        teach = ai_sales.teach_keyboard(buyer_id, reply_text)
+    except Exception:
+        logger.exception("Could not build the AI teach button for %s", buyer_id)
+    await message.answer("✅ Yuborildi.", reply_markup=teach)
 
 
 @router.message(F.text, F.chat.type == "private")
@@ -265,7 +290,20 @@ async def relay_freeform_text(message: Message, bot: Bot):
     # Stray/mistyped commands aren't "chatting with the bot" — leave those alone.
     if not text or text.startswith("/"):
         return
+    await relay_text(message, bot, text)
 
+
+async def relay_text(message: Message, bot: Bot, text: str) -> None:
+    """Acknowledge the buyer and put `text` in front of every admin.
+
+    Split out of the handler so the AI seller (ai_sales.py) can fall back to
+    it when the model cannot answer — an API outage must leave the buyer with
+    the usual "operators will contact you", not an apology and a lost question."""
+    try:
+        import ai_sales   # the conversation log topic — every bot chat in one place
+        await ai_sales.log_customer_message(bot, message.from_user, text)
+    except Exception:
+        logger.exception("Could not log the buyer message of %s", message.from_user.id)
     lang = await get_user_language(message.from_user.id)
     await message.answer(
         get_text("freeform_received", lang),

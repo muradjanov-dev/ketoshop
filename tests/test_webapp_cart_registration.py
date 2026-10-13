@@ -98,7 +98,10 @@ class CartUserRegistrationTests(unittest.IsolatedAsyncioTestCase):
         })
         product = {"id": 7, "name": "Test product", "quantity": 5}
 
+        self.new_user_processing = AsyncMock()
         with patch.object(webapp_server, "create_user", create_user, create=True), \
+             patch.object(webapp_server, "get_user", AsyncMock(side_effect=lambda uid: users.get(uid))), \
+             patch("handlers.start._process_new_user", self.new_user_processing), \
              patch("database.get_product", AsyncMock(return_value=product)), \
              patch("database.get_cart_line_for_product", AsyncMock(return_value=(None, 0))), \
              patch.object(webapp_server, "add_to_cart", add_to_cart), \
@@ -120,6 +123,9 @@ class CartUserRegistrationTests(unittest.IsolatedAsyncioTestCase):
             "full_name": "Ali Valiyev",
             "language": "uz",
         })
+        # A Mini App-first buyer is a new joiner: admin note + 100 Keto gift.
+        self.new_user_processing.assert_awaited_once()
+        self.assertEqual(self.new_user_processing.call_args.args[1].id, 12345)
 
     async def test_existing_user_profile_is_not_overwritten(self):
         existing = {
@@ -133,6 +139,7 @@ class CartUserRegistrationTests(unittest.IsolatedAsyncioTestCase):
         user = await self._add_cart_item(existing_user=existing)
 
         self.assertEqual(user, existing)
+        self.new_user_processing.assert_not_called()
 
 
 if __name__ == "__main__":

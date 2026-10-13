@@ -47,6 +47,7 @@ from abandoned_cart import router as abandoned_cart_router
 from retention import router as retention_router
 from keto_explainer import router as keto_explainer_router
 from bot_discount import router as bot_discount_router
+from onboarding_video import router as onboarding_video_router
 from bot_discount_campaign import router as bot_discount_campaign_router
 from stock_alerts import router as stock_alerts_router
 from referral_stats import router as referral_stats_router
@@ -218,6 +219,7 @@ async def main():
     dp.include_router(link_guard_router)
     dp.include_router(webapp_data_router)
     dp.include_router(start_router)
+    dp.include_router(onboarding_video_router)
     dp.include_router(broadcast_admin_router)
     # 10% chegirma — admin-only /chegirma* commands, high for the same reason
     # as broadcast_admin: they must win over any FSM state an admin is in.
@@ -383,6 +385,10 @@ async def main():
     from release_notes import scheduler_loop as release_notes_loop
     release_notes_task = asyncio.create_task(release_notes_loop(bot))
 
+    # AI sotuvchi: har kuni 23:58 da adminlarga o'sha kungi token va $ sarfi.
+    from ai_sales import usage_report_loop as ai_usage_report_loop
+    ai_usage_report_task = asyncio.create_task(ai_usage_report_loop(bot))
+
     # One-off channel post: the all-time top 20 (owner, 2026-10-04), sent
     # once right after this deploy — see top20_post.py.
     from top20_post import scheduler_loop as top20_loop
@@ -413,6 +419,7 @@ async def main():
         product_of_day_task.cancel()
         channel_posts_task.cancel()
         release_notes_task.cancel()
+        ai_usage_report_task.cancel()
         meta_leads_task.cancel()
         meta_ads_task.cancel()
         if runner:

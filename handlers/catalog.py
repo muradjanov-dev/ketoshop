@@ -288,24 +288,32 @@ async def _show_product_list(callback: CallbackQuery, category: str, page: int):
     # now — one cheap set lookup for the whole page, not one per row.
     bonus_ids = await get_bonus_trigger_product_ids() if banner else set()
 
+    # 10% bot-order prices for the whole page in one go (bot_discount.py).
+    import bot_discount
+    bot_prices = await bot_discount.display_prices(
+        [dict(p, is_set=True) if is_sets else p for p in products])
+
     buttons = []
-    for p in products:
+    for p, bot_price in zip(products, bot_prices):
         if is_sets:
-            price_str = f"{int(p['set_price']):,}".replace(",", " ")
+            price_str = f"{int(bot_price if bot_price is not None else p['set_price']):,}".replace(",", " ")
+            badge = f" 🔥-{bot_discount.shown_percent(p['set_price'], bot_price)}%" if bot_price is not None else ""
             prod_name = p["name_ru"] if lang == "ru" and p.get("name_ru") else p["name"]
             buttons.append([InlineKeyboardButton(
-                text=f"🎁 {prod_name} — {price_str} so'm",
+                text=f"🎁 {prod_name} — {price_str} so'm{badge}",
                 callback_data=f"set:{p['id']}:{page}"
             )])
         else:
             discount = active_discount(p.get("discount_percent"), p.get("discount_until"))
             price_value = effective_price(p["price"], discount, p.get("discount_until"))
+            du = p.get("discount_until")
+            if bot_price is not None:
+                discount, price_value, du = bot_discount.shown_percent(p["price"], bot_price), bot_price, None
             price_str = f"{int(price_value):,}".replace(",", " ")
             prod_name = localize_product_text(p.get("name"), p.get("name_ru"), lang)
             badge = ""
             if discount > 0:
                 badge = f" 🔥-{discount}%"
-                du = p.get("discount_until")
                 if du:
                     badge += f" ⏳{du.strftime('%d.%m')}"
             gift = "🎁 " if p["id"] in bonus_ids else ""
@@ -370,8 +378,15 @@ async def show_set_detail(callback: CallbackQuery):
         
     name = s["name_ru"] if lang == "ru" and s.get("name_ru") else s["name"]
     price = f"{int(s['set_price']):,}".replace(",", " ")
-    
-    desc_lines = [f"<b>🎁 {name}</b>", f"Narxi: {price} so'm", "", "Tarkibi:"]
+    price_line = f"Narxi: {price} so'm"
+    import bot_discount
+    bot_price = await bot_discount.display_price(dict(s, is_set=True))
+    if bot_price is not None:
+        new = f"{int(bot_price):,}".replace(",", " ")
+        price_line = (f"Narxi: <s>{price}</s> → <b>{new} so'm</b> "
+                      f"🔥-{bot_discount.shown_percent(s['set_price'], bot_price)}%")
+
+    desc_lines = [f"<b>🎁 {name}</b>", price_line, "", "Tarkibi:"]
     for item in s["items"]:
         iname = item["name_ru"] if lang == "ru" and item.get("name_ru") else item["name"]
         desc_lines.append(f"— {iname} ({item['quantity']} {get_unit_name(item['unit'], lang)})")
