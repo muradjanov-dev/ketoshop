@@ -113,6 +113,7 @@ import time
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from aiogram.types import (CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
                            Message)
 from aiogram.utils.chat_action import ChatActionSender
@@ -667,6 +668,9 @@ def _shop_knowledge() -> str:
         f"- Toshkent bo'ylab Ketoshop kuryeri: {_fmt(SELF_DELIVERY_FEE)} so'm; mahsulotlar "
         f"{_fmt(FREE_DELIVERY_FROM)} so'mdan oshsa — bepul. 24 soat ichida yetkaziladi. "
         "To'lov naqd (kuryerga) yoki karta orqali oldindan.\n"
+        "- 'QACHON YETKAZASIZLAR?' deb so'rashsa (egasi, 2026-10-13): zarur va shoshilinch "
+        "buyurtmani Yandex Taxi orqali tez yetkazib beramiz; juda shoshilinch bo'lmasa — 1 kun "
+        "ichida yetkazib beramiz. Shu ikki variantni ayt va qaysi biri qulayligini so'ra.\n"
         "- Toshkentda Yandex Taxi bilan ham bo'ladi: yo'l haqini mijoz haydovchiga o'zi to'laydi, "
         "mahsulot puli faqat karta orqali oldindan.\n"
         "- Viloyatlarga BTS yoki EMU pochtasi orqali: pochta haqi pochtaga alohida to'lanadi, "
@@ -2558,13 +2562,30 @@ async def cmd_ai_customer_forget(message: Message):
                          "(buyurtmalar tarixi qoladi).")
 
 
-async def _has_session(message: Message) -> bool:
+async def _in_bot_form(state: FSMContext | None) -> bool:
+    """Foydalanuvchi botning biror formasi ichida (FSM holati bor): masalan admin
+    "↩️ Javob berish" ni bosib, mijozga javob yozyapti. Bunda yozgan matni o'sha
+    formaniki — AI aralashmaydi (egasi, 2026-10-13: "mijozga o'zim javob
+    bermoqchi edim, lekin AI menga javob beryapti"). support_relay routeri AI
+    dan KEYIN turadi, shuning uchun bu tekshiruvsiz AI uning formasini yutib
+    yuborardi; oldingi routerlardagi formalar baribir AI dan oldin ushlaydi."""
+    if state is None:
+        return False
+    try:
+        return await state.get_state() is not None
+    except Exception:
+        return False
+
+
+async def _has_session(message: Message, state: FSMContext | None = None) -> bool:
     """FILTR sifatida ishlatiladi, handler ichidagi tekshiruv sifatida emas —
     va bu ataylab. aiogram'da mos kelgan handler `return` qilsa ham xabar
     "ishlangan" hisoblanadi va support_relay ga yetib bormaydi. Ya'ni AI
     javob bermaydigan odamning savoli jimgina yo'qolardi."""
     user = message.from_user
     if not user or message.chat.type != "private" or not await _ready():
+        return False
+    if await _in_bot_form(state):
         return False
     if _is_paused(user.id) or not await _allowed(user.id):
         return False
@@ -2580,10 +2601,10 @@ async def _has_session(message: Message) -> bool:
     return AUTOSTART and user.id not in _opted_out
 
 
-async def _awaiting_cheque(message: Message) -> bool:
+async def _awaiting_cheque(message: Message, state: FSMContext | None = None) -> bool:
     """Rasm/hujjat faqat AI karta raqamini bergan suhbatda chek deb olinadi —
     boshqa paytda mijozning rasmi bu yerda ushlanmaydi."""
-    if not await _has_session(message):
+    if not await _has_session(message, state):
         return False
     session = _sessions.get(message.from_user.id)
     return bool(session and session.get("awaiting_cheque"))
