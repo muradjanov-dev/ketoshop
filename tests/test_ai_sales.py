@@ -439,6 +439,26 @@ class AiSalesGateTest(_ProviderSwap):
         self.assertFalse(_run(ai_sales._has_session(_FakeMessage("salom"), typing_reply)))
         self.assertTrue(_run(ai_sales._has_session(_FakeMessage("salom"), idle)))
 
+    def test_mixed_script_words_are_fixed_before_sending(self):
+        fix = ai_sales.fix_mixed_script
+        self.assertEqual(fix("Ha, in shaa ALLOH, shahар ichida 1 kun ichida yetkazib beramiz 😊"),
+                         "Ha, in shaa ALLOH, shahar ichida 1 kun ichida yetkazib beramiz 😊")
+        self.assertEqual(fix("Ҳа, шаҳar ичида етказиб берамиз"), "Ҳа, шаҳар ичида етказиб берамиз")
+        # Brend kirill matnda lotincha qoladi; toza matnlarga tegilmaydi.
+        self.assertEqual(fix("Ассалому алайкум, Keto shopга хуш келибсиз!"),
+                         "Ассалому алайкум, Keto shopга хуш келибсиз!")
+        self.assertEqual(fix("Bodom uni — 89 000 so'm"), "Bodom uni — 89 000 so'm")
+        self.assertEqual(fix("Миндальная мука — 89 000 сум"), "Миндальная мука — 89 000 сум")
+
+    def test_saved_address_and_phone_are_shown_when_confirming(self):
+        rules = ai_sales._sales_rules()
+        self.assertIn("'📍 Manzil: …' / '📞 Raqam: …'", rules)
+        self.assertIn("ARALASHTIRMA", rules)
+        text = ai_memory.profile_text(None, "uz", [{"id": 1, "status": "delivered", "phone": "+998901112233",
+                                                     "items": "[]"}], [],
+                                      {"address": "Chilonzor 9"}, None)
+        self.assertIn("'📍 Manzil: …', '📞 Raqam: …'", text)
+
     def test_thanks_alone_costs_no_model_call(self):
         for text in ("rahmat", "Katta rahmat!", "спасибо", "Раҳмат 🙏"):
             self.assertTrue(ai_sales.is_thanks_only(text), text)
