@@ -46,7 +46,10 @@ LABELS = {
                     "ru": "Продукты Ketoshop — по 1 упаковке"},
     "steps": {"uz": "Tayyorlash", "ru": "Приготовление"},
     "tip": {"uz": "💡 Maslahat", "ru": "💡 Совет"},
-    "next": {"uz": "Keyingi retsept — {date}", "ru": "Следующий рецепт — {date}"},
+    # Owner, 2026-10-13: "keyingi retsept shu sanasida e'lon qilinadi,
+    # kuzatib boring" — a full sentence instead of a bare date.
+    "next": {"uz": "Keyingi retsept {date} kuni e'lon qilinadi — kuzatib boring",
+             "ru": "Следующий рецепт выйдет {date} — следите за обновлениями"},
     "added": {"uz": "✅ {n} ta mahsulot savatga qo'shildi", "ru": "✅ Добавлено в корзину: {n}"},
     "already": {"uz": "👍 Masalliqlar allaqachon savatingizda", "ru": "👍 Ингредиенты уже в корзине"},
     "missing": {"uz": "Hozir tugagan: {names}", "ru": "Нет в наличии: {names}"},

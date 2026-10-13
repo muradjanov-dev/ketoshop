@@ -90,6 +90,44 @@ _SINGLES = {
 # cannot nest inside another one.
 _WORD_INITIAL_E_RE = re.compile(r"(?<![^\W\d_])(?<!['ʻ’])[eE]")
 
+# Loanwords where Latin "ts" stands for Cyrillic "ц": "Ретсептни очиш" was
+# printed for "Рецептни очиш" (owner, 2026-10-13). Native Uzbek "ts" must
+# stay "тс" — aytsa → айтса, ketsa → кетса, shartsiz → шартсиз,
+# muvaffaqiyatsiz → муваффақиятсиз — so these are narrow rules, never a
+# blanket ts → ц:
+#   • stems borrowed whole (retsept, ratsion, …), in any case;
+#   • the "-tsiya" ending (lokatsiya, kombinatsiya, integratsiya → -ция);
+#   • "ts" at the start of a word (tsikl → цикл); no Uzbek word starts so.
+_TS_STEMS: tuple[tuple[str, str], ...] = (
+    ("retsept", "рецепт"),
+    ("ratsion", "рацион"),
+    ("antotsian", "антоциан"),
+    ("protsess", "процесс"),
+    ("protsedur", "процедур"),
+    ("kontsentrat", "концентрат"),
+    ("kontsert", "концерт"),
+)
+_TS_STEM_RES = tuple((re.compile(lat, re.IGNORECASE), cyr) for lat, cyr in _TS_STEMS)
+_TSIYA_RE = re.compile(r"(?<=[^\W\d_])ts(?=iya)", re.IGNORECASE)
+_WORD_INITIAL_TS_RE = re.compile(r"(?<![^\W\d_])(?<!['ʻ’])ts", re.IGNORECASE)
+
+
+def _same_case(src: str, cyr: str) -> str:
+    """Cyrillic replacement in the case of the Latin original: retsept →
+    рецепт, Retsept → Рецепт, RETSEPT → РЕЦЕПТ."""
+    if src.isupper() and len(src) > 1:
+        return cyr.upper()
+    if src[:1].isupper():
+        return cyr[:1].upper() + cyr[1:]
+    return cyr
+
+
+def _ts_loanwords(text: str) -> str:
+    for rx, cyr in _TS_STEM_RES:
+        text = rx.sub(lambda m, c=cyr: _same_case(m.group(0), c), text)
+    text = _TSIYA_RE.sub(lambda m: _same_case(m.group(0), "ц"), text)
+    return _WORD_INITIAL_TS_RE.sub(lambda m: _same_case(m.group(0), "ц"), text)
+
 
 # Private-use range — guaranteed not to appear in real text.
 _PH_OPEN = ""
@@ -133,6 +171,9 @@ def lat_to_cyr(text: str) -> str:
     text = _stash(text, _BOT_COMMAND_RE, store, counter)
     for brand in _BRANDS:
         text = _stash(text, brand, store, counter)
+
+    # Loanword "ts" → "ц" before anything else touches those letters.
+    text = _ts_loanwords(text)
 
     # Digraphs first
     for lat, cyr in _DIGRAPHS:
