@@ -2830,11 +2830,23 @@ async def get_courier_board_orders(delivered_hours: int = 24, scope: str = "acti
                        u.full_name    AS buyer_full_name,
                        u.language     AS buyer_language,
                        c.full_name    AS courier_name,
-                       c.username     AS courier_username
+                       c.username     AS courier_username,
+                       h.hist_nth, h.hist_delivered, h.hist_cancelled
                 FROM orders o
                 JOIN picked p ON p.id = o.id
                 LEFT JOIN users u ON u.user_id = o.user_id
                 LEFT JOIN users c ON c.user_id = o.courier_id
+                -- "🔁 2-buyurtmasi (oldingi 1 tasi yetkazilgan)" on every card,
+                -- the get_order_history_position rule in one pass. Manual/B2B
+                -- rows carry the admin's user_id, so they get no history.
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*) FILTER (WHERE x.status <> 'cancelled' AND x.id <= o.id) AS hist_nth,
+                           COUNT(*) FILTER (WHERE x.status = 'delivered' AND x.id < o.id)  AS hist_delivered,
+                           COUNT(*) FILTER (WHERE x.status = 'cancelled' AND x.id < o.id)  AS hist_cancelled
+                      FROM orders x
+                     WHERE x.user_id = o.user_id
+                       AND COALESCE(x.source, 'bot') NOT IN ('manual', 'b2b')
+                ) h ON COALESCE(o.source, 'bot') NOT IN ('manual', 'b2b')
                 ORDER BY o.created_at ASC""",
             *args,
         )

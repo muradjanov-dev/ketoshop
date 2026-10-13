@@ -1435,8 +1435,11 @@ async def view_seller_order(callback: CallbackQuery):
         order["customer_name"],
     )
 
+    import order_admin_feed
     note = order.get("address_note")
-    note_block = f"\n📝 {note}" if note else ""
+    note_block = f"\n📝 {html.escape(note, quote=False)}" if note else ""
+    if map_link := order_admin_feed.map_line(order, lang):
+        note_block += "\n" + map_link
     sec = order.get("secondary_phone")
     secondary_block = f"\n📞 {sec}" if sec else ""
     # Read the fee back from what was actually charged (total = products +
@@ -1460,7 +1463,7 @@ async def view_seller_order(callback: CallbackQuery):
         phone=order["phone"],
         secondary_block=secondary_block,
         contact=contact,
-        address=order["address"],
+        address=html.escape(order_admin_feed.plain_address(order["address"]), quote=False),
         note_block=note_block,
         delivery=get_delivery_method_name(order.get("delivery_method"), lang),
         payment_block=payment_status_block(order.get("payment_method"), order.get("status"), lang),
@@ -1488,7 +1491,8 @@ async def view_seller_order(callback: CallbackQuery):
     await callback.message.edit_text(
         text,
         reply_markup=seller_order_keyboard(lang, order_id, order["status"], is_admin=is_admin),
-        parse_mode="HTML"
+        parse_mode="HTML",
+        disable_web_page_preview=True,
     )
 
     # Drop the delivery pin and, for online orders, the payment cheque right
