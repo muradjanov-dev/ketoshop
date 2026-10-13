@@ -569,6 +569,7 @@ class AiChatLogTopicTest(unittest.TestCase):
                       self.bot.edit_message_text.await_args.kwargs["text"])
 
     def test_ai_topic_command_binds_the_topic_it_is_typed_in(self):
+        _patch(self, ai_sales, "OWNER_IDS", {1})
         store = AsyncMock()
         _patch(self, ai_sales, "set_setting", store)
         message = _FakeMessage("/ai_mavzu", user_id=1, chat_type="supergroup")
@@ -702,6 +703,89 @@ class AiLocationButtonTest(unittest.TestCase):
         rules = ai_sales._sales_rules()
         self.assertIn("HAR DOIM lokatsiya_tugmasi", rules)
         self.assertIn("uy, xonadon, podyezd yoki mo'ljal", rules)
+class AiOwnerOnlySettingsTest(unittest.TestCase):
+    """Sozlama tugmalarini faqat do'kon egasi o'zgartiradi (egasi, 2026-10-13)."""
+
+    def setUp(self):
+        _patch(self, ai_sales, "ADMIN_IDS", [1, 2])
+        _patch(self, ai_sales, "OWNER_IDS", {1})
+        self.store = AsyncMock()
+        _patch(self, ai_sales, "set_setting", self.store)
+        _settings()
+
+    def tearDown(self):
+        _settings()
+
+    def _tap(self, data, user_id):
+        callback = NS(data=data, from_user=NS(id=user_id), answer=AsyncMock(),
+                      message=NS(edit_text=AsyncMock()))
+        return callback
+
+    def test_another_admin_taps_a_switch_and_nothing_changes(self):
+        callback = self._tap("aiset:customers", 2)
+        _run(ai_sales.cb_setting(callback))
+        self.store.assert_not_awaited()
+        self.assertIn("faqat do'kon egasi", callback.answer.await_args.args[0])
+        callback = self._tap("aimodel:gpt-5.4-nano", 2)
+        _run(ai_sales.cb_model(callback))
+        self.store.assert_not_awaited()
+
+    def test_the_owner_can_switch(self):
+        _patch(self, ai_sales, "_status_text", AsyncMock(return_value="holat"))
+        _run(ai_sales.cb_setting(self._tap("aiset:customers", 1)))
+        self.store.assert_awaited_once_with("customers", "0", 1)
+
+
+class AiTeachFromReplyTest(unittest.TestCase):
+    """"🧠 AI ga o'rgat": mijozning oxirgi savoli + admin javobi — bitta bosishda fakt."""
+
+    def setUp(self):
+        ai_sales._last_question.clear()
+        ai_sales._teach_pending.clear()
+        _patch(self, ai_sales, "ADMIN_IDS", [1])
+        self.add_fact = AsyncMock(return_value=31)
+        _patch(self, database, "add_ai_fact", self.add_fact)
+
+    def tearDown(self):
+        ai_sales._last_question.clear()
+        ai_sales._teach_pending.clear()
+
+    def _tap(self, keyboard):
+        data = keyboard.inline_keyboard[0][0].callback_data
+        return NS(data=data, from_user=NS(id=1), answer=AsyncMock(),
+                  message=NS(edit_reply_markup=AsyncMock(), answer=AsyncMock()))
+
+    def test_one_tap_turns_the_question_and_answer_into_knowledge(self):
+        ai_sales._remember_question(777, "Halol sertifikati bormi?")
+        ai_sales._remember_question(777, "[Mijoz yetkazish lokatsiyasini yubordi: ...]")  # savol emas
+        keyboard = ai_sales.teach_keyboard(777, "Ha, hamma mahsulotlarimiz halol sertifikatli.")
+        self.assertIn("AI ga o'rgat", keyboard.inline_keyboard[0][0].text)
+
+        callback = self._tap(keyboard)
+        _run(ai_sales.cb_teach(callback))
+
+        fact, admin = self.add_fact.await_args.args
+        self.assertIn("Halol sertifikati bormi?", fact)
+        self.assertIn("halol sertifikatli", fact)
+        self.assertEqual(admin, 1)
+        callback.message.edit_reply_markup.assert_awaited_once()
+        self.assertIn("/ai_unut 31", callback.message.answer.await_args.args[0])
+
+        again = self._tap(keyboard)                          # ikkinchi bosish
+        _run(ai_sales.cb_teach(again))
+        self.assertEqual(self.add_fact.await_count, 1)
+        self.assertIn("Muddati o'tdi", again.answer.await_args.args[0])
+
+    def test_no_known_question_means_no_button(self):
+        self.assertIsNone(ai_sales.teach_keyboard(999, "javob"))
+
+    def test_customer_messages_are_remembered_from_the_conversation_log(self):
+        _settings()
+        _run(ai_sales._mirror(None, _FakeMessage("narxi qancha?"), "narxi qancha?", "125 000 so'm"))
+        # bot yo'q — hech narsa yuborilmaydi, lekin savol eslanmaydi ham (admin ham emas)
+        bot = NS(send_message=AsyncMock(return_value=NS(message_id=1)), edit_message_text=AsyncMock())
+        _run(ai_sales._mirror(bot, _FakeMessage("eritritol bormi?"), "eritritol bormi?", "Bor 😊"))
+        self.assertEqual(ai_sales._last_question[777], "eritritol bormi?")
 
 
 class AiSaleCelebrationTest(unittest.TestCase):
@@ -820,7 +904,8 @@ class AiKeyCommandTest(_ProviderSwap):
         self.use([])
         ai_sales.PROVIDER = None                     # serverda kalit yo'q holat
         _patch(self, ai_sales, "MODEL", "")
-        _patch(self, ai_sales, "ADMIN_IDS", [1])
+        _patch(self, ai_sales, "ADMIN_IDS", [1, 2])
+        _patch(self, ai_sales, "OWNER_IDS", {1})
         self.saved_from_bot = dict(ai_sales._key_source)
         self.addCleanup(ai_sales._key_source.update, self.saved_from_bot)
         self.store = AsyncMock()
@@ -865,6 +950,17 @@ class AiKeyCommandTest(_ProviderSwap):
         message.delete.assert_awaited_once()
         verify.assert_not_awaited()
         self.store.assert_not_awaited()
+
+    def test_another_admin_cannot_change_the_key_but_the_message_is_deleted(self):
+        verify = AsyncMock(return_value=None)
+        _patch(self, ai_sales, "_verify_key", verify)
+        message = _FakeMessage(f"/ai_kalit {self.KEY}", user_id=2)
+        message.delete = AsyncMock()
+        _run(ai_sales.cmd_ai_key(message))
+        message.delete.assert_awaited_once()
+        verify.assert_not_awaited()
+        self.store.assert_not_awaited()
+        self.assertIn("faqat do'kon egasi", message.answer.await_args.args[0])
 
     def test_stored_key_is_picked_up_from_settings(self):
         ai_sales._apply_key(self.KEY)

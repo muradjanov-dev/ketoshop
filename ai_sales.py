@@ -162,6 +162,20 @@ DELIVERY = {"toshkent_kuryer": "self", "olib_ketish": "pickup", "yandex_taxi": "
 # Naqd faqat shu ikkisida — kuryerga yoki do'konda qo'lma-qo'l. Qolganida karta oldindan.
 CASH_OK = {"self", "pickup"}
 
+# AI sozlamalarini (tugmalar, model, kalit, suhbatlar joyi) faqat do'kon egasi
+# o'zgartiradi (egasi, 2026-10-13: "bu tugmalarni faqat men o'zgartira olishim
+# kerak"). Boshqa adminlar /ai_holat ni ko'radi, lekin o'zgartira olmaydi.
+OWNER_IDS = {
+    int(part) for part in os.getenv("AI_OWNER_IDS", "917456291").replace(" ", "").split(",")
+    if part.lstrip("-").isdigit()
+}
+OWNER_DENIED = "🔒 Bu sozlamani faqat do'kon egasi o'zgartira oladi."
+
+
+def is_owner(user_id: int) -> bool:
+    return user_id in OWNER_IDS
+
+
 _catalog_cache: tuple[float, str] | None = None
 _sessions: dict[int, dict] = {}
 _opted_out: set[int] = set()         # /ai_off bosganlar — avtomatik ochilmaydi
@@ -1740,6 +1754,7 @@ LOG_CHAT_SETTING, LOG_THREAD_SETTING = "log_chat", "log_thread"
 LOG_MAX_CHARS = 3800          # Telegram chegarasi 4096 — sarlavha va HTML uchun zaxira
 LOG_NEW_AFTER = 3600          # 1 soat jimlikdan keyin — yangi xabar
 _chat_logs: dict[int, dict] = {}     # user_id -> {"msg": (chat, id) | None, "entries", "part", "last", "who"}
+_last_question: dict[int, str] = {}  # user_id -> mijozning oxirgi o'z matni ("AI ga o'rgat" uchun)
 _chat_log_locks: dict[int, asyncio.Lock] = {}
 
 
@@ -1836,6 +1851,7 @@ async def log_admin_reply(bot: Bot | None, buyer_id: int, admin_name: str, text:
 async def log_customer_message(bot: Bot | None, user, text: str) -> None:
     """AI javob bermagan mijoz xabari (AI to'xtatilgan, o'chiq yoki xato) — shu
     suhbatga, adminlarga boradigan relay kartochkasidan tashqari."""
+    _remember_question(user.id, text)
     try:
         await log_conversation(bot, user, f"👤 {_esc(_short(text, 900))}\n"
                                           "<i>↪️ operatorlarga yuborildi</i>")
@@ -1850,6 +1866,7 @@ async def _mirror(bot: Bot | None, message: Message, user_text: str, reply: str)
     user = message.from_user
     if bot is None or user.id in ADMIN_IDS:
         return
+    _remember_question(user.id, user_text)
     entry = (f"👤 {_esc(_short(user_text, 900))}\n"
              f"🤖 {_esc(_short(reply, MIRROR_TEXT_MAX))}")
     if await log_conversation(bot, user, entry):
@@ -1868,6 +1885,72 @@ async def _mirror(bot: Bot | None, message: Message, user_text: str, reply: str)
             logger.debug("AI mirror to admin %s failed", admin_id)
 
 
+# ─────────────────────────── "🧠 AI ga o'rgat" ────────────────────────────
+# Egasi, 2026-10-13: admin mijozga to'g'ri javob yozsa, bir bosishda u AI
+# bilimiga aylansin. "✅ Yuborildi." ostida tugma chiqadi; bosilsa mijozning
+# oxirgi savoli + adminning javobi /ai_orgat bilan bir xil faktga aylanadi
+# (har suhbatda promptda, /ai_unut bilan o'chiriladi). Juftlik xotirada
+# saqlanadi — bot qayta ishga tushsa tugma "muddati o'tdi" deydi.
+
+TEACH_TTL = 24 * 3600
+_teach_pending: dict[str, tuple[str, str, float]] = {}
+
+
+def _remember_question(user_id: int, text: str) -> None:
+    text = (text or "").strip()
+    # "[Mijoz lokatsiyasini yubordi ...]" kabi tizim belgilari savol emas.
+    if text and not text.startswith("["):
+        _last_question[user_id] = text
+
+
+def teach_keyboard(buyer_id: int, answer: str) -> InlineKeyboardMarkup | None:
+    """Admin javobi ostidagi "🧠 AI ga o'rgat" tugmasi — mijozning oxirgi savoli
+    ma'lum bo'lsa. Yo'q bo'lsa None (tugma chiqmaydi)."""
+    import secrets
+    question = _last_question.get(buyer_id)
+    answer = (answer or "").strip()
+    if not question or not answer:
+        return None
+    now = time.time()
+    for token in [t for t, item in _teach_pending.items() if now - item[2] > TEACH_TTL]:
+        _teach_pending.pop(token, None)
+    token = secrets.token_hex(4)
+    _teach_pending[token] = (_short(question, 400), _short(answer, 600), now)
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🧠 AI ga o'rgat (hammaga tegishli javob bo'lsa)",
+                             callback_data=f"aiteach:{token}"),
+    ]])
+
+
+@router.callback_query(F.data.startswith("aiteach:"))
+async def cb_teach(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    item = _teach_pending.pop(callback.data.split(":", 1)[1], None)
+    if item is None:
+        await callback.answer("Muddati o'tdi — /ai_orgat bilan o'rgating.", show_alert=True)
+        return
+    question, answer, _ = item
+    fact = f"Mijoz so'rasa: «{question}» — to'g'ri javob: «{answer}»"[:1000]
+    try:
+        item_id = await database.add_ai_fact(fact, callback.from_user.id)
+    except Exception:
+        logger.exception("AI teach from a reply failed")
+        _teach_pending[callback.data.split(":", 1)[1]] = item
+        await callback.answer("⚠️ Saqlab bo'lmadi, qayta urinib ko'ring.", show_alert=True)
+        return
+    invalidate_knowledge()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.message.answer(
+        f"🧠 AI ga o'rgatildi (#{item_id}) — keyingi suhbatdan boshlab shunday javob beradi.\n"
+        f"O'chirish: <code>/ai_unut {item_id}</code>", parse_mode="HTML")
+    await callback.answer("🧠 O'rgatildi")
+
+
 @router.message(Command("ai_mavzu"))
 async def cmd_ai_topic(message: Message, bot: Bot):
     """Mijozlar suhbatlari tushadigan joyni belgilash: admin shu buyruqni kerakli
@@ -1875,6 +1958,9 @@ async def cmd_ai_topic(message: Message, bot: Bot):
     group_quiet guruhdagi buyruqni faqat ADMIN_COMMANDS da bo'lsa o'tkazadi."""
     user = message.from_user
     if user is None or user.id not in ADMIN_IDS or message.sender_chat is not None:
+        return
+    if not is_owner(user.id):
+        await message.answer(OWNER_DENIED)
         return
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("Bu buyruqni mijozlar suhbatlari tushishi kerak bo'lgan guruh "
@@ -2059,14 +2145,16 @@ async def cmd_ai_status(message: Message):
     await _load_settings()
     if CHANNEL_GROUP:
         await _channel_group(message.bot)
-    await message.answer(await _status_text(), parse_mode="HTML",
-                         reply_markup=_settings_kb(_settings["values"]))
+    owner = is_owner(message.from_user.id)
+    await message.answer(await _status_text() + ("" if owner else "\n\n" + OWNER_DENIED),
+                         parse_mode="HTML",
+                         reply_markup=_settings_kb(_settings["values"]) if owner else None)
 
 
 @router.callback_query(F.data.startswith("aiset:"))
 async def cb_setting(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
+    if not is_owner(callback.from_user.id):
+        await callback.answer(OWNER_DENIED, show_alert=True)
         return
     key = callback.data.split(":", 1)[1]
     if key not in _SETTING_DEFAULTS:
@@ -2089,8 +2177,8 @@ async def cb_setting(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("aimodel:"))
 async def cb_model(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
+    if not is_owner(callback.from_user.id):
+        await callback.answer(OWNER_DENIED, show_alert=True)
         return
     name = callback.data.split(":", 1)[1]
     if name not in model_options():
@@ -2137,6 +2225,15 @@ async def cmd_ai_key(message: Message):
                              f"Model: <code>{html.escape(MODEL or '—')}</code>\n\n"
                              "Yangi kalit: <code>/ai_kalit sk-...</code> · o'chirish: "
                              "<code>/ai_kalit off</code>", parse_mode="HTML")
+        return
+
+    if not is_owner(message.from_user.id):
+        # Kalit xabari baribir o'chirilsin — chatda qolmasin.
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        await message.answer(OWNER_DENIED)
         return
 
     if arg.lower() in _KEY_OFF_WORDS:

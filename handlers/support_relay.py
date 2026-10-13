@@ -274,7 +274,14 @@ async def send_freeform_reply(message: Message, state: FSMContext, bot: Bot):
         logger.exception("Could not log support reply to %s", buyer_id)
 
     await announce_support_answer(bot, buyer_id, me, reply_text)
-    await message.answer("✅ Yuborildi.")
+    # "🧠 AI ga o'rgat" — the buyer's question + this answer can become AI knowledge.
+    teach = None
+    try:
+        import ai_sales
+        teach = ai_sales.teach_keyboard(buyer_id, reply_text)
+    except Exception:
+        logger.exception("Could not build the AI teach button for %s", buyer_id)
+    await message.answer("✅ Yuborildi.", reply_markup=teach)
 
 
 @router.message(F.text, F.chat.type == "private")
