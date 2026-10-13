@@ -215,6 +215,37 @@ async def _lang(user_id: int) -> str:
         return "uz"
 
 
+_CYR_CHAR = re.compile(r"[\u0400-\u04FF]")
+_LAT_CHAR = re.compile(r"[A-Za-z]")
+_CYR_RUN = re.compile(r"[\u0400-\u04FF]+")
+_LAT_RUN = re.compile(r"[A-Za-z'ʻ’]+")
+_WORD = re.compile(r"[\w'ʻ’ʼ`‘]+")
+# Kirill matn ichida ham lotincha qoladigan nomlar ("Keto shopга").
+_KEEP_LATIN = {"keto", "shop", "ketoshop", "yandex", "taxi", "telegram", "bts", "emu", "uzs"}
+
+
+def fix_mixed_script(text: str) -> str:
+    """Model ba'zan bitta so'z ichida lotin va kirill harflarini aralashtiradi
+    ("shahар" — egasi, 2026-10-13). Har bir ARALASH so'z javobning asosiy
+    yozuviga keltiriladi; toza so'zlarga, brendlarga tegilmaydi."""
+    latin, cyrillic = len(_LAT_CHAR.findall(text or "")), len(_CYR_CHAR.findall(text or ""))
+    if not latin or not cyrillic:
+        return text
+    from translit import cyr_to_lat, lat_to_cyr
+    to_latin = latin >= cyrillic
+
+    def fix_word(match):
+        word = match.group(0)
+        if not (_LAT_CHAR.search(word) and _CYR_CHAR.search(word)):
+            return word
+        if to_latin:
+            return _CYR_RUN.sub(lambda run: cyr_to_lat(run.group(0)), word)
+        return _LAT_RUN.sub(lambda run: run.group(0) if run.group(0).lower() in _KEEP_LATIN
+                            else lat_to_cyr(run.group(0)), word)
+
+    return _WORD.sub(fix_word, text)
+
+
 def _strip_html(text: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", text or "")).strip()
 
@@ -728,6 +759,8 @@ def _sales_rules() -> str:
         "- DO'KON NOMIDAN 'BIZ' DEB GAPIR: fe'llar -miz bilan — beramiz, qilamiz, aytamiz, "
         "tavsiya qilamiz, yetkazamiz, qo'shamiz. 'Beraman', 'qilaman', 'aytaman' kabi "
         "-man shakli YO'Q. Ruschada ham 'мы': поможем, подскажем, отправим.\n"
+        "- Bitta so'z ichida lotin va kirill harflarini ARALASHTIRMA: 'shahар' — xato, "
+        "'shahar' (lotinda) yoki 'шаҳар' (kirillda) — to'g'ri.\n"
         "- Adabiy, grammatik to'g'ri o'zbek tilida yoz ('Qaysi biri kerak?' — to'g'ri, "
         "'Qaysi birini kerak?' — xato). Mahsulot nomini katalogdagidek yoz.\n"
         "- Misol. Mijoz: 'psillium bormi'.\n"
@@ -843,7 +876,9 @@ def _sales_rules() -> str:
         "bilan qayta chaqir (u miqdorni almashtiradi, ustiga qo'shmaydi).\n"
         "- BUYURTMA QADAMLARI — tugmali checkout bilan AYNAN BIR XIL tartib, faqat oson: "
         "har qadamda bitta qisqa savol, tugma bo'lsa tugmani taklif qil, MIJOZ XOTIRASI da "
-        "bor narsani qayta so'rama (faqat 'shu raqam/manzilmi?' deb tasdiqlat), ixtiyoriy "
+        "bor narsani qayta so'rama — tasdiqlat, va bunda manzil va raqamni TO'LIQ ko'rsat, "
+        "alohida qatorlarda: '📍 Manzil: …' / '📞 Raqam: …' / 'Shu manzil va raqamga "
+        "yetkazaylikmi?'; ixtiyoriy "
         "qadamni 'kerak bo'lmasa — yo'q deng' deb tez o'tkaz:\n"
         "  1) Yetkazib beraylikmi yoki do'kondan olib ketasizmi?\n"
         "  2) TELEFON — lokatsiya_tugmasi ('📞 Raqamni yuborish') yoki yozsin.\n"
@@ -1693,6 +1728,7 @@ async def _answer(bot: Bot, message: Message, user_text: str) -> None:
         return
     if _is_paused(user_id):
         return   # javob tayyorlanguncha admin o'zi gapga kirdi — ustidan gapirmaymiz
+    reply = fix_mixed_script(reply)
     await message.answer(reply, reply_markup=await _reply_keyboard(user_id))
     await _mirror(bot, message, user_text, reply)
 
@@ -3124,6 +3160,7 @@ async def _group_answer(bot: Bot, message: Message, text: str) -> None:
         return
     if not reply:
         return
+    reply = fix_mixed_script(reply)
     await message.reply(reply)
     user_id = message.from_user.id
     _group_context[user_id] = (time.time(), text, reply)

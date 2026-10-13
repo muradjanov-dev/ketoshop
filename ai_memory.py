@@ -243,7 +243,8 @@ def profile_text(user: dict | None, lang: str, orders: list[dict], all_notes: li
             "Oxirgi buyurtmadagi ma'lumot: "
             + (f"telefon {phone}, " if phone else "")
             + f"manzil «{_clean(last_prefs.get('address'))[:160]}». Buyurtmada boshidan "
-              "so'rama — 'shu manzil va raqamga yetkazaylikmi?' deb tasdiqlat.")
+              "so'rama — tasdiqlat va ikkalasini TO'LIQ ko'rsat, alohida qatorlarda: "
+              "'📍 Manzil: …', '📞 Raqam: …', keyin 'Shu manzil va raqamga yetkazaylikmi?'")
 
     if reviews:
         lines.append("Bot orqali qo'ygan baholari: " + "; ".join(
