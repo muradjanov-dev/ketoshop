@@ -427,6 +427,18 @@ class AiSalesGateTest(_ProviderSwap):
         self.assertNotIn(777, ai_sales._sessions)
         self.assertFalse(self.gate(_FakeMessage("salom")))
 
+    def test_someone_inside_a_bot_form_is_never_answered_by_the_ai(self):
+        # Egasi, 2026-10-13: "↩️ Javob berish" dan keyin yozgan javobini AI ushlab,
+        # mijozga emas, adminning o'ziga javob berdi.
+        typing_reply = NS(get_state=AsyncMock(return_value="SupportReplyStates:waiting_text"))
+        idle = NS(get_state=AsyncMock(return_value=None))
+        admin_text = _FakeMessage("Ha in shaa ALLOH, bugun yetkazib beramiz", user_id=1)
+        self.assertFalse(_run(ai_sales._has_session(admin_text, typing_reply)))
+        self.assertTrue(_run(ai_sales._has_session(admin_text, idle)))       # sinov tugmasi yoqilgan
+        ai_sales._session(777)
+        self.assertFalse(_run(ai_sales._has_session(_FakeMessage("salom"), typing_reply)))
+        self.assertTrue(_run(ai_sales._has_session(_FakeMessage("salom"), idle)))
+
     def test_thanks_alone_costs_no_model_call(self):
         for text in ("rahmat", "Katta rahmat!", "спасибо", "Раҳмат 🙏"):
             self.assertTrue(ai_sales.is_thanks_only(text), text)
@@ -1361,6 +1373,12 @@ class AiUsagePromoKnowledgeTest(_ProviderSwap):
         text = "\n".join(lines)
         for expected in ("gpt-5.5", "142 so'rov", "912.3K", "38.4K", "$2.56", "$31.40"):
             self.assertIn(expected, text)
+
+    def test_delivery_time_answer_reaches_bot_and_group(self):
+        for rules in (ai_sales._sales_rules(), ai_sales._group_rules()):
+            self.assertIn("'QACHON YETKAZASIZLAR?'", rules)
+            self.assertIn("shoshilinch buyurtmani Yandex Taxi orqali", rules)
+            self.assertIn("1 kun ichida yetkazib beramiz", rules)
 
     def test_shop_address_link_and_landmark_reach_bot_and_group(self):
         for rules in (ai_sales._sales_rules(), ai_sales._group_rules()):
