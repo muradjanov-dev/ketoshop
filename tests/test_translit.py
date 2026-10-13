@@ -60,5 +60,38 @@ class IdempotenceTest(unittest.TestCase):
         self.assertIn("chek", back)
 
 
+class TsLoanwordTest(unittest.TestCase):
+    """Latin "ts" in a loanword is Cyrillic "ц" — "Ретсептни очиш" was on the
+    site for "Рецептни очиш" (2026-10-13) — while native Uzbek "ts" stays
+    "тс"."""
+
+    def test_retsept_family(self):
+        for src, want in (("Retseptni ochish", "Рецептни очиш"),
+                          ("Keyingi retsept — {date}", "Кейинги рецепт — {date}"),
+                          ("retseptlar", "рецептлар"), ("retseptingizga", "рецептингизга"),
+                          ("RETSEPT", "РЕЦЕПТ")):
+            self.assertEqual(lat_to_cyr(src), want, src)
+
+    def test_other_loanwords(self):
+        for src, want in (("lokatsiya", "локация"), ("lokatsiyani", "локацияни"),
+                          ("Lokatsiyasini yuboring", "Локациясини юборинг"),
+                          ("ratsion", "рацион"), ("ratsioningizga", "рационингизга"),
+                          ("kombinatsiya", "комбинация"), ("integratsiyasi", "интеграцияси"),
+                          ("tsikl", "цикл"), ("Tsikli", "Цикли"),
+                          ("antotsianinlarga", "антоцианинларга")):
+            self.assertEqual(lat_to_cyr(src), want, src)
+
+    def test_native_ts_stays(self):
+        for src, want in (("aytsa", "айтса"), ("ketsa", "кетса"), ("qaytsin", "қайтсин"),
+                          ("shartsiz", "шартсиз"), ("muddatsiz", "муддатсиз"),
+                          ("muvaffaqiyatsiz", "муваффақиятсиз"), ("tortsin", "тортсин"),
+                          ("etsin", "этсин")):
+            self.assertEqual(lat_to_cyr(src), want, src)
+
+    def test_links_and_brands_untouched(self):
+        self.assertEqual(lat_to_cyr("https://t.me/retsept_bot"), "https://t.me/retsept_bot")
+        self.assertEqual(lat_to_cyr("@retseptlar_uz"), "@retseptlar_uz")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
