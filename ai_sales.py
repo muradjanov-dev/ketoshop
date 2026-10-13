@@ -114,7 +114,7 @@ import time
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.types import (CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
-                           Message)
+                           KeyboardButton, Message, ReplyKeyboardMarkup)
 from aiogram.utils.chat_action import ChatActionSender
 
 import ai_memory
@@ -823,21 +823,42 @@ def _sales_rules() -> str:
         "- Mahsulot tanlangach savatga_qoshish (yoki set uchun set_qoshish) bilan savatga "
         "sol va qisqacha tasdiqla. Miqdorni o'zgartirsa — savatga_qoshish ni yangi miqdor "
         "bilan qayta chaqir (u miqdorni almashtiradi, ustiga qo'shmaydi).\n"
-        "- Buyurtma uchun kerak: ISM, TELEFON, MANZIL, YETKAZISH TURI va TO'LOV. "
-        "Ularni birma-bir so'ra. MIJOZ XOTIRASI da oxirgi manzil va telefon bo'lsa, "
-        "qayta so'rama — 'shu manzilga yetkazaylikmi?' deb tasdiqlat.\n"
-        "- Yetkazish usulini aniqla: Toshkentda kuryer (naqd yoki karta), do'kondan olib "
-        "ketish (naqd yoki karta, manzil kerak emas) yoki Yandex Taxi (faqat karta); "
-        "viloyatda BTS yoki EMU (faqat karta).\n"
-        "- MANZILNI so'raganda mijozdan Telegram lokatsiyasini yuborishni so'ra "
-        "(skrepka 📎 -> Location), kuryerga eng aniq shu bo'ladi. Lokatsiya yubora "
-        "olmasa, manzilni matn bilan yozsin — ikkalasi ham bo'ladi.\n"
-        "- Telefonni ham kontakt tugmasi orqali yuborsa bo'ladi.\n"
+        "- BUYURTMA QADAMLARI — tugmali checkout bilan AYNAN BIR XIL tartib, faqat oson: "
+        "har qadamda bitta qisqa savol, tugma bo'lsa tugmani taklif qil, MIJOZ XOTIRASI da "
+        "bor narsani qayta so'rama (faqat 'shu raqam/manzilmi?' deb tasdiqlat), ixtiyoriy "
+        "qadamni 'kerak bo'lmasa — yo'q deng' deb tez o'tkaz:\n"
+        "  1) Yetkazib beraylikmi yoki do'kondan olib ketasizmi?\n"
+        "  2) TELEFON — lokatsiya_tugmasi ('📞 Raqamni yuborish') yoki yozsin.\n"
+        "  3) LOKATSIYA (olib ketishda yo'q) — '📍 Lokatsiyani yuborish', kelgan manzilni "
+        "tasdiqlat.\n"
+        "  4) MANZIL IZOHI (ixtiyoriy) — uy/xonadon, qavat, kirish, mo'ljal.\n"
+        "  5) YETKAZISH USULI — Toshkent ichida: kuryer yoki Yandex Taxi; tashqarida: BTS yoki "
+        "EMU (narxlari bilan).\n"
+        "  6) QO'SHIMCHA TELEFON (ixtiyoriy) — asosiy raqam javob bermasa kuryer qo'ng'iroq "
+        "qiladigan raqam.\n"
+        "  7) TO'LOV — naqd yoki karta (Yandex va pochtada faqat karta).\n"
+        "  8) KETO TANGACHALAR — savatni_korish 'KETO:' qatorini qaytarsa, bir marta so'ra: "
+        "'Hisobingizda N ta Keto bor (1 Keto = 1 so'm) — shu buyurtmada ishlatamizmi?'; ha "
+        "desa buyurtma_rasmiylashtirish da keto ni ber.\n"
+        "  9) TASDIQ — savatni_korish dagi mahsulotlar, chegirma, sovg'a, yetkazish narxi va "
+        "JAMI ni qisqa ko'rsat va 'Tasdiqlaysizmi?' de.\n"
+        "  10) BUYURTMA — 'ha' dan keyin buyurtma_rasmiylashtirish; raqam, minnatdorchilik, "
+        "karta bo'lsa karta raqami va chek.\n"
+        "- Mijoz bir xabarda bir nechta narsani aytsa (masalan raqam va manzil) — o'sha "
+        "qadamlarni o'tkazib, keyingisiga o't.\n"
+        "- MANZIL (kuryer yoki pochta uchun): HAR DOIM lokatsiya_tugmasi ni chaqir va mijozdan "
+        "pastdagi '📍 Lokatsiyani yuborish' tugmasini bosishini so'ra — kuryerga eng aniq shu. "
+        "Telefon so'raganda ham shu tugmalar ('📞 Raqamni yuborish') ishlaydi.\n"
+        "- Lokatsiya kelgach ('[Mijoz yetkazish lokatsiyasini yubordi: ...]') manzilni mijozga "
+        "o'qib tasdiqlat ('Chilonzor, ... — to'g'rimi?') va uy, xonadon, podyezd yoki mo'ljalni "
+        "so'ra. Lokatsiya Toshkentdan tashqarida bo'lsa — kuryer emas, pochtani taklif qil.\n"
+        "- Mijoz lokatsiya yubora olmasa — manzilni matn bilan yozsin (tuman, ko'cha, uy, "
+        "mo'ljal). Do'kondan olib ketishda manzil kerak emas.\n"
         "- Tasdiqlatishdan oldin savatni_korish ni chaqir va jami summani FAQAT undan ol — "
         "o'zing hisoblama. Savat, yetkazish turi va jami summani qisqa takrorlab, mijozdan "
         "tasdiq so'ra. Mijoz 'ha' degandan keyingina buyurtma_rasmiylashtirish ni chaqir.\n"
-        "- Buyurtma tushgach raqamini ayt. Toshkent kuryeri bo'lsa '24 soat ichida "
-        "yetkaziladi', boshqasida 'operatorimiz bog'lanadi' de.\n\n"
+        "- Buyurtma tushgach: 'Xaridingiz uchun katta rahmat!' + raqami + vosita qaytargan "
+        "yetkazish matni (kuryer — 24 soat ichida; Yandex — admin aloqalari).\n\n"
         "TO'LOV\n"
         "- Toshkent kuryeri va do'kondan olib ketishda ikki yo'l bor: NAQD (qo'lma-qo'l) yoki "
         "KARTA orqali oldindan. Yandex va pochtada faqat KARTA. Buyurtmani rasmiylashtirishdan oldin "
@@ -914,6 +935,14 @@ _TOOL_SPECS = [
             "required": ["mahsulot_id"],
             "additionalProperties": False,
         },
+        "strict": True,
+    },
+    {
+        "name": "lokatsiya_tugmasi",
+        "description": "Manzil yoki telefon so'raganda chaqir: javobing ostiga '📍 Lokatsiyani "
+                       "yuborish' va '📞 Raqamni yuborish' tugmalari qo'yiladi — mijoz bir "
+                       "bosishda yuboradi.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
         "strict": True,
     },
     {
@@ -1000,7 +1029,12 @@ _TOOL_SPECS = [
                                              "bts yoki emu"},
                 "tolov_turi": {"type": "string", "enum": ["naqd", "karta"],
                                "description": "Mijoz qanday to'laydi"},
-                "izoh": {"type": "string", "description": "Qo'shimcha izoh (ixtiyoriy)"},
+                "izoh": {"type": "string", "description": "Manzil izohi: uy/xonadon, qavat, "
+                         "kirish, mo'ljal (ixtiyoriy)"},
+                "qoshimcha_telefon": {"type": "string",
+                                      "description": "Qo'shimcha telefon raqami (ixtiyoriy)"},
+                "keto": {"type": "integer", "description": "Mijoz ishlatmoqchi bo'lgan Keto "
+                         "tangachalar soni (ixtiyoriy; savatni_korish KETO qatori bo'lsa)"},
             },
             "required": ["ism", "telefon", "tolov_turi"],
             "additionalProperties": False,
@@ -1238,7 +1272,28 @@ async def _tool_cart(user_id: int) -> str:
     for hint in hints:
         if _strip_html(hint):
             lines.append("ESLATMA: " + _strip_html(hint).replace("\n", " "))
+    keto_line = await _keto_line(user_id)
+    if keto_line:
+        lines.append(keto_line)
     return "\n".join(lines) + await _promo_hint(user_id)
+
+
+async def _keto_line(user_id: int) -> str:
+    """Tugmali checkout dagi "Ketochalarni ishlatish" — sarflash yoqilgan va
+    balans bo'lsa, modelga bir qator. Aks holda ""."""
+    try:
+        import gamification
+        if not await gamification.is_redemption_enabled(user_id):
+            return ""
+        user = await database.get_user(user_id)
+        balance = int((user or {}).get("keto_balance") or 0)
+    except Exception:
+        logger.warning("Keto balance unavailable for %s", user_id, exc_info=True)
+        return ""
+    if balance <= 0:
+        return ""
+    return (f"KETO: mijoz hisobida {_fmt(balance)} ta Keto tangacha (1 Keto = 1 so'm) — "
+            "buyurtmada chegirma sifatida ishlatish mumkin, bir marta so'ra.")
 
 
 async def _tool_remove(user_id: int, args: dict) -> str:
@@ -1287,6 +1342,8 @@ async def _tool_order(bot: Bot, message: Message, args: dict) -> str:
     address = (args.get("manzil") or "").strip()
     payment = (args.get("tolov_turi") or "naqd").strip().lower()
     note = (args.get("izoh") or "").strip() or None
+    secondary_phone = (args.get("qoshimcha_telefon") or "").strip() or None
+    keto_wanted = max(0, int(args.get("keto") or 0))
     delivery = DELIVERY.get((args.get("yetkazish") or "toshkent_kuryer").strip().lower())
 
     if not delivery:
@@ -1325,7 +1382,17 @@ async def _tool_order(bot: Bot, message: Message, args: dict) -> str:
     # _build_order_summary telefon, manzil va to'lov turini ham o'qiydi
     # (data["phone"], data["payment_method"]) — busiz KeyError beradi.
     data = {"delivery_method": delivery, "payment_method": "cash", "phone": phone,
-            "address": address, "address_note": note, "pickup_map_url": pickup_url}
+            "address": address, "address_note": note, "pickup_map_url": pickup_url,
+            "secondary_phone": secondary_phone}
+    if keto_wanted:
+        # Tugmali checkout bilan bir xil: _build_order_summary balans va jami
+        # summaga qarab qisqartiradi; sarflash yoqilmagan bo'lsa — umuman yo'q.
+        try:
+            import gamification
+            if await gamification.is_redemption_enabled(user_id):
+                data["keto_redeem"] = keto_wanted
+        except Exception:
+            logger.warning("Keto redemption check failed for %s", user_id, exc_info=True)
     _, total, items_data, keto_redeem = await _build_order_summary(user_id, data, lang)
     if not items_data:
         return "Xato: savat bo'sh — avval mahsulot qo'shish kerak."
@@ -1343,6 +1410,7 @@ async def _tool_order(bot: Bot, message: Message, args: dict) -> str:
             longitude=location[1] if location else None,
             delivery_method=delivery,
             address_note=note,
+            secondary_phone=secondary_phone,
             keto_redeem=keto_redeem,
             pickup_map_url=pickup_url,
         )
@@ -1370,6 +1438,7 @@ async def _tool_order(bot: Bot, message: Message, args: dict) -> str:
             "phone": phone,
             "address": address,
             "address_note": note,
+            "secondary_phone": secondary_phone,
             "latitude": location[0] if location else None,
             "longitude": location[1] if location else None,
             "total": total,
@@ -1387,17 +1456,24 @@ async def _tool_order(bot: Bot, message: Message, args: dict) -> str:
     logger.info("AI sales created order %s for user %s (payment=%s, delivery=%s)",
                 order_id, user_id, payment, delivery)
     session["location"] = None   # keyingi buyurtma o'z lokatsiyasini so'rasin
+    session["keyboard"] = "menu"   # buyurtma tushdi — lokatsiya tugmasi o'rniga menyu
     try:
         await _celebrate(bot, message.from_user, order_id, items_data, total, payment)
     except Exception:
         logger.exception("AI order %s: celebration failed", order_id)
 
     result = f"OK: buyurtma #{order_id} qabul qilindi, jami {_fmt(total)} so'm."
+    if keto_redeem:
+        result += f" Shundan {_fmt(keto_redeem)} so'm Keto tangachalar bilan to'landi."
     if delivery == "self":
         result += " Toshkent bo'ylab 24 soat ichida yetkaziladi."
     elif delivery == "pickup":
         result += (f" Mijoz do'kondan olib ketadi — mo'ljal: {SHOP_LANDMARK}, havola: "
                    f"{SHOP_ADDRESS_URL} . Buyurtma tayyor bo'lgach operatorimiz xabar beradi.")
+    elif delivery == "yandex_taxi":
+        from config import SUPPORT_USERNAME
+        result += (" Yandex orqali yuboriladi — yetkazish vaqti bo'yicha adminimiz: "
+                   f"@{SUPPORT_USERNAME}, {SUPPORT_PHONES}.")
     else:
         result += " Yetkazish bo'yicha operator bog'lanadi."
     if payment == "karta":
@@ -1429,6 +1505,10 @@ async def _run_tool(bot: Bot, message: Message, name: str, args: dict) -> str:
         return await _tool_info(user_id, args)
     if name == "retsept":
         return await _tool_recipe(user_id, args)
+    if name == "lokatsiya_tugmasi":
+        _session(user_id)["keyboard"] = "location"
+        return ("OK: javobing ostida '📍 Lokatsiyani yuborish' va '📞 Raqamni yuborish' "
+                "tugmalari chiqadi. Mijozga pastdagi tugmani bosishini qisqa ayt.")
     if name == "savatga_qoshish":
         return await _tool_add(user_id, args)
     if name == "set_qoshish":
@@ -1595,8 +1675,32 @@ async def _answer(bot: Bot, message: Message, user_text: str) -> None:
         return
     if _is_paused(user_id):
         return   # javob tayyorlanguncha admin o'zi gapga kirdi — ustidan gapirmaymiz
-    await message.answer(reply)
+    await message.answer(reply, reply_markup=await _reply_keyboard(user_id))
     await _mirror(bot, message, user_text, reply)
+
+
+async def _reply_keyboard(user_id: int):
+    """Javob ostidagi pastki klaviatura: AI lokatsiya so'ragan bo'lsa —
+    '📍 Lokatsiyani yuborish' + '📞 Raqamni yuborish'; lokatsiya/kontakt kelgach
+    yoki buyurtma tushgach — odatdagi 🏠/🛒 menyu qaytadi. Boshqa paytda None —
+    klaviatura o'zgarmaydi."""
+    session = _sessions.get(user_id) or {}
+    want = session.pop("keyboard", None)
+    if not want:
+        return None
+    lang = await _lang(user_id)
+    if want == "location":
+        return ReplyKeyboardMarkup(keyboard=[
+            [KeyboardButton(text=_t("📍 Lokatsiyani yuborish", "📍 Отправить локацию", lang),
+                            request_location=True)],
+            [KeyboardButton(text=_t("📞 Raqamni yuborish", "📞 Отправить номер", lang),
+                            request_contact=True)],
+        ], resize_keyboard=True, one_time_keyboard=True)
+    try:
+        from keyboards import persistent_menu_keyboard
+        return persistent_menu_keyboard(lang)
+    except Exception:
+        return None
 
 
 async def _fallback_to_admins(bot: Bot | None, message: Message, user_text: str) -> None:
@@ -2483,13 +2587,67 @@ async def _has_session(message: Message) -> bool:
     return AUTOSTART and user.id not in _opted_out
 
 
-async def _awaiting_cheque(message: Message) -> bool:
-    """Rasm/hujjat faqat AI karta raqamini bergan suhbatda chek deb olinadi —
-    boshqa paytda mijozning rasmi bu yerda ushlanmaydi."""
-    if not await _has_session(message):
+CHEQUE_ORDER_DAYS = 3        # shu kundan eski buyurtmaga chek bog'lanmaydi
+
+
+async def _open_order_for_cheque(user_id: int) -> int | None:
+    """Chek qaysi buyurtmaniki: AI karta raqamini bergan buyurtma (sessiyada),
+    bo'lmasa mijozning oxirgi CHEQUE_ORDER_DAYS kundagi ochiq buyurtmasi —
+    to'lanmagan (online emas), cheki yo'q, yetkazilmagan va bekor qilinmagan.
+    Bazadan o'qiladi, ya'ni bot qayta ishga tushsa ham, AI to'xtatilgan yoki
+    suhbat unutilgan bo'lsa ham chek yo'qolmaydi. Faqat karta tanlangan
+    ("To'lov: KARTA" izohli) buyurtma — naqd buyurtmachining rasmi chek emas
+    (egasi, 2026-10-13: "kartaga
+    to'lov qilinganda chekni qabul qilishi kerak, hozir qabul qilmadi")."""
+    from datetime import datetime, timedelta, timezone
+    session = _sessions.get(user_id)
+    if session and session.get("awaiting_cheque"):
+        return int(session["awaiting_cheque"])
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    for order in await database.get_user_orders(user_id):
+        created = order.get("created_at")
+        if not isinstance(created, datetime) or now - created > timedelta(days=CHEQUE_ORDER_DAYS):
+            continue
+        if order.get("status") in ("delivered", "cancelled"):
+            continue
+        if order.get("payment_method") == "online" or order.get("cheque_file_id"):
+            continue
+        if "KARTA" not in (order.get("address_note") or ""):
+            continue   # naqd buyurtma — mijozning rasmi chek emas
+        return int(order["id"])
+    return None
+
+
+def _is_receipt(message: Message) -> bool:
+    if message.photo:
+        return True
+    document = message.document
+    mime = (getattr(document, "mime_type", None) or "") if document else ""
+    return bool(document) and (mime.startswith("image/") or mime == "application/pdf")
+
+
+async def _cheque_filter(message: Message):
+    """FILTR: mijozning shaxsiy chatdagi rasmi/PDF i — to'lov cheki bo'lishi
+    mumkinmi. Tugmali checkout ning chek holati (FSM) oldinroq turgan routerda
+    ushlanadi; bu yerga faqat undan o'tganlari keladi. Topilgan buyurtma
+    handlerga `cheque_order` bo'lib beriladi (None — buyurtmaga bog'lanmagan,
+    lekin ochiq AI suhbatida)."""
+    user = message.from_user
+    if user is None or message.chat.type != "private" or not _is_receipt(message):
         return False
-    session = _sessions.get(message.from_user.id)
-    return bool(session and session.get("awaiting_cheque"))
+    if user.id in database.LEADERBOARD_EXCLUDED_USER_IDS or user.id in _settings["staff"]:
+        return False
+    in_session = user.id in _sessions and not _is_paused(user.id)
+    if user.id in ADMIN_IDS and not in_session:
+        return False   # admin rasm yuborsa — o'z ishi, chek emas (sinovda — sessiya bor)
+    try:
+        order_id = await _open_order_for_cheque(user.id)
+    except Exception:
+        logger.warning("Open order lookup for a cheque failed for %s", user.id, exc_info=True)
+        order_id = None
+    if order_id is None and not in_session:
+        return False
+    return {"cheque_order": order_id}
 
 
 # Faqat minnatdorchilik — javob kutmaydi, model chaqirilmaydi. "ha", "ok",
@@ -2541,6 +2699,7 @@ async def on_location(message: Message, bot: Bot):
     if readable:
         pin += f" — {readable}"
     _session(message.from_user.id)["location"] = (lat, lng, pin)
+    _session(message.from_user.id)["keyboard"] = "menu"   # lokatsiya keldi — menyu qaytsin
     try:
         from handlers.cart import _is_tashkent
         where = "Toshkent ichida" if _is_tashkent(lat, lng) else "Toshkentdan TASHQARIDA (viloyat)"
@@ -2556,17 +2715,40 @@ async def on_contact(message: Message, bot: Bot):
     if phone and not phone.startswith("+"):
         phone = "+" + phone
     _session(message.from_user.id)["phone"] = phone
+    _session(message.from_user.id)["keyboard"] = "menu"
     await _reply(bot, message, f"[Mijoz telefon raqamini yubordi: {phone}]")
 
 
-@router.message(_awaiting_cheque, F.photo | F.document)
-async def on_cheque(message: Message, bot: Bot):
-    """To'lov cheki. AI uni KO'RMAYDI va tasdiqlamaydi — rasm to'g'ridan-to'g'ri
-    adminlarga uzatiladi, qaror ularniki. Buyurtma bazada 'cash' bo'lib qoladi,
-    ya'ni hech qachon yolg'on 'to'landi' holatiga tushmaydi."""
-    session = _session(message.from_user.id)
-    order_id = session.get("awaiting_cheque")
+@router.message(_cheque_filter)
+async def on_cheque(message: Message, bot: Bot, cheque_order: int | None = None):
+    """To'lov cheki. AI uni KO'RMAYDI va tasdiqlamaydi. Buyurtma topilsa —
+    tugmali checkout bilan bir xil: chek buyurtmaga biriktiriladi (kartochkada
+    ko'rinadi) va adminlarga "🧾 Buyurtma #X uchun to'lov cheki" bo'lib boradi.
+    Buyurtma 'cash' bo'lib qoladi — to'lov holatini admin o'zgartiradi."""
     user = message.from_user
+    lang = await _lang(user.id)
+    session = _sessions.get(user.id)
+    if cheque_order:
+        kind, file_id = (("photo", message.photo[-1].file_id) if message.photo
+                         else ("document", message.document.file_id))
+        try:
+            await database.set_order_cheque(cheque_order, file_id, kind)
+        except Exception:
+            logger.exception("Cheque could not be attached to order %s", cheque_order)
+        try:
+            from handlers.cart import _forward_cheque_to_admins
+            await _forward_cheque_to_admins(bot, cheque_order, user.full_name or "—", kind, file_id)
+        except Exception:
+            logger.exception("Cheque for order %s could not be forwarded", cheque_order)
+        if session:
+            session["awaiting_cheque"] = None
+        await log_conversation(bot, user, f"🧾 To'lov cheki yuborildi — buyurtma #{cheque_order}")
+        await message.answer(_t(f"✅ Rahmat! Buyurtma #{cheque_order} uchun chekingiz qabul qilindi — "
+                                "operatorimiz to'lovni tekshirib tasdiqlaydi 🌿",
+                                f"✅ Спасибо! Чек по заказу #{cheque_order} получен — оператор "
+                                "проверит оплату и подтвердит 🌿", lang))
+        return
+    order_id = None
     caption = (f"🧾 <b>AI suhbatidan to'lov cheki</b>\n"
                f"👤 {html.escape(user.full_name or '')}"
                + (f" (@{html.escape(user.username)})" if user.username else "")
@@ -2582,12 +2764,11 @@ async def on_cheque(message: Message, bot: Bot):
         except Exception:
             logger.warning("Cheque forward to admin %s failed", admin_id, exc_info=True)
 
-    lang = await _lang(user.id)
     if not sent:
         await message.answer(_t("Rahmat! Chekni oldik, operatorimiz tez orada bog'lanadi.",
                                 "Спасибо! Чек получили, оператор скоро свяжется с вами.", lang))
         return
-    session["awaiting_cheque"] = None
+    await log_conversation(bot, user, "🧾 Rasm/chek yubordi (buyurtmaga bog'lanmagan)")
     await message.answer(_t("✅ Rahmat! Chek qabul qilindi — operatorimiz to'lovni tekshirib tasdiqlaydi.",
                             "✅ Спасибо! Чек принят — оператор проверит оплату и подтвердит.", lang))
 

@@ -583,6 +583,127 @@ class AiChatLogTopicTest(unittest.TestCase):
         self.assertEqual(bot.send_message.await_args.kwargs["message_thread_id"], 4242)
 
 
+class AiChequeTest(unittest.TestCase):
+    """Chek AI sessiyasiga bog'liq emas: bot qayta ishga tushsa ham karta
+    buyurtmasiga biriktiriladi (egasi, 2026-10-13: "chekni qabul qilmadi")."""
+
+    def setUp(self):
+        ai_sales._sessions.clear()
+        ai_sales._paused.clear()
+        _patch(self, ai_sales, "ADMIN_IDS", [1])
+        _settings()
+        self.now = datetime.utcnow()
+        self.orders = []
+        _patch(self, database, "get_user_orders", AsyncMock(side_effect=lambda uid: self.orders))
+        self.attach = AsyncMock()
+        _patch(self, database, "set_order_cheque", self.attach)
+        import handlers.cart as cart
+        self.forward = AsyncMock()
+        _patch(self, cart, "_forward_cheque_to_admins", self.forward)
+
+    def tearDown(self):
+        ai_sales._sessions.clear()
+        ai_sales._paused.clear()
+        _settings()
+
+    def _order(self, **kw):
+        order = {"id": 4242, "created_at": self.now - timedelta(hours=1), "status": "pending",
+                 "payment_method": "cash", "address_note": "To'lov: KARTA (chek kutilmoqda)",
+                 "cheque_file_id": None}
+        order.update(kw)
+        return order
+
+    def _photo(self, user_id=777):
+        message = _FakeMessage(None, user_id=user_id)
+        message.photo = [NS(file_id="small"), NS(file_id="big")]
+        message.document = None
+        message.forward = AsyncMock()
+        return message
+
+    def test_card_order_cheque_is_attached_even_after_a_restart(self):
+        self.orders = [self._order()]
+        message = self._photo()                              # sessiya yo'q — bot qayta ishga tushgan
+        data = _run(ai_sales._cheque_filter(message))
+        self.assertEqual(data, {"cheque_order": 4242})
+
+        _run(ai_sales.on_cheque(message, None, **data))
+
+        self.attach.assert_awaited_once_with(4242, "big", "photo")
+        self.forward.assert_awaited_once()
+        self.assertEqual(self.forward.await_args.args[1], 4242)
+        self.assertIn("#4242", message.answer.await_args.args[0])
+
+    def test_paused_ai_does_not_lose_the_cheque(self):
+        self.orders = [self._order()]
+        ai_sales.pause_for_human(777, seconds=600)
+        self.assertEqual(_run(ai_sales._cheque_filter(self._photo())), {"cheque_order": 4242})
+
+    def test_cash_old_paid_or_closed_orders_are_not_cheque_targets(self):
+        for order in (self._order(address_note=None),                       # naqd
+                      self._order(created_at=self.now - timedelta(days=4)),  # eski
+                      self._order(payment_method="online"),
+                      self._order(cheque_file_id="already"),
+                      self._order(status="delivered"),
+                      self._order(status="cancelled")):
+            self.orders = [order]
+            self.assertFalse(_run(ai_sales._cheque_filter(self._photo())), order)
+
+    def test_admin_photos_and_plain_text_are_not_cheques(self):
+        self.orders = [self._order()]
+        self.assertFalse(_run(ai_sales._cheque_filter(self._photo(user_id=1))))
+        text = _FakeMessage("salom")
+        text.photo, text.document = None, None
+        self.assertFalse(_run(ai_sales._cheque_filter(text)))
+
+    def test_pdf_receipt_counts_but_other_files_do_not(self):
+        self.orders = [self._order()]
+        pdf = self._photo()
+        pdf.photo, pdf.document = None, NS(file_id="doc", mime_type="application/pdf")
+        self.assertEqual(_run(ai_sales._cheque_filter(pdf)), {"cheque_order": 4242})
+        zip_file = self._photo()
+        zip_file.photo, zip_file.document = None, NS(file_id="z", mime_type="application/zip")
+        self.assertFalse(_run(ai_sales._cheque_filter(zip_file)))
+
+    def test_unlinked_receipt_in_an_open_conversation_goes_to_the_admins(self):
+        ai_sales._session(777)
+        message = self._photo()
+        data = _run(ai_sales._cheque_filter(message))
+        self.assertEqual(data, {"cheque_order": None})
+        bot = NS(send_message=AsyncMock())
+        _run(ai_sales.on_cheque(message, bot, **data))
+        message.forward.assert_awaited_once_with(1)
+        self.assertIn("bog'lanmagan", bot.send_message.await_args.args[1])
+        self.attach.assert_not_awaited()
+
+
+class AiLocationButtonTest(unittest.TestCase):
+    """Manzil so'ralganda — '📍 Lokatsiyani yuborish' tugmasi, keyin menyu qaytadi."""
+
+    def setUp(self):
+        ai_sales._sessions.clear()
+
+    def tearDown(self):
+        ai_sales._sessions.clear()
+
+    def test_location_and_phone_buttons_then_the_menu_comes_back(self):
+        out = _run(ai_sales._run_tool(None, _FakeMessage(), "lokatsiya_tugmasi", {}))
+        self.assertTrue(out.startswith("OK:"), out)
+        keyboard = _run(ai_sales._reply_keyboard(777))
+        buttons = [b for row in keyboard.keyboard for b in row]
+        self.assertTrue(buttons[0].request_location)
+        self.assertTrue(buttons[1].request_contact)
+        self.assertIsNone(_run(ai_sales._reply_keyboard(777)))    # bir martalik
+        ai_sales._session(777)["keyboard"] = "menu"               # lokatsiya keldi
+        menu = _run(ai_sales._reply_keyboard(777))
+        self.assertFalse(any(getattr(b, "request_location", False)
+                             for row in menu.keyboard for b in row))
+
+    def test_rules_always_ask_for_the_location_button(self):
+        rules = ai_sales._sales_rules()
+        self.assertIn("HAR DOIM lokatsiya_tugmasi", rules)
+        self.assertIn("uy, xonadon, podyezd yoki mo'ljal", rules)
+
+
 class AiSaleCelebrationTest(unittest.TestCase):
     """AI sotuvga olib borsa — mavzuga tantanali xabar va bugungi jami."""
 
@@ -1037,6 +1158,42 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
         for expected in ("🏪 Do'kondan olib ketish — bepul", "🚚 Toshkent bo'ylab kuryer — 25 000",
                          "📦 Viloyatlarga BTS / EMU"):
             self.assertIn(expected, rules)
+
+    def test_secondary_phone_and_keto_ride_into_the_order_like_the_button_checkout(self):
+        import gamification
+        _patch(self, gamification, "is_redemption_enabled", AsyncMock(return_value=True))
+        seen = {}
+        items = self._items
+
+        async def fake_summary(user_id, data, lang):
+            seen.update(data)
+            return "matn", 110000 - 20000, items, 20000          # 20 000 Keto ishlatildi
+
+        import handlers.cart as cart
+        _patch(self, cart, "_build_order_summary", fake_summary)
+        _patch(self, cart, "_notify_sellers", AsyncMock())
+        _patch(self, cart, "notify_low_stock", AsyncMock())
+        database.create_order = AsyncMock(return_value=(4242, []))
+        database.clear_cart = AsyncMock()
+        database.get_user_language = AsyncMock(return_value="uz")
+        ai_sales._session(777)
+        result = _run(ai_sales._tool_order(None, _FakeMessage("ha"), {
+            "ism": "Dilnoza", "telefon": "+998901234567", "manzil": "Chilonzor 9",
+            "tolov_turi": "naqd", "qoshimcha_telefon": "+998935556677", "keto": 20000}))
+        self.assertEqual(seen["keto_redeem"], 20000)
+        self.assertEqual(seen["secondary_phone"], "+998935556677")
+        kwargs = database.create_order.await_args.kwargs
+        self.assertEqual(kwargs["keto_redeem"], 20000)
+        self.assertEqual(kwargs["secondary_phone"], "+998935556677")
+        self.assertIn("Keto tangachalar bilan", result)
+
+    def test_rules_follow_the_button_checkout_steps(self):
+        rules = ai_sales._sales_rules()
+        for step in ("1) Yetkazib beraylikmi yoki do'kondan olib ketasizmi?", "2) TELEFON",
+                     "3) LOKATSIYA", "4) MANZIL IZOHI", "5) YETKAZISH USULI",
+                     "6) QO'SHIMCHA TELEFON", "7) TO'LOV", "8) KETO TANGACHALAR", "9) TASDIQ",
+                     "10) BUYURTMA"):
+            self.assertIn(step, rules)
 
     def test_tashkent_courier_refuses_a_location_outside_tashkent(self):
         result, kwargs, _ = self._order(
