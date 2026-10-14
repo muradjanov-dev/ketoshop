@@ -26,9 +26,14 @@ logger = logging.getLogger(__name__)
 # Telegram's 1024-character photo caption.
 DESC_IN_CARD_MAX = 650
 
+# Sold-out notes product_out_of_stock_0..N-1, picked by product id — the same
+# five the Mini App's detail sheet shows (SOLD_OUT_NOTES in webapp/index.html).
+SOLD_OUT_NOTES = 5
+
 
 async def build_caption(product: dict, lang: str, rate: float | None,
-                        extra: str | None = None, tip: str | None = None) -> str:
+                        extra: str | None = None, tip: str | None = None,
+                        lead: str | None = None) -> str:
     """The card's text. `rate` is the Keto cashback to advertise (None = don't
     show that line at all); callers pass gamification.buyer_rate(user) for a
     buyer, or the base rate for an audience with no single reader.
@@ -42,6 +47,9 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     under the name, above the description — the first thing they read
     (owner, 2026-10-02) — and is budgeted the same way: a long tip trims the
     description, never the other way round.
+
+    `lead` goes above everything, budgeted the same way — the "siz qiziqqan
+    mahsulot qaytdi" headline of a restock notice (restock_notify.py).
     """
     import gamification
     import gift_campaign
@@ -66,13 +74,15 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     seller_name = product.get("seller_name") or product.get("seller_username") or "—"
     name = localize_product_text(product.get("name"), product.get("name_ru"), lang)
     desc = localize_product_text(product.get("description"), product.get("description_ru"), lang) or "—"
-    sold_out = get_text("product_out_of_stock", lang) if product["quantity"] <= 0 else ""
+    sold_out = (get_text(f"product_out_of_stock_{abs(int(product.get('id') or 0)) % SOLD_OUT_NOTES}", lang)
+                if product["quantity"] <= 0 else "")
     # Trim here, not in tg_safety's net: that would save the message by
     # dropping the price lines below instead of the tail of the description.
     desc_budget = DESC_IN_CARD_MAX - (len(extra) + 2 if extra else 0) \
                                    - (len(gift) + 2 if gift else 0) \
                                    - (len(tip) + 6 if tip else 0) \
-                                   - (len(sold_out) + 2 if sold_out else 0)
+                                   - (len(sold_out) + 2 if sold_out else 0) \
+                                   - (len(lead) + 2 if lead else 0)
     if len(desc) > desc_budget:
         desc = desc[: max(40, desc_budget - 1)].rstrip() + "…"
 
@@ -141,6 +151,8 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     if gift:
         text += "\n\n" + gift
 
+    if lead:
+        text = lead + "\n\n" + text
     return text
 
 
@@ -153,7 +165,12 @@ async def detail_keyboard(user_id: int, product_id: int, back_category: str,
     _cart_id, cart_qty = await get_cart_line_for_product(user_id, product_id)
     ret = f":{back_category}:{back_page}"
     if out_of_stock:
-        primary_row = [InlineKeyboardButton(text=get_text("btn_coming_soon", lang), callback_data="noop")]
+        # Sold out: "tell me when it's back" (owner, 2026-10-14), or the
+        # promise once they asked — restock_notify.py sends the message.
+        waiting = await database.is_waiting_restock(user_id, product_id)
+        primary_row = [InlineKeyboardButton(
+            text=get_text("btn_restock_waiting" if waiting else "btn_restock_wait", lang),
+            callback_data=f"restock_wait:{product_id}{ret}")]
     elif cart_qty > 0:
         qty_str = str(int(cart_qty)) if float(cart_qty).is_integer() else f"{cart_qty:.1f}"
         primary_row = [

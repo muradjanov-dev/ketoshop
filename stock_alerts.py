@@ -152,7 +152,24 @@ def _alert_text(product: dict, level: str, lang: str) -> str:
     return template.replace("\x00", name)
 
 
-def summary_text(products: list[dict]) -> str:
+async def _waiting() -> dict[int, int]:
+    """Buyers waiting for each sold-out product (restock_notify.py). Never
+    lets the stock list fail over it."""
+    try:
+        return await database.get_restock_wait_counts()
+    except Exception:
+        logger.exception("Restock wait counts unavailable")
+        return {}
+
+
+def _waiting_tag(product: dict, waiting: dict[int, int] | None) -> str:
+    n = (waiting or {}).get(product["id"], 0)
+    return f" — 🔔 <b>{n} kishi kutyapti</b>" if n else ""
+
+
+def summary_text(products: list[dict], waiting: dict[int, int] | None = None) -> str:
+    """`waiting` = {product_id: buyers who asked to hear when it's back};
+    shown next to sold-out products so the most-wanted get restocked first."""
     out = [p for p in products if level_for(p) == "out"]
     low = [p for p in products if level_for(p) == "low"]
     if not out and not low:
@@ -160,7 +177,8 @@ def summary_text(products: list[dict]) -> str:
     lines = ["📦 <b>Ombor holati</b>", ""]
     if out:
         lines.append(f"🚫 <b>Tugagan ({len(out)} ta):</b>")
-        lines += [f"• {html.escape(p['name'])}" for p in sorted(out, key=lambda p: p["name"].lower())]
+        lines += [f"• {html.escape(p['name'])}{_waiting_tag(p, waiting)}"
+                  for p in sorted(out, key=lambda p: p["name"].lower())]
         lines.append("")
     if low:
         lines.append(f"⚠️ <b>Kam qolgan ({len(low)} ta):</b>")
@@ -279,7 +297,7 @@ async def send_night_report(bot: Bot) -> bool:
     if not await database.claim_release_notes(f"stock-night-{STOCK_GROUP_ID}-{day.isoformat()}"):
         return False
     text = (f"🌙 <b>Kun yakuni — {day:%d.%m.%Y}</b>\n\n"
-            + summary_text(await database.get_stock_snapshot()))
+            + summary_text(await database.get_stock_snapshot(), await _waiting()))
     return await post_to_group(bot, text, tag=False)
 
 
@@ -334,7 +352,7 @@ async def _maybe_send_summary(bot: Bot) -> None:
         return
     if not await database.claim_stock_summary():
         return
-    text = summary_text(await database.get_stock_snapshot())
+    text = summary_text(await database.get_stock_snapshot(), await _waiting())
     for part in _chunks(text):
         for admin_id in ADMIN_IDS:
             try:
@@ -363,7 +381,7 @@ async def cmd_stock(message: Message):
     """Current low / out-of-stock list on demand — with a button that sends
     the same full list to every admin (owner request 2026-09-30)."""
     products = await database.get_stock_snapshot()
-    parts = _chunks(summary_text(products))
+    parts = _chunks(summary_text(products, await _waiting()))
     kb = None
     if _low_or_out(products):
         rows = [[InlineKeyboardButton(
@@ -383,7 +401,7 @@ async def send_stock_to_all_admins(callback: CallbackQuery, bot: Bot):
     every admin, tagged with who sent it."""
     products = await database.get_stock_snapshot()
     who = html.escape(callback.from_user.full_name or str(callback.from_user.id))
-    parts = _chunks(summary_text(products))
+    parts = _chunks(summary_text(products, await _waiting()))
     parts[0] = f"📤 Yuboruvchi: {who}\n\n" + parts[0]
     sent = 0
     for admin_id in ADMIN_IDS:
@@ -405,7 +423,7 @@ async def send_stock_to_group(callback: CallbackQuery, bot: Bot):
     """The full low/out list (fresh snapshot) into the staff group right now."""
     products = await database.get_stock_snapshot()
     who = html.escape(callback.from_user.full_name or str(callback.from_user.id))
-    ok = await post_to_group(bot, f"📤 Yuboruvchi: {who}\n\n" + summary_text(products))
+    ok = await post_to_group(bot, f"📤 Yuboruvchi: {who}\n\n" + summary_text(products, await _waiting()))
     await callback.answer("✅ Guruhga yuborildi" if ok else
                           "❌ Guruhga yuborilmadi — bot guruhda va admin ekanini tekshiring",
                           show_alert=True)
