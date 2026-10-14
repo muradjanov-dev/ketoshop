@@ -1130,6 +1130,13 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
           <option value="liter">litr</option><option value="bundle">bog'lam</option><option value="jar">banka</option>
         </select>
       </div>
+      <div class="full"><label>Sotuv turi</label>
+        <select name="b2b_only">
+          <option value="false">🏪 Umumiy do'kon (hamma ko'radi)</option>
+          <option value="true">🏢 Faqat B2B / Optom (yopiq)</option>
+        </select>
+        <div class="hint">Faqat B2B mahsulot oddiy xaridorlar katalogida ko'rinmaydi. Optom narx alohida belgilanadi.</div>
+      </div>
       <div><label>Narx (so'm) *</label><input name="price" type="number" min="0" step="any" required></div>
       <div><label>Tannarx (so'm)</label><input name="cost_price" type="number" min="0" step="any" value="0"></div>
       <div><label>Optom narx (so'm / 1 kg)</label><input name="b2b_price" type="number" min="0" step="any" value="0" placeholder="0 = optomga sotilmaydi"></div>
@@ -1815,6 +1822,7 @@ window.openProdModal=function(id){
     const p=PRODUCTS.find(x=>x.id===id);if(!p)return;
     for(const k of['name','name_ru','category','unit','price','cost_price','b2b_price','quantity','discount_percent','description','description_ru'])
       if(f[k]!==undefined&&p[k]!=null)f[k].value=p[k];
+    f.b2b_only.value=p.b2b_only?'true':'false';
     if(p.image_url){$('#prodImgUrl').value=p.image_url;$('#prodImgPrev').innerHTML=`<img src="${p.image_url}">`;}
   }
   lastCatValue=f.category.value;
@@ -1906,6 +1914,7 @@ $('#descFile').addEventListener('change',async e=>{
 $('#prodForm').addEventListener('submit',async e=>{
   e.preventDefault();const f=e.target,btn=$('#prodSaveBtn');btn.disabled=true;
   const body={name:f.name.value,name_ru:f.name_ru.value,category:f.category.value,unit:f.unit.value,
+    b2b_only:f.b2b_only.value==='true',
     price:+f.price.value,cost_price:+f.cost_price.value||0,b2b_price:+f.b2b_price.value||0,quantity:+f.quantity.value||0,
     discount_percent:+f.discount_percent.value||0,description:f.description.value,description_ru:f.description_ru.value,image_url:$('#prodImgUrl').value||null};
   try{

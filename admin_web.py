@@ -453,6 +453,10 @@ async def api_products_create(request: web.Request):
     except Exception:
         return _json({"error": "name, price, category are required"}, status=400)
 
+    b2b_only = b.get("b2b_only", False)
+    if not isinstance(b2b_only, bool):
+        return _json({"error": "b2b_only must be a boolean"}, status=400)
+
     await database.ensure_user_exists(WEB_SELLER_ID, "Ketoshop Admin")
     pid = await database.admin_create_product(
         seller_id=WEB_SELLER_ID,
@@ -466,6 +470,7 @@ async def api_products_create(request: web.Request):
         description_ru=_clean_str(b.get("description_ru"), 2000),
         cost_price=float(b.get("cost_price") or 0),
         b2b_price=float(b.get("b2b_price") or 0),
+        b2b_only=b2b_only,
         discount_percent=int(b.get("discount_percent") or 0),
         image_url=_clean_str(b.get("image_url"), 300),
     )
@@ -483,6 +488,10 @@ async def api_products_update(request: web.Request):
         return _json({"error": "bad request"}, status=400)
 
     fields = {}
+    if "b2b_only" in b:
+        if not isinstance(b["b2b_only"], bool):
+            return _json({"error": "b2b_only must be a boolean"}, status=400)
+        fields["b2b_only"] = b["b2b_only"]
     if "name" in b:             fields["name"] = _clean_str(b["name"], 200)
     if "name_ru" in b:          fields["name_ru"] = _clean_str(b["name_ru"], 200)
     if "description" in b:      fields["description"] = _clean_str(b["description"], 2000)

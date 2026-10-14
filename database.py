@@ -5118,17 +5118,18 @@ async def admin_create_product(seller_id: int, name: str, price: float, category
                                description: str = None, name_ru: str = None,
                                description_ru: str = None, cost_price: float = 0,
                                b2b_price: float = 0,
-                               discount_percent: int = 0, image_url: str = None) -> int:
+                               discount_percent: int = 0, image_url: str = None,
+                               b2b_only: bool = False) -> int:
     """Insert a product from the admin website. seller_id must reference an
     existing users row (the caller ensures the admin user exists first)."""
     async with pool.acquire() as conn:
         return await conn.fetchval(
             """INSERT INTO products
                  (seller_id, name, description, price, unit, quantity, category,
-                  name_ru, description_ru, cost_price, b2b_price, discount_percent, image_url)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id""",
+                  name_ru, description_ru, cost_price, b2b_price, discount_percent, image_url, b2b_only)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id""",
             seller_id, name, description, price, unit, quantity, category,
-            name_ru, description_ru, cost_price, b2b_price, discount_percent, image_url,
+            name_ru, description_ru, cost_price, b2b_price, discount_percent, image_url, b2b_only,
         )
 
 
