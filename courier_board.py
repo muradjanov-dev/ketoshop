@@ -37,6 +37,7 @@ from datetime import datetime, timedelta
 
 import database
 import mystery_gift
+import payment_state
 from locales import get_text
 
 logger = logging.getLogger(__name__)
@@ -224,6 +225,9 @@ def _card(order: dict) -> dict:
         "longitude": _coord(order.get("longitude")),
         "delivery_method": order.get("delivery_method"),
         "payment_method": order.get("payment_method"),
+        # AI karta buyurtmasi: 'unpaid' / 'cheque' — doskada "❗ To'lanmagan"
+        "card_state": payment_state.card_payment_state(
+            order.get("payment_method"), order.get("address_note"), order.get("cheque_file_id")),
         "source": order.get("source") or "bot",
         "history": _history(order),
         "items": items,

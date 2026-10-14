@@ -1947,6 +1947,14 @@ TEXTS = {
         "uz": "💵 To'lov: Naqd — ✅ To'langan",
         "ru": "💵 Оплата: Наличные — ✅ Оплачено",
     },
+    "pay_card_unpaid": {
+        "uz": "❗💳 To'lov: Karta — <b>TO'LANMAGAN</b> (chek kutilmoqda)",
+        "ru": "❗💳 Оплата: Картой — <b>НЕ ОПЛАЧЕНО</b> (ждём чек)",
+    },
+    "pay_card_cheque": {
+        "uz": "🧾 To'lov: Karta — chek keldi, ⚠️ <b>tekshiring</b> (hali tasdiqlanmagan)",
+        "ru": "🧾 Оплата: Картой — чек получен, ⚠️ <b>проверьте</b> (ещё не подтверждено)",
+    },
     "order_cheque_caption": {
         "uz": "🧾 #{order_id} buyurtma to'lov cheki",
         "ru": "🧾 Чек оплаты заказа #{order_id}",

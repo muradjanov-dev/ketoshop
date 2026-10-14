@@ -101,6 +101,13 @@ class CustomerBlockTest(unittest.TestCase):
         self.assertNotIn("To'lov", self.card(dict(FULL, status="cancelled")))
         self.assertIn("Karta orqali", self.card(dict(FULL, payment_method="online")))
 
+    def test_ai_card_order_waiting_for_money_says_unpaid(self):
+        from locales import get_text
+        unpaid = dict(FULL, address_note="Hislat 5-uy · To'lov: KARTA (chek kutilmoqda)")
+        self.assertIn(get_text("pay_card_unpaid", "uz"), self.card(unpaid))
+        self.assertNotIn("Yetkazib berishda to'lanadi", self.card(unpaid))
+        self.assertIn(get_text("pay_card_cheque", "uz"), self.card(dict(unpaid, cheque_file_id="F")))
+
     def test_send_all_adds_history_and_contact(self):
         import asyncio
         from unittest.mock import AsyncMock, patch

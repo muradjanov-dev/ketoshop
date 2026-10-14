@@ -221,7 +221,8 @@ def profile_text(user: dict | None, lang: str, orders: list[dict], all_notes: li
              "yozilgan' kabi gaplarni aytma; shunchaki eslab turgan sotuvchidek gapir.]"]
     name = (user or {}).get("full_name") or ""
     lang_note = {"uz_cyr": "o'zbekcha KIRILL yozuvida", "ru": "ruscha"}.get(lang, "o'zbekcha lotin")
-    lines.append(f"Ism (Telegram): {name or '—'} · bot sozlamasidagi tili: {lang_note}. "
+    lines.append(f"Ism (Telegram, faqat buyurtma ma'lumoti uchun — ISMI BILAN MUROJAAT QILMA): "
+                 f"{name or '—'} · bot sozlamasidagi tili: {lang_note}. "
                  f"Lekin javob tili va yozuvi — mijoz xabaridagidek (kirill, lotin, rus, ingliz).")
 
     real = [o for o in orders if o.get("status") != "cancelled"]

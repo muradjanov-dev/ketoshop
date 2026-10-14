@@ -51,6 +51,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="ai_holat", description="🤖 AI sotuvchi: holat, yoqish/o'chirish, model"),
     BotCommand(command="ai_kalit", description="🔑 OpenAI (GPT) kaliti — serverga kirmasdan"),
     BotCommand(command="ai_mavzu", description="💬 Mijoz suhbatlari shu guruh mavzusiga (topic ichida yozing)"),
+    BotCommand(command="ai_hisobot", description="📊 AI: nechta mijoz, mavzular, sotuvlar"),
     BotCommand(command="ai", description="🤖 AI bilan yangi suhbat (o'zingiz sinash)"),
     BotCommand(command="ai_off", description="🤖 AI ni o'z chatingizda o'chirish"),
     BotCommand(command="ai_mijoz", description="🧠 AI mijoz haqida nimani eslaydi (ID bilan)"),

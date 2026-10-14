@@ -149,7 +149,10 @@ def customer_lines(order: dict, lang: str, *, history: str = "", contact: str = 
         lines.append(_t("delivery", lang, delivery=get_delivery_method_name(order["delivery_method"], lang)))
     # A cancelled order is not "paid on delivery" any more — no payment line.
     if order.get("payment_method") and order.get("status") != "cancelled":
-        lines.append(payment_status_block(order["payment_method"], order.get("status"), lang))
+        # address_note + cheque: an AI card order still waiting for its money
+        # says "❗ TO'LANMAGAN", never "pay on delivery" (payment_state.py).
+        lines.append(payment_status_block(order["payment_method"], order.get("status"), lang,
+                                          order.get("address_note"), order.get("cheque_file_id")))
     return lines
 
 

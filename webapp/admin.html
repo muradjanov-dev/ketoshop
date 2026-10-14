@@ -3035,8 +3035,11 @@ function kbCardHtml(c,col,i){
   // The surprise pack has no order line of its own — the team adds it by
   // hand — so the board is the only thing that can remind them.
   if(c.mystery_gift)chips.push('<span class="kb-chip hot">🎁 Sirli sovg’a</span>');
+  // AI orqali karta to'lovli buyurtma pul kelmasdan tuziladi — naqd emas!
+  if(c.card_state==='unpaid')chips.push('<span class="kb-chip hot">❗ To‘lanmagan — karta</span>');
+  if(c.card_state==='cheque')chips.push('<span class="kb-chip hot">🧾 Chek keldi — tekshiring</span>');
 
-  const cash=!c.payment_method||c.payment_method==='cash';
+  const cash=(!c.payment_method||c.payment_method==='cash')&&!c.card_state;
   const pin=kbPin(c);
   // A pinned address is stored as "41.29, 69.28 — Taras Shevchenko 29": the
   // coordinates are for the map link, not for reading, so the card shows the
@@ -3070,9 +3073,9 @@ function kbCardHtml(c,col,i){
     ${note?`<div class="kb-meta">📝 ${esc(note)}</div>`:''}
     ${links?`<div class="kb-links">${links}</div>`:''}
     <div class="kb-foot">
-      <span class="kb-total ${cash?'cash':'paid'}"
-            title="${cash?'Naqd — kuryer pul oladi':'Oldindan to’langan'}">
-        ${cash?'💵 ':'✅ '}${kbSom(c.total)}</span>
+      <span class="kb-total ${cash||c.card_state?'cash':'paid'}"
+            title="${c.card_state==='unpaid'?'Karta — TO‘LANMAGAN, chek kutilmoqda':c.card_state==='cheque'?'Karta — chek keldi, tekshiring':cash?'Naqd — kuryer pul oladi':'Oldindan to’langan'}">
+        ${c.card_state==='unpaid'?'❗💳 ':c.card_state==='cheque'?'🧾 ':cash?'💵 ':'✅ '}${kbSom(c.total)}</span>
       <div class="kb-acts">
         ${done&&c.status==='cancelled'?'':
           `<button class="kb-mini" data-act="prev" title="Orqaga: ${pv?esc(KB_LABEL[pv]):''}" ${kbCan(c.status,pv)?'':'disabled'}>◀</button>`}
@@ -3334,7 +3337,7 @@ function kbRenderDetail(id,opts){
       <div class="kb-line" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px">
         <span style="font-weight:800">Jami</span><span class="tnum" style="font-weight:800">${kbSom(c.total)} so'm</span></div>
       ${c.keto_redeemed>0?`<div class="kb-line"><span>🎁 Keto bilan chegirma</span><span class="tnum">−${kbSom(c.keto_redeemed)}</span></div>`:''}
-      <div class="kb-kv" style="margin-top:6px"><span class="k">To’lov</span><span class="v">${KB_PAYMENT[c.payment_method]||esc(c.payment_method||'—')}${c.status==='cancelled'?'':' — '+kbPayState(c)}</span></div>
+      <div class="kb-kv" style="margin-top:6px"><span class="k">To’lov</span><span class="v">${c.card_state==='unpaid'?'❗💳 Karta — TO‘LANMAGAN (chek kutilmoqda)':c.card_state==='cheque'?'🧾 Karta — chek keldi, tekshiring':(KB_PAYMENT[c.payment_method]||esc(c.payment_method||'—'))+(c.status==='cancelled'?'':' — '+kbPayState(c))}</span></div>
       <div class="kb-kv"><span class="k">Yetkazish</span><span class="v">${KB_DELIVERY[c.delivery_method]||esc(c.delivery_method||'—')}</span></div>
     </div>
     <div class="sec">
