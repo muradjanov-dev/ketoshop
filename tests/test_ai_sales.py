@@ -222,7 +222,7 @@ class AiSalesToolLoopTest(_ProviderSwap):
                 Turn(text="Buyurtmangiz #4242 qabul qilindi."),
             ])
             message = _FakeMessage("ha, tasdiqlayman")
-            ai_sales._session(message.from_user.id)
+            ai_sales._session(message.from_user.id)["summary_turn"] = 0   # jami oldin ko'rsatilgan
             reply = _run(ai_sales._respond(None, message, message.text))
         finally:
             cart._build_order_summary, cart._notify_sellers, cart.notify_low_stock = saved
@@ -458,6 +458,41 @@ class AiSalesGateTest(_ProviderSwap):
                                                      "items": "[]"}], [],
                                       {"address": "Chilonzor 9"}, None)
         self.assertIn("'📍 Manzil: …', '📞 Raqam: …'", text)
+
+    def test_reply_is_polished_before_sending(self):
+        polish = ai_sales.polish_reply
+        # O'zbekcha kirill javobda lotin qoldiqlar (mahsulot nomi, so'm) — kirillga.
+        out = polish("Ҳа, албатта бор 😊\n• Eritritol 500gr — 68 000 so'm", "uz_cyr")
+        self.assertNotRegex(out, r"[A-Za-z]")
+        self.assertIn("сўм", out)
+        # Ruscha javobda so'm — сум, qolgani o'zgarmaydi.
+        self.assertEqual(polish("Миндальная мука — 89 000 so'm"), "Миндальная мука — 89 000 сум")
+        # Tugma nomlari matndan olib tashlanadi.
+        out = polish("Iltimos, pastdagi tugmani bosing.\n\n📍 Lokatsiyani yuborish\n📞 Raqamni yuborish")
+        self.assertEqual(out, "Iltimos, pastdagi tugmani bosing.")
+        # Mo'ljal aytilib havola unutilsa — havola qo'shiladi; bor bo'lsa ikkinchi marta emas.
+        out = polish("Do'konimiz: Toshkent shahri, Ko'kcha masjidi ro'parasi.")
+        self.assertIn("https://t.me/ketoshop_uz/1071", out)
+        self.assertEqual(polish(out).count("https://t.me/ketoshop_uz/1071"), 1)
+        # Lotin javobga tegilmaydi.
+        self.assertEqual(polish("Bodom uni — 89 000 so'm 😊"), "Bodom uni — 89 000 so'm 😊")
+
+    def test_reply_script_follows_the_customer_message(self):
+        polish = ai_sales.polish_reply
+        out = polish("Албатта, аввалги бодом уни билан нон ретсептини берган эдик 😊", "uz",
+                     customer_text="yana boshqa bodom uni retsepti bering")
+        self.assertNotRegex(out, r"[\u0400-\u04FF]")
+        out = polish("Ha, albatta bor 😊 Eritritol 500gr — 68 000 so'm", "uz",
+                     customer_text="эритритол борми? нархи қанча?")
+        self.assertNotRegex(out, r"[A-Za-z]")
+        out = polish("Psillium uni 300gr — 125 000 so'm 😊\n\nСаватга қўшамизми? 🛒", "uz",
+                     customer_text="pishiriq uchun kerak")
+        self.assertIn("Savatga qo'shamizmi? 🛒", out)
+        self.assertNotRegex(out, r"[\u0400-\u04FF]")
+        # Ruscha mijozga ruscha javob o'zgarmaydi; lokatsiya belgisi yozuvni belgilamaydi.
+        self.assertEqual(polish("Да, есть 😊", "ru", customer_text="Есть миндальная мука?"), "Да, есть 😊")
+        self.assertEqual(polish("Rahmat 😊", "uz", customer_text="[Mijoz telefon raqamini yubordi: +998]"),
+                         "Rahmat 😊")
 
     def test_thanks_alone_costs_no_model_call(self):
         for text in ("rahmat", "Katta rahmat!", "спасибо", "Раҳмат 🙏"):
@@ -1200,6 +1235,7 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
         try:
             message = _FakeMessage("ha")
             session = ai_sales._session(message.from_user.id)
+            session["turn"], session["summary_turn"] = 2, 1
             if location:
                 session["location"] = location
             result = _run(ai_sales._tool_order(None, message, tool_input))
@@ -1309,7 +1345,8 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
         database.create_order = AsyncMock(return_value=(4242, []))
         database.clear_cart = AsyncMock()
         database.get_user_language = AsyncMock(return_value="uz")
-        ai_sales._session(777)
+        session = ai_sales._session(777)
+        session["turn"], session["summary_turn"] = 2, 1
         result = _run(ai_sales._tool_order(None, _FakeMessage("ha"), {
             "ism": "Dilnoza", "telefon": "+998901234567", "manzil": "Chilonzor 9",
             "tolov_turi": "naqd", "qoshimcha_telefon": "+998935556677", "keto": 20000}))
@@ -1327,6 +1364,82 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
                      "6) QO'SHIMCHA TELEFON", "7) TO'LOV", "8) KETO TANGACHALAR", "9) TASDIQ",
                      "10) BUYURTMA"):
             self.assertIn(step, rules)
+
+    def test_no_order_until_the_total_was_shown_in_an_earlier_message(self):
+        args = {"ism": "Aziz", "telefon": "+998901234567", "manzil": "Chilonzor 9",
+                "tolov_turi": "naqd"}
+        session = ai_sales._session(777)
+        session["turn"], session["summary_turn"] = 3, None           # jami umuman ko'rsatilmagan
+        result, kwargs, _ = self._order_raw(args)
+        self.assertTrue(result.startswith("Xato:"), result)
+        self.assertIsNone(kwargs)
+        session["summary_turn"] = 3                                  # shu xabarda ko'rsatildi
+        result, kwargs, _ = self._order_raw(args)
+        self.assertIn("KEYINGI", result)
+        self.assertIsNone(kwargs)
+        session["summary_turn"] = 1                                  # ikki xabar oldin — yetmaydi
+        result, kwargs, _ = self._order_raw(args)
+        self.assertTrue(result.startswith("Xato:"), result)
+        self.assertIsNone(kwargs)
+        session["summary_turn"] = 2                                  # aynan oldingi xabarda — mumkin
+        ai_sales._cart_changed(777)                                  # ...lekin savat o'zgardi
+        result, kwargs, _ = self._order_raw(args)
+        self.assertTrue(result.startswith("Xato:"), result)
+
+    def test_total_counts_as_shown_only_when_the_reply_really_shows_it(self):
+        session = {"turn": 4, "last_totals": {185200, 160200}}
+        ai_sales._mark_summary_shown(session, "Hisobingizda 15 000 ta Keto bor — ishlatamizmi?")
+        self.assertNotIn("summary_turn", session)                    # summa ko'rsatilmadi
+        ai_sales._mark_summary_shown(session, "Jami: 185 200 so'm. To'lov naqdmi yoki kartami?")
+        self.assertNotIn("summary_turn", session)                    # tasdiq so'ralmadi
+        session["turn"] = 5                                          # keyingi xabarda, vositasiz
+        ai_sales._mark_summary_shown(session, "Jami: 185 200 so'm. Tasdiqlaysizmi? 🛒")
+        self.assertEqual(session["summary_turn"], 5)
+
+    def test_location_address_is_not_written_twice(self):
+        session = ai_sales._session(777)
+        session["turn"], session["summary_turn"] = 2, 1
+        session["location"] = (41.31, 69.24, "📍 41.310000, 69.240000 — Chilonzor tumani, Bunyodkor 5")
+        result, kwargs, _ = self._order_raw({
+            "ism": "Aziz", "telefon": "+998901234567", "tolov_turi": "naqd",
+            "manzil": "Chilonzor tumani, Bunyodkor 5, 3-uy, 12-xonadon"})
+        self.assertEqual(kwargs["address"].count("Bunyodkor 5"), 1)
+        self.assertIn("3-uy, 12-xonadon", kwargs["address"])
+
+    def test_location_address_with_other_apostrophes_is_not_written_twice(self):
+        session = ai_sales._session(777)
+        session["turn"], session["summary_turn"] = 2, 1
+        session["location"] = (41.31, 69.24, "📍 41.310000, 69.240000 — Chilonzor tumani, Bunyodkor ko'chasi 5")
+        _, kwargs, _ = self._order_raw({
+            "ism": "Aziz", "telefon": "+998901234567", "tolov_turi": "naqd",
+            "manzil": "Chilonzor tumani, Bunyodkor ko‘chasi 5, 3-uy, 12-xonadon"})
+        self.assertEqual(kwargs["address"].count("Bunyodkor"), 1)
+        self.assertIn("3-uy, 12-xonadon", kwargs["address"])
+
+    def test_order_number_is_always_in_the_reply(self):
+        session = {"new_order_id": 5001}
+        out = ai_sales._with_order_number(session, "Buyurtma qabul qilindi: 101 100 so'm.", "uz")
+        self.assertIn("#5001", out)
+        session = {"new_order_id": 5002}
+        self.assertEqual(ai_sales._with_order_number(session, "Buyurtma #5002 qabul qilindi.", "uz"),
+                         "Buyurtma #5002 qabul qilindi.")
+
+    def _order_raw(self, tool_input):
+        items = self._items
+
+        async def fake_summary(user_id, data, lang):
+            return "matn", 110000, items, 0
+
+        import handlers.cart as cart
+        _patch(self, cart, "_build_order_summary", fake_summary)
+        _patch(self, cart, "_notify_sellers", AsyncMock())
+        _patch(self, cart, "notify_low_stock", AsyncMock())
+        database.create_order = AsyncMock(return_value=(4242, []))
+        database.clear_cart = AsyncMock()
+        database.get_user_language = AsyncMock(return_value="uz")
+        result = _run(ai_sales._tool_order(None, _FakeMessage("ha"), tool_input))
+        kwargs = database.create_order.await_args.kwargs if database.create_order.await_count else None
+        return result, kwargs, None
 
     def test_tashkent_courier_refuses_a_location_outside_tashkent(self):
         result, kwargs, _ = self._order(
