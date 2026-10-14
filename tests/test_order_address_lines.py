@@ -45,18 +45,26 @@ class StatusCardTest(unittest.TestCase):
         return feed.build_card(order, lang, title="status_title", by="Sayt — Kuryer doskasi",
                                old_status="pending", new_status="confirmed")
 
-    def test_place_note_and_link(self):
+    LINK = f'🗺 <a href="{URL.replace("&", "&amp;")}">Yandex xaritada ochish</a>'
+
+    def test_link_instead_of_coordinates(self):
+        # Owner, 2026-10-14: "41.018332, 69.676414 shuni o'rniga yandex xarita
+        # havolasi chiqara olamizmi?"
         text = self.card()
-        self.assertIn("📍 41.357019, 69.275420", text)
+        self.assertIn(f"📍 {self.LINK}", text)
+        self.assertNotIn("41.357019", text.replace(URL.replace("&", "&amp;"), ""))
         self.assertNotIn("📍 📍", text)
         self.assertIn("📝 М.Улугбек тум Геофизика Хислат 5уй 12 хонадон", text)
-        self.assertIn(f'🗺 <a href="{URL.replace("&", "&amp;")}">Yandex xaritada ochish</a>', text)
+
+    def test_street_stays_readable_next_to_the_link(self):
+        text = self.card(dict(ORDER, address="📍 41.357019, 69.275420 — Mirzo Ulug'bek, Geofizika"))
+        self.assertIn(f"📍 Mirzo Ulug'bek, Geofizika · {self.LINK}", text)
 
     def test_order_of_lines(self):
         lines = self.card().split("\n")
         i = next(n for n, l in enumerate(lines) if l.startswith("📍"))
         self.assertTrue(lines[i + 1].startswith("📝"))
-        self.assertTrue(lines[i + 2].startswith("🗺"))
+        self.assertFalse(any(l.startswith("🗺") for l in lines))   # no separate map line
 
     def test_languages(self):
         self.assertIn("Открыть в Яндекс Картах", self.card(lang="ru"))
@@ -90,7 +98,7 @@ class CustomerBlockTest(unittest.TestCase):
                          contact='<a href="https://t.me/dilnoza">@dilnoza</a>')
         lines = text.split("\n")
         starts = ["👤 Дилноза", "🔁 <b>2-buyurtmasi</b>", "📱 +998992288314", "📞 +998901112233",
-                  "💬 <a href=", "📍 41.357019", "📝 М.Улугбек", "🗺 <a href=",
+                  "💬 <a href=", "📍 🗺 <a href=", "📝 М.Улугбек",
                   "🚚 Yetkazib berish:", "💵 To'lov: Naqd — ⏳"]
         found = [next(i for i, l in enumerate(lines) if l.startswith(s)) for s in starts]
         self.assertEqual(found, sorted(found))

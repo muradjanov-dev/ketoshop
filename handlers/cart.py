@@ -2423,11 +2423,10 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
         # was ever told about it.
         note = data.get("address_note")
         note_block = f"\n📝 {_escape_html(note)}" if note else ""
-        # 🗺 Yandex Maps pin under the address — from the saved row, since
-        # not every one of the flows that reach here carries the coordinates.
+        # The street + a Yandex Maps link in place of raw coordinates — from
+        # the saved row, since not every flow that reaches here carries them.
         import order_admin_feed
-        if map_link := order_admin_feed.map_line(saved_order or data, admin_lang):
-            note_block += "\n" + map_link
+        address_html = order_admin_feed.address_html(saved_order or data, admin_lang) or "—"
         sec = data.get("secondary_phone")
         secondary_block = f"\n📞 {_escape_html(sec)}" if sec else ""
         delivery_fee = delivery_fee_for(data.get("delivery_method"), goods_subtotal(items))
@@ -2440,7 +2439,7 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
                 phone=_escape_html(data["phone"]),
                 secondary_block=secondary_block,
                 contact=contact,          # already-escaped markup — buyer_contact_link
-                address=_escape_html(order_admin_feed.plain_address(data["address"])),
+                address=address_html,          # already escaped — order_admin_feed
                 note_block=note_block,
                 delivery=get_delivery_method_name(data.get("delivery_method"), admin_lang),
                 payment_block=payment_status_block(data.get("payment_method"), data.get("status"), admin_lang,

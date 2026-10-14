@@ -16,9 +16,8 @@ the change — the owner asked for all of them, and it doubles as a receipt):
     🔁 2-buyurtmasi (oldingi 1 tasi yetkazilgan)
     📱 +998 90 …
     💬 @ali
-    📍 41.35…, 69.27… — Toshkent, Chilonzor …
+    📍 Toshkent, Chilonzor … · 🗺 Yandex xaritada ochish   (a link, not digits)
     📝 Chilonzor 9-kvartal, 12-uy (buyer's own words)
-    🗺 Yandex xaritada ochish
     🚚 Yetkazib berish: Ketoshop kuryer
     💵 To'lov: Naqd — ⏳ Yetkazib berishda to'lanadi
 
@@ -41,6 +40,7 @@ import asyncio
 import html
 import json
 import logging
+import re
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
@@ -101,17 +101,34 @@ def plain_address(address) -> str:
     return str(address or "").strip().removeprefix("📍").strip()
 
 
-def location_lines(order: dict, lang: str) -> list[str]:
-    def esc(v: str) -> str:
-        return html.escape(v, quote=False)
+# "41.018332, 71.676414" / "41.01, 71.67 — Chilonzor 9": the digits are for
+# the map, not for reading (owner, 2026-10-14: "shuni o'rniga yandex xarita
+# havolasi chiqara olamizmi?").
+_COORD_PREFIX = re.compile(r"^\s*-?\d{1,2}\.\d+\s*,\s*-?\d{1,3}\.\d+\s*(?:[—–-]\s*)?")
 
+
+def street(address) -> str:
+    """The readable part of a stored address — coordinates dropped."""
+    return _COORD_PREFIX.sub("", plain_address(address)).strip()
+
+
+def address_html(order: dict, lang: str) -> str:
+    """What follows "📍 " on an admin order card: the street and, in place of
+    raw coordinates, a tappable Yandex Maps link. HTML-escaped; "" when the
+    order has neither."""
+    text = html.escape(street(order.get("address")), quote=False)[:200]
+    link = map_line(order, lang)
+    if text and link:
+        return f"{text} · {link}"
+    return text or link
+
+
+def location_lines(order: dict, lang: str) -> list[str]:
     lines = []
-    if address := plain_address(order.get("address")):
-        lines.append(f"📍 {esc(address)[:200]}")
+    if where := address_html(order, lang):
+        lines.append(f"📍 {where}")
     if note := str(order.get("address_note") or "").strip():
-        lines.append(f"📝 {esc(note)[:300]}")
-    if link := map_line(order, lang):
-        lines.append(link)
+        lines.append(f"📝 {html.escape(note, quote=False)[:300]}")
     return lines
 
 

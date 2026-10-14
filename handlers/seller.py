@@ -1438,8 +1438,6 @@ async def view_seller_order(callback: CallbackQuery):
     import order_admin_feed
     note = order.get("address_note")
     note_block = f"\n📝 {html.escape(note, quote=False)}" if note else ""
-    if map_link := order_admin_feed.map_line(order, lang):
-        note_block += "\n" + map_link
     sec = order.get("secondary_phone")
     secondary_block = f"\n📞 {sec}" if sec else ""
     # Read the fee back from what was actually charged (total = products +
@@ -1463,7 +1461,7 @@ async def view_seller_order(callback: CallbackQuery):
         phone=order["phone"],
         secondary_block=secondary_block,
         contact=contact,
-        address=html.escape(order_admin_feed.plain_address(order["address"]), quote=False),
+        address=order_admin_feed.address_html(order, lang) or "—",   # street + Yandex link, escaped
         note_block=note_block,
         delivery=get_delivery_method_name(order.get("delivery_method"), lang),
         payment_block=payment_status_block(order.get("payment_method"), order.get("status"), lang,
