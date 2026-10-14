@@ -180,6 +180,22 @@ async def detail_keyboard(user_id: int, product_id: int, back_category: str,
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def mark_held(text: str, product: dict, lang: str) -> str:
+    """Savat broni (2026-10-13): a product whose last pieces all sit in other
+    buyers' carts (database.apply_holds → held_out) is "⏳ band", not sold
+    out — it may come back within 24 h. Swaps the card's sold-out note for
+    the band note, whichever sold-out wording the card used."""
+    if not product.get("held_out"):
+        return text
+    from locales import TEXTS
+    held = get_text("product_held_out", lang)
+    for key in [k for k in TEXTS if k.startswith("product_out_of_stock")]:
+        note = get_text(key, lang)
+        if note and note in text:
+            return text.replace(note, held)
+    return f"{text}\n\n{held}"
+
+
 async def send_card(bot: Bot, chat_id: int, product: dict, lang: str,
                     rate: float | None = None, back_category: str = "",
                     back_page: int = 0, caption: str | None = None):
@@ -189,8 +205,10 @@ async def send_card(bot: Bot, chat_id: int, product: dict, lang: str,
     import gamification
     if rate is None:
         rate = await gamification.buyer_rate(chat_id)
+    # What this buyer can still take — other buyers' carts hold the rest.
+    product = (await database.apply_holds([product], chat_id))[0]
     if caption is None:
-        caption = await build_caption(product, lang, rate)
+        caption = mark_held(await build_caption(product, lang, rate), product, lang)
     keyboard = await detail_keyboard(chat_id, product["id"], back_category, back_page,
                                      lang, product["quantity"] <= 0, keep=True)
     if product.get("photo_id"):

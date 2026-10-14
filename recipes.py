@@ -213,6 +213,9 @@ async def add_all_to_cart(user_id: int, recipe: dict, lang: str = "uz") -> dict:
         if in_cart:
             already.append(name)
             continue
-        await database.add_to_cart(user_id, product_id=p["id"], quantity=1)
+        # Savat broni: nothing goes in when other buyers' carts hold it all.
+        if await database.add_to_cart(user_id, product_id=p["id"], quantity=1) <= 0:
+            missing.append(name)
+            continue
         added.append(name)
     return {"added": added, "already": already, "missing": missing}

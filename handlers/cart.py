@@ -424,6 +424,12 @@ async def added_more(callback: CallbackQuery):
     await show_catalog(callback)
 
 
+def _fmt_qty(value) -> str:
+    """2.0 → "2", 1.5 → "1.5" — a quantity as a buyer reads it."""
+    v = float(value or 0)
+    return str(int(v)) if v.is_integer() else f"{v:g}"
+
+
 @router.callback_query(F.data.startswith("add_cart:"))
 async def add_one_to_cart(callback: CallbackQuery):
     """Add 1 of the product to the cart straight away — no quantity prompt.
@@ -436,11 +442,15 @@ async def add_one_to_cart(callback: CallbackQuery):
     if not product:
         await callback.answer("❌")
         return
-    if (product.get("quantity") or 0) <= 0:
-        await callback.answer(get_text("cart_stock_limit", lang), show_alert=True)
-        return
 
-    await add_to_cart(callback.from_user.id, product_id, 1)
+    # Savat broni: add_to_cart only puts in what nobody else holds.
+    from database import get_cart_line_for_product
+    _line, before = await get_cart_line_for_product(callback.from_user.id, product_id)
+    if await add_to_cart(callback.from_user.id, product_id, 1) <= before:
+        import cart_reservations
+        await callback.answer(await cart_reservations.limit_text(callback.from_user.id, lang, product_id),
+                              show_alert=True)
+        return
 
     _kb, toast = await _after_add(callback.from_user.id, lang)
     await send_added_to_cart(callback.bot, callback.from_user.id, product["name"], lang)
@@ -460,14 +470,24 @@ async def add_item_to_cart(callback: CallbackQuery):
         await callback.answer("❌")
         return
 
-    await add_to_cart(callback.from_user.id, product_id, quantity)
+    # Savat broni: only what nobody else holds goes in — say so if it's less.
+    from database import get_cart_line_for_product
+    _line, before = await get_cart_line_for_product(callback.from_user.id, product_id)
+    added = await add_to_cart(callback.from_user.id, product_id, quantity) - before
+    if added <= 0:
+        import cart_reservations
+        await callback.answer(await cart_reservations.limit_text(callback.from_user.id, lang, product_id),
+                              show_alert=True)
+        return
 
     keyboard, toast = await _after_add(callback.from_user.id, lang)
+    if added < quantity:
+        toast = get_text("cart_added_partly", lang, n=_fmt_qty(added))
 
     await callback.message.edit_text(
         get_text("added_to_cart", lang,
             name=product["name"],
-            quantity=quantity,
+            quantity=_fmt_qty(added),
             unit=get_display_unit(product["unit"], lang)
         ),
         reply_markup=keyboard,
@@ -499,6 +519,14 @@ async def process_custom_quantity(message: Message, state: FSMContext):
     product = await get_product(product_id)
     unit = product["unit"] if product else ""
     available = product["quantity"] if product else 1000
+    if product:
+        # Savat broni: what this buyer can still add — the shelf minus other
+        # buyers' holds, minus what is already in their own cart.
+        from database import get_cart_line_for_product, stock_view
+        _line, before = await get_cart_line_for_product(message.from_user.id, product_id)
+        view = (await stock_view([product_id], message.from_user.id)).get(product_id)
+        if view:
+            available = max(0.0, view["free"] - float(before))
 
     raw = (message.text or "").strip().replace(",", ".")
     try:
@@ -532,14 +560,20 @@ async def process_custom_quantity(message: Message, state: FSMContext):
         await message.answer("❌")
         return
 
-    await add_to_cart(message.from_user.id, product_id, quantity)
+    _line, before = await get_cart_line_for_product(message.from_user.id, product_id)
+    added = await add_to_cart(message.from_user.id, product_id, quantity) - before
+    if added <= 0:
+        # Someone else took the last pieces between the check above and now.
+        import cart_reservations
+        await message.answer(await cart_reservations.limit_text(message.from_user.id, lang, product_id))
+        return
 
     keyboard, _toast = await _after_add(message.from_user.id, lang)
 
     await message.answer(
         get_text("added_to_cart", lang,
             name=product["name"],
-            quantity=quantity,
+            quantity=_fmt_qty(added),
             unit=get_display_unit(product["unit"], lang)
         ),
         reply_markup=keyboard,
@@ -839,12 +873,16 @@ async def cart_increment(callback: CallbackQuery):
     if not item or item["user_id"] != callback.from_user.id:
         await callback.answer("❌", show_alert=True)
         return
-    stock = item.get("stock") or 0
     new_qty = item["cart_quantity"] + 1
-    if stock and new_qty > stock:
-        await callback.answer(get_text("cart_stock_limit", lang), show_alert=True)
+    # Savat broni: capped at what nobody else holds.
+    got = await set_cart_quantity(cart_id, new_qty)
+    if got < new_qty:
+        import cart_reservations
+        if got != item["cart_quantity"]:
+            await _render_cart(callback, lang)      # the shelf shrank under them
+        await callback.answer(await cart_reservations.limit_text(
+            callback.from_user.id, lang, item.get("product_id"), item.get("set_id")), show_alert=True)
         return
-    await set_cart_quantity(cart_id, new_qty)
     await _render_cart(callback, lang)
     await callback.answer()
 
@@ -2039,6 +2077,10 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
         # Online → DON'T create the order yet. Stash everything we'll need in
         # FSM state and ask for the cheque. The row is inserted in
         # process_cheque_photo / process_cheque_document once we have proof.
+        # The cart stays held while they pay (Savat broni) — a fresh 24 h, so
+        # the products can't go back on sale between the transfer and the cheque.
+        from database import extend_cart_hold
+        await extend_cart_hold(callback.from_user.id)
         await state.set_state(CheckoutStates.waiting_cheque)
         await state.update_data(
             pending_items=items_data,
@@ -2183,12 +2225,7 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
             pickup_map_url=data.get("pending_pickup_map_url"),
         )
     except InsufficientStockError as exc:
-        await state.clear()
-        await message.answer(
-            await stock_gone_text(exc, lang),
-            reply_markup=main_menu_keyboard(lang),
-            parse_mode="HTML",
-        )
+        await _paid_but_short(bot, message, state, data, exc, cheque_file_id, cheque_kind, total, lang)
         return
     except InsufficientKetoError:
         # Balance dropped again in the instant between the re-clamp above and
@@ -2216,12 +2253,7 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
                 pickup_map_url=data.get("pending_pickup_map_url"),
             )
         except InsufficientStockError as exc:
-            await state.clear()
-            await message.answer(
-                await stock_gone_text(exc, lang),
-                reply_markup=main_menu_keyboard(lang),
-                parse_mode="HTML",
-            )
+            await _paid_but_short(bot, message, state, data, exc, cheque_file_id, cheque_kind, total, lang)
             return
 
     await state.clear()
@@ -2326,6 +2358,52 @@ async def send_pending_cheque_prompt(bot: Bot, user_id: int, data: dict) -> None
         ]),
         parse_mode="HTML",
     )
+
+
+async def _paid_but_short(bot: Bot, message: Message, state: FSMContext, data: dict,
+                          exc: "InsufficientStockError", cheque_file_id: str, cheque_kind: str,
+                          total: float, lang: str) -> None:
+    """The buyer paid by card and sent the cheque, but stock ran short before
+    the order could be made. Rare since carts hold their products (Savat
+    broni) — e.g. an admin cut the stock by hand — but the money must never
+    vanish silently: the cheque goes to every admin with who / what / how
+    much, and the buyer is told an admin will contact them."""
+    import html
+    import logging
+    await state.clear()
+    await message.answer(
+        await stock_gone_text(exc, lang) + "\n\n" + get_text("paid_stock_gone_note", lang),
+        reply_markup=main_menu_keyboard(lang),
+        parse_mode="HTML",
+    )
+    try:
+        p = await get_product(exc.product_id)
+    except Exception:
+        p = None
+    name = data.get("pending_customer_name") or message.from_user.full_name or "—"
+    phone = str(data.get("pending_phone") or "—")
+    contact = buyer_contact_link(message.from_user.id, message.from_user.username, name)
+    amount = f"{int(total or 0):,}".replace(",", " ")
+    product = (p or {}).get("name") or str(exc.product_id)
+    caption = "\n".join([
+        "⚠️ <b>To'langan, lekin buyurtma tuzilmadi</b>",
+        "",
+        f"👤 {html.escape(name, quote=False)} · {html.escape(phone, quote=False)}",
+        f"💬 {contact}",
+        f"💰 {amount} so'm — chek ilovada",
+        f"❌ Yetmadi: {html.escape(product, quote=False)} — "
+        f"so'raldi {float(exc.requested):g}, bor {float(exc.available or 0):g}",
+        "",
+        "Mijoz bilan bog'laning: pulni qaytaring yoki boshqa mahsulot taklif qiling.",
+    ])[:1024]
+    for admin_id in ADMIN_IDS:
+        try:
+            if cheque_kind == "photo":
+                await bot.send_photo(admin_id, cheque_file_id, caption=caption, parse_mode="HTML")
+            else:
+                await bot.send_document(admin_id, cheque_file_id, caption=caption, parse_mode="HTML")
+        except Exception as err:
+            logging.getLogger(__name__).warning("paid-but-short alert to %s failed: %s", admin_id, err)
 
 
 async def _forward_cheque_to_admins(bot: Bot, order_id: int, customer_name: str,

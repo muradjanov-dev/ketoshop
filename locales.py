@@ -580,6 +580,28 @@ TEXTS = {
         "uz": "Omborda bundan ko'p yo'q",
         "ru": "Больше нет в наличии",
     },
+    # Savat broni (cart_reservations.py, 2026-10-13): the rest sits in other
+    # buyers' carts — it may come back within 24 h.
+    "cart_held_limit": {
+        "uz": "⏳ Qolgan donalar boshqa mijoz savatida band — 24 soat ichida bo'shashi mumkin",
+        "ru": "⏳ Остальное уже в корзине другого покупателя — может освободиться в течение 24 часов",
+    },
+    "cart_added_partly": {
+        "uz": "Faqat {n} ta qo'shildi — qolganlari boshqa mijoz savatida band",
+        "ru": "Добавлено только {n} — остальное в корзине другого покупателя",
+    },
+    # Paid by card, cheque sent, then stock ran short (handlers/cart._paid_but_short).
+    "paid_stock_gone_note": {
+        "uz": "💳 To'lovingiz va chekingiz bizda — admin tez orada siz bilan bog'lanib, "
+              "pulni qaytaradi yoki boshqa mahsulot taklif qiladi.",
+        "ru": "💳 Ваша оплата и чек у нас — администратор скоро свяжется с вами, "
+              "вернёт деньги или предложит другой товар.",
+    },
+    "product_held_out": {
+        "uz": "⏳ <b>Hozircha band</b> — oxirgi donalar boshqa mijoz savatida. 24 soat ichida bo'shashi mumkin.",
+        "ru": "⏳ <b>Сейчас забронировано</b> — последние штуки в корзине другого покупателя. "
+              "Может освободиться в течение 24 часов.",
+    },
     "btn_add_to_cart": {"uz": "🛒 Savatga qo'shish", "ru": "🛒 В корзину"},
     "btn_sets": {"uz": "🎁 To'plamlar", "ru": "🎁 Наборы"},
     "btn_clear_cart": {"uz": "🗑 Savatni tozalash", "ru": "🗑 Очистить корзину"},

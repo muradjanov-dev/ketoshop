@@ -132,7 +132,7 @@ class ViewAndCartTest(unittest.TestCase):
         async def line(user_id, pid):
             return (1, 1.0) if pid in in_cart else (None, 0.0)
 
-        add = AsyncMock()
+        add = AsyncMock(return_value=1.0)       # add_to_cart returns the line quantity
         with patch.object(recipes.database, "get_cart_line_for_product", line), \
              patch.object(recipes.database, "add_to_cart", add):
             res = run(recipes.add_all_to_cart(77, RECIPES[0], "uz"))
@@ -143,7 +143,7 @@ class ViewAndCartTest(unittest.TestCase):
 
     def test_sold_out_is_reported_not_added(self):
         sold_out = [dict(p, quantity=0) if p["id"] == 3 else p for p in CATALOG]
-        add = AsyncMock()
+        add = AsyncMock(return_value=1.0)       # add_to_cart returns the line quantity
         with patch.object(recipes, "_catalog", AsyncMock(return_value=sold_out)), \
              patch.object(recipes.database, "get_cart_line_for_product", AsyncMock(return_value=(None, 0.0))), \
              patch.object(recipes.database, "add_to_cart", add):

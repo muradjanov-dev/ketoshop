@@ -49,6 +49,8 @@ class FakeConn:
         return self.stock.get(args[0], 0)
 
     async def fetch(self, sql, *args):
+        if "SUM(qty) AS held" in sql:
+            return []           # no other buyer holds anything (Savat broni)
         return [{"product_id": p, "quantity": q} for p, q in self.set_items.get(args[0], [])]
 
     async def execute(self, sql, *args):
@@ -92,7 +94,7 @@ class OrderEditTest(unittest.TestCase):
         database.pool = self._pool
 
     def _run(self, order_items, new_items, stock, total=125_000, status="confirmed", set_items=None):
-        order = {"id": 1, "status": status, "total": total, "items": json.dumps(order_items)}
+        order = {"id": 1, "user_id": 7, "status": status, "total": total, "items": json.dumps(order_items)}
         conn = FakeConn(order, stock, set_items)
         database.pool = FakePool(conn)
         res = asyncio.run(database.admin_update_order_items(1, order_items, new_items))

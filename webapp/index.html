@@ -3610,6 +3610,9 @@ const L = {
     errorSessionExpired: 'Sessiya muddati tugadi. Iltimos, ushbu Mini App\'ni yopib qaytadan oching.',
     errorFavStorage: 'Sevimlilarni saqlab bo\'lmadi — xotira to\'lib qolgan.',
     addedToCart: 'Savatga qo\'shildi!',
+    heldOut: '⏳ Hozircha band',
+    heldLimit: '⏳ Qolgan donalar boshqa mijoz savatida band — 24 soat ichida bo\'shashi mumkin',
+    addedPartly: 'Faqat {n} ta qo\'shildi — qolganlari boshqa mijoz savatida band',
     checkoutTitle: 'Buyurtma berish',
     lblPhone: 'Telefon raqam',
     lblLocation: '📍 Yetkazib berish joyi',
@@ -3775,6 +3778,9 @@ const L = {
     errorSessionExpired: 'Сессия истекла. Закройте и снова откройте Mini App.',
     errorFavStorage: 'Не удалось сохранить избранное — память переполнена.',
     addedToCart: 'Добавлено в корзину!',
+    heldOut: '⏳ Сейчас забронировано',
+    heldLimit: '⏳ Остальное уже в корзине другого покупателя — может освободиться в течение 24 часов',
+    addedPartly: 'Добавлено только {n} — остальное в корзине другого покупателя',
     checkoutTitle: 'Оформление заказа',
     lblPhone: 'Номер телефона',
     lblLocation: '📍 Место доставки',
@@ -4769,6 +4775,40 @@ async function checkStartGate(manual) {
   }
 
   await langPromise;
+})();
+
+// ===== SAVAT BRONI: "⏳ Band" (owner, 2026-10-13) =====
+// A product whose last pieces all sit in other buyers' carts comes from the
+// server as out_of_stock + held_out. It isn't sold out — it may come back
+// within 24 h — so wherever a card or the detail view would say "sold out /
+// coming soon", it says "⏳ Hozircha band" instead. Done as a pass over the
+// rendered element, so it holds whatever the out-of-stock markup looks like.
+function markHeld(root) {
+  if (!root) return;
+  const soldOut = [t.comingSoon, t.soldOutStamp, t.outOfStock].filter(Boolean);
+  root.querySelectorAll('*').forEach(el => {
+    if (el.children.length === 0 && soldOut.includes((el.textContent || '').trim())) {
+      el.textContent = t.heldOut;
+    }
+  });
+}
+(function showHeldAsBand() {
+  const card = createProductCard, carousel = createCarouselCard, detail = openDetail;
+  createProductCard = function (p) {
+    const el = card.apply(this, arguments);
+    if (p && p.held_out) markHeld(el);
+    return el;
+  };
+  createCarouselCard = function (p) {
+    const el = carousel.apply(this, arguments);
+    if (p && p.held_out) markHeld(el);
+    return el;
+  };
+  openDetail = async function () {
+    const result = await detail.apply(this, arguments);
+    if (currentProduct && currentProduct.held_out) markHeld(document.getElementById('detail-modal'));
+    return result;
+  };
 })();
 
 // ===== TACTILE POLISH =====
@@ -5822,17 +5862,19 @@ async function addToCart() {
   try {
     if (btn) btn.disabled = true;
     const payload = currentProduct.is_set ? { set_id: currentProduct.id, quantity: qty } : { product_id: currentProduct.id, quantity: qty };
-    await api('/api/cart/add', {
+    const res = await api('/api/cart/add', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
     closeDetail();
     await loadCart();
     if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
-    showToast(t.addedToCart);
+    // Savat broni: only what no other buyer holds goes in — say if it was less.
+    showToast(res && res.partial ? t.addedPartly.replace('{n}', res.added) : t.addedToCart);
   } catch(e) {
     console.error('Add to cart error:', e);
-    showToast(t.errorCart, true);
+    const reason = e && e.body && e.body.error;
+    showToast(reason === 'held' ? t.heldLimit : t.errorCart, true);
   } finally {
     if (btn) btn.disabled = false;
   }

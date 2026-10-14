@@ -279,7 +279,7 @@ async def api_products(request: web.Request):
     if category == "discounts":
         products, total = await get_discounted_products(page=page, per_page=ITEMS_PER_PAGE)
         return _json({
-            "products": await _serialize_products(products, lang),
+            "products": await _serialize_products(products, lang, request.get("user_id")),
             "total": total,
             "page": page,
             "pages": (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE,
@@ -310,7 +310,7 @@ async def api_products(request: web.Request):
         # just a first-page slice, so infinite scroll actually reaches everything.
         products, total = await get_all_products_paginated(page=page, per_page=per_page)
         return _json({
-            "products": await _serialize_products(products, lang),
+            "products": await _serialize_products(products, lang, request.get("user_id")),
             "total": total,
             "page": page,
             "pages": (total + per_page - 1) // per_page,
@@ -318,7 +318,7 @@ async def api_products(request: web.Request):
 
     products, total = await get_products_by_category(category, page=page, per_page=per_page)
     return _json({
-        "products": await _serialize_products(products, lang),
+        "products": await _serialize_products(products, lang, request.get("user_id")),
         "total": total,
         "page": page,
         "pages": (total + per_page - 1) // per_page,
@@ -340,7 +340,10 @@ async def api_product_detail(request: web.Request):
 
     avg_rating, review_count = await get_product_rating(product_id)
     media = await get_product_media(product_id)
-    data = (await _serialize_products([p], lang))[0]
+    # What this buyer can still take — other buyers' carts hold the rest.
+    from database import apply_holds
+    p = (await apply_holds([p], request.get("user_id")))[0]
+    data = (await _serialize_products([p], lang, with_holds=False))[0]
     data["rating"] = avg_rating
     data["review_count"] = review_count
     data["description"] = localize_product_text(
@@ -461,7 +464,7 @@ async def api_top(request: web.Request):
         products = await get_top_ordered_products(limit=3)
         _TOP_CACHE.clear()
         _TOP_CACHE[day] = products
-    return _json(await _serialize_products(products, lang))
+    return _json(await _serialize_products(products, lang, request.get("user_id")))
 
 
 def _leaderboard_display_name(full_name: str | None) -> str | None:
@@ -495,7 +498,7 @@ async def api_search(request: web.Request):
     if len(q) < 2:
         return _json([])
     products, total = await search_products(q, page=0, per_page=20)
-    return _json(await _serialize_products(products, lang))
+    return _json(await _serialize_products(products, lang, request.get("user_id")))
 
 
 async def api_cart(request: web.Request):
@@ -628,8 +631,8 @@ async def api_cart_add(request: web.Request):
         product = await get_product(product_id)
         if not product or (product.get("quantity") or 0) <= 0:
             return _json({"error": "out_of_stock"}, status=400)
-        if quantity > product["quantity"]:
-            return _json({"error": "exceeds_stock", "available": product["quantity"]}, status=400)
+        # How much more fits is decided by add_to_cart below — it puts in
+        # only what no other buyer's cart holds (Savat broni).
     elif set_id:
         set_id = int(set_id)
 
@@ -672,7 +675,9 @@ async def api_cart_add(request: web.Request):
         tg_user = SimpleNamespace(id=user_id, username=telegram_user.get("username"),
                                   full_name=" ".join(name_parts) or None)
         asyncio.create_task(_process_new_user(request.app["bot"], tg_user, None))
-    await add_to_cart(user_id, product_id=product_id, quantity=quantity, set_id=set_id)
+    added = await add_to_cart(user_id, product_id=product_id, quantity=quantity, set_id=set_id) - float(before or 0)
+    if added <= 0:
+        return _json({"error": await _limit_reason(user_id, product_id, set_id)}, status=409)
 
     if not before:
         import asyncio
@@ -688,7 +693,28 @@ async def api_cart_add(request: web.Request):
         # Fire-and-forget: the Mini App gets its "ok" immediately; the chat
         # message follows a moment later.
         asyncio.create_task(send_added_to_cart(request.app["bot"], user_id, name, lang))
-    return _json({"ok": True})
+    if added < quantity:
+        # Only part of it was free — the Mini App says how much went in.
+        return _json({"ok": True, "added": added, "partial": True})
+    return _json({"ok": True, "added": added})
+
+
+async def _limit_reason(user_id: int, product_id: int | None, set_id: int | None) -> str:
+    """"held" — the rest sits in other buyers' carts (Savat broni, may come
+    back within 24 h); "out_of_stock" — the shelf really has no more."""
+    from database import pool, stock_view, _set_components
+    try:
+        if set_id:
+            async with pool.acquire() as conn:
+                pids = [p for p, _ in await _set_components(conn, int(set_id))]
+        else:
+            pids = [product_id]
+        view = await stock_view(pids, user_id)
+        if any(v["held"] > 0 for v in view.values()):
+            return "held"
+    except Exception:
+        logger.warning("cart limit reason lookup failed", exc_info=True)
+    return "out_of_stock"
 
 
 async def api_cart_remove(request: web.Request):
@@ -722,12 +748,18 @@ async def api_cart_update(request: web.Request):
         return _json({"ok": True, "removed": True})
 
     quantity = max(1, int(round(raw_quantity)))
+    # get_cart_item's "stock" is already what this buyer may have — the shelf
+    # minus other buyers' holds (Savat broni); set_cart_quantity enforces it.
     stock = float(item.get("stock") or 0)
     if quantity > stock:
-        return _json({"error": "exceeds_stock", "available": stock}, status=400)
+        reason = await _limit_reason(user_id, item.get("product_id"), item.get("set_id"))
+        return _json({"error": "held" if reason == "held" else "exceeds_stock", "available": stock}, status=400)
 
-    await set_cart_quantity(cart_id, quantity)
-    return _json({"ok": True, "quantity": quantity})
+    got = await set_cart_quantity(cart_id, quantity)
+    if got < quantity:
+        return _json({"ok": True, "quantity": got,
+                      "limit": await _limit_reason(user_id, item.get("product_id"), item.get("set_id"))})
+    return _json({"ok": True, "quantity": got})
 
 
 async def api_cart_clear(request: web.Request):
@@ -868,6 +900,9 @@ async def api_checkout(request: web.Request):
     # _document (bot chat upload). This guarantees no half-real orders sit
     # in the DB when a buyer abandons before paying.
     if payment_method == "online":
+        # The cart stays held while they pay (Savat broni) — a fresh 24 h.
+        from database import extend_cart_hold
+        await extend_cart_hold(user_id)
         storage = request.app.get("storage")
         if storage is None:
             logger.error("FSM storage unavailable — cannot defer online checkout for user %s", user_id)
@@ -963,6 +998,43 @@ async def api_checkout(request: web.Request):
                         pickup_map_url=pickup_snapshot["pickup_map_url"])
     return _json(response)
 
+
+
+async def _alert_paid_but_short(bot, user_id: int, data: dict, exc: InsufficientStockError,
+                                total: float, file_bytes: bytes, filename: str, is_image: bool) -> None:
+    """The buyer paid by card and uploaded the cheque, but stock ran short
+    before the order could be made (rare since carts hold their products —
+    Savat broni). They may retry with a smaller cart, but the money is
+    already sent: every admin gets the cheque and who / what / how much, so
+    it can be refunded or settled. Never raises."""
+    import html as _html
+    from aiogram.types import BufferedInputFile
+    try:
+        p = await get_product(exc.product_id)
+    except Exception:
+        p = None
+    name = data.get("pending_customer_name") or "—"
+    caption = "\n".join([
+        "⚠️ <b>To'langan, lekin buyurtma tuzilmadi</b> (sayt)",
+        "",
+        f"👤 {_html.escape(name, quote=False)} · {_html.escape(str(data.get('pending_phone') or '—'), quote=False)}",
+        f"💬 <a href=\"tg://user?id={int(user_id)}\">Telegram</a>",
+        f"💰 {int(total or 0):,} so'm — chek ilovada".replace(",", " "),
+        f"❌ Yetmadi: {_html.escape((p or {}).get('name') or str(exc.product_id), quote=False)} — "
+        f"so'raldi {float(exc.requested):g}, bor {float(exc.available or 0):g}",
+        "",
+        "Mijoz savatni o'zgartirib qayta urinishi mumkin. Bog'lanib, farqini qaytaring "
+        "yoki boshqa mahsulot taklif qiling.",
+    ])[:1024]
+    for admin_id in ADMIN_IDS:
+        try:
+            doc = BufferedInputFile(file_bytes, filename=filename or "chek")
+            if is_image:
+                await bot.send_photo(admin_id, photo=doc, caption=caption, parse_mode="HTML")
+            else:
+                await bot.send_document(admin_id, document=doc, caption=caption, parse_mode="HTML")
+        except Exception as err:
+            logger.warning("paid-but-short alert to %s failed: %s", admin_id, err)
 
 
 async def _stock_gone(exc: InsufficientStockError, request: web.Request):
@@ -1213,6 +1285,7 @@ async def api_checkout_cheque(request: web.Request):
             pickup_map_url=data.get("pending_pickup_map_url"),
         )
     except InsufficientStockError as exc:
+        await _alert_paid_but_short(bot, user_id, data, exc, total, file_bytes, filename, is_image)
         return await _stock_gone(exc, request)
     except InsufficientKetoError:
         # Balance dropped again in the instant between the re-clamp above and
@@ -1238,6 +1311,7 @@ async def api_checkout_cheque(request: web.Request):
                 pickup_map_url=data.get("pending_pickup_map_url"),
             )
         except InsufficientStockError as exc:
+            await _alert_paid_but_short(bot, user_id, data, exc, total, file_bytes, filename, is_image)
             return await _stock_gone(exc, request)
 
     # The deferred checkout is a real order now — drop it from the FSM before
@@ -1603,14 +1677,23 @@ def _serialize_product(p: dict, lang: str, bot_price: float | None = None) -> di
         "unit": get_display_unit(p["unit"], lang),
         "packaged": p["unit"] in ("kg", "g"),
         "out_of_stock": (p.get("quantity") or 0) <= 0,
+        "held_out": bool(p.get("held_out")),
         "category": p["category"],
         "photo_url": photo_url(p.get("photo_id")),
         "bonus": bonus,
     }
 
 
-async def _serialize_products(products: list[dict], lang: str) -> list[dict]:
+async def _serialize_products(products: list[dict], lang: str, viewer: int | None = None,
+                              *, with_holds: bool = True) -> list[dict]:
+    """`viewer` sees what other buyers' carts hold as taken (Savat broni):
+    a product whose last pieces are all held comes out of stock with
+    `held_out` — the Mini App shows "⏳ Band", not "sold out". Pass
+    with_holds=False for dicts that already went through apply_holds."""
     import bot_discount
+    if with_holds:
+        from database import apply_holds
+        products = await apply_holds(products, viewer)
     bot_prices = await bot_discount.display_prices(products)
     return [_serialize_product(p, lang, bp) for p, bp in zip(products, bot_prices)]
 
