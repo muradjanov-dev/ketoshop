@@ -119,6 +119,7 @@ from aiogram.types import (CallbackQuery, InlineKeyboardButton, InlineKeyboardMa
 from aiogram.utils.chat_action import ChatActionSender
 
 import ai_memory
+import ai_stats
 import ai_provider
 import database
 from config import (ADMIN_IDS, BOT_USERNAME, FREE_DELIVERY_FROM, LOW_STOCK_THRESHOLD,
@@ -244,6 +245,108 @@ def fix_mixed_script(text: str) -> str:
                             else lat_to_cyr(run.group(0)), word)
 
     return _WORD.sub(fix_word, text)
+
+
+_UZ_CYR_LETTERS = re.compile(r"[ўқғҳЎҚҒҲ]")
+_SOM_LATIN = re.compile(r"\bso['ʻ’`‘]?m\b", re.IGNORECASE)
+_BUTTON_LINES = re.compile(r"^[ \t•\-]*(?:📍 Lokatsiyani yuborish|📞 Raqamni yuborish|"
+                           r"📍 Отправить локацию|📞 Отправить номер)[ \t]*\n?", re.MULTILINE)
+_LANDMARK_RE = re.compile(r"Ko[ʻ'’`‘]?kcha|Кўкча|Кукча|Кокча", re.IGNORECASE)
+
+
+def _script(text: str | None) -> str | None:
+    """Mijoz xabari qaysi yozuvda: "lat" / "cyr" / None (harf kam yoki yo'q).
+    "[Mijoz lokatsiyasini yubordi ...]" kabi tizim belgilari hisobga olinmaydi."""
+    text = re.sub(r"\[[^\]]*\]", " ", text or "")
+    latin, cyrillic = len(_LAT_CHAR.findall(text)), len(_CYR_CHAR.findall(text))
+    if latin + cyrillic < 3:
+        return None
+    return "cyr" if cyrillic > latin else "lat"
+
+
+def polish_reply(text: str, lang: str | None = None, customer_text: str | None = None) -> str:
+    """Mijozga ketishdan oldingi oxirgi tekshiruv (jonli sinov, 2026-10-13):
+      * aralash lotin/kirill so'zlar — fix_mixed_script;
+      * o'zbekcha kirill javobdagi lotin qoldiqlar (mahsulot nomi, "so'm") —
+        kirillga; ruscha javobda "so'm" — "сум";
+      * pastdagi tugma nomlari matnda alohida qator bo'lib takrorlanmasin;
+      * do'kon mo'ljali aytilib, havola unutilgan bo'lsa — havola qo'shiladi."""
+    text = fix_mixed_script(text or "")
+    latin, cyrillic = len(_LAT_CHAR.findall(text)), len(_CYR_CHAR.findall(text))
+    letters = latin + cyrillic
+    customer = _script(customer_text)
+    uzbek_cyrillic = cyrillic and cyrillic >= 0.4 * letters and (
+        _UZ_CYR_LETTERS.search(text) or (lang == "uz_cyr" and cyrillic >= latin))
+    if customer == "lat" and cyrillic:
+        # Mijoz lotinda yozdi: model kirillda javob bergan yoki lotin javob ichida
+        # kirill bo'lak qolgan ("Саватга қўшамизми?") — hammasi lotinga.
+        from translit import cyr_to_lat
+        text = _CYR_RUN.sub(lambda run: cyr_to_lat(run.group(0)), text)
+    elif (customer == "cyr" and _UZ_CYR_LETTERS.search(customer_text or "")
+          and latin > cyrillic):
+        # Mijoz o'zbekcha kirillda yozdi, model lotinda javob berdi — kirillga.
+        from translit import lat_to_cyr
+        text = lat_to_cyr(text)
+    elif uzbek_cyrillic:
+        from translit import lat_to_cyr
+        text = lat_to_cyr(text)
+    elif cyrillic > latin:
+        text = _SOM_LATIN.sub("сум", text)
+    text = _BUTTON_LINES.sub("", text)
+    if SHOP_ADDRESS_URL and SHOP_ADDRESS_URL not in text and _LANDMARK_RE.search(text):
+        text = text.rstrip() + f"\n\n📍 {SHOP_ADDRESS_URL}"
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+_EMOJI_OR_END = r"(?=\s*(?:[!.?,;:…)]|[\U0001F300-\U0001FAFF\u2600-\u27BF]|$))"
+_HONORIFIC = r"(?:hurmatli|qadrli|aziz|азиз|ҳурматли|қадрли|уважаемый|уважаемая|dear)"
+_NAME_GIVEN = re.compile(r"\b(?:ismim|ism|исмим|исм|имя|меня зовут|my name is)\s*[:\-]?\s*"
+                         r"([A-ZА-ЯЎҚҒҲ][\w'ʻ’]{2,})", re.IGNORECASE)
+
+
+_THANKS_LAT = re.compile(r"(^|[.!?]\s+|\n)(katta\s+)?(?:rahmat|raxmat)\b(?!\s+sizga)",
+                         re.IGNORECASE | re.MULTILINE)
+_THANKS_CYR = re.compile(r"(^|[.!?]\s+|\n)(катта\s+)?(?:раҳмат|рахмат)\b(?!\s+сизга)",
+                         re.IGNORECASE | re.MULTILINE)
+
+
+def thank_politely(text: str) -> str:
+    """Gap boshidagi yolg'iz "Rahmat" / "Katta rahmat" → "Sizga rahmat" /
+    "Sizga katta rahmat" (kirillda ham). "Xaridingiz uchun katta rahmat" kabi
+    to'liq gapga tegilmaydi — u gap boshida emas."""
+    text = _THANKS_LAT.sub(lambda m: m.group(1) + "Sizga " + ("katta " if m.group(2) else "") + "rahmat",
+                           text or "")
+    return _THANKS_CYR.sub(lambda m: m.group(1) + "Сизга " + ("катта " if m.group(2) else "") + "раҳмат",
+                           text)
+
+
+def customer_names(user, text: str | None = None, extra=()) -> set[str]:
+    """Mijozning ism(lar)i: Telegram ismi, yozishmada aytgani ("Ism Bobur") va
+    buyurtmaga yozilgani. 3 harfdan qisqasi olinmaydi."""
+    names = set(extra or ())
+    for part in (getattr(user, "first_name", None), getattr(user, "full_name", None)):
+        names.update((part or "").split())
+    for match in _NAME_GIVEN.finditer(text or ""):
+        names.add(match.group(1))
+    return {n.strip(",.!?") for n in names if len(n.strip(",.!?")) >= 3}
+
+
+def strip_name_address(text: str, names) -> str:
+    """Egasi, 2026-10-14: "mijozni ismi bilan murojaat qilma". Model baribir
+    yozsa: "Rahmat, Bobur 😊" → "Rahmat 😊", "Bobur, buyurtmangiz…" →
+    "Buyurtmangiz…", "Hurmatli Bobur" → "Hurmatli mijoz". "Ism: Bobur" kabi
+    ma'lumot qatoriga tegilmaydi."""
+    for name in sorted(names or (), key=len, reverse=True):
+        # "Bobur aka" / "Dilnoza opa" ham — egasi: "ism ishlatma" (aka/opa ham emas).
+        n = re.escape(name) + r"(?:\s+(?:aka|opa|ака|опа))?"
+        text = re.sub(rf",\s*(?:{_HONORIFIC}\s+)?{n}{_EMOJI_OR_END}", "", text, flags=re.IGNORECASE)
+        text = re.sub(rf"(^|[.!?]\s+|[\U0001F300-\U0001FAFF\u2600-\u27BF]\s+)"
+                      rf"(?:{_HONORIFIC}\s+)?{n},\s*(\w)",
+                      lambda m: m.group(1) + m.group(2).upper(), text,
+                      flags=re.IGNORECASE | re.MULTILINE)
+        text = re.sub(rf"\b({_HONORIFIC})\s+{n}\b", lambda m: m.group(1) + " mijoz", text,
+                      flags=re.IGNORECASE)
+    return text
 
 
 def _strip_html(text: str) -> str:
@@ -709,7 +812,7 @@ def _shop_knowledge() -> str:
         "va'da qilma.\n"
         f"- Do'kondan o'zi olib ketish: BEPUL. Mo'ljal: {SHOP_LANDMARK}, havola: "
         f"{SHOP_ADDRESS_URL} . Buyurtma tayyor bo'lgach operatorimiz xabar beradi. To'lov naqd "
-        "yoki karta.\n"
+        "yoki karta. Faqat Toshkentdagi mijozga taklif qil — viloyatdagiga emas.\n"
         "- Yetkazish usullarini taklif qilganda shunday ro'yxat qil (narxlari bilan, har biri "
         "alohida qatorda):\n"
         f"  🚚 Toshkent bo'ylab kuryer — {_fmt(SELF_DELIVERY_FEE)} so'm ({_fmt(FREE_DELIVERY_FROM)} "
@@ -721,7 +824,8 @@ def _shop_knowledge() -> str:
         "- DO'KON MANZILI: mijoz do'kon/ofis qayerda, manzilingiz, adres, lokatsiya, qanday "
         f"borsa bo'ladi deb so'rasa — mo'ljalni ayt ({SHOP_LANDMARK}) va shu havolani ber: "
         f"{SHOP_ADDRESS_URL} . Havolani o'zgartirmay, to'liq yoz. Buni mijozning o'z "
-        "yetkazish manzilini so'rash bilan adashtirma.\n"
+        "yetkazish manzilini so'rash bilan adashtirma — bunda lokatsiya_tugmasi ni CHAQIRMA "
+        "(u mijozning o'z manzili uchun).\n"
     )
 
 
@@ -747,6 +851,10 @@ def _sales_rules() -> str:
         "GAPIRISH USLUBI\n"
         "- QISQA, lekin QURUQ EMAS: odatda 2-3 jumla, ortiqcha muqaddimasiz va takrorsiz. "
         "Bu Telegram chat, maqola emas. Ro'yxat kerak bo'lsa — 3 qatordan oshmasin.\n"
+        "- MINNATDORCHILIK — 'Sizga rahmat' / 'Sizga katta rahmat' shaklida; yolg'iz 'Rahmat' "
+        "yoki 'Bobur, rahmat' emas (egasi, 2026-10-14).\n"
+        "- MIJOZGA ISMI BILAN MUROJAAT QILMA ('Rahmat, Bobur', 'Hurmatli Dilnoza' — yo'q; "
+        "egasi, 2026-10-14). Ism faqat buyurtma xulosasida ('Ism: …') ko'rinishi mumkin.\n"
         "- OHANG — MAKSIMAL ODOB: muloyim va g'amxo'r sotuvchi. Mijozga doim 'siz' deb "
         "murojaat qil; 'albatta', 'mamnuniyat bilan', 'marhamat', 'iltimos', 'rahmat' kabi "
         "hurmatli so'zlar ishlat; savoli va xaridi uchun minnatdorchilik bildir. Bir so'zli "
@@ -798,7 +906,9 @@ def _sales_rules() -> str:
         "katalogdan 2-3 ta mosini narxi bilan taklif qil, ro'yxatni to'kib tashlama.\n\n"
         "SOTUVGA YO'NALTIRISH\n"
         "- Avval ehtiyojni bitta savol bilan aniqla (nima tayyorlamoqchi, keto'dami yoki "
-        "PP, kim uchun), keyin aniq mahsulot va narx ayt va aniq so'ra: 'Savatga qo'shamizmi? 🛒' ('qo'shib qo'yaymi?' kabi noaniq so'z emas).\n"
+        "PP, kim uchun), keyin aniq mahsulot va narx ayt va aniq so'ra: 'Savatga qo'shamizmi? 🛒' ('qo'shib qo'yaymi?' kabi noaniq so'z emas). "
+        "Boshqa tilda: kirill — 'Саватга қўшамизми? 🛒', rus — 'Добавим в корзину? 🛒', ingliz — "
+        "'Shall we add it to your cart? 🛒'.\n"
         "- Mahsulot savatga tushgach — BIR MARTA: 'Yana nima olamiz? 😊' deb so'ra va "
         "chegirmadagi (katalogda -%) yoki shu mahsulotga mos 1-2 mahsulotni taklif qil "
         "(masalan bodom uni -> eritritol yoki psillium). Bosimsiz.\n"
@@ -822,8 +932,9 @@ def _sales_rules() -> str:
         "- OK qaytsa — retseptni qisqa va tushunarli ber (masalliqlar va qadamlar), Ketoshop "
         "mahsulotlarini narxi bilan eslat va 'Savatga qo'shamizmi? 🛒' de.\n"
         "- RAD qaytsa — yangi retsept YOZMA va hech qanday cheklov, limit, vaqt yoki 'har "
-        "bir mahsulotga bitta' haqida AYTMA. Muloyim ravishda oldingi retseptni eslat yoki "
-        "boshqa yordam taklif qil.\n\n"
+        "bir mahsulotga bitta' haqida AYTMA. Muloyim ravishda oldingi retseptni eslat va "
+        "masalliqlarni savatga qo'shishni taklif qil. Boshqa retsept TAKLIF QILMA (bera "
+        "olmaysan).\n\n"
         "MIJOZ XOTIRASI\n"
         "- Suhbatning birinchi xabari oldidan [MIJOZ XOTIRASI] keladi: buyurtmalari, oldingi "
         "suhbatlardagi qiziqish va fikrlari. Undan tabiiy foydalan: qiziqishiga mos tavsiya "
@@ -864,8 +975,8 @@ def _sales_rules() -> str:
         "'Ассалому алайкум, добро пожаловать в Keto shop!'\n"
         "- Kirillda yozganga: 'Ассалому алайкум, Keto shopга хуш келибсиз!'; inglizcha "
         "yozganga: 'Hello! Welcome to Keto shop!'\n"
-        "- Avval buyurtma bergan mijozni ismi bilan, 'yana ko'rganimizdan xursandmiz' "
-        "ohangida kutib ol.\n"
+        "- Avval buyurtma bergan mijozni 'yana ko'rganimizdan xursandmiz' ohangida kutib ol "
+        "(ismi bilan emas).\n"
         "- Salomdan keyin darrov ishga o't: mijozning savoliga javob ber yoki "
         "bitta qisqa savol bilan mavzuga burib yubor ('nima qidiryapsiz?').\n"
         "- Salomni FAQAT suhbatning birinchi javobida ayt, keyingi har bir "
@@ -890,18 +1001,23 @@ def _sales_rules() -> str:
         "  6) QO'SHIMCHA TELEFON (ixtiyoriy) — asosiy raqam javob bermasa kuryer qo'ng'iroq "
         "qiladigan raqam.\n"
         "  7) TO'LOV — naqd yoki karta (Yandex va pochtada faqat karta).\n"
-        "  8) KETO TANGACHALAR — savatni_korish 'KETO:' qatorini qaytarsa, bir marta so'ra: "
-        "'Hisobingizda N ta Keto bor (1 Keto = 1 so'm) — shu buyurtmada ishlatamizmi?'; ha "
-        "desa buyurtma_rasmiylashtirish da keto ni ber.\n"
+        "  8) KETO TANGACHALAR — savatni_korish 'KETO:' qatorini qaytarsa, BIR MARTA, alohida "
+        "xabarda so'ra: 'Hisobingizda N ta Keto bor (1 Keto = 1 so'm) — shu buyurtmada "
+        "ishlatamizmi?'. Mijoz aniq 'ha, ishlatamiz' demaguncha keto ni BERMA va xulosada "
+        "'ishlatamiz' deb yozma; javob bermasa — ishlatilmaydi. Qayta so'rama.\n"
         "  9) TASDIQ — savatni_korish dagi mahsulotlar, chegirma, sovg'a, yetkazish narxi va "
-        "JAMI ni qisqa ko'rsat va 'Tasdiqlaysizmi?' de.\n"
+        "JAMI ni qisqa ko'rsat va 'Tasdiqlaysizmi?' de. Mijoz jami summani oldingi xabarda "
+        "ko'rmaguncha buyurtma vositasi ishlamaydi.\n"
         "  10) BUYURTMA — 'ha' dan keyin buyurtma_rasmiylashtirish; raqam, minnatdorchilik, "
         "karta bo'lsa karta raqami va chek.\n"
+        "- BITTA XABARDA BITTA SAVOL: Keto va yetkazish usulini, yoki manzil va to'lovni birga "
+        "so'rama. Lokatsiya kelgach — avval 4) manzil izohini so'ra.\n"
         "- Mijoz bir xabarda bir nechta narsani aytsa (masalan raqam va manzil) — o'sha "
         "qadamlarni o'tkazib, keyingisiga o't.\n"
         "- MANZIL (kuryer yoki pochta uchun): HAR DOIM lokatsiya_tugmasi ni chaqir va mijozdan "
         "pastdagi '📍 Lokatsiyani yuborish' tugmasini bosishini so'ra — kuryerga eng aniq shu. "
-        "Telefon so'raganda ham shu tugmalar ('📞 Raqamni yuborish') ishlaydi.\n"
+        "Telefon so'raganda ham shu tugmalar ('📞 Raqamni yuborish') ishlaydi. Tugma "
+        "nomlarini matnda alohida qator qilib yozma — 'pastdagi tugmani bosing' yetadi.\n"
         "- Lokatsiya kelgach ('[Mijoz yetkazish lokatsiyasini yubordi: ...]') manzilni mijozga "
         "o'qib tasdiqlat ('Chilonzor, ... — to'g'rimi?') va uy, xonadon, podyezd yoki mo'ljalni "
         "so'ra. Lokatsiya Toshkentdan tashqarida bo'lsa — kuryer emas, pochtani taklif qil.\n"
@@ -922,8 +1038,9 @@ def _sales_rules() -> str:
         "- LEKIN to'lovni sen tasdiqlamaysan. 'Pul tushdi', 'to'lov o'tdi', "
         "'tasdiqladim' dema. Chek kelgach: 'rahmat, operatorimiz tekshirib "
         "tasdiqlaydi' de. Tekshirishni faqat admin qiladi.\n"
-        "- Karta raqamini buyurtmasiz, shunchaki so'ragan odamga ham ayta olasan, "
-        "lekin avval nimaga to'lamoqchi ekanini aniqlashtir.\n"
+        "- Karta raqamini buyurtma tushgandan KEYIN ber (vosita qaytaradi). 'Naqd mumkinmi?' "
+        "kabi savolga — bu usulda karta orqali oldindan ekanini tushuntir, raqamni yozma. "
+        "Faqat mijoz o'zi aniq 'karta raqamini yuboring' desa — berishing mumkin.\n"
         "- Yetkazib berish muddati, aksiya shartlari yoki qaytarish bo'yicha aniq "
         "ma'lumoting bo'lmasa, va'da berma — operator aniqlashtirishini ayt.\n\n"
         "NOQULAY HOLAT — TELEFON RAQAMNI BER\n"
@@ -992,9 +1109,10 @@ _TOOL_SPECS = [
     },
     {
         "name": "lokatsiya_tugmasi",
-        "description": "Manzil yoki telefon so'raganda chaqir: javobing ostiga '📍 Lokatsiyani "
-                       "yuborish' va '📞 Raqamni yuborish' tugmalari qo'yiladi — mijoz bir "
-                       "bosishda yuboradi.",
+        "description": "FAQAT buyurtma uchun mijozning O'Z yetkazish manzili yoki telefoni "
+                       "kerak bo'lganda chaqir: javobing ostiga '📍 Lokatsiyani yuborish' va "
+                       "'📞 Raqamni yuborish' tugmalari qo'yiladi. Mijoz DO'KON manzilini "
+                       "so'rasa yoki do'kondan olib ketsa — CHAQIRMA.",
         "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
         "strict": True,
     },
@@ -1177,8 +1295,9 @@ async def _tool_recipe(user_id: int, args: dict) -> str:
     if await ai_memory.recipe_given_recently(user_id, product_id, RECIPE_EVERY_HOURS):
         return ("RAD: bu mijozga shu mahsulot bo'yicha retsept yaqinda berilgan. Yangi retsept "
                 "YOZMA. Hech qanday cheklov, limit, vaqt yoki 'har bir mahsulotga bitta' haqida "
-                "GAPIRMA. Muloyim: oldin bergan retseptingni eslat yoki mahsulot bo'yicha boshqa "
-                "yordam (qanday ishlatish, savatga qo'shish) taklif qil.")
+                "GAPIRMA. Boshqa retsept yoki boshqa taom (quymoq, pechenye va h.k.) ham TAKLIF "
+                "QILMA — bera olmaysan. Muloyim: oldin bergan retseptingni eslat va masalliqlarni "
+                "savatga qo'shishni taklif qil.")
     await ai_memory.record_recipe(user_id, product_id, product["name"])
     library = _library_recipe(product["name"])
     if library:
@@ -1218,6 +1337,7 @@ async def _tool_add(user_id: int, args: dict) -> str:
         await database.remove_from_cart(cart_id)
     await database.add_to_cart(user_id, product_id=product_id, quantity=qty)
     await _remember_quiet(user_id, "interest", product["name"], product_id)
+    _cart_changed(user_id)
     return (f"OK: savatda {product['name']} — {qty:g} {product.get('unit') or 'dona'}."
             ) + await _promo_hint(user_id) + _NEXT_STEP
 
@@ -1241,6 +1361,7 @@ async def _tool_add_set(user_id: int, args: dict) -> str:
             await database.remove_from_cart(line["cart_id"])
     await database.add_to_cart(user_id, set_id=set_id, quantity=count)
     await _remember_quiet(user_id, "interest", bundle["name"])
+    _cart_changed(user_id)
     return (f"OK: savatda {bundle['name']} — {count} ta." + await _promo_hint(user_id)
             + _NEXT_STEP)
 
@@ -1308,6 +1429,11 @@ async def _tool_cart(user_id: int) -> str:
         lines.append(f"- SOVG'A: {gift['name']} {float(gift.get('quantity') or 0):g} "
                      f"{gift.get('unit') or ''} — bepul")
     fee = max(0.0, float(total) - subtotal)
+    session = _sessions.get(user_id)
+    if session is not None:
+        # Javob matnida shu summalardan biri ko'rinsa — mijoz jamini ko'rdi
+        # (_mark_summary_shown); buyurtma faqat keyingi xabarda mumkin.
+        session["last_totals"] = {int(round(float(total))), int(round(subtotal))}
     lines.append(f"Mahsulotlar: {_fmt(subtotal)} so'm")
     lines.append(f"Toshkent kuryeri bilan: yetkazish {'BEPUL' if fee <= 0 else _fmt(fee) + ' so' + chr(39) + 'm'}"
                  f" -> JAMI {_fmt(total)} so'm")
@@ -1357,13 +1483,56 @@ async def _tool_remove(user_id: int, args: dict) -> str:
             if line.get("set_id") == set_id:
                 await database.remove_from_cart(line["cart_id"])
                 removed = True
+        _cart_changed(user_id)
         return "OK: set savatdan o'chirildi." if removed else "Bu set savatda yo'q edi."
     product_id = int(args.get("mahsulot_id") or 0)
     cart_id, _ = await database.get_cart_line_for_product(user_id, product_id)
     if not cart_id:
         return "Bu mahsulot savatda yo'q edi."
     await database.remove_from_cart(cart_id)
+    _cart_changed(user_id)
     return "OK: savatdan o'chirildi."
+
+
+def _with_order_number(session: dict, reply: str, lang: str) -> str:
+    """Buyurtma tuzilgan xabarda raqam albatta bo'lsin (jonli sinovda model bir
+    marta "Buyurtma qabul qilindi: 101 100 so'm" deb raqamni tashlab ketdi)."""
+    order_id = session.pop("new_order_id", None)
+    if not order_id or not reply or str(order_id) in reply:
+        return reply
+    return reply.rstrip() + "\n\n" + _t(f"🧾 Buyurtma raqami: #{order_id}",
+                                        f"🧾 Номер заказа: #{order_id}", lang)
+
+
+def _same_apostrophes(text: str) -> str:
+    return re.sub(r"[ʻʼ‘’`´]", "'", text or "")
+
+
+def _cart_changed(user_id: int) -> None:
+    """Savat o'zgardi — avval ko'rsatilgan jami summa endi eskirgan."""
+    session = _sessions.get(user_id)
+    if session is not None:
+        session["summary_turn"] = None
+        session.pop("last_totals", None)
+
+
+_DIGIT_GROUP_SEP = re.compile(r"(?<=\d)[ \u00a0\u202f.,'](?=\d{3}\b)")
+_CONFIRM_ASK = re.compile(r"tasdiql|тасдиқл|подтвер|confirm", re.IGNORECASE)
+
+
+def _mark_summary_shown(session: dict, reply: str) -> None:
+    """Jonli sinov (2026-10-13): model savatni_korish ni faqat Keto qatori uchun
+    chaqirib, jami summani mijozga ko'rsatmasdan buyurtmaga o'tdi. Endi summa
+    "ko'rsatildi" deb faqat javob matnida haqiqatan bo'lsa belgilanadi. Oxirgi
+    hisoblangan summa savat o'zgarmaguncha eslab qolinadi — model xulosani
+    vositani qayta chaqirmay takrorlasa ham hisoblanadi."""
+    totals = session.get("last_totals")
+    if not totals or not reply:
+        return
+    compact = _DIGIT_GROUP_SEP.sub("", reply)
+    if (any(total > 0 and str(total) in compact for total in totals)
+            and _CONFIRM_ASK.search(reply)):
+        session["summary_turn"] = session.get("turn", 0)
 
 
 async def _tool_remember(user_id: int, args: dict) -> str:
@@ -1391,6 +1560,7 @@ async def _tool_order(bot: Bot, message: Message, args: dict) -> str:
     location = session.get("location")   # (lat, lon, o'qiladigan manzil) yoki None
 
     name = (args.get("ism") or message.from_user.full_name or "—").strip()
+    session.setdefault("names", set()).update(customer_names(None, None, name.split()))
     phone = (args.get("telefon") or session.get("phone") or "").strip()
     address = (args.get("manzil") or "").strip()
     payment = (args.get("tolov_turi") or "naqd").strip().lower()
@@ -1408,6 +1578,19 @@ async def _tool_order(bot: Bot, message: Message, args: dict) -> str:
     if delivery == "self" and location and not _is_tashkent(location[0], location[1]):
         return ("Xato: lokatsiya Toshkentdan tashqarida — Ketoshop kuryeri faqat Toshkent "
                 "bo'ylab. Viloyatga BTS yoki EMU (karta orqali) taklif qil.")
+    # Jonli sinov (2026-10-13): mijoz Keto savoliga "ha" degan, model buni buyurtma
+    # tasdig'i deb olib, jami summani ko'rsatmay rasmiylashtirdi. Endi buyurtma
+    # faqat jami summa OLDINGI xabarda ko'rsatilgan va savat o'shandan beri
+    # o'zgarmagan bo'lsa tuziladi — tugmali checkout dagi tasdiq ekrani kabi.
+    # Tugmali checkout dagi "✅ Tasdiqlash" kabi: AYNAN OLDINGI javobda jami summa va
+    # "Tasdiqlaysizmi?" bo'lgan, mijoz shunga javob berdi. Oraliqda boshqa gap
+    # bo'lsa (masalan "naqd") — xulosa qayta ko'rsatiladi.
+    shown = session.get("summary_turn")
+    if shown is None or shown != session.get("turn", 0) - 1:
+        return ("Xato: buyurtmadan oldin mijoz aynan oldingi xabaringizda JAMI summani ko'rib, "
+                "'Tasdiqlaysizmi?' savoliga javob berishi kerak. savatni_korish ni chaqir, "
+                "mahsulotlar, yetkazish usuli va narxi, to'lov va JAMI ni ko'rsatib "
+                "'Tasdiqlaysizmi?' deb so'ra. Mijoz KEYINGI xabarida tasdiqlasa — rasmiylashtir.")
 
     pickup_url = None
     if delivery == "pickup":
@@ -1419,6 +1602,11 @@ async def _tool_order(bot: Bot, message: Message, args: dict) -> str:
     # Mijoz ham lokatsiya, ham matn bergan bo'lsa ikkalasi ham yoziladi.
     if location:
         pin = location[2] or f"📍 {location[0]:.6f}, {location[1]:.6f}"
+        readable = _same_apostrophes(pin.split(" — ", 1)[1]) if " — " in pin else ""
+        if readable and readable in _same_apostrophes(address):
+            # Model lokatsiyadagi manzilni qayta yozgan ("ko‘chasi" / "ko'chasi") —
+            # bir marta qolsin.
+            address = _same_apostrophes(address).replace(readable, "").strip(" ,—-")
         address = f"{pin} — {address}" if address else pin
     if not phone:
         return "Xato: telefon raqami kerak. Mijozdan so'ra."
@@ -1506,6 +1694,7 @@ async def _tool_order(bot: Bot, message: Message, args: dict) -> str:
         # Buyurtma allaqachon bazada — admin xabari ketmasa ham uni yo'qotmaymiz.
         logger.exception("AI order %s: admin notification failed", order_id)
 
+    session["new_order_id"] = order_id   # javobda raqam bo'lishini _respond tekshiradi
     logger.info("AI sales created order %s for user %s (payment=%s, delivery=%s)",
                 order_id, user_id, payment, delivery)
     session["location"] = None   # keyingi buyurtma o'z lokatsiyasini so'rasin
@@ -1624,6 +1813,7 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
     user_id = message.from_user.id
     session = _session(user_id)
     session["last"] = time.time()
+    session["turn"] = session.get("turn", 0) + 1   # mijoz xabarlari hisobi (buyurtma darvozasi)
     state = session.setdefault("ai", {})
     if not session.get("profiled"):
         session["profiled"] = True
@@ -1645,7 +1835,8 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
                       "Подробнее по телефону: ", lang) + SUPPORT_PHONES
         reply_text = turn.text or reply_text
         if not turn.calls:
-            return reply_text
+            _mark_summary_shown(session, reply_text)
+            return _with_order_number(session, reply_text, lang)
 
         results = []
         for call in turn.calls:
@@ -1728,9 +1919,18 @@ async def _answer(bot: Bot, message: Message, user_text: str) -> None:
         return
     if _is_paused(user_id):
         return   # javob tayyorlanguncha admin o'zi gapga kirdi — ustidan gapirmaymiz
-    reply = fix_mixed_script(reply)
+    reply = polish_reply(reply, await _lang(user_id), customer_text=user_text)
+    session = _sessions.get(user_id) or {}
+    names = customer_names(message.from_user, user_text, session.get("names", ()))
+    session.setdefault("names", set()).update(names)
+    reply = thank_politely(strip_name_address(reply, names))
+    session = _sessions.get(user_id)
+    if session and session.get("keyboard") == "location" and SHOP_ADDRESS_URL in reply:
+        session.pop("keyboard", None)   # do'kon manzili haqida — mijoz lokatsiyasi kerak emas
     await message.answer(reply, reply_markup=await _reply_keyboard(user_id))
     await _mirror(bot, message, user_text, reply)
+    if user_id not in ADMIN_IDS and user_id not in database.LEADERBOARD_EXCLUDED_USER_IDS:
+        await ai_stats.record_turn(user_id, "bot", user_text)   # /ai_hisobot
 
 
 async def _reply_keyboard(user_id: int):
@@ -1989,6 +2189,55 @@ async def cb_teach(callback: CallbackQuery):
         f"🧠 AI ga o'rgatildi (#{item_id}) — keyingi suhbatdan boshlab shunday javob beradi.\n"
         f"O'chirish: <code>/ai_unut {item_id}</code>", parse_mode="HTML")
     await callback.answer("🧠 O'rgatildi")
+
+
+# ───────────────────── AI karta buyurtmasi: to'lov tasdig'i ─────────────────────
+# AI buyurtmani pul kelmasdan tuzadi (payment_method='cash', izoh "To'lov: KARTA").
+# Kartochkalarda "❗ TO'LANMAGAN" (handlers/cart.card_payment_state); chek kelgach
+# admin chek ostidagi tugmani bosadi — buyurtma tugmali karta buyurtmasi kabi
+# 'online' (to'langan) bo'ladi. To'lov holatini faqat admin o'zgartiradi.
+
+def _paid_kb(order_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ To'lov tasdiqlandi", callback_data=f"aipaid:{order_id}"),
+    ]])
+
+
+async def mark_card_paid(order_id: int) -> bool:
+    """AI karta buyurtmasini to'langan qiladi. Faqat hali to'lanmagan KARTA
+    buyurtmasiga ta'sir qiladi; ikkinchi bosish hech narsa o'zgartirmaydi."""
+    async with database.pool.acquire() as conn:
+        result = await conn.execute(
+            """UPDATE orders
+                  SET payment_method = 'online',
+                      address_note = REPLACE(address_note, 'KARTA (chek kutilmoqda)', 'KARTA (to''langan)')
+                WHERE id = $1 AND COALESCE(payment_method, 'cash') <> 'online'
+                  AND COALESCE(address_note, '') LIKE '%KARTA%'""", order_id)
+    return str(result).strip().endswith(" 1")
+
+
+@router.callback_query(F.data.startswith("aipaid:"))
+async def cb_card_paid(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    order_id = int(callback.data.split(":", 1)[1])
+    try:
+        changed = await mark_card_paid(order_id)
+    except Exception:
+        logger.exception("Card payment of order %s could not be confirmed", order_id)
+        await callback.answer("⚠️ Saqlab bo'lmadi, qayta urinib ko'ring.", show_alert=True)
+        return
+    who = callback.from_user.username and f"@{callback.from_user.username}" or (callback.from_user.full_name or "admin")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+        caption = (callback.message.caption or "").strip()
+        await callback.message.edit_caption(
+            caption=f"{html.escape(caption)}\n\n✅ To'lov tasdiqlandi — {html.escape(who)}", parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer(f"✅ #{order_id} to'langan deb belgilandi." if changed
+                          else f"#{order_id} allaqachon to'langan.", show_alert=not changed)
 
 
 @router.message(Command("ai_mavzu"))
@@ -2346,13 +2595,15 @@ async def _usage_for_day(day) -> tuple[list[dict], dict, int]:
 
 
 def usage_report_text(day, rows: list[dict], month: dict, questions: int,
-                      usd_rate: float | None, sales: dict | None = None) -> str:
+                      usd_rate: float | None, sales: dict | None = None, talks: str = "") -> str:
     requests = sum(int(r["requests"]) for r in rows)
     tokens_in = sum(int(r["input_tokens"]) for r in rows)
     cached = sum(int(r["cached_tokens"]) for r in rows)
     tokens_out = sum(int(r["output_tokens"]) for r in rows)
     cost = sum(float(r["cost_usd"]) for r in rows)
     lines = [f"🤖 <b>AI sarfi — {day:%d.%m.%Y}</b> (kun yakuni)", ""]
+    if talks:
+        lines += [talks, ""]
     if not rows:
         lines.append("Bugun AI ishlatilmadi — <b>$0.00</b>")
     else:
@@ -2428,7 +2679,7 @@ async def _usage_report_tick(bot: Bot, now_tk=None):
     except Exception:
         logger.warning("AI sales for the daily report unavailable", exc_info=True)
         sales = None
-    text = usage_report_text(due, rows, month, questions, rate, sales)
+    text = usage_report_text(due, rows, month, questions, rate, sales, await ai_stats.day_line(due))
     for admin_id in list(dict.fromkeys(ADMIN_IDS)):
         try:
             await bot.send_message(admin_id, text, parse_mode="HTML", disable_notification=True)
@@ -2674,6 +2925,20 @@ def _user_id_arg(message: Message) -> int | None:
     return int(parts[1])
 
 
+@router.message(Command("ai_hisobot"))
+async def cmd_ai_report(message: Message):
+    """/ai_hisobot — AI nechta mijoz bilan gaplashdi, nechta javob, mavzular,
+    eng ko'p so'ralgan mahsulotlar, sotuvlar (ai_stats.py)."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    try:
+        text = ai_stats.report_text(await ai_stats.fetch_stats())
+    except Exception:
+        logger.exception("AI report failed")
+        text = "⚠️ Hisobotni o'qib bo'lmadi, birozdan keyin qayta urinib ko'ring."
+    await message.answer(text, parse_mode="HTML")
+
+
 @router.message(Command("ai_mijoz"))
 async def cmd_ai_customer(message: Message):
     """/ai_mijoz 123456789 — AI shu mijoz haqida nimani eslab turibdi."""
@@ -2893,13 +3158,14 @@ async def on_cheque(message: Message, bot: Bot, cheque_order: int | None = None)
             logger.exception("Cheque could not be attached to order %s", cheque_order)
         try:
             from handlers.cart import _forward_cheque_to_admins
-            await _forward_cheque_to_admins(bot, cheque_order, user.full_name or "—", kind, file_id)
+            await _forward_cheque_to_admins(bot, cheque_order, user.full_name or "—", kind, file_id,
+                                            reply_markup=_paid_kb(cheque_order))
         except Exception:
             logger.exception("Cheque for order %s could not be forwarded", cheque_order)
         if session:
             session["awaiting_cheque"] = None
         await log_conversation(bot, user, f"🧾 To'lov cheki yuborildi — buyurtma #{cheque_order}")
-        await message.answer(_t(f"✅ Rahmat! Buyurtma #{cheque_order} uchun chekingiz qabul qilindi — "
+        await message.answer(_t(f"✅ Sizga rahmat! Buyurtma #{cheque_order} uchun chekingiz qabul qilindi — "
                                 "operatorimiz to'lovni tekshirib tasdiqlaydi 🌿",
                                 f"✅ Спасибо! Чек по заказу #{cheque_order} получен — оператор "
                                 "проверит оплату и подтвердит 🌿", lang))
@@ -2921,11 +3187,11 @@ async def on_cheque(message: Message, bot: Bot, cheque_order: int | None = None)
             logger.warning("Cheque forward to admin %s failed", admin_id, exc_info=True)
 
     if not sent:
-        await message.answer(_t("Rahmat! Chekni oldik, operatorimiz tez orada bog'lanadi.",
+        await message.answer(_t("Sizga rahmat! Chekni oldik, operatorimiz tez orada bog'lanadi.",
                                 "Спасибо! Чек получили, оператор скоро свяжется с вами.", lang))
         return
     await log_conversation(bot, user, "🧾 Rasm/chek yubordi (buyurtmaga bog'lanmagan)")
-    await message.answer(_t("✅ Rahmat! Chek qabul qilindi — operatorimiz to'lovni tekshirib tasdiqlaydi.",
+    await message.answer(_t("✅ Sizga rahmat! Chek qabul qilindi — operatorimiz to'lovni tekshirib tasdiqlaydi.",
                             "✅ Спасибо! Чек принят — оператор проверит оплату и подтвердит.", lang))
 
 
@@ -3014,6 +3280,7 @@ def _group_rules() -> str:
         "shaxsiy yozishga taklif qil.\n\n"
         "GAPIRISH USLUBI\n"
         "- Do'kon nomidan 'biz' deb gapir: beramiz, qilamiz, aytamiz — '-man' shakli yo'q.\n"
+        "- Hech kimga ismi bilan murojaat qilma.\n"
         "- MAKSIMAL ODOB: odamdek, muloyim va samimiy yoz — 'siz' deb murojaat, "
         "'albatta', 'marhamat', 'rahmat'. Quruq bir so'zli javob ('Ha, bor.') yo'q.\n"
         "- Mijoz tomonidan o'yla: variantlar bo'lsa narxi va nimaga mosligini qisqa ayt, "
@@ -3160,9 +3427,10 @@ async def _group_answer(bot: Bot, message: Message, text: str) -> None:
         return
     if not reply:
         return
-    reply = fix_mixed_script(reply)
+    reply = thank_politely(strip_name_address(polish_reply(reply), customer_names(message.from_user, text)))
     await message.reply(reply)
     user_id = message.from_user.id
+    await ai_stats.record_turn(user_id, "group", text)   # guruhda adminlarga javob yo'q
     _group_context[user_id] = (time.time(), text, reply)
     await _remember_quiet(user_id, "interest", f"guruhda so'radi: {_short(text, 200)}")
 

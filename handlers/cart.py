@@ -305,10 +305,19 @@ def _escape_html_attr(s: str) -> str:
     return html.escape(s or "", quote=True)
 
 
-def payment_status_block(payment_method: str | None, status: str | None, lang: str) -> str:
+def payment_status_block(payment_method: str | None, status: str | None, lang: str,
+                         address_note: str | None = None,
+                         cheque_file_id: str | None = None) -> str:
     """One-line payment summary for an order card. Online orders only reach
     the seller after the cheque is uploaded, so online ⇒ paid. Cash is paid on
-    delivery, so it shows 'paid' once delivered, else 'pay on delivery'."""
+    delivery, so it shows 'paid' once delivered, else 'pay on delivery'. An AI
+    card order waiting for its money says so loudly instead."""
+    from payment_state import card_payment_state
+    card = card_payment_state(payment_method, address_note, cheque_file_id)
+    if card == "unpaid":
+        return get_text("pay_card_unpaid", lang)
+    if card == "cheque":
+        return get_text("pay_card_cheque", lang)
     if payment_method == "online":
         return get_text("pay_card_paid", lang)
     if status == "delivered":
@@ -2320,9 +2329,11 @@ async def send_pending_cheque_prompt(bot: Bot, user_id: int, data: dict) -> None
 
 
 async def _forward_cheque_to_admins(bot: Bot, order_id: int, customer_name: str,
-                                     kind: str, file_id: str, skip=frozenset()) -> None:
+                                     kind: str, file_id: str, skip=frozenset(),
+                                     reply_markup=None) -> None:
     """Forward a payment cheque (photo or document) to every admin in parallel.
-    `skip` holds admins who already got it (the Mini App upload fallback)."""
+    `skip` holds admins who already got it (the Mini App upload fallback).
+    `reply_markup` — the AI card order's "✅ To'lov tasdiqlandi" button."""
     import asyncio
     import logging
     logger = logging.getLogger(__name__)
@@ -2334,10 +2345,10 @@ async def _forward_cheque_to_admins(bot: Bot, order_id: int, customer_name: str,
                                order_id=order_id, name=customer_name)
             if kind == "photo":
                 await bot.send_photo(chat_id=admin_id, photo=file_id,
-                                     caption=caption, parse_mode="HTML")
+                                     caption=caption, parse_mode="HTML", reply_markup=reply_markup)
             else:
                 await bot.send_document(chat_id=admin_id, document=file_id,
-                                        caption=caption, parse_mode="HTML")
+                                        caption=caption, parse_mode="HTML", reply_markup=reply_markup)
         except Exception as exc:
             logger.warning("Cheque forward to admin %s failed: %s", admin_id, exc)
 
@@ -2427,7 +2438,8 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
                 address=_escape_html(data["address"]),
                 note_block=note_block,
                 delivery=get_delivery_method_name(data.get("delivery_method"), admin_lang),
-                payment_block=payment_status_block(data.get("payment_method"), data.get("status"), admin_lang),
+                payment_block=payment_status_block(data.get("payment_method"), data.get("status"), admin_lang,
+                                                   data.get("address_note"), data.get("cheque_file_id")),
                 items=items_text,
                 delivery_fee_block=delivery_fee_block,
                 total=f"{int(data['total']):,}".replace(",", " "),
