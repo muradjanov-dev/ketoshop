@@ -83,37 +83,29 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(self.apply(items, 0), 0)
         self.assertEqual(items[0]["price"], 45000)
 
-    def test_never_below_cost(self):
-        # Shelf 100 000, cost 95 000 → only 5 000 off, never 90 000.
-        self.costs = ({1: (95000.0, True)}, {})
-        items = [line(100000, 2)]
-        self.assertEqual(self.apply(items), 10000)
-        self.assertEqual(items[0]["price"], 95000)
-        self.assertEqual(items[0]["discount_percent"], 5)
+    def test_cost_floor_is_off(self):
+        self.assertIs(bot_discount.COST_FLOOR, False)
 
-    def test_no_margin_no_discount(self):
-        self.costs = ({1: (100000.0, True)}, {})
-        items = [line(100000)]
-        self.assertEqual(self.apply(items), 0)
-        self.assertEqual(items[0]["price"], 100000)
-        self.assertNotIn("bot_discount", items[0])
-
-    def test_fractional_cost_rounds_up(self):
-        self.costs = ({1: (91234.4, True)}, {})
-        items = [line(100000)]
-        self.apply(items)
-        self.assertEqual(items[0]["price"], 91235)
+    def test_full_ten_whatever_the_margin(self):
+        # Owner, 2026-10-13: "marjasidan qatiy nazar 10%". Cost 95 000 or even
+        # above the shelf price — still 90 000.
+        for cost in (95000.0, 100000.0, 120000.0):
+            self.costs = ({1: (cost, True)}, {})
+            items = [line(100000, 2)]
+            self.assertEqual(self.apply(items), 20000)
+            self.assertEqual(items[0]["price"], 90000)
+            self.assertEqual(items[0]["discount_percent"], 10)
 
     def test_healthy_margin_gets_the_full_ten(self):
         self.costs = ({1: (60000.0, True)}, {})
         items = [line(100000)]
         self.assertEqual(self.apply(items), 10000)
 
-    def test_set_is_floored_by_its_components_cost(self):
+    def test_set_gets_the_full_ten_too(self):
         self.costs = ({}, {7: (115000.0, True)})
         items = [{"set_id": 7, "is_set": True, "name": "Set", "unit": "piece", "quantity": 1,
                   "price": 120000, "original_price": 120000, "discount_percent": 0}]
-        self.assertEqual(self.apply(items), 5000)
+        self.assertEqual(self.apply(items), 12000)
 
     def test_unknown_cost_gets_the_full_ten(self):
         self.costs = ({1: (0.0, False)}, {})
@@ -125,7 +117,40 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(run(bot_discount.cart_saving(rows, 10)), 4500 * 2 + 12000)
         self.assertEqual(run(bot_discount.cart_saving(rows, 0)), 0)
         self.costs = ({1: (44000.0, True)}, {7: (115000.0, True)})
-        self.assertEqual(run(bot_discount.cart_saving(rows, 10)), 1000 * 2 + 5000)
+        self.assertEqual(run(bot_discount.cart_saving(rows, 10)), 4500 * 2 + 12000)
+
+
+class CostFloorSwitchTest(unittest.TestCase):
+    """COST_FLOOR = True brings the 2026-10-08 rule back: never below cost."""
+
+    def setUp(self):
+        self.costs = ({}, {})
+        for p in (patch.object(bot_discount, "_cost_maps", AsyncMock(side_effect=lambda items: self.costs)),
+                  patch.object(bot_discount, "COST_FLOOR", True)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def apply(self, items):
+        return run(bot_discount.apply(items, 10))
+
+    def test_never_below_cost(self):
+        self.costs = ({1: (95000.0, True)}, {})
+        items = [line(100000, 2)]
+        self.assertEqual(self.apply(items), 10000)
+        self.assertEqual(items[0]["price"], 95000)
+        self.assertEqual(items[0]["discount_percent"], 5)
+
+    def test_no_margin_no_discount(self):
+        self.costs = ({1: (100000.0, True)}, {})
+        items = [line(100000)]
+        self.assertEqual(self.apply(items), 0)
+        self.assertNotIn("bot_discount", items[0])
+
+    def test_fractional_cost_rounds_up(self):
+        self.costs = ({1: (91234.4, True)}, {})
+        items = [line(100000)]
+        self.apply(items)
+        self.assertEqual(items[0]["price"], 91235)
 
 
 class MarginReportTextTest(unittest.TestCase):
@@ -139,8 +164,17 @@ class MarginReportTextTest(unittest.TestCase):
         self.assertIn("Tannarxi kiritilmagan (1 ta)", text)
         self.assertIn("• Chia — 30 000", text)
 
+    def test_lists_below_cost(self):
+        text = bot_discount.margin_report_text({
+            "total": 2, "capped": [], "no_cost": [],
+            "below_cost": [{"name": "Kokos", "price": 100000, "cost": 95000, "new": 90000, "loss": 5000}],
+        })
+        self.assertIn("tannarxdan arzon sotiladi (1 ta)", text)
+        self.assertIn("• Kokos — 100 000 → 90 000 (tannarx 95 000, har donada −5 000)", text)
+        self.assertNotIn("zararsiz", text)
+
     def test_all_fine(self):
-        text = bot_discount.margin_report_text({"total": 2, "capped": [], "no_cost": []})
+        text = bot_discount.margin_report_text({"total": 2, "capped": [], "below_cost": [], "no_cost": []})
         self.assertIn("zararsiz", text)
 
 
@@ -521,7 +555,7 @@ class _FakePool:
 
 class PriceListTest(unittest.TestCase):
     """12-oktabr xabari: barcha mahsulotlar asl va chegirmadagi narxi bilan —
-    narx checkout bilan bir xil qoida bo'yicha (10%, tannarxdan past emas)."""
+    narx checkout bilan bir xil qoida bo'yicha (marjadan qat'i nazar 10%)."""
 
     PRODUCTS = [
         {"id": 1, "name": "Bodom uni", "name_ru": "Миндальная мука", "category": "flour",
@@ -543,7 +577,7 @@ class PriceListTest(unittest.TestCase):
         items = self.price_list()
         by_name = {i["name"]: (i["base"], i["new"]) for i in items}
         self.assertEqual(by_name["Bodom uni"], (120000, 108000))      # full 10%
-        self.assertEqual(by_name["Kokos <yog'i>"], (50000, 49000))    # stops at cost
+        self.assertEqual(by_name["Kokos <yog'i>"], (50000, 45000))    # 10% even under cost
         self.assertEqual(by_name["Eritritol"], (45000, 40500))        # no cost known → 10%
         self.assertEqual(by_name["Keto set"], (300000, 270000))
         self.assertTrue(items[-1]["is_set"])                          # sets come last
