@@ -92,7 +92,7 @@ async def _render_product_detail(callback: CallbackQuery, product_id: int,
     Shared by show_product_detail and the +/- handlers so the same bubble updates
     in place when the buyer bumps the quantity."""
     lang = await get_user_language(callback.from_user.id)
-    product = await get_product(product_id)
+    product = await _product_for(callback.from_user.id, product_id)
 
     if not product:
         await callback.answer("Not found", show_alert=True)
@@ -175,12 +175,20 @@ def _parse_detail_step(data: str) -> tuple[int, str, int]:
     return pid, bc, page
 
 
+async def _product_for(user_id: int, product_id: int):
+    """The product as this buyer sees it: `quantity` is what nobody else's
+    cart holds, and `held_out` marks "all of it is in other carts" (Savat broni)."""
+    from database import apply_holds
+    product = await get_product(product_id)
+    return (await apply_holds([product], user_id))[0] if product else None
+
+
 async def _refresh_detail_keyboard(callback: CallbackQuery, product_id: int,
                                    back_category: str, back_page: int) -> None:
     """Update just the inline keyboard on the detail bubble — caption stays.
     Avoids the delete+resend of a photo on every +/- tap."""
     lang = await get_user_language(callback.from_user.id)
-    product = await get_product(product_id)
+    product = await _product_for(callback.from_user.id, product_id)
     if not product:
         return
     out_of_stock = product["quantity"] <= 0
@@ -202,12 +210,16 @@ async def detail_increment(callback: CallbackQuery):
     if not product:
         await callback.answer("❌")
         return
-    stock = product.get("quantity") or 0
     _cart_id, current = await get_cart_line_for_product(callback.from_user.id, pid)
-    if stock and current + 1 > stock:
-        await callback.answer(get_text("cart_stock_limit", lang), show_alert=True)
+    # Savat broni: add_to_cart puts in only what nobody else holds.
+    after = await add_to_cart(callback.from_user.id, pid, 1)  # merges into existing line
+    if after <= current:
+        import cart_reservations
+        if after < current:
+            await _refresh_detail_keyboard(callback, pid, bc, page)
+        await callback.answer(await cart_reservations.limit_text(callback.from_user.id, lang, pid),
+                              show_alert=True)
         return
-    await add_to_cart(callback.from_user.id, pid, 1)  # merges into existing line
     await _refresh_detail_keyboard(callback, pid, bc, page)
     from handlers.cart import send_added_to_cart
     if current <= 0:
@@ -452,7 +464,13 @@ async def set_increment(callback: CallbackQuery):
     page = int(parts[2])
     
     _line, before = await get_cart_line_for_set(callback.from_user.id, set_id)
-    await add_to_cart(callback.from_user.id, set_id=set_id, quantity=1)
+    # Savat broni: a set holds its parts; it only goes in if they are free.
+    if await add_to_cart(callback.from_user.id, set_id=set_id, quantity=1) <= before:
+        import cart_reservations
+        lang = await get_user_language(callback.from_user.id)
+        await callback.answer(await cart_reservations.limit_text(callback.from_user.id, lang, set_id=set_id),
+                              show_alert=True)
+        return
     if not before:
         from handlers.cart import send_added_to_cart
         lang = await get_user_language(callback.from_user.id)

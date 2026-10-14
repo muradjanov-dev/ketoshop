@@ -590,6 +590,13 @@ TEXTS = {
         "uz": "Faqat {n} ta qo'shildi — qolganlari boshqa mijoz savatida band",
         "ru": "Добавлено только {n} — остальное в корзине другого покупателя",
     },
+    # Paid by card, cheque sent, then stock ran short (handlers/cart._paid_but_short).
+    "paid_stock_gone_note": {
+        "uz": "💳 To'lovingiz va chekingiz bizda — admin tez orada siz bilan bog'lanib, "
+              "pulni qaytaradi yoki boshqa mahsulot taklif qiladi.",
+        "ru": "💳 Ваша оплата и чек у нас — администратор скоро свяжется с вами, "
+              "вернёт деньги или предложит другой товар.",
+    },
     "product_held_out": {
         "uz": "⏳ <b>Hozircha band</b> — oxirgi donalar boshqa mijoz savatida. 24 soat ichida bo'shashi mumkin.",
         "ru": "⏳ <b>Сейчас забронировано</b> — последние штуки в корзине другого покупателя. "

@@ -118,7 +118,11 @@ async def build_caption(product: dict, lang: str, rate: float | None,
         if reward:
             text += "\n" + reward
 
-    if product["quantity"] <= 0:
+    if product.get("held_out"):
+        # In stock, but every piece sits in other buyers' carts (Savat broni,
+        # database.apply_holds) — "band", not "sold out" (owner, 2026-10-13).
+        text += "\n\n" + get_text("product_held_out", lang)
+    elif product["quantity"] <= 0:
         text += "\n\n" + get_text("product_out_of_stock", lang)
 
     # Aksiya bonus this exact product triggers — on the card, so the buyer
@@ -189,6 +193,8 @@ async def send_card(bot: Bot, chat_id: int, product: dict, lang: str,
     import gamification
     if rate is None:
         rate = await gamification.buyer_rate(chat_id)
+    # What this buyer can still take — other buyers' carts hold the rest.
+    product = (await database.apply_holds([product], chat_id))[0]
     if caption is None:
         caption = await build_caption(product, lang, rate)
     keyboard = await detail_keyboard(chat_id, product["id"], back_category, back_page,

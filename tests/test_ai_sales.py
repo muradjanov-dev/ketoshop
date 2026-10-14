@@ -136,7 +136,7 @@ class AiSalesToolLoopTest(_ProviderSwap):
             "quantity": 4, "is_active": 1,
         })
         database.get_cart_line_for_product = AsyncMock(return_value=(None, 0.0))
-        database.add_to_cart = AsyncMock()
+        database.add_to_cart = AsyncMock(return_value=2.0)   # the line quantity it ended with
         provider = self.use([
             Turn(calls=[ToolCall("t1", "savatga_qoshish", {"mahsulot_id": 10, "miqdor": 2})]),
             Turn(text="2 kg kokos uni savatga solindi."),
@@ -164,7 +164,7 @@ class AiSalesToolLoopTest(_ProviderSwap):
             "id": 10, "name": "Kokos uni 1000gr", "unit": "kg", "quantity": 9, "is_active": 1})
         database.get_cart_line_for_product = AsyncMock(return_value=(55, 3.0))
         database.remove_from_cart = AsyncMock()
-        database.add_to_cart = AsyncMock()
+        database.add_to_cart = AsyncMock(return_value=2.0)   # the line quantity it ended with
         out = _run(ai_sales._tool_add(777, {"mahsulot_id": 10, "miqdor": 2}))
         self.assertTrue(out.startswith("OK:"), out)
         database.remove_from_cart.assert_awaited_once_with(55)
@@ -1351,7 +1351,7 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
         _patch(self, database, "get_product", AsyncMock(return_value={
             "id": 10, "name": "Kokos uni 1000gr", "unit": "kg", "quantity": 9, "is_active": 1}))
         _patch(self, database, "get_cart_line_for_product", AsyncMock(return_value=(None, 0.0)))
-        _patch(self, database, "add_to_cart", AsyncMock())
+        _patch(self, database, "add_to_cart", AsyncMock(return_value=1.0))
         _patch(self, ai_sales, "_promo_hint", AsyncMock(return_value=""))
         out = _run(ai_sales._tool_add(777, {"mahsulot_id": 10, "miqdor": 1}))
         self.assertIn("Yana nima olamiz? 😊", out)

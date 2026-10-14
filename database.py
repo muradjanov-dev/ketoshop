@@ -1686,11 +1686,15 @@ async def add_to_cart(user_id: int, product_id: int = None, quantity: float = 1,
 
 async def extend_cart_hold(user_id: int) -> None:
     """Restart the 24 h on a buyer's held lines — at checkout, so a hold can't
-    run out while they are paying."""
-    async with pool.acquire() as conn:
-        await conn.execute(
-            f"UPDATE cart SET reserved_until = {_HOLD_UNTIL} WHERE user_id = $1 AND reserved_until > {_NOW_UTC}",
-            user_id)
+    run out while they are paying. Best effort: never stops a checkout."""
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                f"UPDATE cart SET reserved_until = {_HOLD_UNTIL} WHERE user_id = $1 AND reserved_until > {_NOW_UTC}",
+                user_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("extend_cart_hold(%s) failed", user_id, exc_info=True)
 
 
 async def stock_view(product_ids, user_id: int | None = None) -> dict[int, dict]:

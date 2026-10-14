@@ -1335,10 +1335,16 @@ async def _tool_add(user_id: int, args: dict) -> str:
     cart_id, _ = await database.get_cart_line_for_product(user_id, product_id)
     if cart_id:
         await database.remove_from_cart(cart_id)
-    await database.add_to_cart(user_id, product_id=product_id, quantity=qty)
+    # Savat broni: only what no other buyer's cart holds goes in.
+    got = await database.add_to_cart(user_id, product_id=product_id, quantity=qty)
+    if got <= 0:
+        return (f"Xato: {product['name']} hozir boshqa mijozlar savatida band — 24 soat ichida "
+                "bo'shashi mumkin. Mijozga shuni ayt va o'xshash mahsulot taklif qil.")
     await _remember_quiet(user_id, "interest", product["name"], product_id)
     _cart_changed(user_id)
-    return (f"OK: savatda {product['name']} — {qty:g} {product.get('unit') or 'dona'}."
+    short = (f" Faqat {got:g} bo'sh edi — qolgani boshqa mijoz savatida band, mijozga ayt."
+             if got < qty else "")
+    return (f"OK: savatda {product['name']} — {got:g} {product.get('unit') or 'dona'}." + short
             ) + await _promo_hint(user_id) + _NEXT_STEP
 
 
@@ -1359,10 +1365,13 @@ async def _tool_add_set(user_id: int, args: dict) -> str:
     for line in await database.get_cart(user_id):
         if line.get("set_id") == set_id:
             await database.remove_from_cart(line["cart_id"])
-    await database.add_to_cart(user_id, set_id=set_id, quantity=count)
+    got = await database.add_to_cart(user_id, set_id=set_id, quantity=count)
+    if got <= 0:
+        return (f"Xato: {bundle['name']} tarkibidagi mahsulotlar hozir boshqa mijozlar savatida band. "
+                "Mijozga ayt va alohida mahsulotlarni taklif qil.")
     await _remember_quiet(user_id, "interest", bundle["name"])
     _cart_changed(user_id)
-    return (f"OK: savatda {bundle['name']} — {count} ta." + await _promo_hint(user_id)
+    return (f"OK: savatda {bundle['name']} — {int(got)} ta." + await _promo_hint(user_id)
             + _NEXT_STEP)
 
 

@@ -5,7 +5,11 @@ A buyer puts products in the cart and leaves without ordering. Two gentle
 touches bring them back:
 
     stage 1 — cart idle 3 h    "Savatingiz sizni kutyapti" + one-tap checkout
-    stage 2 — cart idle 24 h   "Mahsulotlaringiz hali saqlanmoqda" (last one)
+    stage 2 — cart idle 20 h   "Savatingiz bugun 18:40 gacha siz uchun band" —
+                               the warning before the 24 h cart hold ends
+                               (Savat broni, cart_reservations.py, 2026-10-13).
+                               If 20 h falls at night, it goes at 20:30 to
+                               everyone whose hold ends before the morning.
 
 Rules that keep it from turning into spam:
   * "idle" is measured from the LAST time the buyer touched the cart (any add,
@@ -56,8 +60,23 @@ MAX_LINES = 8                     # cart lines listed before "… va yana N ta"
 # night-time reminder wait for the morning without ever firing days late.
 STAGES = (
     (1, 3 * 60, 20 * 60),
-    (2, 24 * 60, 60 * 60),
+    # Ends with the hold itself: at 24 h the cart is released, not reminded.
+    (2, 20 * 60, 24 * 60),
 )
+HOLD_MINUTES = 24 * 60
+LAST_CALL = (20, 30)               # the last daytime half hour
+
+
+def stage2_min_idle(default: int, now_tk: datetime | None = None) -> int:
+    """Stage 2 warns ~4 h before the hold ends. When that moment would fall
+    in tonight's quiet hours, the last half hour of the day warns everyone
+    whose hold ends before the morning — never a release without a warning."""
+    now = now_tk or _now_tk()
+    if (now.hour, now.minute) < LAST_CALL or now.hour >= QUIET_START:
+        return default
+    morning = (now + timedelta(days=1)).replace(hour=QUIET_END, minute=0, second=0, microsecond=0)
+    until_morning = int((morning - now).total_seconds() // 60)
+    return max(0, min(default, HOLD_MINUTES - until_morning))
 
 
 def _now_tk() -> datetime:
@@ -118,11 +137,24 @@ async def build_reminder(user_id: int, stage: int, lang: str) -> tuple[str, Inli
         push = _t("Buyurtma 1 daqiqada rasmiylashtiriladi 👇",
                   "Заказ оформляется за 1 минуту 👇", lang)
     else:
-        head = _t("🛒 <b>Savatingizdagi mahsulotlar shu yerda turibdi</b>",
-                  "🛒 <b>Товары по-прежнему в вашей корзине</b>", lang)
-        intro = _t("Savatingizda:", "В корзине:", lang)
-        push = _t("Kerak bo'lsa, buyurtmani bir necha bosishda rasmiylashtirish mumkin 👇",
-                  "Если нужно — заказ оформляется в пару нажатий 👇", lang)
+        until = await database.cart_hold_until(user_id)
+        if until:
+            # The warning before the 24 h hold ends (Savat broni).
+            import cart_reservations
+            when = cart_reservations.hold_end_text(until, "ru" if lang == "ru" else "uz")
+            head = _t(f"⏳ <b>Savatingiz {when} gacha siz uchun band</b>",
+                      f"⏳ <b>Ваша корзина закреплена за вами до {when}</b>", lang)
+            intro = _t("Savatingizda:", "В корзине:", lang)
+            push = _t("Shu vaqtgacha rasmiylashtirmasangiz, bu mahsulotlar boshqa xaridorlar uchun "
+                      "sotuvga qaytadi. Buyurtma bir necha bosishda 👇",
+                      "Если не оформить заказ до этого времени, товары вернутся в продажу для других "
+                      "покупателей. Оформление — в пару нажатий 👇", lang)
+        else:
+            head = _t("🛒 <b>Savatingizdagi mahsulotlar shu yerda turibdi</b>",
+                      "🛒 <b>Товары по-прежнему в вашей корзине</b>", lang)
+            intro = _t("Savatingizda:", "В корзине:", lang)
+            push = _t("Kerak bo'lsa, buyurtmani bir necha bosishda rasmiylashtirish mumkin 👇",
+                      "Если нужно — заказ оформляется в пару нажатий 👇", lang)
 
     parts = [head, "", intro, *shown, "",
              _t(f"💰 Jami: <b>{fmt_sum(total)} so'm</b>", f"💰 Итого: <b>{fmt_sum(total)} сум</b>", lang)]
@@ -184,6 +216,8 @@ async def run_once(bot: Bot) -> dict:
 
     banned = set(await _banned_ids())
     for stage, min_idle, max_idle in STAGES:
+        if stage == 2:
+            min_idle = stage2_min_idle(min_idle)
         carts = await database.get_idle_carts(min_idle, max_idle)
         if not carts:
             continue
