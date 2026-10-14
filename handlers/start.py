@@ -297,6 +297,10 @@ async def _process_new_user(bot, tg_user, referrer_id: int | None,
     # kelib, uni yuqorida olgan bo'lsa, qayta berilmaydi.
     import referral_program
     await referral_program.grant_welcome_bonus(bot, tg_user.id)
+    # Today's recipe, sent after the video once they pick a language
+    # (welcome_recipe.py, owner 2026-10-14). Never raises.
+    import welcome_recipe
+    await welcome_recipe.mark_pending(tg_user.id)
 
 
 async def _resend_menu_keyboard(bot, user_id: int, lang: str) -> None:
@@ -352,6 +356,10 @@ async def set_language(callback: CallbackQuery):
     # once per user ever; a no-op until the admin uploads them or if they
     # switched auto-send off. Never raises.
     await onboarding_video.maybe_send_to_new_user(callback.bot, callback.from_user.id, lang)
+    # …and then today's recipe from the site, in full with its photo — a
+    # reason to stay (owner, 2026-10-14). Brand-new users only, once.
+    import welcome_recipe
+    await welcome_recipe.maybe_send(callback.bot, callback.from_user.id, lang)
 
 
 @router.callback_query(F.data == "change_lang")
