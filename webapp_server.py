@@ -131,6 +131,50 @@ def _validate_init_data(init_data: str, bot_token: str) -> dict | None:
         return None
 
 
+# ───────────── botni ishga tushirish sharti (2026-10-14) ─────────────
+# Owner: "Mini appni yoki saytni ishlatish uchun botni ishga tushurish shart
+# bo'lsin". A buyer who never pressed START can't be written to — no order
+# status, no cheque echo (the 502s of 2026-10-11), no onboarding video, no
+# gift — so the Mini App asks them to start the bot first.
+#
+# Telegram has no "did this user start the bot" call; a chat action is the
+# quiet probe: it succeeds only when the bot may write to them (started and
+# not blocked). Cached, and it fails OPEN — a Telegram hiccup must never lock
+# buyers out of the shop.
+BOT_ACCESS_PATH = "/api/bot-access"
+_BOT_ACCESS_OK_TTL = 1800      # s — re-probed at most every 30 min while fine
+_BOT_ACCESS_NO_TTL = 3         # s — the gate polls; don't hit Telegram per request
+_bot_access: dict[int, tuple[float, bool]] = {}
+
+
+async def bot_can_write(bot, user_id: int) -> bool:
+    if bot is None or user_id in ADMIN_IDS:
+        return True
+    import time
+    now = time.monotonic()
+    hit = _bot_access.get(user_id)
+    if hit and now - hit[0] < (_BOT_ACCESS_OK_TTL if hit[1] else _BOT_ACCESS_NO_TTL):
+        return hit[1]
+    from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+    try:
+        await bot.send_chat_action(user_id, "typing")
+        ok = True
+    except (TelegramForbiddenError, TelegramBadRequest):
+        ok = False          # never started, blocked the bot, or account gone
+    except Exception:
+        logger.warning("bot access probe for %s failed — letting them in", user_id, exc_info=True)
+        return True
+    _bot_access[user_id] = (now, ok)
+    return ok
+
+
+async def api_bot_access(request: web.Request):
+    """The Mini App's gate check — open even while the gate is shut."""
+    from config import BOT_USERNAME
+    ok = await bot_can_write(request.app.get("bot"), request["user_id"])
+    return _json({"ok": ok, "bot": BOT_USERNAME})
+
+
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
     """Validate Telegram WebApp initData on /api/* routes."""
@@ -166,6 +210,11 @@ async def auth_middleware(request: web.Request, handler):
         request["user_lang"] = user.get("language_code", "uz")
         if request["user_lang"] not in ("uz", "uz_cyr", "ru"):
             request["user_lang"] = "uz"
+
+    # The shop is for buyers the bot can reach — see "botni ishga tushirish".
+    if path != BOT_ACCESS_PATH and not await bot_can_write(request.app.get("bot"), user_id):
+        from config import BOT_USERNAME
+        return _json({"error": "start_bot", "bot": BOT_USERNAME}, status=403)
 
     return await handler(request)
 
@@ -1602,6 +1651,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
 
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/", index)
+    app.router.add_get(BOT_ACCESS_PATH, api_bot_access)
     app.router.add_get("/api/categories", api_categories)
     app.router.add_get("/api/pickup-config", api_pickup_config)
     app.router.add_get("/api/promo", api_promo)

@@ -3686,6 +3686,11 @@ const L = {
     errorCancel: 'Buyurtmani bekor qilib bo\'lmadi',
     ordering: 'Buyurtma berilmoqda...',
     comingSoon: '⏳ Tez orada qaytadi',
+    startGateTitle: 'Avval botni ishga tushiring',
+    startGateText: 'Buyurtmangiz holati, to\'lov cheki, sovg\'alar va chegirmalar shu bot orqali keladi. Botni oching va pastdagi «START» tugmasini bosing — keyin shu yerga qayting.',
+    startGateOpen: '▶️ Botni ochish',
+    startGateCheck: '✅ Bosdim — davom etish',
+    startGateWaiting: 'Hali START bosilmagan. Botni oching va «START» ni bosing.',
     outOfStock: '❌ Sotuvda yo\'q — mahsulot yaqin kunlarda qaytadi',
     discountUntil: '⏳ Chegirma {date} gacha amal qiladi',
     youSave: '💚 {amount} so\'m tejaysiz',
@@ -3846,6 +3851,11 @@ const L = {
     errorCancel: 'Не удалось отменить заказ',
     ordering: 'Оформление...',
     comingSoon: '⏳ Скоро в наличии',
+    startGateTitle: 'Сначала запустите бота',
+    startGateText: 'Статус заказа, чек об оплате, подарки и скидки приходят через этого бота. Откройте бота и нажмите «START» внизу — затем вернитесь сюда.',
+    startGateOpen: '▶️ Открыть бота',
+    startGateCheck: '✅ Нажал — продолжить',
+    startGateWaiting: 'Бот ещё не запущен. Откройте бота и нажмите «START».',
     outOfStock: '❌ Нет в наличии — товар появится в ближайшие дни',
     discountUntil: '⏳ Скидка действует до {date}',
     youSave: '💚 экономия {amount} сум',
@@ -4031,6 +4041,9 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     let body = null;
     try { body = await res.json(); } catch(_) {}
+    // The server refuses buyers the bot can't reach (never pressed START,
+    // or blocked it) — show the "start the bot" screen instead of an error.
+    if (res.status === 403 && body && body.error === 'start_bot') showStartGate(body.bot);
     const err = new Error(res.status);
     err.status = res.status;
     err.body = body;
@@ -4657,6 +4670,54 @@ function finishGame(id, value, total) {
 }
 
 // ===== INIT =====
+// ===== START THE BOT FIRST (owner, 2026-10-14: "Mini appni yoki saytni
+// ishlatish uchun botni ishga tushurish shart bo'lsin") =====
+// A full-screen card over the shop until the bot can write to this buyer.
+// It re-checks every few seconds, so pressing START in the chat and coming
+// back opens the shop by itself; "✅" re-checks at once.
+let _startGateTimer = null;
+function showStartGate(botName) {
+  let gate = document.getElementById('start-gate');
+  if (!gate) {
+    gate = document.createElement('div');
+    gate.id = 'start-gate';
+    gate.setAttribute('role', 'dialog');
+    gate.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;'
+      + 'padding:24px;background:var(--bg,#FFF8EC);color:var(--text,#2B2116);font-family:inherit';
+    gate.innerHTML =
+      '<div style="max-width:380px;width:100%;text-align:center">' +
+        '<div style="font-size:64px;line-height:1;margin-bottom:14px">🤖</div>' +
+        '<h2 style="font-size:22px;font-weight:800;margin:0 0 10px">' + escapeHtml(t.startGateTitle) + '</h2>' +
+        '<p style="font-size:15px;line-height:1.5;margin:0 0 22px;color:var(--hint,#7A6A55)">' + escapeHtml(t.startGateText) + '</p>' +
+        '<button id="start-gate-open" type="button" style="width:100%;border:0;border-radius:14px;padding:15px;font-size:16px;font-weight:800;'
+          + 'background:var(--btn,#2E7D32);color:var(--btn-text,#fff);margin-bottom:10px;cursor:pointer">' + escapeHtml(t.startGateOpen) + '</button>' +
+        '<button id="start-gate-check" type="button" style="width:100%;border:1px solid var(--hairline,#E5DAC6);border-radius:14px;padding:13px;'
+          + 'font-size:15px;font-weight:700;background:transparent;color:inherit;cursor:pointer">' + escapeHtml(t.startGateCheck) + '</button>' +
+        '<div id="start-gate-note" style="font-size:13px;margin-top:12px;min-height:18px;color:var(--berry,#B3261E)"></div>' +
+      '</div>';
+    document.body.appendChild(gate);
+    gate.querySelector('#start-gate-check').onclick = () => checkStartGate(true);
+  }
+  const url = 'https://t.me/' + (botName || 'ketoshopbot');
+  gate.querySelector('#start-gate-open').onclick = () => {
+    try { tg.openTelegramLink(url); } catch (_) { window.open(url, '_blank'); }
+  };
+  gate.style.display = 'flex';
+  if (!_startGateTimer) _startGateTimer = setInterval(() => checkStartGate(false), 3000);
+}
+async function checkStartGate(manual) {
+  let ok = false;
+  try { ok = !!(await fetch('/api/bot-access', { headers: apiHeaders() }).then(r => r.json())).ok; } catch (_) {}
+  if (ok) {
+    clearInterval(_startGateTimer); _startGateTimer = null;
+    location.reload();   // boot the shop from scratch now that it may load
+  } else if (manual) {
+    const note = document.getElementById('start-gate-note');
+    if (note) note.textContent = t.startGateWaiting;
+  }
+  return ok;
+}
+
 (async function init() {
   // Paint immediately with the language we already know locally
   // (localStorage / Telegram's language_code — set synchronously above at
@@ -4664,6 +4725,12 @@ function finishGame(id, value, total) {
   // while we wait on a network round trip just to double-check it.
   applyLanguage();
   updateBackButton();
+
+  // Nothing loads for a buyer the bot can't reach — they get the START card.
+  try {
+    const access = await fetch('/api/bot-access', { headers: apiHeaders() }).then(r => r.json());
+    if (access && access.ok === false) { showStartGate(access.bot); return; }
+  } catch (_) { /* network trouble — carry on; the server still guards every call */ }
 
   // Reconcile the server-saved language preference in the background; only
   // re-render text if it actually differs from our local guess.
