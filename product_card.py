@@ -66,11 +66,13 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     seller_name = product.get("seller_name") or product.get("seller_username") or "—"
     name = localize_product_text(product.get("name"), product.get("name_ru"), lang)
     desc = localize_product_text(product.get("description"), product.get("description_ru"), lang) or "—"
+    sold_out = get_text("product_out_of_stock", lang) if product["quantity"] <= 0 else ""
     # Trim here, not in tg_safety's net: that would save the message by
     # dropping the price lines below instead of the tail of the description.
     desc_budget = DESC_IN_CARD_MAX - (len(extra) + 2 if extra else 0) \
                                    - (len(gift) + 2 if gift else 0) \
-                                   - (len(tip) + 6 if tip else 0)
+                                   - (len(tip) + 6 if tip else 0) \
+                                   - (len(sold_out) + 2 if sold_out else 0)
     if len(desc) > desc_budget:
         desc = desc[: max(40, desc_budget - 1)].rstrip() + "…"
 
@@ -118,8 +120,8 @@ async def build_caption(product: dict, lang: str, rate: float | None,
         if reward:
             text += "\n" + reward
 
-    if product["quantity"] <= 0:
-        text += "\n\n" + get_text("product_out_of_stock", lang)
+    if sold_out:
+        text += "\n\n" + sold_out
 
     # Aksiya bonus this exact product triggers — on the card, so the buyer
     # sees the gift before deciding, not only once it lands in the cart.

@@ -130,10 +130,14 @@ TEXTS = {
     },
     "btn_add_to_cart": {"uz": "🛒 Savatga qo'shish", "ru": "🛒 В корзину"},
     "btn_in_cart_qty": {"uz": "✓ Savatda: {n} ta", "ru": "✓ В корзине: {n} шт"},
-    "btn_coming_soon": {"uz": "⏳ Tez orada qaytadi", "ru": "⏳ Скоро в наличии"},
+    "btn_coming_soon": {"uz": "⏳ Tez orada qaytadi", "ru": "⏳ Скоро вернётся"},
+    # Sold out, said with a smile (owner, 2026-10-14) — same promise as the
+    # Mini App's "Tugab qoldi" stamp.
     "product_out_of_stock": {
-        "uz": "❌ <b>Sotuvda yo'q</b> — mahsulot yaqin kunlarda qaytadi",
-        "ru": "❌ <b>Нет в наличии</b> — товар появится в ближайшие дни",
+        "uz": "🔥 <b>Hammasini olib ketishdi!</b> Javonda bittasi ham qolmadi — "
+              "yangisini olib kelyapmiz, tez orada qaytadi 🚚",
+        "ru": "🔥 <b>Всё раскупили!</b> На полке не осталось ни одного — "
+              "уже везём новую партию, скоро вернётся 🚚",
     },
     "btn_prev": {"uz": "⬅️", "ru": "⬅️"},
     "btn_next": {"uz": "➡️", "ru": "➡️"},
