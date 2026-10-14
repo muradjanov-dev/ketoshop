@@ -507,6 +507,34 @@
 .kb-arrow:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .kb-arrow.prev{left:4px}
 .kb-arrow.next{right:4px}
+/* ── active orders map ── */
+.kb-mapview[hidden]{display:none}
+#view-courier.kb-map-mode .kb-nav,#view-courier.kb-map-mode .kb-board-wrap{display:none!important}
+.kb-map-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:2px 0 10px}
+.kb-map-legend .it{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--ink-2)}
+.kb-map-legend .it i{width:11px;height:11px;border-radius:50%;background:var(--c)}
+.kb-map-legend .it b{color:var(--ink);font-variant-numeric:tabular-nums}
+.kb-map-legend button{margin-left:auto}
+/* isolation: Leaflet's panes sit at z-index 400–1000, above the order modal
+   (100) — kept inside the map's own stacking context they can't cover it. */
+.kb-map-canvas{position:relative;isolation:isolate;height:calc(100vh - 240px);min-height:420px;
+               border-radius:14px;border:1px solid var(--line);overflow:hidden;background:var(--surface-2)}
+.kb-map-note{font-size:12.5px;color:var(--ink-3);margin-top:9px;line-height:1.7}
+.kb-map-note button{border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);border-radius:8px;
+                    font-size:12px;font-weight:700;padding:2px 8px;margin:0 2px;cursor:pointer}
+.kb-pin-wrap{background:none;border:none}
+.kb-pin{position:absolute;left:0;top:0;transform:translate(-50%,calc(-100% - 7px));background:var(--c);color:#fff;
+        font:800 11.5px/1 system-ui,sans-serif;padding:5px 8px;border-radius:9px;white-space:nowrap;
+        box-shadow:0 2px 8px rgba(0,0,0,.35);border:1.5px solid rgba(255,255,255,.85);cursor:pointer}
+.kb-pin::after{content:"";position:absolute;left:50%;bottom:-7px;margin-left:-6px;
+               border:6px solid transparent;border-top-color:var(--c);border-bottom:0}
+.kb-pop{font:13px/1.45 system-ui,sans-serif;color:#1F1B14;min-width:200px}
+.kb-pop .h{font-weight:800;font-size:14px;margin-bottom:3px}
+.kb-pop .s{font-size:11.5px;font-weight:700;color:#6B6252;margin-bottom:6px}
+.kb-pop .r{margin:2px 0}
+.kb-pop .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.kb-pop .acts a,.kb-pop .acts button{font:700 12px system-ui,sans-serif;border-radius:8px;padding:5px 9px;
+        border:1px solid #D9D1BF;background:#F6F2E8;color:#1F1B14;text-decoration:none;cursor:pointer}
 .kb-nav{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 10px}
 .kb-nav::-webkit-scrollbar{display:none}
 .kb-nav[hidden]{display:none}
@@ -666,6 +694,10 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
         <button data-scope="all" class="active">Hammasi</button>
         <button data-scope="active">Faol</button>
       </div>
+      <div class="kb-scope" id="kbView" title="Doska yoki faol buyurtmalar xaritasi">
+        <button data-view="board" class="active">🗂 Doska</button>
+        <button data-view="map">🗺 Xarita</button>
+      </div>
       <div class="spacer" style="margin-left:auto"></div>
       <input type="search" class="kb-search" id="kbSearch" placeholder="Qidirish: #raqam, ism, telefon…">
       <label class="kb-switch" title="Status o'zgarganda mijozga Telegram'dan xabar yuborilsin">
@@ -682,6 +714,13 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
       <button class="kb-arrow prev" id="kbPrev" type="button" aria-label="Oldingi ustun" hidden>‹</button>
       <div class="kanban" id="kanban"></div>
       <button class="kb-arrow next" id="kbNext" type="button" aria-label="Keyingi ustun" hidden>›</button>
+    </div>
+    <!-- Every active order on one map (owner, 2026-10-13: "hamma buyurtmalar
+         bitta kartada lokatsiyalari ko'rinib tursin faollari"). -->
+    <div class="kb-mapview" id="kbMapView" hidden>
+      <div class="kb-map-legend" id="kbMapLegend"></div>
+      <div class="kb-map-canvas" id="kbMapCanvas"></div>
+      <div class="kb-map-note" id="kbMapNote"></div>
     </div>
   </section>
 
@@ -2894,13 +2933,20 @@ async function loadCourier(opts){
 /* ── render ── */
 function renderKanban(){
   if(!KB_BOARD)return;
-  const q=($('#kbSearch').value||'').trim().toLowerCase().replace(/^#/,'');
-  const match=c=>!q||String(c.id).includes(q)
+  const q=kbQuery(), match=kbMatcher();
+  renderKanbanCols(q,match);
+  kbMapRender();
+}
+function kbQuery(){return ($('#kbSearch').value||'').trim().toLowerCase().replace(/^#/,'');}
+function kbMatcher(){
+  const q=kbQuery();
+  return c=>!q||String(c.id).includes(q)
     ||(c.customer_name||'').toLowerCase().includes(q)
     ||(c.phone||'').replace(/\s/g,'').includes(q.replace(/\s/g,''))
     ||(c.address||'').toLowerCase().includes(q)
     ||(c.username||'').toLowerCase().includes(q);
-
+}
+function renderKanbanCols(q,match){
   const t=KB_BOARD.totals||{};
   $('#kbLive').textContent=t.live??0;
   $('#kbLiveSum').textContent=t.live_sum?kbSom(t.live_sum)+" so'm":'';
@@ -3405,6 +3451,133 @@ try{
     KB_AUTO=false;$('#kbAutoBtn').classList.remove('on');$('#kbAutoLab').textContent='To’xtatilgan';
   }
 }catch(e){}
+
+/* ===== Faol buyurtmalar xaritasi (owner, 2026-10-13: "hamma buyurtmalar
+   bitta kartada lokatsiyalari ko'rinib tursin faollari") =====
+   Built from the board's own payload (KB_BOARD), so it refreshes with every
+   poll and needs no endpoint of its own. Yandex tiles, therefore crs
+   EPSG3395 — on the default 3857 the pins land 5–10 km off (the same trap
+   the Mini App's map picker documents). Markers are updated in place, so an
+   open popup survives the 12-second refresh. */
+const KB_MAP_COLS=['new','accepted','delivery'];
+let KB_VIEW='board', KB_MAP=null, KB_MAP_LAYER=null, KB_MAP_FITTED=false, KB_MAP_BOUNDS=[];
+const KB_MARKERS=new Map();
+
+function kbLoadLeaflet(){
+  if(window.L&&typeof window.L.map==='function')return Promise.resolve();
+  return new Promise((resolve,reject)=>{
+    const css=document.createElement('link');css.rel='stylesheet';css.href='/static/leaflet.css';
+    document.head.appendChild(css);
+    const s=document.createElement('script');s.src='/static/leaflet.js';
+    s.onload=()=>resolve();s.onerror=()=>reject(new Error('Xarita kutubxonasi yuklanmadi'));
+    document.head.appendChild(s);
+  });
+}
+function kbMapWhere(c){
+  return String(c.address||'').replace(/^\s*📍\s*/u,'').replace(KB_COORD_PREFIX_RE,'').trim();
+}
+function kbMapPin(c){
+  if(c.latitude&&c.longitude)return [c.latitude,c.longitude];
+  const m=/^\s*(?:📍\s*)?(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/u.exec(String(c.address||''));
+  return m?[parseFloat(m[1]),parseFloat(m[2])]:null;
+}
+function kbMapPinHtml(c,col){
+  const shipped=c.status==='shipped'?'🚚 ':'';
+  return `<div class="kb-pin" style="--c:var(--kb-${col.tone})">${shipped}#${c.id}</div>`;
+}
+function kbMapPopupHtml(c,col,pin){
+  const cash=!c.payment_method||c.payment_method==='cash';
+  const tel=(c.phone||'').replace(/[^\d+]/g,'');
+  const where=kbMapWhere(c), note=(c.address_note||'').trim();
+  const status=c.status==='shipped'?"🚚 Yo’lda":(KB_LABEL[c.status]||col.title);
+  return `<div class="kb-pop">
+    <div class="h">#${c.id} · ${esc(c.customer_name||'—')}</div>
+    <div class="s">${esc(status)} · ${kbAgo(c.stage_minutes)}${c.courier_name?' · 🧍 '+esc(c.courier_name):''}</div>
+    ${where?`<div class="r">📍 ${esc(where)}</div>`:''}
+    ${note?`<div class="r">📝 ${esc(note)}</div>`:''}
+    ${c.phone?`<div class="r">📱 <a href="tel:${esc(tel)}">${esc(c.phone)}</a></div>`:''}
+    <div class="r">${cash?'💵 Naqd: ':'✅ To’langan: '}<b>${kbSom(c.total)} so'm</b>${c.mystery_gift?' · 🎁':''}</div>
+    <div class="acts">
+      <button type="button" data-kbmap-open="${c.id}">⋯ Batafsil</button>
+      <a href="https://yandex.uz/maps/?pt=${pin[1]},${pin[0]}&z=17&l=map" target="_blank" rel="noopener">🗺 Yandex</a>
+    </div>
+  </div>`;
+}
+async function kbSetView(view){
+  KB_VIEW=view==='map'?'map':'board';
+  $$('#kbView button').forEach(b=>b.classList.toggle('active',b.dataset.view===KB_VIEW));
+  const map=KB_VIEW==='map';
+  $('#kbMapView').hidden=!map;
+  // A class, not [hidden]: kbNavRender re-shows the column tabs on every poll.
+  $('#view-courier').classList.toggle('kb-map-mode',map);
+  try{localStorage.setItem('ketoshop_kb_view',KB_VIEW);}catch(e){}
+  if(!map){kbNavRender();return;}
+  try{await kbLoadLeaflet();}
+  catch(err){$('#kbMapNote').textContent='⚠️ '+err.message;return;}
+  if(!KB_MAP){
+    KB_MAP=window.L.map('kbMapCanvas',{crs:window.L.CRS.EPSG3395,zoomControl:true,attributionControl:false})
+      .setView([41.3111,69.2797],12);
+    window.L.tileLayer('https://core-renderer-tiles.maps.yandex.net/tiles?l=map&v=21.06.02&x={x}&y={y}&z={z}&scale=1&lang=ru_RU',
+      {maxZoom:19}).addTo(KB_MAP);
+    KB_MAP_LAYER=window.L.layerGroup().addTo(KB_MAP);
+  }
+  // The canvas was display:none until now — let Leaflet measure it.
+  requestAnimationFrame(()=>{KB_MAP.invalidateSize();kbMapRender();});
+}
+function kbMapFit(){
+  if(KB_MAP&&KB_MAP_BOUNDS.length)KB_MAP.fitBounds(KB_MAP_BOUNDS,{padding:[50,50],maxZoom:15});
+}
+function kbMapRender(){
+  if(KB_VIEW!=='map'||!KB_MAP||!KB_BOARD)return;
+  // Cheap when nothing changed; needed when the Kuryer tab was hidden while
+  // the map was set up (a 0×0 canvas draws grey).
+  KB_MAP.invalidateSize();
+  const visible=$('#kbMapCanvas').offsetWidth>0;
+  const match=kbMatcher(), seen=new Set(), missing=[], legend=[];
+  KB_MAP_BOUNDS=[];
+  for(const col of KB_BOARD.columns){
+    if(!KB_MAP_COLS.includes(col.key))continue;
+    const cards=col.cards.filter(match);
+    legend.push(`<span class="it" style="--c:var(--kb-${col.tone})"><i></i>${col.icon} ${esc(col.title)} <b>${cards.length}</b></span>`);
+    for(const c of cards){
+      const pin=kbMapPin(c);
+      if(!pin){missing.push(c);continue;}
+      seen.add(c.id);KB_MAP_BOUNDS.push(pin);
+      const icon=window.L.divIcon({className:'kb-pin-wrap',html:kbMapPinHtml(c,col),iconSize:null});
+      const html=kbMapPopupHtml(c,col,pin);
+      let m=KB_MARKERS.get(c.id);
+      if(!m){
+        m=window.L.marker(pin,{icon,riseOnHover:true}).bindPopup(html,{maxWidth:290});
+        m.addTo(KB_MAP_LAYER);KB_MARKERS.set(c.id,m);
+      }else{
+        m.setLatLng(pin);m.setIcon(icon);m.setPopupContent(html);
+      }
+    }
+  }
+  for(const [id,m] of KB_MARKERS){
+    if(!seen.has(id)){KB_MAP_LAYER.removeLayer(m);KB_MARKERS.delete(id);}
+  }
+  if(!KB_MAP_FITTED&&visible&&KB_MAP_BOUNDS.length){kbMapFit();KB_MAP_FITTED=true;}
+  $('#kbMapLegend').innerHTML=legend.join('')
+    +(KB_MAP_BOUNDS.length?'<button class="btn btn-o btn-sm" type="button" id="kbMapFitBtn">⤢ Hammasini ko’rsatish</button>':'');
+  const none=!KB_MAP_BOUNDS.length&&!missing.length;
+  $('#kbMapNote').innerHTML=none
+    ? 'Hozir faol buyurtma yo’q.'
+    : (missing.length
+        ? `📍 Xaritada yo’q (${missing.length}) — olib ketish yoki lokatsiyasiz manzil: `
+          +missing.map(c=>`<button type="button" data-kbmap-open="${c.id}">#${c.id} ${esc(c.customer_name||'')}</button>`).join('')
+        : '');
+}
+$('#kbView').addEventListener('click',e=>{
+  const b=e.target.closest('[data-view]');
+  if(b&&b.dataset.view!==KB_VIEW)kbSetView(b.dataset.view);
+});
+$('#kbMapView').addEventListener('click',e=>{
+  if(e.target.closest('#kbMapFitBtn')){kbMapFit();return;}
+  const b=e.target.closest('[data-kbmap-open]');
+  if(b)kbOpenDetail(+b.dataset.kbmapOpen);
+});
+try{if(localStorage.getItem('ketoshop_kb_view')==='map')kbSetView('map');}catch(e){}
 
 /* ===== start ===== */
 function showKuryerDenied(msg){
