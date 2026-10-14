@@ -494,6 +494,39 @@ class AiSalesGateTest(_ProviderSwap):
         self.assertEqual(polish("Rahmat 😊", "uz", customer_text="[Mijoz telefon raqamini yubordi: +998]"),
                          "Rahmat 😊")
 
+    def test_customer_is_never_addressed_by_name(self):
+        strip = ai_sales.strip_name_address
+        names = {"Bobur"}
+        self.assertEqual(strip("Rahmat, Bobur 😊", names), "Rahmat 😊")
+        self.assertEqual(strip("Xaridingiz uchun katta rahmat, Bobur!", names),
+                         "Xaridingiz uchun katta rahmat!")
+        self.assertEqual(strip("Bobur, buyurtmangiz tayyor 😊", names), "Buyurtmangiz tayyor 😊")
+        self.assertEqual(strip("Ajoyib 😊 Bobur, endi manzil kerak.", names),
+                         "Ajoyib 😊 Endi manzil kerak.")
+        self.assertEqual(strip("Hurmatli Bobur, rahmat", names), "Rahmat")
+        self.assertEqual(strip("Sizga, hurmatli Bobur aka, rahmat", names), "Sizga, rahmat")
+        self.assertEqual(strip("Rahmat, Dilnoza opa 😊", {"Dilnoza"}), "Rahmat 😊")
+        self.assertEqual(strip("• Ism: Bobur\n• Mijoz: Bobur, +998935551122", names),
+                         "• Ism: Bobur\n• Mijoz: Bobur, +998935551122")   # ma'lumot qatori
+        self.assertEqual(strip("Раҳмат, Шоира 😊", {"Шоира"}), "Раҳмат 😊")
+        # Ism qayerdan olinadi: Telegram, yozishma, buyurtma.
+        user = NS(first_name="Dilnoza", full_name="Dilnoza Karimova")
+        found = ai_sales.customer_names(user, "mayli karta. Ism Bobur, raqam +998935551122")
+        self.assertTrue({"Dilnoza", "Karimova", "Bobur"} <= found)
+        self.assertIn("ISMI BILAN MUROJAAT QILMA", ai_sales._sales_rules())
+
+    def test_thanks_are_said_as_sizga_rahmat(self):
+        thank = ai_sales.thank_politely
+        self.assertEqual(thank("Rahmat 😊"), "Sizga rahmat 😊")
+        self.assertEqual(thank("Katta rahmat! Buyurtma qabul qilindi."), "Sizga katta rahmat! Buyurtma qabul qilindi.")
+        self.assertEqual(thank("Manzil yozildi. Rahmat, endi to'lov."), "Manzil yozildi. Sizga rahmat, endi to'lov.")
+        self.assertEqual(thank("Xaridingiz uchun katta rahmat!"), "Xaridingiz uchun katta rahmat!")
+        self.assertEqual(thank("Sizga rahmat 😊"), "Sizga rahmat 😊")
+        self.assertEqual(thank("Раҳмат 😊"), "Сизга раҳмат 😊")
+        # Ism olib tashlangach ham: "Rahmat, Bobur 😊" -> "Sizga rahmat 😊".
+        self.assertEqual(thank(ai_sales.strip_name_address("Rahmat, Bobur 😊", {"Bobur"})), "Sizga rahmat 😊")
+        self.assertIn("'Sizga rahmat'", ai_sales._sales_rules())
+
     def test_thanks_alone_costs_no_model_call(self):
         for text in ("rahmat", "Katta rahmat!", "спасибо", "Раҳмат 🙏"):
             self.assertTrue(ai_sales.is_thanks_only(text), text)
