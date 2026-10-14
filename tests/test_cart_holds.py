@@ -312,6 +312,26 @@ class MessagesTest(unittest.TestCase):
             self.assertIn("sotuvga qaytarildi", bot.send_message.call_args.args[1])
 
 
+class BotCardTest(unittest.TestCase):
+    def test_sold_out_note_becomes_band(self):
+        import product_card
+        from locales import get_text
+        card = "📦 Kokos chips\n\n" + get_text("product_out_of_stock", "uz")
+        out = product_card.mark_held(card, {"held_out": True}, "uz")
+        self.assertIn(get_text("product_held_out", "uz"), out)
+        self.assertNotIn(get_text("product_out_of_stock", "uz"), out)
+        self.assertEqual(product_card.mark_held(card, {"held_out": False}, "uz"), card)
+
+    def test_any_sold_out_wording_is_swapped(self):
+        # PR #71 picks one of several product_out_of_stock_N notes.
+        import locales
+        import product_card
+        with patch.dict(locales.TEXTS, {"product_out_of_stock_3": {"uz": "Tugab qoldi — tez orada qaytadi"}}):
+            out = product_card.mark_held("X\n\nTugab qoldi — tez orada qaytadi", {"held_out": True}, "uz")
+        self.assertNotIn("Tugab qoldi", out)
+        self.assertIn("Hozircha band", out)
+
+
 class MiniAppTest(_Base):
     def test_cards_show_band_not_sold_out(self):
         import webapp_server

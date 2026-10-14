@@ -14,7 +14,7 @@ from database import (
 )
 from locales import get_text, get_category_name, get_unit_name, get_display_unit, localize_product_text
 from keyboards import categories_keyboard, back_to_menu_keyboard, cart_shortcut_row
-from product_card import build_caption, detail_keyboard, DESC_IN_CARD_MAX
+from product_card import build_caption, detail_keyboard, mark_held, DESC_IN_CARD_MAX
 from config import ITEMS_PER_PAGE
 
 router = Router()
@@ -111,7 +111,7 @@ async def _render_product_detail(callback: CallbackQuery, product_id: int,
     # next variant, a +/- repaint keeps the one already on screen.
     import product_tips
     tip = await product_tips.tip_for(callback.from_user.id, product, lang, advance=track_view)
-    text = await build_caption(product, lang, rate, tip=tip)
+    text = mark_held(await build_caption(product, lang, rate, tip=tip), product, lang)
     out_of_stock = product["quantity"] <= 0
 
     keyboard = await _detail_keyboard(callback.from_user.id, product_id, back_category, back_page, lang, out_of_stock)
