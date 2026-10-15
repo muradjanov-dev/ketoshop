@@ -14,7 +14,9 @@ from database import (
 )
 from locales import get_text, get_category_name, get_unit_name, get_display_unit, localize_product_text
 from keyboards import categories_keyboard, back_to_menu_keyboard, cart_shortcut_row
-from product_card import build_caption, detail_keyboard, mark_held, DESC_IN_CARD_MAX
+from product_card import (build_caption, detail_keyboard, mark_held, product_photo,
+                          send_product_message, DESC_IN_CARD_MAX)
+from aiogram.exceptions import TelegramBadRequest
 from config import ITEMS_PER_PAGE
 
 router = Router()
@@ -116,41 +118,20 @@ async def _render_product_detail(callback: CallbackQuery, product_id: int,
 
     keyboard = await _detail_keyboard(callback.from_user.id, product_id, back_category, back_page, lang, out_of_stock)
 
+    # Keep the ordinary text-only card in place. Photo cards and oversized
+    # text use the common sender so the full description is never truncated.
+    if not product_photo(product) and not callback.message.photo and len(text.encode("utf-16-le")) // 2 <= 4096:
+        try:
+            await callback.message.edit_text(text=text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.answer()
+            return
+        except TelegramBadRequest:
+            pass
     try:
-        if product.get("photo_id"):
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
-            await callback.message.answer_photo(
-                photo=product["photo_id"],
-                caption=text,
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
-        else:
-            if callback.message.photo:
-                try:
-                    await callback.message.delete()
-                except Exception:
-                    pass
-                await callback.message.answer(
-                    text=text,
-                    reply_markup=keyboard,
-                    parse_mode="HTML"
-                )
-            else:
-                await callback.message.edit_text(
-                    text=text,
-                    reply_markup=keyboard,
-                    parse_mode="HTML"
-                )
-    except Exception:
-        await callback.message.answer(
-            text=text,
-            reply_markup=keyboard,
-            parse_mode="HTML"
-        )
+        await callback.message.delete()
+    except TelegramBadRequest:
+        pass
+    await send_product_message(callback.bot, callback.message.chat.id, product, text, keyboard)
 
     await callback.answer()
 

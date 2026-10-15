@@ -7,6 +7,7 @@ import logging
 from io import BytesIO
 
 from aiogram import Router, F, Bot
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, Message, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -21,6 +22,7 @@ from database import (
     get_user_delivered_order_count, admin_search_products,
 )
 from config import ADMIN_IDS
+from product_card import product_photo, send_product_message
 from locales import get_text, get_category_name, get_unit_name, get_order_status, get_delivery_method_name, localize_product_text, CATEGORIES, UNITS
 from keyboards import (
     seller_panel_keyboard, category_select_keyboard, unit_select_keyboard,
@@ -116,34 +118,18 @@ async def _safe_edit_or_resend(message: Message, text: str, reply_markup=None) -
 
 
 async def _send_with_optional_photo(message: Message, text: str, keyboard, photo_id: str | None) -> None:
-    """Render text+buttons, attaching the product photo when there is one.
-    Photo messages can't be edited to text, so we delete the previous bubble
-    first when a photo is present (and we're not already on a photo message)."""
-    if photo_id:
+    """Show admins the same complete photo/text layout buyers receive."""
+    if not photo_id and not message.photo and len(text.encode("utf-16-le")) // 2 <= 4096:
         try:
-            await message.delete()
-        except Exception:
-            pass
-        try:
-            await message.answer_photo(
-                photo=photo_id,
-                caption=text,
-                reply_markup=keyboard,
-                parse_mode="HTML",
-            )
+            await message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
             return
-        except Exception:
-            # Stale or invalid file_id — fall through to plain text
+        except TelegramBadRequest:
             pass
-    # No photo path
     try:
-        await message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    except Exception:
-        try:
-            await message.delete()
-        except Exception:
-            pass
-        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        await message.delete()
+    except TelegramBadRequest:
+        pass
+    await send_product_message(message.bot, message.chat.id, {"photo_id": photo_id}, text, keyboard)
 
 
 async def _doc_to_photo_id(message: Message, bot: Bot) -> str:
@@ -169,11 +155,8 @@ async def _doc_to_photo_id(message: Message, bot: Bot) -> str:
         return message.document.file_id
 
 
-# Telegram photo captions max out at 1024 chars. The product card wraps the
-# description in ~120 chars of chrome (name, price, unit, stock, rating, etc.),
-# so once the description passes ~900 the full caption can exceed 1024 — at
-# which point the card renders photo and text separately. We don't block it
-# (sellers may want a long description), just warn so they can shorten it.
+# Long descriptions are welcome: photo and text are sent separately when
+# needed. Tell the seller about that layout without asking them to trim it.
 DESC_SOFT_LIMIT = 900
 
 
@@ -739,8 +722,8 @@ async def view_product(callback: CallbackQuery):
         return
 
     text = get_text("product_card", lang,
-        name=localize_product_text(product.get("name"), product.get("name_ru"), lang),
-        description=localize_product_text(product.get("description"), product.get("description_ru"), lang) or "—",
+        name=html.escape(localize_product_text(product.get("name"), product.get("name_ru"), lang) or "", quote=False),
+        description=html.escape(localize_product_text(product.get("description"), product.get("description_ru"), lang) or "—", quote=False),
         price=f"{int(product['price']):,}".replace(",", " "),
         unit=get_unit_name(product["unit"], lang),
         available=product["quantity"],
@@ -751,7 +734,7 @@ async def view_product(callback: CallbackQuery):
                  else "\n🔒 <b>Тип продажи:</b> 🏢 Только B2B / Оптом (скрыт из магазина)")
         text += badge
     keyboard = seller_product_keyboard(lang, product_id, page=page)
-    await _send_with_optional_photo(callback.message, text, keyboard, product.get("photo_id"))
+    await _send_with_optional_photo(callback.message, text, keyboard, product_photo(product))
     await callback.answer()
 
 
@@ -816,7 +799,7 @@ async def start_edit_product(callback: CallbackQuery, state: FSMContext):
         callback.message,
         get_text("edit_product_choose", lang, name=product["name"]),
         keyboard,
-        product.get("photo_id"),
+        product_photo(product),
     )
     await callback.answer()
 
@@ -1154,7 +1137,7 @@ async def process_edit_photo(message: Message, state: FSMContext):
     product_id = data["edit_product_id"]
 
     photo_id = message.photo[-1].file_id
-    await update_product(product_id, photo_id=photo_id)
+    await update_product(product_id, photo_id=photo_id, image_url=None)
     await state.clear()
 
     await send_my_products_after_edit(
@@ -1172,7 +1155,7 @@ async def process_edit_photo_as_doc(message: Message, state: FSMContext, bot: Bo
     product_id = data["edit_product_id"]
 
     photo_id = await _doc_to_photo_id(message, bot)
-    await update_product(product_id, photo_id=photo_id)
+    await update_product(product_id, photo_id=photo_id, image_url=None)
     await state.clear()
 
     await send_my_products_after_edit(

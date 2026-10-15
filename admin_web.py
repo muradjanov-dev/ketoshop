@@ -275,8 +275,8 @@ async def api_products_list(request: web.Request):
 # a stale or hand-edited file can't touch prices, stock or categories.
 
 # Telegram caps a photo caption at 1024 characters and the product card needs
-# roughly 350 of them for price/stock/discount, so anything past this is
-# trimmed with an ellipsis when the card renders (handlers/catalog.py).
+# roughly 350 of them for price/stock/discount. Longer descriptions are sent
+# in full as separate text; this is only short-copy guidance for bulk edits.
 DESCRIPTION_SOFT_MAX = 650
 
 
