@@ -129,6 +129,30 @@ class ChangeAlertTest(GroupBase):
         self.assertNotIn(GROUP, [c.args[0] for c in bot.send_message.call_args_list])
 
 
+class MentionExclusionTest(GroupBase):
+    def test_owner_username_excluded_from_both_member_sources(self):
+        for source in ("group_admin", "bot_admin"):
+            for username in ("azamatovasadbek", "AzamatovAsadbek"):
+                with self.subTest(source=source, username=username):
+                    bot = make_bot()
+                    owner = member(33, "Asadbek", status="administrator")
+                    owner.user.username = username
+                    other = member(44, "Asadbek", status="administrator")
+                    other.user.username = "another_asadbek"
+                    bot.get_chat_administrators.return_value.append(other)
+                    if source == "group_admin":
+                        bot.get_chat_administrators.return_value.append(owner)
+                    else:
+                        bot.get_chat_member.side_effect = None
+                        bot.get_chat_member.return_value = owner
+                    with patch.object(stock_alerts, "ADMIN_IDS", [33]):
+                        asyncio.run(stock_alerts.post_to_group(bot, "Stock changed"))
+                    text = bot.send_message.call_args.args[1]
+                    self.assertNotIn("tg://user?id=33", text)
+                    self.assertIn("tg://user?id=44", text)
+                    self.assertIn("tg://user?id=77", text)
+
+
 class ButtonTest(GroupBase):
     def test_send_group_button(self):
         bot = make_bot()
