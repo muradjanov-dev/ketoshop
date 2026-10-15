@@ -562,8 +562,8 @@ async def api_cart(request: web.Request):
     misses = promotions.compute_near_misses(promo, bonus_input)
 
     def _nm(m):
-        name = m.get("trigger_name_ru") if (lang == "ru" and m.get("trigger_name_ru")) else m.get("trigger_name")
-        bname = m.get("bonus_name_ru") if (lang == "ru" and m.get("bonus_name_ru")) else m.get("bonus_name")
+        name = localize_product_text(m.get("trigger_name"), m.get("trigger_name_ru"), lang)
+        bname = localize_product_text(m.get("bonus_name"), m.get("bonus_name_ru"), lang)
         bname = promotions.bonus_display_name(bname, m.get("bonus_unit"))
         return {
             "product_id": m["trigger_product_id"],
@@ -578,8 +578,7 @@ async def api_cart(request: web.Request):
         "total": total,
         "bonuses": [
             {"name": promotions.bonus_display_name(
-                 b.get("name_ru") if (lang == "ru" and b.get("name_ru")) else b.get("name"),
-                 b.get("unit")),
+                 localize_product_text(b.get("name"), b.get("name_ru"), lang), b.get("unit")),
              "amount": promotions.fmt_amount(b["quantity"]),
              "unit": promotions.unit_label(b["unit"], lang),
              # Shelf price of the giveaway, struck through client-side so the
@@ -1703,7 +1702,8 @@ def _serialize_set(s: dict, lang: str, bot_price: float | None = None) -> dict:
     import bot_discount
     data = {
         "id": s["id"],
-        "name": s["name_ru"] if lang == "ru" and s.get("name_ru") else s["name"],
+        # Same rule as product names: ru translation, Cyrillic for uz_cyr.
+        "name": localize_product_text(s["name"], s.get("name_ru"), lang),
         "price": s["set_price"],
         "photo_id": s["image_url"],
         "photo_url": photo_url(s["image_url"]),

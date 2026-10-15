@@ -48,7 +48,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import database
 from config import ADMIN_IDS
-from locales import get_display_unit
+from locales import get_display_unit, localize_product_text
+from translit import lat_to_cyr
 
 logger = logging.getLogger(__name__)
 
@@ -92,11 +93,20 @@ _cache: tuple[float, dict | None] = (0.0, None)
 
 # ───────────────────────────── formatting ───────────────────────────────────
 
+def _cyr(text: str, lang: str) -> str:
+    """uz_cyr buyers read Cyrillic: the campaign texts are stored in Latin, so
+    they are transliterated on the way out. Before this the Mini App showed
+    "Stevia — doimiy bonus" and "200 gr Stevia sovg'a" inside an otherwise
+    Cyrillic page (owner, 2026-10-13). lat_to_cyr leaves Cyrillic alone, so
+    calling it on an already-converted piece is harmless."""
+    return lat_to_cyr(text) if lang == "uz_cyr" and text else text
+
+
 def unit_label(unit: str, lang: str) -> str:
     entry = _UNIT_LABEL.get((unit or "").lower())
     if not entry:
         return unit or ""
-    return entry["ru"] if lang == "ru" else entry["uz"]
+    return entry["ru"] if lang == "ru" else _cyr(entry["uz"], lang)
 
 
 def fmt_amount(value: float) -> str:
@@ -129,20 +139,17 @@ def to_stock_qty(amount: float, unit: str, product_unit: str, product_name: str 
 def promo_name(promo: dict, lang: str) -> str:
     if lang == "ru" and promo.get("name_ru"):
         return promo["name_ru"]
-    return promo.get("name") or ""
+    return _cyr(promo.get("name") or "", lang)
 
 
 def promo_conditions(promo: dict, lang: str) -> str:
     if lang == "ru" and promo.get("conditions_ru"):
         return promo["conditions_ru"]
-    return promo.get("conditions") or ""
+    return _cyr(promo.get("conditions") or "", lang)
 
 
 def _product_name(rule: dict, side: str, lang: str) -> str:
-    ru = rule.get(f"{side}_name_ru")
-    if lang == "ru" and ru:
-        return ru
-    return rule.get(f"{side}_name") or ""
+    return localize_product_text(rule.get(f"{side}_name") or "", rule.get(f"{side}_name_ru"), lang) or ""
 
 
 def days_left(promo: dict) -> int:
@@ -207,7 +214,7 @@ def rule_line(rule: dict, lang: str) -> str:
     arrow = "→"
     if lang == "ru":
         return f"{trig_qty} {trig_unit} {trig_name} {arrow} {bonus} {bonus_name} в подарок"
-    return f"{trig_qty} {trig_unit} {trig_name} {arrow} {bonus} {bonus_name} sovg'a"
+    return _cyr(f"{trig_qty} {trig_unit} {trig_name} {arrow} {bonus} {bonus_name} sovg'a", lang)
 
 
 def rule_bonus_value(rule: dict) -> float:
@@ -242,7 +249,7 @@ def rule_block(rule: dict, lang: str) -> str:
         return f"🎁 <b>{trig_qty} {trig_unit}</b> {trig_name}\n      └ {gift}{price}"
     gift = f"{bonus_amt} <b>{bonus_name}</b>"
     price = f" — <s>{fmt_sum(value)}</s> <b>BEPUL</b>" if value > 0 else " — sovg'a"
-    return f"🎁 <b>{trig_qty} {trig_unit}</b> {trig_name}\n      └ {gift}{price}"
+    return _cyr(f"🎁 <b>{trig_qty} {trig_unit}</b> {trig_name}\n      └ {gift}{price}", lang)
 
 
 def bonus_hint(promo: dict | None, product_id: int, lang: str) -> str | None:

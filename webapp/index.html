@@ -3129,9 +3129,9 @@
 
     <div class="checkout-form">
       <div class="form-group">
-        <label>Buyurtmani olish usuli</label>
+        <label id="lbl-receive-mode">Buyurtmani olish usuli</label>
         <div class="delivery-options-list" id="checkout-mode-options">
-          <button type="button" class="del-opt active" data-mode="delivery">🚚 Yetkazib berish</button>
+          <button type="button" class="del-opt active" data-mode="delivery" id="mode-delivery-btn">🚚 Yetkazib berish</button>
         </div>
       </div>
       <div class="form-group">
@@ -3615,6 +3615,13 @@ const L = {
     addedPartly: 'Faqat {n} ta qo\'shildi — qolganlari boshqa mijoz savatida band',
     checkoutTitle: 'Buyurtma berish',
     lblPhone: 'Telefon raqam',
+    // Pickup texts used to be hard-coded Latin Uzbek and showed up as-is in
+    // the Cyrillic and Russian checkout (owner, 2026-10-13).
+    lblReceiveMode: 'Buyurtmani olish usuli',
+    modeDelivery: '🚚 Yetkazib berish',
+    modePickup: '🏪 Olib ketish',
+    pickupAddressTitle: '🏪 Olib ketish manzili',
+    openOnMap: 'Xaritada ochish',
     lblLocation: '📍 Yetkazib berish joyi',
     btnGetLocation: "Joylashuvni aniqlash",
     btnLocationSet: "Joylashuv aniqlandi ✓",
@@ -3735,7 +3742,7 @@ const L = {
     deliveryFreeLabel: 'Доставка',
     deliveryFreeValue: 'БЕСПЛАТНО',
     freeDeliveryHint: 'Добавьте товаров ещё на {left} сум — и доставка по Ташкенту бесплатно!',
-    ketoRedeemLabel: 'Использовать Ketочки',
+    ketoRedeemLabel: 'Использовать Keto-монетки',
     ketoSwitchHint: 'Ваш баланс: {balance} монеток (1 монетка = 1 сум)',
     ketoSwitchApplied: 'Из заказа вычтено −{amount} UZS',
     ketoSwitchEmpty: 'Пока монеток нет — они копятся с каждой покупки',
@@ -3783,6 +3790,11 @@ const L = {
     addedPartly: 'Добавлено только {n} — остальное в корзине другого покупателя',
     checkoutTitle: 'Оформление заказа',
     lblPhone: 'Номер телефона',
+    lblReceiveMode: 'Способ получения',
+    modeDelivery: '🚚 Доставка',
+    modePickup: '🏪 Самовывоз',
+    pickupAddressTitle: '🏪 Адрес самовывоза',
+    openOnMap: 'Открыть на карте',
     lblLocation: '📍 Место доставки',
     btnGetLocation: 'Определить местоположение',
     btnLocationSet: 'Местоположение определено ✓',
@@ -3887,7 +3899,7 @@ const L = {
 // ===== Latin → Uzbek Cyrillic transliteration =====
 // Mirrors translit.py — same brand skip list, same digraph order so the
 // Mini App and bot stay in lockstep.
-const _UZ_BRANDS = ['Yandex Taxi','Yandex Market','Yandex','KETOSHOP','Ketoshop','Telegram','BTS','EMU','UZS'];
+const _UZ_BRANDS = ['Yandex Taxi','Yandex Market','Yandex','KETOSHOP','Ketoshop','Telegram','BTS','EMU','UZS','MCT'];
 const _UZ_DIGRAPHS = [
   // o' / g' before yo/yu/ya so "yo'l" → й + ў + л (not ё + ъ).
   ["O'",'Ў'],["o'",'ў'],
@@ -6244,6 +6256,10 @@ function renderCheckoutPage() {
   // Title
   document.getElementById('checkout-title').textContent = t.checkoutTitle;
   document.getElementById('lbl-phone').textContent = t.lblPhone;
+  document.getElementById('lbl-receive-mode').textContent = t.lblReceiveMode;
+  document.getElementById('mode-delivery-btn').textContent = t.modeDelivery;
+  const pickupBtn = document.querySelector('#checkout-mode-options [data-mode="pickup"]');
+  if (pickupBtn) pickupBtn.textContent = t.modePickup;
   document.getElementById('lbl-location').textContent = t.lblLocation;
   document.getElementById('location-text').textContent = t.btnGetLocation;
   document.getElementById('lbl-payment').textContent = t.lblPayment;
@@ -6608,7 +6624,8 @@ function showCheckoutSuccess(result) {
   document.getElementById('order-success-detail').textContent =
     t.orderSuccessDetail.replace('{id}', result.order_id);
   document.getElementById('order-success-detail').style.whiteSpace = 'pre-line';
-  window.renderPickupSuccessDetails(document, result);
+  window.renderPickupSuccessDetails(document, result,
+    { pickup: t.modePickup, map: '🗺 ' + t.openOnMap });
   const ketoEl = document.getElementById('order-success-keto');
   if (result.expected_keto > 0) {
     ketoEl.innerHTML = t.orderSuccessKeto.replace('{amount}', formatPrice(result.expected_keto));
@@ -7005,7 +7022,7 @@ function contactAdmin() {
 // ===== ORDERS PAGE =====
 function deliveryLabel(method) {
   const map = {
-    pickup: '🏪 Olib ketish',
+    pickup: t.modePickup,
     self: t.delSelfLabel,
     yandex_taxi: t.delYandexTaxiLabel,
     yandex_market: t.delYandexMarketLabel,
@@ -7103,7 +7120,7 @@ async function loadOrdersPage() {
       '<div class="order-meta">' + t.orderDelivery + ': ' + deliveryLabel(o.delivery_method) +
         ' &nbsp;·&nbsp; ' + t.orderPayment + ': ' + paymentLabel(o.payment_method) + '</div>' +
       (o.delivery_method==='pickup' ? '<div class="order-meta">🏪 '+escapeHtml(o.address||'')+
-        (o.pickup_map_url?' · <a href="'+escapeHtml(o.pickup_map_url)+'" target="_blank" rel="noopener">Xaritada ochish</a>':'')+'</div>' : '') +
+        (o.pickup_map_url?' · <a href="'+escapeHtml(o.pickup_map_url)+'" target="_blank" rel="noopener">'+escapeHtml(t.openOnMap)+'</a>':'')+'</div>' : '') +
       '<div class="order-items">' + itemsHtml + moreItems + '</div>' +
       (timeline.length ? '<div class="order-timeline">' + timeline.join('') + '</div>' : '') +
       cancelBtn;
@@ -7258,7 +7275,7 @@ async function loadPickupConfig() {
   const pickupState = window.ketoshopPickupState(pickupConfig.enabled, pickupMode,
     Boolean(document.getElementById('inp-lat').value && document.getElementById('inp-lng').value));
   if (pickupState.offerPickup && !modes.querySelector('[data-mode="pickup"]')) {
-    modes.insertAdjacentHTML('beforeend','<button type="button" class="del-opt" data-mode="pickup">🏪 Olib ketish</button>');
+    modes.insertAdjacentHTML('beforeend','<button type="button" class="del-opt" data-mode="pickup">' + escapeHtml(t.modePickup) + '</button>');
   }
   modes.querySelectorAll('[data-mode]').forEach(btn => btn.onclick = () => {
     pickupMode = btn.dataset.mode === 'pickup';
@@ -7269,8 +7286,8 @@ async function loadPickupConfig() {
     document.getElementById('delivery-group').style.display = view.showDeliveryOptions ? '' : 'none';
     const instructions = document.getElementById('pickup-instructions');
     instructions.style.display = view.showPickupInstructions ? '' : 'none';
-    instructions.innerHTML = view.showPickupInstructions ? '<b>🏪 Olib ketish manzili</b><br>' + escapeHtml(pickupConfig.address) +
-      '<br><a href="' + escapeHtml(pickupConfig.map_url) + '" target="_blank" rel="noopener">Xaritada ochish</a>' : '';
+    instructions.innerHTML = view.showPickupInstructions ? '<b>' + escapeHtml(t.pickupAddressTitle) + '</b><br>' + escapeHtml(pickupConfig.address) +
+      '<br><a href="' + escapeHtml(pickupConfig.map_url) + '" target="_blank" rel="noopener">' + escapeHtml(t.openOnMap) + '</a>' : '';
     applyPaymentRestrictions();refreshCheckoutTotal();
   });
   // If pickup settings arrive while checkout is already on screen, keep the
