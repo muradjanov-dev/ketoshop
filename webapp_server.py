@@ -131,6 +131,50 @@ def _validate_init_data(init_data: str, bot_token: str) -> dict | None:
         return None
 
 
+# ───────────── botni ishga tushirish sharti (2026-10-14) ─────────────
+# Owner: "Mini appni yoki saytni ishlatish uchun botni ishga tushurish shart
+# bo'lsin". A buyer who never pressed START can't be written to — no order
+# status, no cheque echo (the 502s of 2026-10-11), no onboarding video, no
+# gift — so the Mini App asks them to start the bot first.
+#
+# Telegram has no "did this user start the bot" call; a chat action is the
+# quiet probe: it succeeds only when the bot may write to them (started and
+# not blocked). Cached, and it fails OPEN — a Telegram hiccup must never lock
+# buyers out of the shop.
+BOT_ACCESS_PATH = "/api/bot-access"
+_BOT_ACCESS_OK_TTL = 1800      # s — re-probed at most every 30 min while fine
+_BOT_ACCESS_NO_TTL = 3         # s — the gate polls; don't hit Telegram per request
+_bot_access: dict[int, tuple[float, bool]] = {}
+
+
+async def bot_can_write(bot, user_id: int) -> bool:
+    if bot is None or user_id in ADMIN_IDS:
+        return True
+    import time
+    now = time.monotonic()
+    hit = _bot_access.get(user_id)
+    if hit and now - hit[0] < (_BOT_ACCESS_OK_TTL if hit[1] else _BOT_ACCESS_NO_TTL):
+        return hit[1]
+    from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+    try:
+        await bot.send_chat_action(user_id, "typing")
+        ok = True
+    except (TelegramForbiddenError, TelegramBadRequest):
+        ok = False          # never started, blocked the bot, or account gone
+    except Exception:
+        logger.warning("bot access probe for %s failed — letting them in", user_id, exc_info=True)
+        return True
+    _bot_access[user_id] = (now, ok)
+    return ok
+
+
+async def api_bot_access(request: web.Request):
+    """The Mini App's gate check — open even while the gate is shut."""
+    from config import BOT_USERNAME
+    ok = await bot_can_write(request.app.get("bot"), request["user_id"])
+    return _json({"ok": ok, "bot": BOT_USERNAME})
+
+
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
     """Validate Telegram WebApp initData on /api/* routes."""
@@ -166,6 +210,11 @@ async def auth_middleware(request: web.Request, handler):
         request["user_lang"] = user.get("language_code", "uz")
         if request["user_lang"] not in ("uz", "uz_cyr", "ru"):
             request["user_lang"] = "uz"
+
+    # The shop is for buyers the bot can reach — see "botni ishga tushirish".
+    if path != BOT_ACCESS_PATH and not await bot_can_write(request.app.get("bot"), user_id):
+        from config import BOT_USERNAME
+        return _json({"error": "start_bot", "bot": BOT_USERNAME}, status=403)
 
     return await handler(request)
 
@@ -230,7 +279,7 @@ async def api_products(request: web.Request):
     if category == "discounts":
         products, total = await get_discounted_products(page=page, per_page=ITEMS_PER_PAGE)
         return _json({
-            "products": await _serialize_products(products, lang),
+            "products": await _serialize_products(products, lang, request.get("user_id")),
             "total": total,
             "page": page,
             "pages": (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE,
@@ -261,7 +310,7 @@ async def api_products(request: web.Request):
         # just a first-page slice, so infinite scroll actually reaches everything.
         products, total = await get_all_products_paginated(page=page, per_page=per_page)
         return _json({
-            "products": await _serialize_products(products, lang),
+            "products": await _serialize_products(products, lang, request.get("user_id")),
             "total": total,
             "page": page,
             "pages": (total + per_page - 1) // per_page,
@@ -269,7 +318,7 @@ async def api_products(request: web.Request):
 
     products, total = await get_products_by_category(category, page=page, per_page=per_page)
     return _json({
-        "products": await _serialize_products(products, lang),
+        "products": await _serialize_products(products, lang, request.get("user_id")),
         "total": total,
         "page": page,
         "pages": (total + per_page - 1) // per_page,
@@ -291,7 +340,10 @@ async def api_product_detail(request: web.Request):
 
     avg_rating, review_count = await get_product_rating(product_id)
     media = await get_product_media(product_id)
-    data = (await _serialize_products([p], lang))[0]
+    # What this buyer can still take — other buyers' carts hold the rest.
+    from database import apply_holds
+    p = (await apply_holds([p], request.get("user_id")))[0]
+    data = (await _serialize_products([p], lang, with_holds=False))[0]
     data["rating"] = avg_rating
     data["review_count"] = review_count
     data["description"] = localize_product_text(
@@ -412,7 +464,7 @@ async def api_top(request: web.Request):
         products = await get_top_ordered_products(limit=3)
         _TOP_CACHE.clear()
         _TOP_CACHE[day] = products
-    return _json(await _serialize_products(products, lang))
+    return _json(await _serialize_products(products, lang, request.get("user_id")))
 
 
 def _leaderboard_display_name(full_name: str | None) -> str | None:
@@ -446,7 +498,7 @@ async def api_search(request: web.Request):
     if len(q) < 2:
         return _json([])
     products, total = await search_products(q, page=0, per_page=20)
-    return _json(await _serialize_products(products, lang))
+    return _json(await _serialize_products(products, lang, request.get("user_id")))
 
 
 async def api_cart(request: web.Request):
@@ -510,8 +562,8 @@ async def api_cart(request: web.Request):
     misses = promotions.compute_near_misses(promo, bonus_input)
 
     def _nm(m):
-        name = m.get("trigger_name_ru") if (lang == "ru" and m.get("trigger_name_ru")) else m.get("trigger_name")
-        bname = m.get("bonus_name_ru") if (lang == "ru" and m.get("bonus_name_ru")) else m.get("bonus_name")
+        name = localize_product_text(m.get("trigger_name"), m.get("trigger_name_ru"), lang)
+        bname = localize_product_text(m.get("bonus_name"), m.get("bonus_name_ru"), lang)
         bname = promotions.bonus_display_name(bname, m.get("bonus_unit"))
         return {
             "product_id": m["trigger_product_id"],
@@ -526,8 +578,7 @@ async def api_cart(request: web.Request):
         "total": total,
         "bonuses": [
             {"name": promotions.bonus_display_name(
-                 b.get("name_ru") if (lang == "ru" and b.get("name_ru")) else b.get("name"),
-                 b.get("unit")),
+                 localize_product_text(b.get("name"), b.get("name_ru"), lang), b.get("unit")),
              "amount": promotions.fmt_amount(b["quantity"]),
              "unit": promotions.unit_label(b["unit"], lang),
              # Shelf price of the giveaway, struck through client-side so the
@@ -579,8 +630,8 @@ async def api_cart_add(request: web.Request):
         product = await get_product(product_id)
         if not product or (product.get("quantity") or 0) <= 0:
             return _json({"error": "out_of_stock"}, status=400)
-        if quantity > product["quantity"]:
-            return _json({"error": "exceeds_stock", "available": product["quantity"]}, status=400)
+        # How much more fits is decided by add_to_cart below — it puts in
+        # only what no other buyer's cart holds (Savat broni).
     elif set_id:
         set_id = int(set_id)
 
@@ -623,7 +674,9 @@ async def api_cart_add(request: web.Request):
         tg_user = SimpleNamespace(id=user_id, username=telegram_user.get("username"),
                                   full_name=" ".join(name_parts) or None)
         asyncio.create_task(_process_new_user(request.app["bot"], tg_user, None))
-    await add_to_cart(user_id, product_id=product_id, quantity=quantity, set_id=set_id)
+    added = await add_to_cart(user_id, product_id=product_id, quantity=quantity, set_id=set_id) - float(before or 0)
+    if added <= 0:
+        return _json({"error": await _limit_reason(user_id, product_id, set_id)}, status=409)
 
     if not before:
         import asyncio
@@ -639,7 +692,28 @@ async def api_cart_add(request: web.Request):
         # Fire-and-forget: the Mini App gets its "ok" immediately; the chat
         # message follows a moment later.
         asyncio.create_task(send_added_to_cart(request.app["bot"], user_id, name, lang))
-    return _json({"ok": True})
+    if added < quantity:
+        # Only part of it was free — the Mini App says how much went in.
+        return _json({"ok": True, "added": added, "partial": True})
+    return _json({"ok": True, "added": added})
+
+
+async def _limit_reason(user_id: int, product_id: int | None, set_id: int | None) -> str:
+    """"held" — the rest sits in other buyers' carts (Savat broni, may come
+    back within 24 h); "out_of_stock" — the shelf really has no more."""
+    from database import pool, stock_view, _set_components
+    try:
+        if set_id:
+            async with pool.acquire() as conn:
+                pids = [p for p, _ in await _set_components(conn, int(set_id))]
+        else:
+            pids = [product_id]
+        view = await stock_view(pids, user_id)
+        if any(v["held"] > 0 for v in view.values()):
+            return "held"
+    except Exception:
+        logger.warning("cart limit reason lookup failed", exc_info=True)
+    return "out_of_stock"
 
 
 async def api_cart_remove(request: web.Request):
@@ -673,12 +747,18 @@ async def api_cart_update(request: web.Request):
         return _json({"ok": True, "removed": True})
 
     quantity = max(1, int(round(raw_quantity)))
+    # get_cart_item's "stock" is already what this buyer may have — the shelf
+    # minus other buyers' holds (Savat broni); set_cart_quantity enforces it.
     stock = float(item.get("stock") or 0)
     if quantity > stock:
-        return _json({"error": "exceeds_stock", "available": stock}, status=400)
+        reason = await _limit_reason(user_id, item.get("product_id"), item.get("set_id"))
+        return _json({"error": "held" if reason == "held" else "exceeds_stock", "available": stock}, status=400)
 
-    await set_cart_quantity(cart_id, quantity)
-    return _json({"ok": True, "quantity": quantity})
+    got = await set_cart_quantity(cart_id, quantity)
+    if got < quantity:
+        return _json({"ok": True, "quantity": got,
+                      "limit": await _limit_reason(user_id, item.get("product_id"), item.get("set_id"))})
+    return _json({"ok": True, "quantity": got})
 
 
 async def api_cart_clear(request: web.Request):
@@ -819,6 +899,9 @@ async def api_checkout(request: web.Request):
     # _document (bot chat upload). This guarantees no half-real orders sit
     # in the DB when a buyer abandons before paying.
     if payment_method == "online":
+        # The cart stays held while they pay (Savat broni) — a fresh 24 h.
+        from database import extend_cart_hold
+        await extend_cart_hold(user_id)
         storage = request.app.get("storage")
         if storage is None:
             logger.error("FSM storage unavailable — cannot defer online checkout for user %s", user_id)
@@ -914,6 +997,43 @@ async def api_checkout(request: web.Request):
                         pickup_map_url=pickup_snapshot["pickup_map_url"])
     return _json(response)
 
+
+
+async def _alert_paid_but_short(bot, user_id: int, data: dict, exc: InsufficientStockError,
+                                total: float, file_bytes: bytes, filename: str, is_image: bool) -> None:
+    """The buyer paid by card and uploaded the cheque, but stock ran short
+    before the order could be made (rare since carts hold their products —
+    Savat broni). They may retry with a smaller cart, but the money is
+    already sent: every admin gets the cheque and who / what / how much, so
+    it can be refunded or settled. Never raises."""
+    import html as _html
+    from aiogram.types import BufferedInputFile
+    try:
+        p = await get_product(exc.product_id)
+    except Exception:
+        p = None
+    name = data.get("pending_customer_name") or "—"
+    caption = "\n".join([
+        "⚠️ <b>To'langan, lekin buyurtma tuzilmadi</b> (sayt)",
+        "",
+        f"👤 {_html.escape(name, quote=False)} · {_html.escape(str(data.get('pending_phone') or '—'), quote=False)}",
+        f"💬 <a href=\"tg://user?id={int(user_id)}\">Telegram</a>",
+        f"💰 {int(total or 0):,} so'm — chek ilovada".replace(",", " "),
+        f"❌ Yetmadi: {_html.escape((p or {}).get('name') or str(exc.product_id), quote=False)} — "
+        f"so'raldi {float(exc.requested):g}, bor {float(exc.available or 0):g}",
+        "",
+        "Mijoz savatni o'zgartirib qayta urinishi mumkin. Bog'lanib, farqini qaytaring "
+        "yoki boshqa mahsulot taklif qiling.",
+    ])[:1024]
+    for admin_id in ADMIN_IDS:
+        try:
+            doc = BufferedInputFile(file_bytes, filename=filename or "chek")
+            if is_image:
+                await bot.send_photo(admin_id, photo=doc, caption=caption, parse_mode="HTML")
+            else:
+                await bot.send_document(admin_id, document=doc, caption=caption, parse_mode="HTML")
+        except Exception as err:
+            logger.warning("paid-but-short alert to %s failed: %s", admin_id, err)
 
 
 async def _stock_gone(exc: InsufficientStockError, request: web.Request):
@@ -1164,6 +1284,7 @@ async def api_checkout_cheque(request: web.Request):
             pickup_map_url=data.get("pending_pickup_map_url"),
         )
     except InsufficientStockError as exc:
+        await _alert_paid_but_short(bot, user_id, data, exc, total, file_bytes, filename, is_image)
         return await _stock_gone(exc, request)
     except InsufficientKetoError:
         # Balance dropped again in the instant between the re-clamp above and
@@ -1189,6 +1310,7 @@ async def api_checkout_cheque(request: web.Request):
                 pickup_map_url=data.get("pending_pickup_map_url"),
             )
         except InsufficientStockError as exc:
+            await _alert_paid_but_short(bot, user_id, data, exc, total, file_bytes, filename, is_image)
             return await _stock_gone(exc, request)
 
     # The deferred checkout is a real order now — drop it from the FSM before
@@ -1554,14 +1676,23 @@ def _serialize_product(p: dict, lang: str, bot_price: float | None = None) -> di
         "unit": get_display_unit(p["unit"], lang),
         "packaged": p["unit"] in ("kg", "g"),
         "out_of_stock": (p.get("quantity") or 0) <= 0,
+        "held_out": bool(p.get("held_out")),
         "category": p["category"],
-        "photo_url": photo_url(p.get("photo_id")),
+        "photo_url": photo_url(p.get("image_url") or p.get("photo_id")),
         "bonus": bonus,
     }
 
 
-async def _serialize_products(products: list[dict], lang: str) -> list[dict]:
+async def _serialize_products(products: list[dict], lang: str, viewer: int | None = None,
+                              *, with_holds: bool = True) -> list[dict]:
+    """`viewer` sees what other buyers' carts hold as taken (Savat broni):
+    a product whose last pieces are all held comes out of stock with
+    `held_out` — the Mini App shows "⏳ Band", not "sold out". Pass
+    with_holds=False for dicts that already went through apply_holds."""
     import bot_discount
+    if with_holds:
+        from database import apply_holds
+        products = await apply_holds(products, viewer)
     bot_prices = await bot_discount.display_prices(products)
     return [_serialize_product(p, lang, bp) for p, bp in zip(products, bot_prices)]
 
@@ -1571,7 +1702,8 @@ def _serialize_set(s: dict, lang: str, bot_price: float | None = None) -> dict:
     import bot_discount
     data = {
         "id": s["id"],
-        "name": s["name_ru"] if lang == "ru" and s.get("name_ru") else s["name"],
+        # Same rule as product names: ru translation, Cyrillic for uz_cyr.
+        "name": localize_product_text(s["name"], s.get("name_ru"), lang),
         "price": s["set_price"],
         "photo_id": s["image_url"],
         "photo_url": photo_url(s["image_url"]),
@@ -1624,6 +1756,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
 
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/", index)
+    app.router.add_get(BOT_ACCESS_PATH, api_bot_access)
     app.router.add_get("/api/categories", api_categories)
     app.router.add_get("/api/pickup-config", api_pickup_config)
     app.router.add_get("/api/promo", api_promo)

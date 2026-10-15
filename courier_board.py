@@ -37,6 +37,7 @@ from datetime import datetime, timedelta
 
 import database
 import mystery_gift
+import payment_state
 from locales import get_text
 
 logger = logging.getLogger(__name__)
@@ -166,7 +167,8 @@ def _coord(value):
 # "41.407165, 69.199902" — what the checkout writes into `address` when the
 # buyer sends a Telegram pin instead of typing a street. Older orders have
 # only that string, so the board digs the pin back out of it.
-_COORD_RE = re.compile(r"^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*$")
+# "41.35, 69.27", also as the bot stores it: "📍 41.35, 69.27 — Chilonzor …".
+_COORD_RE = re.compile(r"^\s*(?:📍\s*)?(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*(?:$|—)")
 
 
 def order_pin(order: dict) -> tuple[float, float] | None:
@@ -193,6 +195,15 @@ def _stage_stamp(order: dict) -> datetime | None:
     return order.get(col) if col else order.get("created_at")
 
 
+def _history(order: dict) -> dict | None:
+    """Which order of the buyer's this is — the bot's "🔁 2-buyurtmasi"
+    (database.get_courier_board_orders). None for manual/B2B rows."""
+    if order.get("hist_nth") is None:
+        return None
+    return {"nth": int(order["hist_nth"] or 0), "delivered": int(order.get("hist_delivered") or 0),
+            "cancelled": int(order.get("hist_cancelled") or 0)}
+
+
 def _card(order: dict) -> dict:
     items = _parse_items(order.get("items"))
     total = float(order.get("total") or 0)
@@ -214,7 +225,11 @@ def _card(order: dict) -> dict:
         "longitude": _coord(order.get("longitude")),
         "delivery_method": order.get("delivery_method"),
         "payment_method": order.get("payment_method"),
+        # AI karta buyurtmasi: 'unpaid' / 'cheque' — doskada "❗ To'lanmagan"
+        "card_state": payment_state.card_payment_state(
+            order.get("payment_method"), order.get("address_note"), order.get("cheque_file_id")),
         "source": order.get("source") or "bot",
+        "history": _history(order),
         "items": items,
         "items_count": sum(int(i["quantity"] or 0) for i in items),
         "total": total,

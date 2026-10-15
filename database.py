@@ -821,6 +821,21 @@ async def init_db():
         # counts.
         await conn.execute("ALTER TABLE cart ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP")
         await conn.execute("ALTER TABLE cart ALTER COLUMN updated_at SET DEFAULT CURRENT_TIMESTAMP")
+        # ===== Savat broni (2026-10-13) — see "Savat broni" below. =====
+        # NULL for every line already in a cart at deploy: those reserve
+        # nothing and are never auto-removed, so switching this on can't
+        # suddenly lock stock in months-old carts or message their owners.
+        await conn.execute("ALTER TABLE cart ADD COLUMN IF NOT EXISTS reserved_until TIMESTAMP")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_cart_reserved_until ON cart(reserved_until)")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS cart_release_notices (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                items JSONB NOT NULL,
+                released_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+                sent_at TIMESTAMP
+            )
+        """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS cart_reminders (
                 id SERIAL PRIMARY KEY,
@@ -1553,26 +1568,252 @@ async def reduce_product_quantity(product_id: int, amount: float):
 
 # ===== CART OPERATIONS =====
 
-async def add_to_cart(user_id: int, product_id: int = None, quantity: float = 1, set_id: int = None):
+# ───────────────────────────── Savat broni ─────────────────────────────
+# Owner, 2026-10-13: "savatga solinishi bilan olindi desin, agar savatda 24
+# soat turib qolsa unda mijozni ogohlantirib sotuvga qaytariladi u savatdan
+# olib, bir vaqtda 2 ta yoki ko'p odamlar qolgan narsani talashib qolishmasin".
+#
+# Whoever puts a product in the cart first holds it until cart.reserved_until
+# (24 h after they last touched the cart). The shelf count products.quantity
+# is NOT moved: a hold is derived from live cart rows, so no code path can
+# leak stock by forgetting to give it back. Three places enforce it:
+#   * putting into / changing a cart line is capped at the shelf stock minus
+#     every other live hold (_line_cap), under a row lock on the product, so
+#     two buyers racing for the last pieces are served one after the other;
+#   * create_order never takes what other buyers hold;
+#   * cart_reservations.py deletes lines whose 24 h ran out and tells the
+#     buyer (abandoned_cart.py warns them ~4 h before).
+# Lines already in carts when this shipped have reserved_until NULL: they
+# hold nothing until their owner touches the cart.
+RESERVE_HOURS = 24
+_NOW_UTC = "(NOW() AT TIME ZONE 'UTC')"
+_HOLD_UNTIL = f"({_NOW_UTC} + interval '{RESERVE_HOURS} hours')"
+SET_WITHOUT_ITEMS_STOCK = 999.0   # an empty set never ran out (get_cart's old 999)
+
+_LIVE_HOLDS = f"""
+    SELECT c.id AS cart_id, c.user_id, c.product_id AS pid, c.quantity::float AS qty
+      FROM cart c
+     WHERE c.product_id IS NOT NULL AND c.reserved_until > {_NOW_UTC}
+    UNION ALL
+    SELECT c.id, c.user_id, si.product_id, (c.quantity * si.quantity)::float
+      FROM cart c JOIN product_set_items si ON si.set_id = c.set_id
+     WHERE c.set_id IS NOT NULL AND c.reserved_until > {_NOW_UTC}
+"""
+
+
+async def _held(conn, product_ids, *, exclude_user: int | None = None,
+                exclude_cart_id: int | None = None) -> dict[int, float]:
+    """{product_id: quantity held by live cart lines} — a set line holds its
+    components. `exclude_user` leaves out one buyer's own lines (what that
+    buyer may still take), `exclude_cart_id` one line (what it may hold)."""
+    ids = sorted({int(p) for p in product_ids if p})
+    if not ids:
+        return {}
+    rows = await conn.fetch(
+        f"""SELECT pid, SUM(qty) AS held FROM ({_LIVE_HOLDS}) h
+             WHERE pid = ANY($1::int[])
+               AND ($2::bigint IS NULL OR user_id <> $2)
+               AND ($3::int IS NULL OR cart_id <> $3)
+             GROUP BY pid""",
+        ids, exclude_user, exclude_cart_id)
+    return {int(r["pid"]): float(r["held"] or 0) for r in rows}
+
+
+async def _set_components(conn, set_id: int) -> list[tuple[int, float]]:
+    rows = await conn.fetch("SELECT product_id, quantity FROM product_set_items WHERE set_id = $1", set_id)
+    return [(int(r["product_id"]), float(r["quantity"] or 0)) for r in rows if float(r["quantity"] or 0) > 0]
+
+
+async def _line_cap(conn, product_id: int | None, set_id: int | None, cart_id: int | None) -> float:
+    """The most one cart line may hold right now: shelf stock minus every
+    other live hold (other buyers' lines and this buyer's other lines).
+    Locks the product rows for the rest of the transaction."""
+    if set_id is not None:
+        comps = await _set_components(conn, set_id)
+        if not comps:
+            return SET_WITHOUT_ITEMS_STOCK
+        pids = sorted({p for p, _ in comps})
+    else:
+        comps, pids = [], [int(product_id)]
+    shelf = {int(r["id"]): float(r["quantity"] or 0) for r in await conn.fetch(
+        "SELECT id, quantity FROM products WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE", pids)}
+    held = await _held(conn, pids, exclude_cart_id=cart_id)
+    free = {p: max(0.0, shelf.get(p, 0.0) - held.get(p, 0.0)) for p in pids}
+    if set_id is None:
+        return free[pids[0]]
+    return float(min(math.floor(free[p] / q + 1e-9) for p, q in comps))
+
+
+async def _put_cart_line(conn, user_id: int, product_id: int | None, set_id: int | None,
+                         quantity: float, *, add: bool) -> float:
+    """Add to (`add`) or set a cart line, capped at what is free, and hold it
+    for 24 h. Returns the line's quantity afterwards; 0 = nothing was free
+    (an existing line is then removed)."""
+    col, ref = ("set_id", set_id) if set_id is not None else ("product_id", product_id)
+    existing = await conn.fetchrow(
+        f"SELECT id, quantity FROM cart WHERE user_id = $1 AND {col} = $2 FOR UPDATE", user_id, ref)
+    cart_id = existing["id"] if existing else None
+    want = float(quantity) + (float(existing["quantity"]) if existing and add else 0.0)
+    new = min(want, await _line_cap(conn, product_id, set_id, cart_id))
+    if new <= 0:
+        if existing:
+            await conn.execute("DELETE FROM cart WHERE id = $1", cart_id)
+        return 0.0
+    if existing:
+        await conn.execute(
+            f"""UPDATE cart SET quantity = $1, updated_at = CURRENT_TIMESTAMP,
+                       reserved_until = {_HOLD_UNTIL} WHERE id = $2""", new, cart_id)
+    else:
+        await conn.execute(
+            f"""INSERT INTO cart (user_id, {col}, quantity, reserved_until)
+                VALUES ($1, $2, $3, {_HOLD_UNTIL})""", user_id, ref, new)
+    # Touching the cart restarts the 24 h for everything this buyer holds —
+    # only for lines still held: an expired one must be put back to be held.
+    await conn.execute(
+        f"UPDATE cart SET reserved_until = {_HOLD_UNTIL} WHERE user_id = $1 AND reserved_until > {_NOW_UTC}",
+        user_id)
+    return new
+
+
+async def add_to_cart(user_id: int, product_id: int = None, quantity: float = 1, set_id: int = None) -> float:
+    """Put `quantity` more into the cart, as much of it as is free. Returns the
+    line's quantity afterwards — compare with what was there before to see
+    what actually went in."""
     async with pool.acquire() as conn:
-        if set_id is not None:
-            existing = await conn.fetchrow(
-                "SELECT id, quantity FROM cart WHERE user_id = $1 AND set_id = $2",
-                user_id, set_id
-            )
-            if existing:
-                await conn.execute("UPDATE cart SET quantity = quantity + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", quantity, existing["id"])
-            else:
-                await conn.execute("INSERT INTO cart (user_id, set_id, quantity) VALUES ($1, $2, $3)", user_id, set_id, quantity)
-        else:
-            existing = await conn.fetchrow(
-                "SELECT id, quantity FROM cart WHERE user_id = $1 AND product_id = $2",
-                user_id, product_id
-            )
-            if existing:
-                await conn.execute("UPDATE cart SET quantity = quantity + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", quantity, existing["id"])
-            else:
-                await conn.execute("INSERT INTO cart (user_id, product_id, quantity) VALUES ($1, $2, $3)", user_id, product_id, quantity)
+        async with conn.transaction():
+            return await _put_cart_line(conn, user_id, product_id, set_id, quantity, add=True)
+
+
+async def extend_cart_hold(user_id: int) -> None:
+    """Restart the 24 h on a buyer's held lines — at checkout, so a hold can't
+    run out while they are paying. Best effort: never stops a checkout."""
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                f"UPDATE cart SET reserved_until = {_HOLD_UNTIL} WHERE user_id = $1 AND reserved_until > {_NOW_UTC}",
+                user_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("extend_cart_hold(%s) failed", user_id, exc_info=True)
+
+
+async def stock_view(product_ids, user_id: int | None = None) -> dict[int, dict]:
+    """{pid: {"shelf", "held", "free"}} for showing a product to `user_id`:
+    held = what OTHER buyers' carts hold, free = what this viewer can take."""
+    ids = sorted({int(p) for p in product_ids if p})
+    if not ids:
+        return {}
+    async with pool.acquire() as conn:
+        shelf = {int(r["id"]): float(r["quantity"] or 0) for r in await conn.fetch(
+            "SELECT id, quantity FROM products WHERE id = ANY($1::int[])", ids)}
+        held = await _held(conn, ids, exclude_user=user_id)
+    return {p: {"shelf": shelf.get(p, 0.0), "held": held.get(p, 0.0),
+                "free": max(0.0, shelf.get(p, 0.0) - held.get(p, 0.0))} for p in ids}
+
+
+def _num(v: float):
+    return int(v) if float(v).is_integer() else v
+
+
+async def apply_holds(products: list[dict], user_id: int | None = None) -> list[dict]:
+    """Product dicts as `user_id` should see them: `quantity` becomes what
+    they can still take, `shelf_quantity` keeps the shelf count, and
+    `held_out` marks "in stock, but all of it sits in other buyers' carts"
+    (shown as ⏳ band, not as sold out). Display only — never raises."""
+    ids = [p.get("id") for p in products if p.get("id")]
+    if not ids:
+        return products
+    try:
+        async with pool.acquire() as conn:
+            held = await _held(conn, ids, exclude_user=user_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("cart holds lookup failed", exc_info=True)
+        return products
+    out = []
+    for p in products:
+        h = held.get(p.get("id"), 0.0)
+        if not h:
+            out.append(p)
+            continue
+        shelf = float(p.get("quantity") or 0)
+        free = max(0.0, shelf - h)
+        out.append(dict(p, quantity=_num(free), shelf_quantity=_num(shelf),
+                        held_out=shelf > 0 and free <= 0))
+    return out
+
+
+async def cart_hold_until(user_id: int):
+    """When this buyer's cart stops being held (UTC), or None."""
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            f"SELECT MIN(reserved_until) FROM cart WHERE user_id = $1 AND reserved_until > {_NOW_UTC}",
+            user_id)
+
+
+async def release_expired_holds() -> list[dict]:
+    """Take lines whose 24 h ran out out of the carts — back on sale — and
+    queue one notice per buyer (cart_reservations.py sends them in daytime).
+    Returns the queued notices."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            rows = await conn.fetch(f"""
+                WITH gone AS (
+                    DELETE FROM cart
+                     WHERE reserved_until IS NOT NULL AND reserved_until <= {_NOW_UTC}
+                     RETURNING user_id, product_id, set_id, quantity)
+                SELECT g.user_id, g.quantity::float AS quantity, g.set_id IS NOT NULL AS is_set,
+                       COALESCE(p.name, s.name) AS name, COALESCE(p.name_ru, s.name_ru) AS name_ru,
+                       COALESCE(p.unit, 'piece') AS unit
+                  FROM gone g
+                  LEFT JOIN products p ON p.id = g.product_id
+                  LEFT JOIN product_sets s ON s.id = g.set_id""")
+            by_user: dict[int, list[dict]] = {}
+            for r in rows:
+                by_user.setdefault(int(r["user_id"]), []).append(
+                    {k: r[k] for k in ("name", "name_ru", "quantity", "unit", "is_set")})
+            notices = []
+            for uid, items in by_user.items():
+                nid = await conn.fetchval(
+                    "INSERT INTO cart_release_notices (user_id, items) VALUES ($1, $2::jsonb) RETURNING id",
+                    uid, json.dumps(items, ensure_ascii=False))
+                notices.append({"id": nid, "user_id": uid, "items": items})
+    return notices
+
+
+async def pending_release_notices(max_age_hours: int = 48) -> list[dict]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT id, user_id, items FROM cart_release_notices
+                 WHERE sent_at IS NULL AND released_at > {_NOW_UTC} - ($1 || ' hours')::interval
+                 ORDER BY id""", str(int(max_age_hours)))
+    return [{"id": r["id"], "user_id": r["user_id"],
+             "items": json.loads(r["items"]) if isinstance(r["items"], str) else r["items"]} for r in rows]
+
+
+async def mark_release_notice_sent(notice_id: int) -> bool:
+    """Claim a notice before sending — False if another pass already did."""
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            f"UPDATE cart_release_notices SET sent_at = {_NOW_UTC} WHERE id = $1 AND sent_at IS NULL RETURNING id",
+            notice_id) is not None
+
+
+async def live_holds() -> list[dict]:
+    """Every live hold for the admins' /bron screen."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(f"""
+            SELECT c.user_id, c.quantity::float AS quantity, c.reserved_until,
+                   c.set_id IS NOT NULL AS is_set, COALESCE(p.name, s.name) AS name,
+                   COALESCE(p.unit, 'piece') AS unit, p.quantity::float AS shelf,
+                   u.full_name, u.username
+              FROM cart c
+              LEFT JOIN products p ON p.id = c.product_id
+              LEFT JOIN product_sets s ON s.id = c.set_id
+              LEFT JOIN users u ON u.user_id = c.user_id
+             WHERE c.reserved_until > {_NOW_UTC}
+             ORDER BY COALESCE(p.name, s.name), c.reserved_until""")
+    return [dict(r) for r in rows]
 
 
 async def get_cart_line_for_product(user_id: int, product_id: int) -> tuple[int | None, float]:
@@ -1585,20 +1826,13 @@ async def get_cart_line_for_set(user_id: int, set_id: int) -> tuple[int | None, 
         row = await conn.fetchrow("SELECT id, quantity FROM cart WHERE user_id = $1 AND set_id = $2", user_id, set_id)
         return (row["id"], row["quantity"]) if row else (None, 0.0)
 
-async def set_cart_product_quantity(user_id: int, product_id: int = None, quantity: float = 1, set_id: int = None):
+async def set_cart_product_quantity(user_id: int, product_id: int = None, quantity: float = 1,
+                                    set_id: int = None) -> float:
+    """Set a product's/set's cart line to `quantity`, capped at what is free
+    (see "Savat broni"). Returns the quantity it ended up with."""
     async with pool.acquire() as conn:
-        if set_id is not None:
-            existing = await conn.fetchrow("SELECT id FROM cart WHERE user_id = $1 AND set_id = $2", user_id, set_id)
-            if existing:
-                await conn.execute("UPDATE cart SET quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", quantity, existing["id"])
-            else:
-                await conn.execute("INSERT INTO cart (user_id, set_id, quantity) VALUES ($1, $2, $3)", user_id, set_id, quantity)
-        else:
-            existing = await conn.fetchrow("SELECT id FROM cart WHERE user_id = $1 AND product_id = $2", user_id, product_id)
-            if existing:
-                await conn.execute("UPDATE cart SET quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", quantity, existing["id"])
-            else:
-                await conn.execute("INSERT INTO cart (user_id, product_id, quantity) VALUES ($1, $2, $3)", user_id, product_id, quantity)
+        async with conn.transaction():
+            return await _put_cart_line(conn, user_id, product_id, set_id, quantity, add=False)
 
 def item_cost_qty(item: dict) -> float:
     """How many stock units of an order line to charge as COST OF GOODS.
@@ -1923,6 +2157,12 @@ async def get_cart(user_id: int) -> list[dict]:
                WHERE c.user_id = $1 AND s.is_active = 1""", user_id)
                
         result = [dict(r) for r in prod_rows]
+        # "stock" is what this buyer can have: the shelf minus what OTHER
+        # buyers' carts hold (Savat broni) — their own lines aren't taken
+        # away from them.
+        held = await _held(conn, [r["product_id"] for r in result], exclude_user=user_id)
+        for r in result:
+            r["stock"] = max(0.0, float(r["stock"] or 0) - held.get(r["product_id"], 0.0))
         for r in set_rows:
             d = dict(r)
             d["is_set"] = True
@@ -1943,9 +2183,16 @@ async def remove_from_cart(cart_id: int):
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM cart WHERE id = $1", cart_id)
 
-async def set_cart_quantity(cart_id: int, quantity: float) -> None:
+async def set_cart_quantity(cart_id: int, quantity: float) -> float:
+    """Set one cart line to `quantity`, capped at what is free (see "Savat
+    broni"). Returns the quantity it ended up with (0 = line removed)."""
     async with pool.acquire() as conn:
-        await conn.execute("UPDATE cart SET quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", quantity, cart_id)
+        async with conn.transaction():
+            line = await conn.fetchrow("SELECT user_id, product_id, set_id FROM cart WHERE id = $1", cart_id)
+            if not line:
+                return 0.0
+            return await _put_cart_line(conn, line["user_id"], line["product_id"], line["set_id"],
+                                        quantity, add=False)
 
 async def get_cart_item(cart_id: int) -> dict | None:
     async with pool.acquire() as conn:
@@ -1953,7 +2200,11 @@ async def get_cart_item(cart_id: int) -> dict | None:
             """SELECT c.id as cart_id, c.user_id, c.quantity as cart_quantity,
                       p.id as product_id, p.unit, COALESCE(p.quantity, 0) as stock
                FROM cart c JOIN products p ON c.product_id = p.id WHERE c.id = $1""", cart_id)
-        if prod: return dict(prod)
+        if prod:
+            d = dict(prod)
+            held = await _held(conn, [d["product_id"]], exclude_user=d["user_id"])
+            d["stock"] = max(0.0, float(d["stock"] or 0) - held.get(d["product_id"], 0.0))
+            return d
         
         st = await conn.fetchrow(
             """SELECT c.id as cart_id, c.user_id, c.quantity as cart_quantity, c.set_id,
@@ -2048,6 +2299,22 @@ class InsufficientKetoError(Exception):
 
 
 
+async def _take_stock(conn, product_id: int, qty: float, buyer_id: int):
+    """Take `qty` off the shelf for `buyer_id`'s order — never what other
+    buyers' carts hold (Savat broni); the buyer's own held lines are theirs.
+    Raises InsufficientStockError with what this buyer could have had."""
+    shelf = await conn.fetchval("SELECT quantity FROM products WHERE id = $1 FOR UPDATE", product_id)
+    others = (await _held(conn, [product_id], exclude_user=buyer_id)).get(int(product_id), 0.0)
+    free = float(shelf or 0) - others
+    if shelf is None or free < float(qty):
+        raise InsufficientStockError(product_id, qty, max(0.0, free))
+    return await conn.fetchrow(
+        """UPDATE products SET quantity = quantity - $1 WHERE id = $2
+           RETURNING quantity, name, low_stock_threshold""",
+        qty, product_id,
+    )
+
+
 async def create_order(user_id: int, customer_name: str, phone: str, address: str,
                        items: list[dict], total: float, payment_method: str = "cash",
                        latitude: float = None, longitude: float = None,
@@ -2089,15 +2356,7 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
                     for si in set_items:
                         spid = si["product_id"]
                         sqty = float(si["quantity"]) * float(qty)
-                        row = await conn.fetchrow(
-                            """UPDATE products SET quantity = quantity - $1
-                               WHERE id = $2 AND quantity >= $1
-                               RETURNING quantity, name, low_stock_threshold""",
-                            sqty, spid,
-                        )
-                        if row is None:
-                            available = await conn.fetchval("SELECT quantity FROM products WHERE id = $1", spid)
-                            raise InsufficientStockError(spid, sqty, available or 0)
+                        row = await _take_stock(conn, spid, sqty, user_id)
 
                         new_qty = float(row["quantity"])
                         old_qty = new_qty + float(sqty)
@@ -2106,15 +2365,7 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
                             low_stock.append({"product_id": spid, "name": row["name"], "quantity": new_qty})
                 else:
                     pid = item.get("product_id") or item.get("id")
-                    row = await conn.fetchrow(
-                        """UPDATE products SET quantity = quantity - $1
-                           WHERE id = $2 AND quantity >= $1
-                           RETURNING quantity, name, low_stock_threshold""",
-                        qty, pid,
-                    )
-                    if row is None:
-                        available = await conn.fetchval("SELECT quantity FROM products WHERE id = $1", pid)
-                        raise InsufficientStockError(pid, qty, available or 0)
+                    row = await _take_stock(conn, pid, qty, user_id)
 
                     new_qty = float(row["quantity"])
                     old_qty = new_qty + float(qty)
@@ -2830,11 +3081,23 @@ async def get_courier_board_orders(delivered_hours: int = 24, scope: str = "acti
                        u.full_name    AS buyer_full_name,
                        u.language     AS buyer_language,
                        c.full_name    AS courier_name,
-                       c.username     AS courier_username
+                       c.username     AS courier_username,
+                       h.hist_nth, h.hist_delivered, h.hist_cancelled
                 FROM orders o
                 JOIN picked p ON p.id = o.id
                 LEFT JOIN users u ON u.user_id = o.user_id
                 LEFT JOIN users c ON c.user_id = o.courier_id
+                -- "🔁 2-buyurtmasi (oldingi 1 tasi yetkazilgan)" on every card,
+                -- the get_order_history_position rule in one pass. Manual/B2B
+                -- rows carry the admin's user_id, so they get no history.
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*) FILTER (WHERE x.status <> 'cancelled' AND x.id <= o.id) AS hist_nth,
+                           COUNT(*) FILTER (WHERE x.status = 'delivered' AND x.id < o.id)  AS hist_delivered,
+                           COUNT(*) FILTER (WHERE x.status = 'cancelled' AND x.id < o.id)  AS hist_cancelled
+                      FROM orders x
+                     WHERE x.user_id = o.user_id
+                       AND COALESCE(x.source, 'bot') NOT IN ('manual', 'b2b')
+                ) h ON COALESCE(o.source, 'bot') NOT IN ('manual', 'b2b')
                 ORDER BY o.created_at ASC""",
             *args,
         )
@@ -4397,16 +4660,9 @@ async def admin_update_order_items(order_id: int, original_items: list[dict],
     from config import LOW_STOCK_THRESHOLD
     low_stock: list[dict] = []
 
-    async def _take(conn, pid: int, qty: float):
-        row = await conn.fetchrow(
-            """UPDATE products SET quantity = quantity - $1
-               WHERE id = $2 AND quantity >= $1
-               RETURNING quantity, name, low_stock_threshold""",
-            qty, pid,
-        )
-        if row is None:
-            available = await conn.fetchval("SELECT quantity FROM products WHERE id = $1", pid)
-            raise InsufficientStockError(pid, qty, available or 0)
+    async def _take(conn, pid: int, qty: float, buyer_id: int):
+        # Same rule as checkout: what other buyers' carts hold stays theirs.
+        row = await _take_stock(conn, pid, qty, buyer_id)
         new_qty = float(row["quantity"])
         threshold = row["low_stock_threshold"] if row["low_stock_threshold"] is not None else LOW_STOCK_THRESHOLD
         if new_qty + qty > threshold >= new_qty:
@@ -4431,7 +4687,7 @@ async def admin_update_order_items(order_id: int, original_items: list[dict],
                     moves = [(ref_id, delta)]
                 for pid, qty in moves:
                     if qty > 0:
-                        await _take(conn, pid, qty)
+                        await _take(conn, pid, qty, row["user_id"])
                     elif qty < 0:
                         await conn.execute(
                             "UPDATE products SET quantity = quantity + $1 WHERE id = $2", -qty, pid)
@@ -5118,17 +5374,18 @@ async def admin_create_product(seller_id: int, name: str, price: float, category
                                description: str = None, name_ru: str = None,
                                description_ru: str = None, cost_price: float = 0,
                                b2b_price: float = 0,
-                               discount_percent: int = 0, image_url: str = None) -> int:
+                               discount_percent: int = 0, image_url: str = None,
+                               b2b_only: bool = False) -> int:
     """Insert a product from the admin website. seller_id must reference an
     existing users row (the caller ensures the admin user exists first)."""
     async with pool.acquire() as conn:
         return await conn.fetchval(
             """INSERT INTO products
                  (seller_id, name, description, price, unit, quantity, category,
-                  name_ru, description_ru, cost_price, b2b_price, discount_percent, image_url)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id""",
+                  name_ru, description_ru, cost_price, b2b_price, discount_percent, image_url, b2b_only)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id""",
             seller_id, name, description, price, unit, quantity, category,
-            name_ru, description_ru, cost_price, b2b_price, discount_percent, image_url,
+            name_ru, description_ru, cost_price, b2b_price, discount_percent, image_url, b2b_only,
         )
 
 

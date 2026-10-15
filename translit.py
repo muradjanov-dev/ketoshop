@@ -33,6 +33,7 @@ _BRANDS = (
     "BTS",
     "EMU",
     "UZS",
+    "MCT",        # "MCT yog'i" came out "МCТ" — C has no Uzbek letter
 )
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")

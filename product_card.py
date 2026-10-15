@@ -7,9 +7,13 @@ stock, discount, Keto cashback, aksiya bonus, rating) and the same keyboard.
 It used to live inside handlers/catalog.py; it moved here the day the daily
 spotlight started sending the very same card, so the two can never drift.
 """
+import asyncio
+import html
 import logging
+from urllib.parse import urljoin
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import database
@@ -19,11 +23,13 @@ from database import (
 )
 from keyboards import cart_shortcut_row
 from locales import get_text, get_display_unit, localize_product_text
+from config import WEBAPP_URL
+from tg_safety import strip_markup
 
 logger = logging.getLogger(__name__)
 
-# Longest description that still leaves room for the rest of the card inside
-# Telegram's 1024-character photo caption.
+# Kept for description-library guidance. Rendering no longer truncates text:
+# cards over the photo-caption limit are sent as photo + complete text.
 DESC_IN_CARD_MAX = 650
 
 
@@ -33,15 +39,12 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     show that line at all); callers pass gamification.buyer_rate(user) for a
     buyer, or the base rate for an audience with no single reader.
 
-    `extra` is appended at the end — the daily spotlight uses it for "what to
-    make with this today" (product_ideas). It is budgeted against the same
-    1024-character caption limit, so a long idea shortens the description
-    rather than pushing the price off the card.
+    `extra` adds the daily spotlight's recipe idea. Keep the entire description;
+    send_product_message handles Telegram's caption and message limits.
 
     `tip` is the buyer's personal advice line (product_tips). It goes right
     under the name, above the description — the first thing they read
-    (owner, 2026-10-02) — and is budgeted the same way: a long tip trims the
-    description, never the other way round.
+    (owner, 2026-10-02).
     """
     import gamification
     import gift_campaign
@@ -50,9 +53,7 @@ async def build_caption(product: dict, lang: str, rate: float | None,
 
     # The standing promises close every card (owner, 2026-09-19): the
     # Eritritol on every order, the surprise from 400 000, free Tashkent
-    # delivery from 800 000. Built first because, like `extra`, their length
-    # is budgeted before the description is trimmed — the promises are the
-    # reason to order, so they never lose room to a long description.
+    # delivery from 800 000. Both the promises and the description are kept.
     import bot_discount
     gift = "\n".join(filter(None, [
         # 10% for ordering through the bot (owner, 2026-10-08) — leads the
@@ -66,13 +67,6 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     seller_name = product.get("seller_name") or product.get("seller_username") or "—"
     name = localize_product_text(product.get("name"), product.get("name_ru"), lang)
     desc = localize_product_text(product.get("description"), product.get("description_ru"), lang) or "—"
-    # Trim here, not in tg_safety's net: that would save the message by
-    # dropping the price lines below instead of the tail of the description.
-    desc_budget = DESC_IN_CARD_MAX - (len(extra) + 2 if extra else 0) \
-                                   - (len(gift) + 2 if gift else 0) \
-                                   - (len(tip) + 6 if tip else 0)
-    if len(desc) > desc_budget:
-        desc = desc[: max(40, desc_budget - 1)].rstrip() + "…"
 
     discount_until = product.get("discount_until")
     discount = active_discount(product.get("discount_percent"), discount_until)
@@ -86,12 +80,12 @@ async def build_caption(product: dict, lang: str, rate: float | None,
         final_price, discount_until = bot_price, None
 
     text = get_text("product_card", lang,
-        name=name,
-        description=desc,
+        name=html.escape(name or "", quote=False),
+        description=html.escape(desc, quote=False),
         price=f"{int(final_price):,}".replace(",", " "),
         unit=get_display_unit(product["unit"], lang),
         available=product["quantity"],
-        seller=seller_name,
+        seller=html.escape(seller_name, quote=False),
     )
     if tip:
         import html as _html
@@ -142,6 +136,71 @@ async def build_caption(product: dict, lang: str, rate: float | None,
     return text
 
 
+def product_photo(product: dict) -> str | None:
+    """Accept admin website uploads and Telegram photos without manual conversion.
+
+    A web replacement takes precedence over a legacy Telegram file_id. Bot
+    photo edits clear image_url, so the latest bot upload also takes effect.
+    """
+    ref = (product.get("image_url") or product.get("photo_id") or "").strip()
+    if ref.startswith("/"):
+        return urljoin(WEBAPP_URL, ref) if WEBAPP_URL else None
+    return ref or None
+
+
+def _telegram_length(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
+async def _send_with_retry(send, *args, **kwargs):
+    # Retry the individual request, never an already partially delivered card.
+    try:
+        return await send(*args, **kwargs)
+    except TelegramRetryAfter as exc:
+        await asyncio.sleep(exc.retry_after + 1)
+        return await send(*args, **kwargs)
+
+
+async def send_product_message(bot: Bot, chat_id: int, product: dict,
+                               text: str, keyboard):
+    """Photo caption when it fits; otherwise photo + complete text and buttons.
+
+    Extremely long cards are split as plain text to avoid cutting HTML tags.
+    The actionable keyboard stays on the final message, next to the price.
+    """
+    plain = strip_markup(text)
+    photo = product_photo(product)
+    in_caption = _telegram_length(plain) <= 1024
+    if photo:
+        try:
+            sent = await _send_with_retry(bot.send_photo,
+                chat_id, photo=photo, caption=text if in_caption else None,
+                reply_markup=keyboard if in_caption else None, parse_mode="HTML")
+        except TelegramBadRequest:
+            logger.warning("Product %s photo rejected; sending complete text", product.get("id"))
+        else:
+            if in_caption:
+                return sent
+
+    if _telegram_length(plain) <= 4096:
+        return await _send_with_retry(bot.send_message, chat_id, text, reply_markup=keyboard,
+                                      parse_mode="HTML", disable_web_page_preview=True)
+
+    parts, start, size = [], 0, 0
+    for index, char in enumerate(plain):
+        width = 2 if ord(char) > 0xFFFF else 1
+        if size + width > 4096:
+            parts.append(plain[start:index])
+            start, size = index, 0
+        size += width
+    parts.append(plain[start:])
+    for index, part in enumerate(parts):
+        sent = await _send_with_retry(bot.send_message,
+            chat_id, part, reply_markup=keyboard if index == len(parts) - 1 else None,
+            parse_mode=None, disable_web_page_preview=True)
+    return sent
+
+
 async def detail_keyboard(user_id: int, product_id: int, back_category: str,
                           back_page: int, lang: str, out_of_stock: bool,
                           keep: bool = False) -> InlineKeyboardMarkup:
@@ -180,6 +239,22 @@ async def detail_keyboard(user_id: int, product_id: int, back_category: str,
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def mark_held(text: str, product: dict, lang: str) -> str:
+    """Savat broni (2026-10-13): a product whose last pieces all sit in other
+    buyers' carts (database.apply_holds → held_out) is "⏳ band", not sold
+    out — it may come back within 24 h. Swaps the card's sold-out note for
+    the band note, whichever sold-out wording the card used."""
+    if not product.get("held_out"):
+        return text
+    from locales import TEXTS
+    held = get_text("product_held_out", lang)
+    for key in [k for k in TEXTS if k.startswith("product_out_of_stock")]:
+        note = get_text(key, lang)
+        if note and note in text:
+            return text.replace(note, held)
+    return f"{text}\n\n{held}"
+
+
 async def send_card(bot: Bot, chat_id: int, product: dict, lang: str,
                     rate: float | None = None, back_category: str = "",
                     back_page: int = 0, caption: str | None = None):
@@ -189,15 +264,13 @@ async def send_card(bot: Bot, chat_id: int, product: dict, lang: str,
     import gamification
     if rate is None:
         rate = await gamification.buyer_rate(chat_id)
+    # What this buyer can still take — other buyers' carts hold the rest.
+    product = (await database.apply_holds([product], chat_id))[0]
     if caption is None:
-        caption = await build_caption(product, lang, rate)
+        caption = mark_held(await build_caption(product, lang, rate), product, lang)
     keyboard = await detail_keyboard(chat_id, product["id"], back_category, back_page,
                                      lang, product["quantity"] <= 0, keep=True)
-    if product.get("photo_id"):
-        return await bot.send_photo(chat_id, photo=product["photo_id"], caption=caption,
-                                    reply_markup=keyboard, parse_mode="HTML")
-    return await bot.send_message(chat_id, caption, reply_markup=keyboard,
-                                  parse_mode="HTML", disable_web_page_preview=True)
+    return await send_product_message(bot, chat_id, product, caption, keyboard)
 
 
 class CaptionCache:

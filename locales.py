@@ -580,6 +580,28 @@ TEXTS = {
         "uz": "Omborda bundan ko'p yo'q",
         "ru": "Больше нет в наличии",
     },
+    # Savat broni (cart_reservations.py, 2026-10-13): the rest sits in other
+    # buyers' carts — it may come back within 24 h.
+    "cart_held_limit": {
+        "uz": "⏳ Qolgan donalar boshqa mijoz savatida band — 24 soat ichida bo'shashi mumkin",
+        "ru": "⏳ Остальное уже в корзине другого покупателя — может освободиться в течение 24 часов",
+    },
+    "cart_added_partly": {
+        "uz": "Faqat {n} ta qo'shildi — qolganlari boshqa mijoz savatida band",
+        "ru": "Добавлено только {n} — остальное в корзине другого покупателя",
+    },
+    # Paid by card, cheque sent, then stock ran short (handlers/cart._paid_but_short).
+    "paid_stock_gone_note": {
+        "uz": "💳 To'lovingiz va chekingiz bizda — admin tez orada siz bilan bog'lanib, "
+              "pulni qaytaradi yoki boshqa mahsulot taklif qiladi.",
+        "ru": "💳 Ваша оплата и чек у нас — администратор скоро свяжется с вами, "
+              "вернёт деньги или предложит другой товар.",
+    },
+    "product_held_out": {
+        "uz": "⏳ <b>Hozircha band</b> — oxirgi donalar boshqa mijoz savatida. 24 soat ichida bo'shashi mumkin.",
+        "ru": "⏳ <b>Сейчас забронировано</b> — последние штуки в корзине другого покупателя. "
+              "Может освободиться в течение 24 часов.",
+    },
     "btn_add_to_cart": {"uz": "🛒 Savatga qo'shish", "ru": "🛒 В корзину"},
     "btn_sets": {"uz": "🎁 To'plamlar", "ru": "🎁 Наборы"},
     "btn_clear_cart": {"uz": "🗑 Savatni tozalash", "ru": "🗑 Очистить корзину"},
@@ -1089,18 +1111,16 @@ TEXTS = {
     "enter_product_desc": {
         "uz": "📝 Mahsulot tavsifini kiriting:\n\n"
               "💡 <i>Lotin alifbosida yozing — boshqa tillarga avtomatik moslashtiriladi.</i>\n"
-              "📏 <i>Tavsif 1024 belgidan oshmasin — aks holda kartochkada rasm va matn alohida ko'rinishi mumkin.</i>",
+              "📷 <i>Uzun tavsif ham to'liq chiqadi: kerak bo'lsa rasm va matn alohida yuboriladi.</i>",
         "ru": "📝 Введите описание товара:\n\n"
               "💡 <i>Пишите латиницей — на другие языки преобразуется автоматически.</i>\n"
-              "📏 <i>Описание не длиннее 1024 символов — иначе на карточке фото и текст могут показаться раздельно.</i>",
+              "📷 <i>Длинное описание тоже будет показано целиком: при необходимости фото и текст отправятся отдельно.</i>",
     },
     "desc_too_long_warn": {
-        "uz": "⚠️ Tavsif uzun ({n} belgi). Mahsulot matni 1024 belgidan oshsa, "
-              "kartochkada rasm va matn alohida ko'rinadi. Qisqartirishni tavsiya qilamiz "
-              "— lekin tavsif saqlandi, keyin tahrirlashingiz mumkin.",
-        "ru": "⚠️ Описание длинное ({n} символов). Если текст товара превысит 1024 символа, "
-              "фото и текст на карточке покажутся раздельно. Рекомендуем сократить "
-              "— но описание сохранено, его можно изменить позже.",
+        "uz": "✅ Tavsif saqlandi ({n} belgi). Rasm ostiga sig'masa, "
+              "to'liq matn alohida xabarda chiqadi. Qisqartirish shart emas.",
+        "ru": "✅ Описание сохранено ({n} символов). Если оно не поместится под фото, "
+              "полный текст придёт отдельным сообщением. Сокращать не нужно.",
     },
     "enter_product_price": {
         "uz": "💰 Narxini kiriting (so'mda):",
@@ -1946,6 +1966,14 @@ TEXTS = {
     "pay_cash_paid": {
         "uz": "💵 To'lov: Naqd — ✅ To'langan",
         "ru": "💵 Оплата: Наличные — ✅ Оплачено",
+    },
+    "pay_card_unpaid": {
+        "uz": "❗💳 To'lov: Karta — <b>TO'LANMAGAN</b> (chek kutilmoqda)",
+        "ru": "❗💳 Оплата: Картой — <b>НЕ ОПЛАЧЕНО</b> (ждём чек)",
+    },
+    "pay_card_cheque": {
+        "uz": "🧾 To'lov: Karta — chek keldi, ⚠️ <b>tekshiring</b> (hali tasdiqlanmagan)",
+        "ru": "🧾 Оплата: Картой — чек получен, ⚠️ <b>проверьте</b> (ещё не подтверждено)",
     },
     "order_cheque_caption": {
         "uz": "🧾 #{order_id} buyurtma to'lov cheki",

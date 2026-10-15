@@ -14,7 +14,10 @@
     };
   };
 
-  root.renderPickupSuccessDetails = function (document, result) {
+  // `labels` carries the page's language ({pickup, map}); the Latin Uzbek
+  // defaults keep older callers and the node test working.
+  root.renderPickupSuccessDetails = function (document, result, labels) {
+    labels = labels || {};
     const box = document.getElementById('order-success-pickup');
     if (!box) return false;
     box.replaceChildren();
@@ -23,14 +26,14 @@
       return false;
     }
     const label = document.createElement('div');
-    label.textContent = '🏪 Olib ketish';
+    label.textContent = labels.pickup || '🏪 Olib ketish';
     const address = document.createElement('div');
     address.textContent = '📍 ' + (result.pickup_address || '');
     const map = document.createElement('a');
     map.href = result.pickup_map_url || '';
     map.target = '_blank';
     map.rel = 'noopener';
-    map.textContent = '🗺 Xaritada ochish';
+    map.textContent = labels.map || '🗺 Xaritada ochish';
     box.appendChild(label);
     box.appendChild(address);
     box.appendChild(map);
