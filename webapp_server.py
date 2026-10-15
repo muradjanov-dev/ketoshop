@@ -1679,7 +1679,7 @@ def _serialize_product(p: dict, lang: str, bot_price: float | None = None) -> di
         "out_of_stock": (p.get("quantity") or 0) <= 0,
         "held_out": bool(p.get("held_out")),
         "category": p["category"],
-        "photo_url": photo_url(p.get("photo_id")),
+        "photo_url": photo_url(p.get("image_url") or p.get("photo_id")),
         "bonus": bonus,
     }
 

@@ -116,15 +116,10 @@ async def _send_to_user(bot: Bot, user_id: int, product: dict, lang: str,
     try:
         await product_card.send_card(bot, user_id, product, lang, rate=rate, caption=caption)
         return True
-    except TelegramRetryAfter as e:
-        await asyncio.sleep(e.retry_after + 1)
-        try:
-            await product_card.send_card(bot, user_id, product, lang, rate=rate, caption=caption)
-            return True
-        except Exception:
-            return False
-    except (TelegramForbiddenError, TelegramBadRequest):
+    except (TelegramForbiddenError, TelegramBadRequest, TelegramRetryAfter):
         # Blocked the bot / never started it / deactivated — skip quietly.
+        # Rate limits are retried per request in the card sender. Replaying
+        # the whole card here could duplicate an already delivered photo.
         return False
     except Exception:
         logger.exception("Spotlight send failed for user %s", user_id)
@@ -176,14 +171,7 @@ async def post_to_channel(bot: Bot, product: dict) -> bool:
             product, CHANNEL_LANG, rate,
             product_ideas.idea_block(product.get("name") or "", CHANNEL_LANG))
         markup = channel_keyboard(product["id"])
-        if product.get("photo_id"):
-            await bot.send_photo(REQUIRED_CHANNEL_ID, photo=product["photo_id"],
-                                 caption=caption, reply_markup=markup,
-                                 parse_mode=ParseMode.HTML)
-        else:
-            await bot.send_message(REQUIRED_CHANNEL_ID, caption, reply_markup=markup,
-                                   parse_mode=ParseMode.HTML,
-                                   disable_web_page_preview=True)
+        await product_card.send_product_message(bot, REQUIRED_CHANNEL_ID, product, caption, markup)
         return True
     except Exception:
         logger.exception("Spotlight channel post failed")

@@ -1111,18 +1111,16 @@ TEXTS = {
     "enter_product_desc": {
         "uz": "📝 Mahsulot tavsifini kiriting:\n\n"
               "💡 <i>Lotin alifbosida yozing — boshqa tillarga avtomatik moslashtiriladi.</i>\n"
-              "📏 <i>Tavsif 1024 belgidan oshmasin — aks holda kartochkada rasm va matn alohida ko'rinishi mumkin.</i>",
+              "📷 <i>Uzun tavsif ham to'liq chiqadi: kerak bo'lsa rasm va matn alohida yuboriladi.</i>",
         "ru": "📝 Введите описание товара:\n\n"
               "💡 <i>Пишите латиницей — на другие языки преобразуется автоматически.</i>\n"
-              "📏 <i>Описание не длиннее 1024 символов — иначе на карточке фото и текст могут показаться раздельно.</i>",
+              "📷 <i>Длинное описание тоже будет показано целиком: при необходимости фото и текст отправятся отдельно.</i>",
     },
     "desc_too_long_warn": {
-        "uz": "⚠️ Tavsif uzun ({n} belgi). Mahsulot matni 1024 belgidan oshsa, "
-              "kartochkada rasm va matn alohida ko'rinadi. Qisqartirishni tavsiya qilamiz "
-              "— lekin tavsif saqlandi, keyin tahrirlashingiz mumkin.",
-        "ru": "⚠️ Описание длинное ({n} символов). Если текст товара превысит 1024 символа, "
-              "фото и текст на карточке покажутся раздельно. Рекомендуем сократить "
-              "— но описание сохранено, его можно изменить позже.",
+        "uz": "✅ Tavsif saqlandi ({n} belgi). Rasm ostiga sig'masa, "
+              "to'liq matn alohida xabarda chiqadi. Qisqartirish shart emas.",
+        "ru": "✅ Описание сохранено ({n} символов). Если оно не поместится под фото, "
+              "полный текст придёт отдельным сообщением. Сокращать не нужно.",
     },
     "enter_product_price": {
         "uz": "💰 Narxini kiriting (so'mda):",
