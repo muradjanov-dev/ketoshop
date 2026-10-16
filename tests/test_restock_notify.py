@@ -121,6 +121,24 @@ class SendCardTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("50 000", kwargs["caption"])
         self.assertEqual(kwargs["reply_markup"], "KB")
 
+    async def test_long_card_goes_as_photo_plus_text(self):
+        # Over Telegram's 1024-character caption: photo first, then the whole
+        # text with the buttons — never a refused send_photo.
+        bot = AsyncMock()
+        with patch("gamification.buyer_rate", AsyncMock(return_value=None)), \
+             patch.object(product_card, "get_product_rating", AsyncMock(return_value=(0, 0))), \
+             patch("promotions.get_active", AsyncMock(return_value=None)), \
+             patch("gift_campaign.card_line", AsyncMock(return_value="")), \
+             patch("bot_discount.reminder", AsyncMock(return_value="")), \
+             patch("bot_discount.display_price", AsyncMock(return_value=None)), \
+             patch.object(product_card, "detail_keyboard", AsyncMock(return_value="KB")):
+            ok = await restock_notify._send_card(bot, 11, product(quantity=4, description="Uzun. " * 300), "uz")
+        self.assertTrue(ok)
+        self.assertIsNone(bot.send_photo.await_args.kwargs["caption"])
+        text = bot.send_message.await_args.args[1]
+        self.assertTrue(text.startswith("🎉 <b>Siz qiziqqan mahsulot do'konimizga qaytdi!</b>"))
+        self.assertEqual(bot.send_message.await_args.kwargs["reply_markup"], "KB")
+
     async def test_blocked_buyer_is_not_an_error(self):
         bot = AsyncMock()
         bot.send_photo.side_effect = TelegramForbiddenError(method=None, message="bot was blocked")
@@ -128,9 +146,10 @@ class SendCardTest(unittest.IsolatedAsyncioTestCase):
 
 
 class BotButtonTest(unittest.IsolatedAsyncioTestCase):
-    async def keyboard(self, waiting):
+    async def keyboard(self, waiting, shelf=0):
         with patch.object(product_card, "get_cart_line_for_product", AsyncMock(return_value=(None, 0))), \
              patch.object(product_card, "get_cart_badge", AsyncMock(return_value=(0, 0))), \
+             patch.object(database, "get_product", AsyncMock(return_value=product(quantity=shelf))), \
              patch.object(database, "is_waiting_restock", AsyncMock(return_value=waiting)):
             return await product_card.detail_keyboard(7, 5, "seeds", 2, "uz", True)
 
@@ -140,6 +159,12 @@ class BotButtonTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first.callback_data, "restock_wait:5:seeds:2")
         first = (await self.keyboard(True)).inline_keyboard[0][0]
         self.assertEqual(first.text, get_text("btn_restock_waiting", "uz"))
+
+    async def test_held_in_other_carts_is_band_not_sold_out(self):
+        # Savat broni: 3 on the shelf, all in other buyers' carts.
+        first = (await self.keyboard(False, shelf=3)).inline_keyboard[0][0]
+        self.assertEqual(first.text, get_text("btn_held_out", "uz"))
+        self.assertEqual(first.callback_data, "noop")
 
     async def test_tapping_the_bell(self):
         callback = MagicMock()

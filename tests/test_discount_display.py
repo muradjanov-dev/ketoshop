@@ -57,11 +57,10 @@ class DisplayPricesTest(_Base):
         self.active, self.now = True, AFTER
         self.assertEqual(run(bot_discount.display_prices([product()])), [None])
 
-    def test_cost_floor_same_as_checkout(self):
-        # cost 95 000 → only 5% off; cost ≥ price → no discount on the card.
+    def test_full_ten_whatever_the_margin(self):
+        # Owner, 2026-10-13: 10% even when that is under cost.
         self.costs = ({1: (95000.0, True), 2: (120000.0, True)}, {})
-        self.assertEqual(run(bot_discount.display_prices([product(1), product(2)])), [95000, None])
-        self.assertEqual(bot_discount.shown_percent(100000, 95000), 5)
+        self.assertEqual(run(bot_discount.display_prices([product(1), product(2)])), [90000, 90000])
 
     def test_bigger_own_discount_wins(self):
         until = datetime.utcnow() + timedelta(days=3)

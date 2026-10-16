@@ -45,6 +45,13 @@ for (const result of [
   assert.equal(doc.success.children[2].tag, 'a');
   assert.equal(doc.success.children[2].href, result.pickup_map_url);
 }
+// The page passes its own language; Russian must not fall back to Uzbek.
+const ruDoc = makeDocument();
+assert.equal(globalThis.renderPickupSuccessDetails(ruDoc,
+  {delivery_method:'pickup', pickup_address:'Магазин', pickup_map_url:'https://maps.example/ru'},
+  {pickup:'🏪 Самовывоз', map:'🗺 Открыть на карте'}), true);
+assert.equal(ruDoc.success.children[0].textContent, '🏪 Самовывоз');
+assert.equal(ruDoc.success.children[2].textContent, '🗺 Открыть на карте');
 const regularDoc = makeDocument();
 assert.equal(globalThis.renderPickupSuccessDetails(regularDoc, {delivery_method:'self'}), false);
 assert.equal(regularDoc.success.style.display, 'none');

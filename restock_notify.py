@@ -122,30 +122,21 @@ async def _send_card(bot: Bot, user_id: int, product: dict, lang: str) -> bool:
     """The product card with the "qaytdi" headline on top. True = delivered."""
     import gamification
     from locales import get_text
-    from product_card import build_caption, detail_keyboard
+    from product_card import build_caption, detail_keyboard, send_product_message
 
     rate = await gamification.buyer_rate(user_id)
     caption = await build_caption(product, lang, rate, lead=get_text("restock_back_lead", lang))
     keyboard = await detail_keyboard(user_id, product["id"], "", 0, lang, False, keep=True)
-    for attempt in range(2):
-        try:
-            if product.get("photo_id"):
-                await bot.send_photo(user_id, photo=product["photo_id"], caption=caption,
-                                     reply_markup=keyboard, parse_mode=ParseMode.HTML)
-            else:
-                await bot.send_message(user_id, caption, reply_markup=keyboard,
-                                       parse_mode=ParseMode.HTML, disable_web_page_preview=True)
-            return True
-        except TelegramRetryAfter as exc:
-            if attempt:
-                return False
-            await asyncio.sleep(exc.retry_after + 1)
-        except (TelegramForbiddenError, TelegramBadRequest):
-            return False            # blocked the bot / never pressed START
-        except Exception:
-            logger.exception("Restock notice to %s failed", user_id)
-            return False
-    return False
+    try:
+        # The shop's card sender: photo caption when it fits, otherwise
+        # photo + complete text — a long card is never refused.
+        await send_product_message(bot, user_id, product, caption, keyboard)
+        return True
+    except (TelegramForbiddenError, TelegramBadRequest, TelegramRetryAfter):
+        return False                # blocked the bot / never pressed START
+    except Exception:
+        logger.exception("Restock notice to %s failed", user_id)
+        return False
 
 
 def admin_line(product: dict, sent: int, failed: int) -> str:

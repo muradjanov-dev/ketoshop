@@ -44,10 +44,12 @@ from ads_impact import router as ads_impact_router
 from ad_sources import router as ad_sources_router
 from ai_sales import router as ai_sales_router
 from abandoned_cart import router as abandoned_cart_router
+from cart_reservations import router as cart_reservations_router
 from retention import router as retention_router
 from keto_explainer import router as keto_explainer_router
 from bot_discount import router as bot_discount_router
 from onboarding_video import router as onboarding_video_router
+from welcome_recipe import router as welcome_recipe_router
 from bot_discount_campaign import router as bot_discount_campaign_router
 from stock_alerts import router as stock_alerts_router
 from restock_notify import router as restock_notify_router
@@ -221,6 +223,7 @@ async def main():
     dp.include_router(webapp_data_router)
     dp.include_router(start_router)
     dp.include_router(onboarding_video_router)
+    dp.include_router(welcome_recipe_router)
     dp.include_router(broadcast_admin_router)
     # 10% chegirma — admin-only /chegirma* commands, high for the same reason
     # as broadcast_admin: they must win over any FSM state an admin is in.
@@ -259,6 +262,7 @@ async def main():
     dp.include_router(bloggers_router)
     # /savat_eslatma and /sovga admin stats — before the AI/relay catch-alls.
     dp.include_router(abandoned_cart_router)
+    dp.include_router(cart_reservations_router)
     dp.include_router(retention_router)
     dp.include_router(keto_explainer_router)
     # /ombor — current low / out-of-stock list.
@@ -343,6 +347,10 @@ async def main():
     # Tashlab ketilgan savat — 3 h and 24 h reminders with one-tap checkout.
     from abandoned_cart import scheduler_loop as cart_reminder_loop
     cart_reminder_task = asyncio.create_task(cart_reminder_loop(bot))
+    # Savat broni: a cart line's 24 h hold ends → back on sale + a note to the
+    # buyer (cart_reservations.py). The ~4 h warning is cart_reminder stage 2.
+    from cart_reservations import scheduler_loop as cart_hold_loop
+    cart_hold_task = asyncio.create_task(cart_hold_loop(bot))
 
     # Qayta sotuv — one personal message a week at most: "tugab qolmadimi?",
     # 2nd-order gift, win-back. Daily at 09:30, see retention.py.

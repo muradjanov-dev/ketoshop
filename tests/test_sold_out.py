@@ -56,14 +56,15 @@ class BotCardTest(unittest.TestCase):
             entry = TEXTS[f"product_out_of_stock_{i}"]
             self.assertTrue(entry["uz"] and entry["ru"], i)
 
-    def test_long_description_still_fits_the_photo_caption(self):
-        # The note is budgeted like the other extras: a long description gets
-        # trimmed, the note and the price stay, and the caption fits 1024.
+    def test_long_description_is_kept_whole_with_the_note(self):
+        # Cards are no longer trimmed (#78): an over-long one goes out as
+        # photo + complete text, so the description and the note both stay.
+        long_desc = "Juda uzun tavsif. " * 80
         for pid in range(product_card.SOLD_OUT_NOTES):
-            text = caption(product(0, "Juda uzun tavsif. " * 80, pid=pid))
-            plain = re.sub(r"<[^>]+>", "", text)
-            self.assertLessEqual(len(plain), 1024)
+            text = caption(product(0, long_desc, pid=pid))
+            self.assertIn(long_desc.strip(), text)
             self.assertIn("50 000", text)
+            self.assertIn(TEXTS[f"product_out_of_stock_{pid}"]["uz"].split("</b>")[0], text)
 
 
 class MiniAppTextsTest(unittest.TestCase):

@@ -3180,9 +3180,9 @@
 
     <div class="checkout-form">
       <div class="form-group">
-        <label>Buyurtmani olish usuli</label>
+        <label id="lbl-receive-mode">Buyurtmani olish usuli</label>
         <div class="delivery-options-list" id="checkout-mode-options">
-          <button type="button" class="del-opt active" data-mode="delivery">🚚 Yetkazib berish</button>
+          <button type="button" class="del-opt active" data-mode="delivery" id="mode-delivery-btn">🚚 Yetkazib berish</button>
         </div>
       </div>
       <div class="form-group">
@@ -3602,6 +3602,11 @@ let lang = localStorage.getItem('ketoshop_lang') || ((tg.initDataUnsafe?.user?.l
 
 const L = {
   uz: {
+    startGateTitle: 'Avval botni ishga tushiring',
+    startGateText: 'Buyurtmangiz holati, to\'lov cheki, sovg\'alar va chegirmalar shu bot orqali keladi. Botni oching va pastdagi «START» tugmasini bosing — keyin shu yerga qayting.',
+    startGateOpen: '▶️ Botni ochish',
+    startGateCheck: '✅ Bosdim — davom etish',
+    startGateWaiting: 'Hali START bosilmagan. Botni oching va «START» ni bosing.',
     all: 'Hammasi',
     sectionBestsellers: 'Top mahsulotlar',
     sectionTopCustomers: 'Eng faol xaridorlar',
@@ -3660,8 +3665,18 @@ const L = {
     errorSessionExpired: 'Sessiya muddati tugadi. Iltimos, ushbu Mini App\'ni yopib qaytadan oching.',
     errorFavStorage: 'Sevimlilarni saqlab bo\'lmadi — xotira to\'lib qolgan.',
     addedToCart: 'Savatga qo\'shildi!',
+    heldOut: '⏳ Hozircha band',
+    heldLimit: '⏳ Qolgan donalar boshqa mijoz savatida band — 24 soat ichida bo\'shashi mumkin',
+    addedPartly: 'Faqat {n} ta qo\'shildi — qolganlari boshqa mijoz savatida band',
     checkoutTitle: 'Buyurtma berish',
     lblPhone: 'Telefon raqam',
+    // Pickup texts used to be hard-coded Latin Uzbek and showed up as-is in
+    // the Cyrillic and Russian checkout (owner, 2026-10-13).
+    lblReceiveMode: 'Buyurtmani olish usuli',
+    modeDelivery: '🚚 Yetkazib berish',
+    modePickup: '🏪 Olib ketish',
+    pickupAddressTitle: '🏪 Olib ketish manzili',
+    openOnMap: 'Xaritada ochish',
     lblLocation: '📍 Yetkazib berish joyi',
     btnGetLocation: "Joylashuvni aniqlash",
     btnLocationSet: "Joylashuv aniqlandi ✓",
@@ -3783,6 +3798,11 @@ const L = {
     cartNudgeAdd: '+ Qo\'shish',
   },
   ru: {
+    startGateTitle: 'Сначала запустите бота',
+    startGateText: 'Статус заказа, чек об оплате, подарки и скидки приходят через этого бота. Откройте бота и нажмите «START» внизу — затем вернитесь сюда.',
+    startGateOpen: '▶️ Открыть бота',
+    startGateCheck: '✅ Нажал — продолжить',
+    startGateWaiting: 'Бот ещё не запущен. Откройте бота и нажмите «START».',
     all: 'Все',
     sectionBestsellers: 'Топ товаров',
     sectionTopCustomers: 'Самые активные покупатели',
@@ -3798,7 +3818,7 @@ const L = {
     deliveryFreeLabel: 'Доставка',
     deliveryFreeValue: 'БЕСПЛАТНО',
     freeDeliveryHint: 'Добавьте товаров ещё на {left} сум — и доставка по Ташкенту бесплатно!',
-    ketoRedeemLabel: 'Использовать Ketочки',
+    ketoRedeemLabel: 'Использовать Keto-монетки',
     ketoSwitchHint: 'Ваш баланс: {balance} монеток (1 монетка = 1 сум)',
     ketoSwitchApplied: 'Из заказа вычтено −{amount} UZS',
     ketoSwitchEmpty: 'Пока монеток нет — они копятся с каждой покупки',
@@ -3841,8 +3861,16 @@ const L = {
     errorSessionExpired: 'Сессия истекла. Закройте и снова откройте Mini App.',
     errorFavStorage: 'Не удалось сохранить избранное — память переполнена.',
     addedToCart: 'Добавлено в корзину!',
+    heldOut: '⏳ Сейчас забронировано',
+    heldLimit: '⏳ Остальное уже в корзине другого покупателя — может освободиться в течение 24 часов',
+    addedPartly: 'Добавлено только {n} — остальное в корзине другого покупателя',
     checkoutTitle: 'Оформление заказа',
     lblPhone: 'Номер телефона',
+    lblReceiveMode: 'Способ получения',
+    modeDelivery: '🚚 Доставка',
+    modePickup: '🏪 Самовывоз',
+    pickupAddressTitle: '🏪 Адрес самовывоза',
+    openOnMap: 'Открыть на карте',
     lblLocation: '📍 Место доставки',
     btnGetLocation: 'Определить местоположение',
     btnLocationSet: 'Местоположение определено ✓',
@@ -3963,7 +3991,7 @@ const L = {
 // ===== Latin → Uzbek Cyrillic transliteration =====
 // Mirrors translit.py — same brand skip list, same digraph order so the
 // Mini App and bot stay in lockstep.
-const _UZ_BRANDS = ['Yandex Taxi','Yandex Market','Yandex','KETOSHOP','Ketoshop','Telegram','BTS','EMU','UZS'];
+const _UZ_BRANDS = ['Yandex Taxi','Yandex Market','Yandex','KETOSHOP','Ketoshop','Telegram','BTS','EMU','UZS','MCT'];
 const _UZ_DIGRAPHS = [
   // o' / g' before yo/yu/ya so "yo'l" → й + ў + л (not ё + ъ).
   ["O'",'Ў'],["o'",'ў'],
@@ -4123,6 +4151,9 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     let body = null;
     try { body = await res.json(); } catch(_) {}
+    // The server refuses buyers the bot can't reach (never pressed START,
+    // or blocked it) — show the "start the bot" screen instead of an error.
+    if (res.status === 403 && body && body.error === 'start_bot') showStartGate(body.bot);
     const err = new Error(res.status);
     err.status = res.status;
     err.body = body;
@@ -4749,6 +4780,54 @@ function finishGame(id, value, total) {
 }
 
 // ===== INIT =====
+// ===== START THE BOT FIRST (owner, 2026-10-14: "Mini appni yoki saytni
+// ishlatish uchun botni ishga tushurish shart bo'lsin") =====
+// A full-screen card over the shop until the bot can write to this buyer.
+// It re-checks every few seconds, so pressing START in the chat and coming
+// back opens the shop by itself; "✅" re-checks at once.
+let _startGateTimer = null;
+function showStartGate(botName) {
+  let gate = document.getElementById('start-gate');
+  if (!gate) {
+    gate = document.createElement('div');
+    gate.id = 'start-gate';
+    gate.setAttribute('role', 'dialog');
+    gate.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;'
+      + 'padding:24px;background:var(--bg,#FFF8EC);color:var(--text,#2B2116);font-family:inherit';
+    gate.innerHTML =
+      '<div style="max-width:380px;width:100%;text-align:center">' +
+        '<div style="font-size:64px;line-height:1;margin-bottom:14px">🤖</div>' +
+        '<h2 style="font-size:22px;font-weight:800;margin:0 0 10px">' + escapeHtml(t.startGateTitle) + '</h2>' +
+        '<p style="font-size:15px;line-height:1.5;margin:0 0 22px;color:var(--hint,#7A6A55)">' + escapeHtml(t.startGateText) + '</p>' +
+        '<button id="start-gate-open" type="button" style="width:100%;border:0;border-radius:14px;padding:15px;font-size:16px;font-weight:800;'
+          + 'background:var(--btn,#2E7D32);color:var(--btn-text,#fff);margin-bottom:10px;cursor:pointer">' + escapeHtml(t.startGateOpen) + '</button>' +
+        '<button id="start-gate-check" type="button" style="width:100%;border:1px solid var(--hairline,#E5DAC6);border-radius:14px;padding:13px;'
+          + 'font-size:15px;font-weight:700;background:transparent;color:inherit;cursor:pointer">' + escapeHtml(t.startGateCheck) + '</button>' +
+        '<div id="start-gate-note" style="font-size:13px;margin-top:12px;min-height:18px;color:var(--berry,#B3261E)"></div>' +
+      '</div>';
+    document.body.appendChild(gate);
+    gate.querySelector('#start-gate-check').onclick = () => checkStartGate(true);
+  }
+  const url = 'https://t.me/' + (botName || 'ketoshopbot');
+  gate.querySelector('#start-gate-open').onclick = () => {
+    try { tg.openTelegramLink(url); } catch (_) { window.open(url, '_blank'); }
+  };
+  gate.style.display = 'flex';
+  if (!_startGateTimer) _startGateTimer = setInterval(() => checkStartGate(false), 3000);
+}
+async function checkStartGate(manual) {
+  let ok = false;
+  try { ok = !!(await fetch('/api/bot-access', { headers: apiHeaders() }).then(r => r.json())).ok; } catch (_) {}
+  if (ok) {
+    clearInterval(_startGateTimer); _startGateTimer = null;
+    location.reload();   // boot the shop from scratch now that it may load
+  } else if (manual) {
+    const note = document.getElementById('start-gate-note');
+    if (note) note.textContent = t.startGateWaiting;
+  }
+  return ok;
+}
+
 (async function init() {
   // Paint immediately with the language we already know locally
   // (localStorage / Telegram's language_code — set synchronously above at
@@ -4756,6 +4835,12 @@ function finishGame(id, value, total) {
   // while we wait on a network round trip just to double-check it.
   applyLanguage();
   updateBackButton();
+
+  // Nothing loads for a buyer the bot can't reach — they get the START card.
+  try {
+    const access = await fetch('/api/bot-access', { headers: apiHeaders() }).then(r => r.json());
+    if (access && access.ok === false) { showStartGate(access.bot); return; }
+  } catch (_) { /* network trouble — carry on; the server still guards every call */ }
 
   // Reconcile the server-saved language preference in the background; only
   // re-render text if it actually differs from our local guess.
@@ -4794,6 +4879,40 @@ function finishGame(id, value, total) {
   }
 
   await langPromise;
+})();
+
+// ===== SAVAT BRONI: "⏳ Band" (owner, 2026-10-13) =====
+// A product whose last pieces all sit in other buyers' carts comes from the
+// server as out_of_stock + held_out. It isn't sold out — it may come back
+// within 24 h — so wherever a card or the detail view would say "sold out /
+// coming soon", it says "⏳ Hozircha band" instead. Done as a pass over the
+// rendered element, so it holds whatever the out-of-stock markup looks like.
+function markHeld(root) {
+  if (!root) return;
+  const soldOut = [t.comingSoon, t.soldOutStamp, t.outOfStock].filter(Boolean);
+  root.querySelectorAll('*').forEach(el => {
+    if (el.children.length === 0 && soldOut.includes((el.textContent || '').trim())) {
+      el.textContent = t.heldOut;
+    }
+  });
+}
+(function showHeldAsBand() {
+  const card = createProductCard, carousel = createCarouselCard, detail = openDetail;
+  createProductCard = function (p) {
+    const el = card.apply(this, arguments);
+    if (p && p.held_out) markHeld(el);
+    return el;
+  };
+  createCarouselCard = function (p) {
+    const el = carousel.apply(this, arguments);
+    if (p && p.held_out) markHeld(el);
+    return el;
+  };
+  openDetail = async function () {
+    const result = await detail.apply(this, arguments);
+    if (currentProduct && currentProduct.held_out) markHeld(document.getElementById('detail-modal'));
+    return result;
+  };
 })();
 
 // ===== TACTILE POLISH =====
@@ -5632,8 +5751,16 @@ async function openDetail(productId, isSet = false) {
     }
     document.getElementById('qty-value').textContent = qty;
     const addBtn = document.getElementById('add-to-cart-btn');
-    if (p.out_of_stock) {
+    // Held in other buyers' carts (Savat broni) is not sold out: it keeps
+    // the plain disabled "coming soon" button, which markHeld turns into
+    // "⏳ Hozircha band" — no sold-out note, nothing to subscribe to.
+    const soldOut = p.out_of_stock && !p.held_out;
+    if (soldOut) {
       paintRestockBtn();
+    } else if (p.out_of_stock) {
+      addBtn.textContent = t.comingSoon;
+      addBtn.disabled = true;
+      addBtn.style.opacity = '0.55';
     } else {
       addBtn.textContent = t.addToCart;
       addBtn.disabled = false;
@@ -5642,8 +5769,8 @@ async function openDetail(productId, isSet = false) {
     // No stepper for something that can't be bought yet — the note says when.
     addBtn.parentElement.classList.toggle('is-out', !!p.out_of_stock);
     const soonEl = document.getElementById('detail-soon');
-    soonEl.hidden = !p.out_of_stock;
-    if (p.out_of_stock) {
+    soonEl.hidden = !soldOut;
+    if (soldOut) {
       const v = Math.abs(Number(p.id) || 0) % SOLD_OUT_NOTES;
       document.getElementById('detail-soon-title').textContent = t['soonTitle' + v];
       document.getElementById('detail-soon-text').textContent = t['soonText' + v];
@@ -5899,22 +6026,27 @@ function renderFavPage() {
 // ===== CART =====
 async function addToCart() {
   if (!currentProduct) return;
-  if (currentProduct.out_of_stock) return restockWait();
+  if (currentProduct.out_of_stock) {
+    if (!currentProduct.held_out) restockWait();
+    return;
+  }
   const btn = document.getElementById('add-to-cart-btn');
   try {
     if (btn) btn.disabled = true;
     const payload = currentProduct.is_set ? { set_id: currentProduct.id, quantity: qty } : { product_id: currentProduct.id, quantity: qty };
-    await api('/api/cart/add', {
+    const res = await api('/api/cart/add', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
     closeDetail();
     await loadCart();
     if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
-    showToast(t.addedToCart);
+    // Savat broni: only what no other buyer holds goes in — say if it was less.
+    showToast(res && res.partial ? t.addedPartly.replace('{n}', res.added) : t.addedToCart);
   } catch(e) {
     console.error('Add to cart error:', e);
-    showToast(t.errorCart, true);
+    const reason = e && e.body && e.body.error;
+    showToast(reason === 'held' ? t.heldLimit : t.errorCart, true);
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -6284,6 +6416,10 @@ function renderCheckoutPage() {
   // Title
   document.getElementById('checkout-title').textContent = t.checkoutTitle;
   document.getElementById('lbl-phone').textContent = t.lblPhone;
+  document.getElementById('lbl-receive-mode').textContent = t.lblReceiveMode;
+  document.getElementById('mode-delivery-btn').textContent = t.modeDelivery;
+  const pickupBtn = document.querySelector('#checkout-mode-options [data-mode="pickup"]');
+  if (pickupBtn) pickupBtn.textContent = t.modePickup;
   document.getElementById('lbl-location').textContent = t.lblLocation;
   document.getElementById('location-text').textContent = t.btnGetLocation;
   document.getElementById('lbl-payment').textContent = t.lblPayment;
@@ -6648,7 +6784,8 @@ function showCheckoutSuccess(result) {
   document.getElementById('order-success-detail').textContent =
     t.orderSuccessDetail.replace('{id}', result.order_id);
   document.getElementById('order-success-detail').style.whiteSpace = 'pre-line';
-  window.renderPickupSuccessDetails(document, result);
+  window.renderPickupSuccessDetails(document, result,
+    { pickup: t.modePickup, map: '🗺 ' + t.openOnMap });
   const ketoEl = document.getElementById('order-success-keto');
   if (result.expected_keto > 0) {
     ketoEl.innerHTML = t.orderSuccessKeto.replace('{amount}', formatPrice(result.expected_keto));
@@ -7045,7 +7182,7 @@ function contactAdmin() {
 // ===== ORDERS PAGE =====
 function deliveryLabel(method) {
   const map = {
-    pickup: '🏪 Olib ketish',
+    pickup: t.modePickup,
     self: t.delSelfLabel,
     yandex_taxi: t.delYandexTaxiLabel,
     yandex_market: t.delYandexMarketLabel,
@@ -7143,7 +7280,7 @@ async function loadOrdersPage() {
       '<div class="order-meta">' + t.orderDelivery + ': ' + deliveryLabel(o.delivery_method) +
         ' &nbsp;·&nbsp; ' + t.orderPayment + ': ' + paymentLabel(o.payment_method) + '</div>' +
       (o.delivery_method==='pickup' ? '<div class="order-meta">🏪 '+escapeHtml(o.address||'')+
-        (o.pickup_map_url?' · <a href="'+escapeHtml(o.pickup_map_url)+'" target="_blank" rel="noopener">Xaritada ochish</a>':'')+'</div>' : '') +
+        (o.pickup_map_url?' · <a href="'+escapeHtml(o.pickup_map_url)+'" target="_blank" rel="noopener">'+escapeHtml(t.openOnMap)+'</a>':'')+'</div>' : '') +
       '<div class="order-items">' + itemsHtml + moreItems + '</div>' +
       (timeline.length ? '<div class="order-timeline">' + timeline.join('') + '</div>' : '') +
       cancelBtn;
@@ -7298,7 +7435,7 @@ async function loadPickupConfig() {
   const pickupState = window.ketoshopPickupState(pickupConfig.enabled, pickupMode,
     Boolean(document.getElementById('inp-lat').value && document.getElementById('inp-lng').value));
   if (pickupState.offerPickup && !modes.querySelector('[data-mode="pickup"]')) {
-    modes.insertAdjacentHTML('beforeend','<button type="button" class="del-opt" data-mode="pickup">🏪 Olib ketish</button>');
+    modes.insertAdjacentHTML('beforeend','<button type="button" class="del-opt" data-mode="pickup">' + escapeHtml(t.modePickup) + '</button>');
   }
   modes.querySelectorAll('[data-mode]').forEach(btn => btn.onclick = () => {
     pickupMode = btn.dataset.mode === 'pickup';
@@ -7309,8 +7446,8 @@ async function loadPickupConfig() {
     document.getElementById('delivery-group').style.display = view.showDeliveryOptions ? '' : 'none';
     const instructions = document.getElementById('pickup-instructions');
     instructions.style.display = view.showPickupInstructions ? '' : 'none';
-    instructions.innerHTML = view.showPickupInstructions ? '<b>🏪 Olib ketish manzili</b><br>' + escapeHtml(pickupConfig.address) +
-      '<br><a href="' + escapeHtml(pickupConfig.map_url) + '" target="_blank" rel="noopener">Xaritada ochish</a>' : '';
+    instructions.innerHTML = view.showPickupInstructions ? '<b>' + escapeHtml(t.pickupAddressTitle) + '</b><br>' + escapeHtml(pickupConfig.address) +
+      '<br><a href="' + escapeHtml(pickupConfig.map_url) + '" target="_blank" rel="noopener">' + escapeHtml(t.openOnMap) + '</a>' : '';
     applyPaymentRestrictions();refreshCheckoutTotal();
   });
   // If pickup settings arrive while checkout is already on screen, keep the

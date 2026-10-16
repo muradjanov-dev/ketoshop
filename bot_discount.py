@@ -20,10 +20,10 @@ Narx qatorning o'zida saqlanadi (price + original_price + discount_percent),
 shuning uchun orders.total, foyda (line_cost), admin xabaridagi
 "<s>eski</s> yangi 🔥-10%" va hisobotlar qo'shimcha kodsiz to'g'ri chiqadi.
 Mahsulotning o'z 🔥 chegirmasi bilan qo'shilmaydi — qaysi biri arzon bo'lsa,
-o'sha. Narx hech qachon tannarxdan (cost_price, set uchun tarkibi) arzonga
-tushmaydi — egasi: "zararga sotilmasligi kerak". Marjasi 10% dan kam
-mahsulotda chegirma marja qadar kichrayadi; tannarxi kiritilmagan mahsulotda
-bot zararni bila olmaydi — ular /chegirma_marja ro'yxatida.
+o'sha. Marjadan qat'i nazar hamma mahsulotga to'liq 10% (egasi,
+2026-10-13: "barcha mahsulotlarga marjasidan qatiy nazar 10% chegirmani
+joriy qil") — 8-oktabrdagi tannarx chegarasi COST_FLOOR bilan o'chirilgan.
+Tannarxdan arzonga tushadiganlar /chegirma_marja ro'yxatida.
 Bepul yetkazish (800 000) chegirmagacha bo'lgan summadan hisoblanadi
 (egasi tanlovi: chegirma mijozdan bepul yetkazishni olib qo'ymasin). Keto
 tangachalar bilan to'lash avvalgidek ishlaydi.
@@ -39,7 +39,7 @@ mahsulot kartochkasi, savat, Mini App, kanal postlari va rejalashtirilgan
 xabarlar oxirida chiqadi; o'chirilsa — hamma joydan o'zi yo'qoladi.
 
 Boshqaruv (adminlar): /chegirma — holat · /chegirma_on · /chegirma_off ·
-/chegirma_marja — marjasi 10% dan kam va tannarxi yo'q mahsulotlar
+/chegirma_marja — 10% bilan tannarxdan arzon va tannarxi yo'q mahsulotlar
 """
 import html
 import logging
@@ -59,6 +59,10 @@ logger = logging.getLogger(__name__)
 router = Router(name="bot_discount")
 
 PERCENT = 10
+# Tannarx chegarasi (2026-10-08, "zararga sotilmasligi kerak") — egasi
+# 2026-10-13 da o'chirdi: "barcha mahsulotlarga marjasidan qatiy nazar 10%
+# chegirmani joriy qil". True qilinsa, narx yana tannarxdan pastga tushmaydi.
+COST_FLOOR = False
 CACHE_TTL = 30          # holat shuncha soniya eslab qolinadi — har narxda bazaga bormaslik uchun
 TZ_OFFSET = timedelta(hours=5)
 # Oxirgi daqiqa — Toshkent vaqti. Uzaytirish kerak bo'lsa, shu qator o'zgaradi.
@@ -240,18 +244,17 @@ async def preview_percent_for(user_id: int) -> int:
 
 
 def line_price(base: float, current: float, percent: int, cost: float | None = None) -> float:
-    """Katalog narxidan `percent` kam, lekin:
-      • mahsulotning o'z chegirmali narxidan qimmat emas — ikkalasi
-        qo'shilmaydi, arzoni qoladi;
-      • TANNARXDAN ARZON EMAS (egasi, 2026-10-08: "zararga sotilmasligi
-        kerak"). Marjasi 10% dan kam mahsulotga chegirma marja qadar
-        kichrayadi, marjasi yo'q mahsulotga umuman qo'llanmaydi.
+    """Katalog narxidan `percent` kam, lekin mahsulotning o'z chegirmali
+    narxidan qimmat emas — ikkalasi qo'shilmaydi, arzoni qoladi.
+    Marjadan qat'i nazar (egasi, 2026-10-13). Faqat COST_FLOOR yoqilsa:
+    tannarxdan arzon emas — marjasi 10% dan kam mahsulotga chegirma marja
+    qadar kichrayadi.
     `cost` — bir dona tannarxi; None/0 = noma'lum (tannarx kiritilmagan)."""
     current = float(current)
     if not percent or not base:
         return current
     new = float(round(float(base) * (100 - percent) / 100))
-    if cost and cost > 0:
+    if COST_FLOOR and cost and cost > 0:
         new = max(new, float(math.ceil(cost)))
     return min(current, new)
 
@@ -278,7 +281,7 @@ def _unit_cost(item: dict, product_costs: dict, set_costs: dict) -> float | None
 async def apply(items: list[dict], percent: int) -> float:
     """Checkout qatorlariga (handlers/cart.py / webapp_server.py items_data)
     chegirmani yozadi. Qaytaradi: tejalgan summa. Sovg'a/bonus qatorlari
-    (narxi 0) o'zgarmaydi; hech bir qator tannarxdan arzonga tushmaydi."""
+    (narxi 0) o'zgarmaydi; narx qoidasi — line_price."""
     if not percent:
         return 0.0
     paid = [it for it in items if not (it.get("is_bonus") or it.get("is_gift"))]
@@ -300,7 +303,7 @@ async def apply(items: list[dict], percent: int) -> float:
 
 async def cart_saving(cart_rows: list[dict], percent: int) -> float:
     """Savat ko'rinishi uchun: database.get_cart qatorlarida qancha tejaladi
-    (checkout bilan bir xil qoida, tannarx chegarasi bilan)."""
+    (checkout bilan bir xil qoida — line_price)."""
     if not percent:
         return 0.0
     product_costs, set_costs = await _cost_maps(cart_rows)
@@ -317,8 +320,9 @@ async def cart_saving(cart_rows: list[dict], percent: int) -> float:
 
 
 async def margin_report() -> dict:
-    """Sotuvdagi mahsulot va setlar: 10% to'liq qo'llanmaydiganlari
-    (marja < 10%) va tannarxi kiritilmaganlari (ularda chegara ishlamaydi)."""
+    """Sotuvdagi mahsulot va setlar: 10% bilan tannarxdan arzon
+    sotiladiganlari (below_cost), COST_FLOOR yoqiq bo'lsa — chegirmasi
+    kamaytirilganlari (capped), va tannarxi kiritilmaganlari."""
     async with database.pool.acquire() as conn:
         rows = [dict(r) for r in await conn.fetch(
             """SELECT id, name, price, COALESCE(cost_price, 0) AS cost_price
@@ -330,7 +334,7 @@ async def margin_report() -> dict:
                  FROM product_sets WHERE is_active = 1 AND COALESCE(set_price, 0) > 0
                 ORDER BY name""")]
         product_costs, set_costs = await database._order_cost_maps(conn, rows + sets)
-    capped, no_cost = [], []
+    capped, below_cost, no_cost = [], [], []
     for item in rows + sets:
         base = float(item["price"])
         cost = _unit_cost(item, product_costs, set_costs)
@@ -342,14 +346,18 @@ async def margin_report() -> dict:
         if new > round(base * (100 - PERCENT) / 100):
             capped.append({"name": label, "price": base, "cost": cost, "new": new,
                            "percent": round((base - new) * 100 / base, 1)})
-    return {"capped": capped, "no_cost": no_cost, "total": len(rows) + len(sets)}
+        elif new < cost:
+            below_cost.append({"name": label, "price": base, "cost": cost, "new": new,
+                               "loss": cost - new})
+    return {"capped": capped, "below_cost": below_cost, "no_cost": no_cost,
+            "total": len(rows) + len(sets)}
 
 
 async def price_list() -> list[dict]:
     """Sotuvdagi (omborda bor) mahsulotlar va setlar: asl narx va bot orqali
-    buyurtmadagi narx — checkout bilan bir xil qoida (line_price, tannarx
-    chegarasi bilan). Egasi, 2026-10-12: eslatmada "barcha maxsulotlar
-    ro'yxati asl narxi va chegirmadagi narxi bilan"."""
+    buyurtmadagi narx — checkout bilan bir xil qoida (line_price). Egasi,
+    2026-10-12: eslatmada "barcha maxsulotlar ro'yxati asl narxi va
+    chegirmadagi narxi bilan"."""
     async with database.pool.acquire() as conn:
         rows = [dict(r) for r in await conn.fetch(
             """SELECT id, name, name_ru, category, price, discount_percent, discount_until
@@ -387,10 +395,10 @@ async def display_prices(rows: list[dict]) -> list[float | None]:
     """Har bir mahsulot/set kartochkasida ko'rinadigan chegirmali narx —
     egasi, 2026-10-12: "botda va saytda hamma mahsulotlarga bir xilda 10%
     lik chegirma va narxlari ko'rinib tursin". Checkout bilan aynan bir xil
-    qoida (line_price, tannarx chegarasi), shuning uchun kartochka va savat
+    qoida (line_price), shuning uchun kartochka va savat
     hech qachon farq qilmaydi. Hamma ko'radi (adminlar ham — preview kabi).
     Qator uchun None: chegirma o'chiq yoki bu qatorni arzonlashtirmaydi
-    (marja yo'q, yoki o'z 🔥 chegirmasi kattaroq) — kartochka avvalgidek."""
+    (o'z 🔥 chegirmasi kattaroq) — kartochka avvalgidek."""
     if not rows or not await is_active():
         return [None] * len(rows)
     product_costs, set_costs = await _cost_maps(rows)
@@ -418,7 +426,8 @@ def margin_report_text(report: dict, limit: int = 40) -> str:
         return "\n".join(lines[:limit]) + more
 
     capped, no_cost = report["capped"], report["no_cost"]
-    parts = [f"🛡 <b>10% chegirma — tannarx himoyasi</b>\n"
+    below = report.get("below_cost") or []
+    parts = [f"📉 <b>10% chegirma va tannarx</b>\n"
              f"Sotuvdagi {report['total']} ta mahsulot/setdan:"]
     if capped:
         parts.append(
@@ -426,7 +435,13 @@ def margin_report_text(report: dict, limit: int = 40) -> str:
             "Narx tannarxdan pastga tushmaydi.\n" + _cut([
                 f"• {html.escape(p['name'], quote=False)} — {_som(p['price'])} → {_som(p['new'])} "
                 f"(tannarx {_som(p['cost'])}, chegirma {p['percent']:g}%)" for p in capped]))
-    else:
+    if below:
+        parts.append(
+            f"\n⚠️ <b>10% bilan tannarxdan arzon sotiladi ({len(below)} ta):</b>\n"
+            "Egasi qarori (13.10): marjadan qat'i nazar hammaga 10%.\n" + _cut([
+                f"• {html.escape(p['name'], quote=False)} — {_som(p['price'])} → {_som(p['new'])} "
+                f"(tannarx {_som(p['cost'])}, har donada −{_som(p['loss'])})" for p in below]))
+    if not capped and not below:
         parts.append("\n✅ Tannarxi kiritilgan hamma mahsulotda 10% chegirma zararsiz.")
     if no_cost:
         parts.append(
@@ -572,9 +587,12 @@ async def margin_summary_line() -> str:
         report = await margin_report()
     except Exception:
         logger.warning("bot_discount: margin report failed", exc_info=True)
-        return "🛡 Tannarx himoyasi: hisobot o'qilmadi."
-    return (f"🛡 Tannarxdan arzonga sotilmaydi: {len(report['capped'])} ta mahsulotda chegirma "
-            f"kamaytirilgan, {len(report['no_cost'])} tasida tannarx yo'q — /chegirma_marja")
+        return "📉 Tannarx hisoboti o'qilmadi."
+    if COST_FLOOR:
+        return (f"🛡 Tannarxdan arzonga sotilmaydi: {len(report['capped'])} ta mahsulotda chegirma "
+                f"kamaytirilgan, {len(report['no_cost'])} tasida tannarx yo'q — /chegirma_marja")
+    return (f"📉 Marjadan qat'i nazar hammaga {PERCENT}%: {len(report['below_cost'])} tasi tannarxdan "
+            f"arzon, {len(report['no_cost'])} tasida tannarx yo'q — /chegirma_marja")
 
 
 async def send_long(bot, chat_id: int, text: str) -> None:

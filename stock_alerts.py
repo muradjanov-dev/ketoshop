@@ -216,14 +216,19 @@ def _chunks(text: str, size: int = 3800) -> list[str]:
     return parts
 
 
+def _excluded_from_group_mentions(user) -> bool:
+    # Owner request: do not tag @azamatovasadbek in stock group messages.
+    return (getattr(user, "username", None) or "").casefold() == "azamatovasadbek"
+
+
 async def _group_mentions(bot: Bot) -> str:
     """Tags for everyone the bot can name in the staff group: the group's
     admins (the only members Telegram lets a bot list) plus every bot admin
-    who is in the group."""
+    who is in the group, except the owner who opted out of mentions."""
     people: dict[int, str] = {}
     try:
         for member in await bot.get_chat_administrators(STOCK_GROUP_ID):
-            if not member.user.is_bot:
+            if not member.user.is_bot and not _excluded_from_group_mentions(member.user):
                 people[member.user.id] = member.user.first_name
     except Exception as exc:
         logger.warning("Stock group %s admins unavailable: %s", STOCK_GROUP_ID, exc)
@@ -233,6 +238,8 @@ async def _group_mentions(bot: Bot) -> str:
         try:
             member = await bot.get_chat_member(STOCK_GROUP_ID, admin_id)
         except Exception:
+            continue
+        if _excluded_from_group_mentions(member.user):
             continue
         if member.status in ("creator", "administrator", "member") or getattr(member, "is_member", False):
             people[admin_id] = member.user.first_name

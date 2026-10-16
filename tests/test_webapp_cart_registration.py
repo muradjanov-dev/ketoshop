@@ -83,6 +83,7 @@ class CartUserRegistrationTests(unittest.IsolatedAsyncioTestCase):
             events.append(("cart", user_id))
             if user_id not in users:
                 raise RuntimeError("cart_user_id_fkey")
+            return float(kwargs.get("quantity") or 1)   # the line quantity it ended with
 
         request = self.Request({
             "user_id": 12345,
