@@ -1,5 +1,7 @@
 """
-Savat broni — savatdagi mahsulot 24 soat egasiniki (egasi, 2026-10-13).
+Savat broni — savatdagi mahsulot 6 soat egasiniki (egasi, 2026-10-13; 24 soatdan
+6 soatga — 2026-10-16: "mijoz savatida 24 soat emas 6 soat saqlansin keyin
+ogohlantirish bilan do'konga qaytarilsin"; database.RESERVE_HOURS).
 
     "savatga solinishi bilan olindi desin, agar savatda 24 soat turib qolsa
     unda mijozni ogohlantirib sotuvga qaytariladi u savatdan olib, bir vaqtda
@@ -11,14 +13,17 @@ sometimes after already paying by card — was told "only 2 left".
 
 How it works now:
   * the hold itself is in database.py ("Savat broni"): a cart line keeps its
-    quantity for its buyer until cart.reserved_until, 24 h after the buyer
-    last touched the cart; adding is capped at what nobody else holds, and
-    create_order never takes another buyer's hold;
-  * ~4 h before the end the buyer is warned with the cart and the checkout
-    buttons — that is abandoned_cart.py's stage 2;
+    quantity for its buyer until cart.reserved_until, RESERVE_HOURS after the
+    buyer last touched the cart; adding is capped at what nobody else holds,
+    and create_order never takes another buyer's hold;
+  * before the end the buyer is warned with the end time, the cart and the
+    checkout buttons — abandoned_cart.py's warning stage (3 h into a 6 h hold);
   * here: every few minutes expired lines leave the carts (back on sale) and
     the buyer is told which ones, in their language. A release at night is
     told in the morning (09:00–21:00 only, like every buyer push);
+  * whoever was refused a held product — or tapped "🔔 Bo'shasa xabar bering"
+    on its "⏳ band" card — is on its waitlist and hears "siz so'ragan mahsulot
+    sotuvga qaytdi" right after the release (restock_notify.py);
   * /bron — admins see who holds what until when.
 
 Buyers who see a product whose last pieces are all held get "⏳ band" rather
@@ -94,15 +99,16 @@ def release_text(items: list[dict], lang: str) -> str:
         lines.append(f"• {'🧺 ' if it.get('is_set') else ''}{html.escape(name, quote=False)} × {_qty(it.get('quantity'))} {unit}")
     if len(items) > MAX_LINES:
         lines.append(_t(f"… va yana {len(items) - MAX_LINES} ta", f"… и ещё {len(items) - MAX_LINES}", lang))
+    hours = database.RESERVE_HOURS
     return "\n".join([
         _t("🛒 <b>Savatingizdagi mahsulotlar sotuvga qaytarildi</b>",
            "🛒 <b>Товары из вашей корзины вернулись в продажу</b>", lang),
         "",
-        _t("Ular 24 soat siz uchun band turdi:", "Они были закреплены за вами 24 часа:", lang),
+        _t(f"Ular {hours} soat siz uchun band turdi:", f"Они были закреплены за вами {hours} ч:", lang),
         *lines,
         "",
-        _t("Hali kerak bo'lsa — qayta qo'shing: omborda bo'lsa, yana 24 soat siz uchun band qilinadi.",
-           "Если ещё нужны — добавьте снова: если они есть на складе, мы снова закрепим их за вами на 24 часа.",
+        _t(f"Hali kerak bo'lsa — qayta qo'shing: omborda bo'lsa, yana {hours} soat siz uchun band qilinadi.",
+           f"Если ещё нужны — добавьте снова: если они есть на складе, мы снова закрепим их за вами на {hours} ч.",
            lang),
     ])
 
@@ -115,7 +121,11 @@ def release_keyboard(lang: str) -> InlineKeyboardMarkup:
 async def limit_text(user_id: int, lang: str, product_id: int | None = None,
                      set_id: int | None = None) -> str:
     """Why a cart line can't grow any more: other buyers hold the rest
-    ("⏳ band") or the shelf really has no more."""
+    ("⏳ band") or the shelf really has no more.
+
+    A buyer refused a product because of a hold has asked for it: they go on
+    its waitlist and hear "siz so'ragan mahsulot sotuvga qaytdi" when the hold
+    runs out (owner, 2026-10-16) — the text says so."""
     from locales import get_text
     try:
         if set_id is not None:
@@ -125,10 +135,24 @@ async def limit_text(user_id: int, lang: str, product_id: int | None = None,
             pids = [product_id]
         view = await database.stock_view(pids, user_id)
         if any(v["held"] > 0 for v in view.values()):
-            return get_text("cart_held_limit", lang)
+            if set_id is not None:
+                return get_text("cart_held_limit_set", lang, hours=database.RESERVE_HOURS)
+            await wait_for_hold(user_id, product_id, lang, "held")
+            return get_text("cart_held_limit", lang, hours=database.RESERVE_HOURS)
     except Exception:
         logger.warning("cart limit reason lookup failed", exc_info=True)
     return get_text("cart_stock_limit", lang)
+
+
+async def wait_for_hold(user_id: int, product_id: int, lang: str, source: str) -> bool:
+    """Put a buyer who couldn't get a held product on its waitlist. True = on
+    the list now (or already was). Never raises — a refused add still answers."""
+    try:
+        import restock_notify
+        return await restock_notify.subscribe(user_id, int(product_id), lang, source) in ("added", "already")
+    except Exception:
+        logger.warning("held-product waitlist failed for %s / %s", user_id, product_id, exc_info=True)
+        return False
 
 
 # ───────────────────────────── release loop ─────────────────────────────
@@ -161,6 +185,14 @@ async def run_once(bot: Bot) -> dict:
         logger.info("Cart holds released: %d lines for %d buyers", stats["released"], len(released))
     if _quiet():
         return stats
+    if released:
+        # Whoever waited for these products hears now, not at the next
+        # restock sweep (restock_notify claims each wait, so no double send).
+        try:
+            import restock_notify
+            await restock_notify.run_once(bot)
+        except Exception:
+            logger.exception("Waitlist sweep after a hold release failed")
     notices = await database.pending_release_notices()
     if not notices:
         return stats
@@ -195,7 +227,7 @@ def holds_text(rows: list[dict], now_utc: datetime | None = None) -> str:
     by_name: dict[str, list[dict]] = {}
     for r in rows:
         by_name.setdefault(("🧺 " if r.get("is_set") else "") + str(r.get("name") or "—"), []).append(r)
-    parts = [f"🛒 <b>Savatlardagi bron</b> — {len(rows)} ta qator, 24 soatlik",
+    parts = [f"🛒 <b>Savatlardagi bron</b> — {len(rows)} ta qator, {database.RESERVE_HOURS} soatlik",
              "Band mahsulotni boshqa xaridor ololmaydi; muddati tugasa sotuvga qaytadi."]
     for name, holders in by_name.items():
         held = sum(float(h["quantity"] or 0) for h in holders)

@@ -26,8 +26,12 @@ def product(pid=5, quantity=0, **kw):
 
 
 class SubscribeTest(unittest.IsolatedAsyncioTestCase):
-    async def status(self, p, added=True):
+    async def status(self, p, added=True, free=None):
+        shelf = float((p or {}).get("quantity") or 0)
+        view = {5: {"shelf": shelf, "held": shelf - (shelf if free is None else free),
+                    "free": shelf if free is None else free}}
         with patch.object(database, "get_product", AsyncMock(return_value=p)), \
+             patch.object(database, "stock_view", AsyncMock(return_value=view)), \
              patch.object(database, "add_restock_wait", AsyncMock(return_value=added)) as add:
             return await restock_notify.subscribe(7, 5, "ru", "site"), add
 
@@ -37,6 +41,12 @@ class SubscribeTest(unittest.IsolatedAsyncioTestCase):
         add.assert_awaited_once_with(7, 5, "ru", "site")
         status, _ = await self.status(product(), added=False)
         self.assertEqual(status, "already")
+
+    async def test_a_product_held_in_other_carts_can_be_waited_for(self):
+        # Savat broni (2026-10-16): 3 on the shelf, all in other buyers' carts.
+        status, add = await self.status(product(quantity=3), free=0)
+        self.assertEqual(status, "added")
+        add.assert_awaited_once_with(7, 5, "ru", "held")
 
     async def test_nothing_to_wait_for(self):
         status, add = await self.status(product(quantity=3))
@@ -52,9 +62,13 @@ class RunOnceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.sent = []
 
-        async def fake_send(bot, user_id, p, lang):
+        async def fake_send(bot, user_id, p, lang, source=None):
             self.sent.append((user_id, p["id"], lang))
+            self.sources.append(source)
             return user_id != 13            # 13 blocked the bot
+
+        self.sources = []
+        self.free = {}                      # product_id -> free for the waiter (default: shelf)
 
         self.patches = [
             patch.object(restock_notify, "_quiet_now", lambda: False),
@@ -68,10 +82,27 @@ class RunOnceTest(unittest.IsolatedAsyncioTestCase):
             self.addCleanup(p.stop)
 
     async def run_with(self, due, products, claim=lambda wid: True):
+        def view(pids, user_id=None):
+            pid = pids[0]
+            shelf = float(products[pid].get("quantity") or 0)
+            return {pid: {"shelf": shelf, "free": self.free.get(pid, shelf)}}
         with patch.object(database, "get_restock_due", AsyncMock(return_value=due)), \
              patch.object(database, "get_product", AsyncMock(side_effect=lambda pid: products.get(pid))), \
+             patch.object(database, "stock_view", AsyncMock(side_effect=view)), \
              patch.object(database, "claim_restock_notice", AsyncMock(side_effect=claim)):
             return await restock_notify.run_once(MagicMock())
+
+    async def test_band_waiters_hear_when_it_frees_up_by_any_path(self):
+        # Owner, 2026-10-16: the hold ran out, its holder let it go, or the admin
+        # added stock before the 6 h — whoever asked hears it either way.
+        due = [{"id": 1, "user_id": 11, "product_id": 5, "lang": "uz", "source": "held"}]
+        self.free = {5: 0}                  # still all in another cart: nothing yet
+        stats = await self.run_with(due, {5: product(quantity=3)})
+        self.assertEqual((self.sent, stats["skipped"]), ([], 1))
+        self.free = {5: 2}                  # admin added 2 while the hold is still on
+        stats = await self.run_with(due, {5: product(quantity=5)})
+        self.assertEqual(self.sent, [(11, 5, "uz_cyr")])
+        self.assertEqual(self.sources, ["held"])
 
     async def test_everyone_waiting_hears_once_in_their_language(self):
         due = [{"id": 1, "user_id": 11, "product_id": 5, "lang": "uz"},
@@ -160,11 +191,14 @@ class BotButtonTest(unittest.IsolatedAsyncioTestCase):
         first = (await self.keyboard(True)).inline_keyboard[0][0]
         self.assertEqual(first.text, get_text("btn_restock_waiting", "uz"))
 
-    async def test_held_in_other_carts_is_band_not_sold_out(self):
-        # Savat broni: 3 on the shelf, all in other buyers' carts.
+    async def test_held_in_other_carts_is_band_with_its_own_bell(self):
+        # Savat broni: 3 on the shelf, all in other buyers' carts — "band", not
+        # sold out, and the buyer may wait for it (owner, 2026-10-16).
         first = (await self.keyboard(False, shelf=3)).inline_keyboard[0][0]
-        self.assertEqual(first.text, get_text("btn_held_out", "uz"))
-        self.assertEqual(first.callback_data, "noop")
+        self.assertEqual(first.text, get_text("btn_held_wait", "uz"))
+        self.assertEqual(first.callback_data, "restock_wait:5:seeds:2")
+        first = (await self.keyboard(True, shelf=3)).inline_keyboard[0][0]
+        self.assertEqual(first.text, get_text("btn_held_waiting", "uz"))
 
     async def test_tapping_the_bell(self):
         callback = MagicMock()

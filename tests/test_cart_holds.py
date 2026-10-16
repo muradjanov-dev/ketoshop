@@ -319,7 +319,8 @@ class BotCardTest(unittest.TestCase):
         # PR #71: the sold-out note is one of product_out_of_stock_0..4.
         card = "📦 Kokos chips\n\n" + get_text("product_out_of_stock_0", "uz")
         out = product_card.mark_held(card, {"held_out": True}, "uz")
-        self.assertIn(get_text("product_held_out", "uz"), out)
+        self.assertIn(get_text("product_held_out", "uz", hours=database.RESERVE_HOURS), out)
+        self.assertIn("6 soat", out)
         self.assertNotIn(get_text("product_out_of_stock_0", "uz"), out)
         self.assertEqual(product_card.mark_held(card, {"held_out": False}, "uz"), card)
 
@@ -356,20 +357,141 @@ class MiniAppTest(_Base):
 
 
 class WarningTimingTest(unittest.TestCase):
-    """abandoned_cart stage 2 is the warning ~4 h before the hold ends."""
+    """6 h hold (owner, 2026-10-16): one message at 3 h — the warning with the
+    end time — then the release at 6 h."""
+
+    def test_six_hour_hold_has_one_warning_at_three_hours(self):
+        import abandoned_cart as ac
+        self.assertEqual(database.RESERVE_HOURS, 6)
+        self.assertEqual(ac.STAGES, ((1, 3 * 60, 6 * 60),))
+        self.assertEqual(ac.WARN_STAGE, 1)
 
     def test_daytime_uses_the_normal_window(self):
         import abandoned_cart as ac
-        self.assertEqual(ac.stage2_min_idle(20 * 60, datetime(2026, 10, 14, 15, 0)), 20 * 60)
+        self.assertEqual(ac.warn_min_idle(3 * 60, datetime(2026, 10, 14, 15, 0)), 3 * 60)
 
     def test_last_call_before_the_night(self):
         import abandoned_cart as ac
-        # 20:40 → 09:00 is 740 min away: holds ending before the morning are warned now.
-        self.assertEqual(ac.stage2_min_idle(20 * 60, datetime(2026, 10, 14, 20, 40)), 24 * 60 - 740)
+        # 20:40: every 6 h hold ends before 09:00 — warn now, but not a cart
+        # touched minutes ago (at least an hour idle).
+        self.assertEqual(ac.warn_min_idle(3 * 60, datetime(2026, 10, 14, 20, 40)), 60)
+        # A long hold: only the ones ending before the morning (740 min away).
+        with patch.object(ac, "HOLD_MINUTES", 24 * 60):
+            self.assertEqual(ac.warn_min_idle(20 * 60, datetime(2026, 10, 14, 20, 40)), 24 * 60 - 740)
 
-    def test_window_ends_with_the_hold(self):
+    def test_the_three_hour_message_is_the_warning(self):
         import abandoned_cart as ac
-        self.assertEqual(dict((s, (lo, hi)) for s, lo, hi in ac.STAGES)[2], (20 * 60, 24 * 60))
+        until = datetime.utcnow() + timedelta(hours=3)
+        items = [{"product_id": 1, "name": "Kokos chips", "name_ru": None, "price": 50000, "cart_quantity": 2,
+                  "unit": "piece", "stock": 4, "discount_percent": 0, "discount_until": None}]
+        with patch.object(database, "get_cart", AsyncMock(return_value=items)), \
+             patch.object(database, "cart_hold_until", AsyncMock(return_value=until)), \
+             patch("bot_discount.percent_for", AsyncMock(return_value=0)), \
+             patch("bot_discount.cart_saving", AsyncMock(return_value=0)), \
+             patch("gift_campaign.cart_hint", AsyncMock(return_value="")), \
+             patch("handlers.cart._quick_order_ready", AsyncMock(return_value=False)):
+            text, _, _ = run(ac.build_reminder(ALI, 1, "uz"))
+        self.assertIn("gacha siz uchun band", text)
+        self.assertIn("sotuvga qaytadi", text)
+
+
+class HeldWaitlistTest(unittest.TestCase):
+    """Owner, 2026-10-16: "so'ragan odamga push borsin siz so'ragan mahsulot
+    qaytdi deb" — a buyer refused a held product is put on its waitlist."""
+
+    def test_refused_in_the_bot_goes_on_the_waitlist_and_is_told_so(self):
+        import cart_reservations as cr
+        import restock_notify
+        view = {5: {"shelf": 3, "held": 3, "free": 0}}
+        with patch.object(database, "stock_view", AsyncMock(return_value=view)), \
+             patch.object(restock_notify, "subscribe", AsyncMock(return_value="added")) as sub:
+            text = run(cr.limit_text(ALI, "uz", 5))
+        sub.assert_awaited_once_with(ALI, 5, "uz", "held")
+        self.assertIn("6 soat ichida", text)
+        self.assertIn("xabar beramiz", text)
+
+    def test_a_set_or_a_really_empty_shelf_makes_no_promise(self):
+        import cart_reservations as cr
+        import restock_notify
+        with patch.object(database, "stock_view", AsyncMock(return_value={5: {"shelf": 0, "held": 0, "free": 0}})), \
+             patch.object(restock_notify, "subscribe", AsyncMock()) as sub:
+            text = run(cr.limit_text(ALI, "uz", 5))
+        sub.assert_not_awaited()
+        self.assertNotIn("xabar beramiz", text)
+
+        class Conn:
+            async def fetch(self, *a):
+                return [{"product_id": 5, "quantity": 1}]
+        with patch.object(database, "pool", FakePool(Conn())), \
+             patch.object(database, "stock_view", AsyncMock(return_value={5: {"shelf": 3, "held": 3, "free": 0}})), \
+             patch.object(restock_notify, "subscribe", AsyncMock()) as sub:
+            text = run(cr.limit_text(ALI, "uz", set_id=9))
+        sub.assert_not_awaited()
+        self.assertIn("6 soat", text)
+
+    def test_waiters_hear_right_after_a_release_in_daytime(self):
+        import cart_reservations as cr
+        import restock_notify
+        bot = AsyncMock()
+        notice = {"id": 5, "user_id": ALI, "items": [{"name": "Kokos", "quantity": 1, "unit": "piece"}]}
+        with patch.object(database, "release_expired_holds", AsyncMock(return_value=[notice])), \
+             patch.object(database, "pending_release_notices", AsyncMock(return_value=[])), \
+             patch.object(restock_notify, "run_once", AsyncMock()) as sweep:
+            with patch.object(cr, "_quiet", return_value=True):
+                run(cr.run_once(bot))
+            sweep.assert_not_awaited()                      # night: in the morning
+            with patch.object(cr, "_quiet", return_value=False):
+                run(cr.run_once(bot))
+            sweep.assert_awaited_once_with(bot)
+
+    def test_due_waits_count_what_other_carts_hold(self):
+        seen = {}
+
+        class Conn:
+            async def fetch(self, sql, *args):
+                seen["sql"] = sql
+                return []
+        with patch.object(database, "pool", FakePool(Conn())):
+            run(database.get_restock_due())
+        self.assertIn("reserved_until", seen["sql"])          # live holds are subtracted
+        self.assertIn("h.user_id <> w.user_id", seen["sql"])  # but not the waiter's own
+        self.assertIn("w.source", seen["sql"])
+
+    def test_mini_app_refusal_puts_the_buyer_on_the_list(self):
+        import cart_reservations as cr
+        import webapp_server
+
+        class Req(dict):
+            async def json(self):
+                return {"product_id": 5, "quantity": 1}
+        req = Req(user_id=ALI, user_lang="ru", telegram_user={"id": ALI, "first_name": "Ali"})
+        req.app = {"bot": None}
+        with patch.object(database, "get_product", AsyncMock(return_value={"id": 5, "quantity": 3})), \
+             patch.object(database, "get_cart_line_for_product", AsyncMock(return_value=(None, 0))), \
+             patch.object(webapp_server, "get_user", AsyncMock(return_value={"user_id": ALI})), \
+             patch.object(webapp_server, "create_user", AsyncMock()), \
+             patch.object(webapp_server, "add_to_cart", AsyncMock(return_value=0)), \
+             patch.object(webapp_server, "_limit_reason", AsyncMock(return_value="held")), \
+             patch.object(cr, "wait_for_hold", AsyncMock(return_value=True)) as wait:
+            resp = run(webapp_server.api_cart_add(req))
+        self.assertEqual(resp.status, 409)
+        self.assertEqual(json.loads(resp.text), {"error": "held", "waiting": True})
+        wait.assert_awaited_once_with(ALI, 5, "ru", "held")
+
+    def test_the_ai_seller_puts_the_buyer_on_the_list_too(self):
+        import ai_sales
+        import cart_reservations as cr
+        with patch.object(database, "get_product", AsyncMock(return_value={
+                 "id": 5, "name": "Kokos chips", "unit": "piece", "quantity": 3, "is_active": 1})), \
+             patch.object(database, "get_cart_line_for_product", AsyncMock(return_value=(None, 0))), \
+             patch.object(database, "add_to_cart", AsyncMock(return_value=0)), \
+             patch.object(database, "get_user_language", AsyncMock(return_value="uz")), \
+             patch.object(cr, "wait_for_hold", AsyncMock(return_value=True)) as wait:
+            out = run(ai_sales._tool_add(ALI, {"mahsulot_id": 5, "miqdor": 1}))
+        wait.assert_awaited_once_with(ALI, 5, "uz", "held")
+        self.assertTrue(out.startswith("Xato:"))
+        self.assertIn("kutish ro'yxatiga", out)
+        self.assertIn("6 soat", out)
 
 
 if __name__ == "__main__":

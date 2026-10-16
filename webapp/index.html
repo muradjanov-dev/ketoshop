@@ -3749,7 +3749,8 @@ const L = {
     errorFavStorage: 'Sevimlilarni saqlab bo\'lmadi — xotira to\'lib qolgan.',
     addedToCart: 'Savatga qo\'shildi!',
     heldOut: '⏳ Hozircha band',
-    heldLimit: '⏳ Qolgan donalar boshqa mijoz savatida band — 24 soat ichida bo\'shashi mumkin',
+    heldLimit: '⏳ Qolgan donalar boshqa mijoz savatida band — bir necha soatda bo\'shashi mumkin',
+    heldWaiting: '⏳ Hozircha boshqa mijoz savatida band — bo\'shashi bilan sizga xabar beramiz 🔔',
     addedPartly: 'Faqat {n} ta qo\'shildi — qolganlari boshqa mijoz savatida band',
     checkoutTitle: 'Buyurtma berish',
     lblPhone: 'Telefon raqam',
@@ -3858,6 +3859,8 @@ const L = {
     // the product is back (restock_notify.py).
     restockAsk: '🔔 Kelganda menga xabar bering',
     restockOn: '✅ Qaytishi bilan xabar beramiz',
+    restockAskHeld: '⏳ Band · 🔔 Bo\'shasa xabar bering',
+    restockOnHeld: '✅ Bo\'shashi bilan xabar beramiz',
     restockAdded: '🔔 Yozib qo\'ydik! Qaytishi bilan sizga birinchilardan bo\'lib xabar beramiz 🤍',
     restockAlready: '✅ Siz ro\'yxatdasiz — qaytishi bilan xabar beramiz 🤍',
     restockBack: '🎉 Xushxabar — mahsulot allaqachon qaytdi!',
@@ -3945,7 +3948,8 @@ const L = {
     errorFavStorage: 'Не удалось сохранить избранное — память переполнена.',
     addedToCart: 'Добавлено в корзину!',
     heldOut: '⏳ Сейчас забронировано',
-    heldLimit: '⏳ Остальное уже в корзине другого покупателя — может освободиться в течение 24 часов',
+    heldLimit: '⏳ Остальное уже в корзине другого покупателя — может освободиться через несколько часов',
+    heldWaiting: '⏳ Сейчас в корзине другого покупателя — сообщим вам, как только освободится 🔔',
     addedPartly: 'Добавлено только {n} — остальное в корзине другого покупателя',
     checkoutTitle: 'Оформление заказа',
     lblPhone: 'Номер телефона',
@@ -4047,6 +4051,8 @@ const L = {
     soonText4: 'Товар закончился, но мы не прощаемся. Новая партия уже в пути — ещё немного терпения, и скоро снова встретимся.',
     restockAsk: '🔔 Сообщите, когда появится',
     restockOn: '✅ Сообщим, как только вернётся',
+    restockAskHeld: '⏳ Занято · 🔔 Сообщите, когда освободится',
+    restockOnHeld: '✅ Сообщим, как только освободится',
     restockAdded: '🔔 Записали! Как только товар вернётся, вы узнаете одним из первых 🤍',
     restockAlready: '✅ Вы уже в списке — сообщим, как только вернётся 🤍',
     restockBack: '🎉 Хорошая новость — товар уже вернулся!',
@@ -5006,7 +5012,7 @@ async function checkStartGate(manual) {
 // ===== SAVAT BRONI: "⏳ Band" (owner, 2026-10-13) =====
 // A product whose last pieces all sit in other buyers' carts comes from the
 // server as out_of_stock + held_out. It isn't sold out — it may come back
-// within 24 h — so wherever a card or the detail view would say "sold out /
+// within a few hours — so wherever a card or the detail view would say "sold out /
 // coming soon", it says "⏳ Hozircha band" instead. Done as a pass over the
 // rendered element, so it holds whatever the out-of-stock markup looks like.
 function markHeld(root) {
@@ -5873,16 +5879,12 @@ async function openDetail(productId, isSet = false) {
     }
     document.getElementById('qty-value').textContent = qty;
     const addBtn = document.getElementById('add-to-cart-btn');
-    // Held in other buyers' carts (Savat broni) is not sold out: it keeps
-    // the plain disabled "coming soon" button, which markHeld turns into
-    // "⏳ Hozircha band" — no sold-out note, nothing to subscribe to.
-    const soldOut = p.out_of_stock && !p.held_out;
-    if (soldOut) {
+    // Sold out — "🔔 Kelganda xabar bering". Held in other buyers' carts
+    // (Savat broni) is not sold out but can be waited for the same way:
+    // "⏳ Band · 🔔 Bo'shasa xabar bering" (owner, 2026-10-16) — the bot
+    // writes when the hold runs out.
+    if (p.out_of_stock) {
       paintRestockBtn();
-    } else if (p.out_of_stock) {
-      addBtn.textContent = t.comingSoon;
-      addBtn.disabled = true;
-      addBtn.style.opacity = '0.55';
     } else {
       addBtn.textContent = t.addToCart;
       addBtn.disabled = false;
@@ -6076,7 +6078,8 @@ function toggleFavFromDetail() {
 function paintRestockBtn() {
   const btn = document.getElementById('add-to-cart-btn');
   const waiting = !!(currentProduct && currentProduct.restock_waiting);
-  btn.textContent = waiting ? t.restockOn : t.restockAsk;
+  const held = !!(currentProduct && currentProduct.held_out);
+  btn.textContent = waiting ? (held ? t.restockOnHeld : t.restockOn) : (held ? t.restockAskHeld : t.restockAsk);
   btn.disabled = waiting;
   btn.style.opacity = waiting ? '0.55' : '';
 }
@@ -6149,7 +6152,7 @@ function renderFavPage() {
 async function addToCart() {
   if (!currentProduct) return;
   if (currentProduct.out_of_stock) {
-    if (!currentProduct.held_out) restockWait();
+    restockWait();
     return;
   }
   const btn = document.getElementById('add-to-cart-btn');
@@ -6168,7 +6171,8 @@ async function addToCart() {
   } catch(e) {
     console.error('Add to cart error:', e);
     const reason = e && e.body && e.body.error;
-    showToast(reason === 'held' ? t.heldLimit : t.errorCart, true);
+    const held = reason === 'held' && (e.body.waiting ? t.heldWaiting : t.heldLimit);
+    showToast(held || t.errorCart, true);
   } finally {
     if (btn) btn.disabled = false;
   }

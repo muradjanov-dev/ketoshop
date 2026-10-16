@@ -1338,8 +1338,13 @@ async def _tool_add(user_id: int, args: dict) -> str:
     # Savat broni: only what no other buyer's cart holds goes in.
     got = await database.add_to_cart(user_id, product_id=product_id, quantity=qty)
     if got <= 0:
-        return (f"Xato: {product['name']} hozir boshqa mijozlar savatida band — 24 soat ichida "
-                "bo'shashi mumkin. Mijozga shuni ayt va o'xshash mahsulot taklif qil.")
+        import cart_reservations
+        waiting = await cart_reservations.wait_for_hold(user_id, product_id, await _lang(user_id), "held")
+        return (f"Xato: {product['name']} hozir boshqa mijozlar savatida band — "
+                f"{database.RESERVE_HOURS} soat ichida bo'shashi mumkin."
+                + (" Mijozni kutish ro'yxatiga yozdik: bo'shashi bilan bot unga o'zi xabar beradi — "
+                   "shuni ayt." if waiting else " Mijozga shuni ayt.")
+                + " O'xshash mahsulot ham taklif qil.")
     await _remember_quiet(user_id, "interest", product["name"], product_id)
     _cart_changed(user_id)
     short = (f" Faqat {got:g} bo'sh edi — qolgani boshqa mijoz savatida band, mijozga ayt."

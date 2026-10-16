@@ -11,6 +11,13 @@ How a buyer asks:
   * Mini App: the same button in the product sheet (POST /api/restock-wait).
 Either way one open row lands in restock_waitlist; asking twice is a no-op.
 
+Since 2026-10-16 the same list covers a product whose last pieces sit in other
+buyers' carts (Savat broni, "⏳ band"): the band card offers "🔔 Bo'shasa xabar
+bering", and a buyer whose add-to-cart was refused because of a hold is put
+on the list by itself (cart_reservations.limit_text, the Mini App, the AI
+seller). When the hold runs out they hear "siz so'ragan mahsulot sotuvga
+qaytdi" (owner: "so'ragan odamga push borsin").
+
 How they hear back: a sweep every 10 minutes finds open waits whose product
 is active and has stock again, and sends each buyer the product card with a
 "siz qiziqqan mahsulot qaytdi" headline and a live add-to-cart button. The
@@ -64,12 +71,19 @@ def _quiet_now() -> bool:
 
 async def subscribe(user_id: int, product_id: int, lang: str, source: str) -> str:
     """Put the buyer on the list. Returns:
-    "added" | "already" | "in_stock" (nothing to wait for) | "not_found"."""
+    "added" | "already" | "in_stock" (nothing to wait for) | "not_found".
+
+    Waiting works for a sold-out product and for one whose last pieces sit in
+    other buyers' carts (Savat broni, 2026-10-16) — that wait is kept as
+    source "held" and is told "siz so'ragan mahsulot sotuvga qaytdi" when the
+    hold runs out."""
     product = await database.get_product(product_id)
     if not product or not product.get("is_active") or product.get("b2b_only"):
         return "not_found"
     if float(product.get("quantity") or 0) > 0:
-        return "in_stock"
+        if (await database.stock_view([product_id], user_id))[product_id]["free"] > 0:
+            return "in_stock"
+        source = "held"
     if await database.add_restock_wait(user_id, product_id, lang, source):
         return "added"
     return "already"
@@ -107,6 +121,7 @@ async def restock_wait_button(callback: CallbackQuery):
     product = await database.get_product(product_id)
     if not product:
         return
+    product = (await database.apply_holds([product], user_id))[0]   # what this buyer can take
     try:
         kb = await detail_keyboard(user_id, product_id, back_category, back_page, lang,
                                    float(product.get("quantity") or 0) <= 0,
@@ -118,14 +133,18 @@ async def restock_wait_button(callback: CallbackQuery):
 
 # ─────────────────────────────── telling ────────────────────────────────────
 
-async def _send_card(bot: Bot, user_id: int, product: dict, lang: str) -> bool:
-    """The product card with the "qaytdi" headline on top. True = delivered."""
+async def _send_card(bot: Bot, user_id: int, product: dict, lang: str, source: str | None = None) -> bool:
+    """The product card with the "qaytdi" headline on top. True = delivered.
+    A wait for a product held in another cart gets its own headline: it
+    didn't come back from the warehouse, a cart let it go."""
     import gamification
     from locales import get_text
     from product_card import build_caption, detail_keyboard, send_product_message
 
     rate = await gamification.buyer_rate(user_id)
-    caption = await build_caption(product, lang, rate, lead=get_text("restock_back_lead", lang))
+    lead = (get_text("restock_held_lead", lang, hours=database.RESERVE_HOURS) if source == "held"
+            else get_text("restock_back_lead", lang))
+    caption = await build_caption(product, lang, rate, lead=lead)
     keyboard = await detail_keyboard(user_id, product["id"], "", 0, lang, False, keep=True)
     try:
         # The shop's card sender: photo caption when it fits, otherwise
@@ -169,11 +188,16 @@ async def run_once(bot: Bot) -> dict:
             continue
         sent = failed = 0
         for w in waits:
+            # Free for THIS buyer — shelf minus what other carts hold right now.
+            view = await database.stock_view([product_id], w["user_id"])
+            if view[product_id]["free"] <= 0:
+                stats["skipped"] += 1           # another cart took it since the query
+                continue
             if not await database.claim_restock_notice(w["id"]):
                 stats["skipped"] += 1           # another pass got here first
                 continue
             lang = langs.get(w["user_id"]) or w.get("lang") or "uz"
-            if await _send_card(bot, w["user_id"], product, lang):
+            if await _send_card(bot, w["user_id"], product, lang, w.get("source")):
                 sent += 1
             else:
                 failed += 1

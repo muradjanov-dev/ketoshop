@@ -168,6 +168,19 @@ TEXTS = {
     "btn_restock_wait": {"uz": "🔔 Kelganda menga xabar bering", "ru": "🔔 Сообщите, когда появится"},
     "btn_restock_waiting": {"uz": "✅ Qaytishi bilan xabar beramiz", "ru": "✅ Сообщим, как только вернётся"},
     "btn_held_out": {"uz": "⏳ Hozircha band", "ru": "⏳ Сейчас забронировано"},
+    # Band (another buyer's cart holds the last pieces): wait for it to free up
+    # (owner, 2026-10-16: "so'ragan odamga push borsin siz so'ragan mahsulot qaytdi deb").
+    "btn_held_wait": {"uz": "⏳ Band · 🔔 Bo'shasa xabar bering", "ru": "⏳ Занято · 🔔 Сообщите, когда освободится"},
+    "btn_held_waiting": {"uz": "✅ Bo'shashi bilan xabar beramiz", "ru": "✅ Сообщим, как только освободится"},
+    # Told when a band product is free again — the hold ran out, its holder let
+    # it go, or the admin added stock (owner, 2026-10-16: "admin tomonidan
+    # bo'lsa ham ... 6 soatdan avval unda ham mijozga xabar beraver").
+    "restock_held_lead": {
+        "uz": "🔔 <b>Siz so'ragan mahsulot sotuvga qaytdi!</b>\n"
+              "Hozir savatga qo'shsangiz, {hours} soat siz uchun band turadi 🤍",
+        "ru": "🔔 <b>Товар, который вы просили, снова в продаже!</b>\n"
+              "Добавьте его в корзину сейчас — он будет закреплён за вами на {hours} ч 🤍",
+    },
     "restock_wait_added": {
         "uz": "🔔 Yozib qo'ydik! Mahsulot qaytishi bilan sizga birinchilardan bo'lib xabar beramiz 🤍",
         "ru": "🔔 Записали! Как только товар вернётся, вы узнаете об этом одним из первых 🤍",
@@ -632,10 +645,18 @@ TEXTS = {
         "ru": "Больше нет в наличии",
     },
     # Savat broni (cart_reservations.py, 2026-10-13): the rest sits in other
-    # buyers' carts — it may come back within 24 h.
+    # buyers' carts — it may come back within the hold ({hours} h). The buyer
+    # is put on the product's waitlist and told when it frees up (2026-10-16).
     "cart_held_limit": {
-        "uz": "⏳ Qolgan donalar boshqa mijoz savatida band — 24 soat ichida bo'shashi mumkin",
-        "ru": "⏳ Остальное уже в корзине другого покупателя — может освободиться в течение 24 часов",
+        "uz": "⏳ Qolgan donalar boshqa mijoz savatida band — {hours} soat ichida bo'shashi mumkin. "
+              "Bo'shashi bilan sizga xabar beramiz 🔔",
+        "ru": "⏳ Остальное в корзине другого покупателя — может освободиться в течение {hours} ч. "
+              "Как только освободится, сообщим вам 🔔",
+    },
+    # The same for a set: no per-set waitlist, so no promise.
+    "cart_held_limit_set": {
+        "uz": "⏳ Setdagi mahsulotning qolgan donalari boshqa mijoz savatida band — {hours} soat ichida bo'shashi mumkin",
+        "ru": "⏳ Часть товаров набора в корзине другого покупателя — может освободиться в течение {hours} ч",
     },
     "cart_added_partly": {
         "uz": "Faqat {n} ta qo'shildi — qolganlari boshqa mijoz savatida band",
@@ -649,9 +670,10 @@ TEXTS = {
               "вернёт деньги или предложит другой товар.",
     },
     "product_held_out": {
-        "uz": "⏳ <b>Hozircha band</b> — oxirgi donalar boshqa mijoz savatida. 24 soat ichida bo'shashi mumkin.",
+        "uz": "⏳ <b>Hozircha band</b> — oxirgi donalar boshqa mijoz savatida. {hours} soat ichida "
+              "bo'shashi mumkin — 🔔 tugmasini bossangiz, bo'shashi bilan xabar beramiz.",
         "ru": "⏳ <b>Сейчас забронировано</b> — последние штуки в корзине другого покупателя. "
-              "Может освободиться в течение 24 часов.",
+              "Может освободиться в течение {hours} ч — нажмите 🔔, и мы сообщим, как только освободится.",
     },
     "btn_add_to_cart": {"uz": "🛒 Savatga qo'shish", "ru": "🛒 В корзину"},
     "btn_sets": {"uz": "🎁 To'plamlar", "ru": "🎁 Наборы"},
