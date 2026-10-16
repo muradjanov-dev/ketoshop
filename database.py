@@ -888,6 +888,27 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS idx_cart_reminders_sent ON cart_reminders(sent_at)"
         )
 
+        # ===== Qaytdi eslatmasi / restock waitlist (2026-10-14) =====
+        # A buyer taps "🔔 Kelganda xabar bering" on a sold-out product; once
+        # it is back in stock they get one message (restock_notify.py). The
+        # unique index covers only open rows, so after being told once the
+        # same buyer can ask again the next time the product sells out.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS restock_waitlist (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                product_id INTEGER NOT NULL,
+                lang TEXT NOT NULL DEFAULT 'uz',
+                source TEXT NOT NULL DEFAULT 'bot',
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                notified_at TIMESTAMP
+            )
+        """)
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_restock_waitlist_open "
+            "ON restock_waitlist(user_id, product_id) WHERE notified_at IS NULL"
+        )
+
         # ===== Maqsadlar / targets (2026-09-02) =====
         # Owner's two numbers: 10 sales a day, $2 000 net profit a month.
         # The single settings row keeps them editable without a deploy — the
@@ -3766,6 +3787,72 @@ async def set_stock_alert_levels(levels: dict[int, str]) -> None:
                   SET level = EXCLUDED.level, updated_at = CURRENT_TIMESTAMP""",
             list(levels.items()),
         )
+
+
+async def add_restock_wait(user_id: int, product_id: int, lang: str, source: str) -> bool:
+    """Put the buyer on the product's "tell me when it's back" list.
+    False = they are already waiting for it."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO restock_waitlist (user_id, product_id, lang, source)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (user_id, product_id) WHERE notified_at IS NULL DO NOTHING
+               RETURNING id""",
+            user_id, product_id, lang, source,
+        )
+        return row is not None
+
+
+async def is_waiting_restock(user_id: int, product_id: int) -> bool:
+    async with pool.acquire() as conn:
+        return bool(await conn.fetchval(
+            """SELECT 1 FROM restock_waitlist
+                WHERE user_id = $1 AND product_id = $2 AND notified_at IS NULL""",
+            user_id, product_id,
+        ))
+
+
+async def get_restock_due(limit: int = 500) -> list[dict]:
+    """Open waits whose product is back on sale — oldest first, product by
+    product. Banned buyers are left out (their rows simply stay open)."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT w.id, w.user_id, w.product_id, w.lang
+                 FROM restock_waitlist w
+                 JOIN products p ON p.id = w.product_id
+                WHERE w.notified_at IS NULL
+                  AND p.is_active = 1
+                  AND COALESCE(p.quantity, 0) > 0
+                  AND (p.b2b_only IS NOT TRUE)
+                  AND NOT EXISTS (SELECT 1 FROM banned_users b WHERE b.user_id = w.user_id)
+                ORDER BY w.product_id, w.created_at
+                LIMIT $1""",
+            limit,
+        )
+        return [dict(r) for r in rows]
+
+
+async def claim_restock_notice(wait_id: int) -> bool:
+    """Mark one wait as told, before sending — a restart mid-batch can't
+    message the same buyer twice. False = another pass already claimed it."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """UPDATE restock_waitlist SET notified_at = CURRENT_TIMESTAMP
+                WHERE id = $1 AND notified_at IS NULL RETURNING id""",
+            wait_id,
+        )
+        return row is not None
+
+
+async def get_restock_wait_counts() -> dict[int, int]:
+    """{product_id: buyers still waiting} — shown next to sold-out products
+    in /ombor, so the most-wanted ones get restocked first."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT product_id, COUNT(*) AS n FROM restock_waitlist
+                WHERE notified_at IS NULL GROUP BY product_id"""
+        )
+        return {int(r["product_id"]): int(r["n"]) for r in rows}
 
 
 async def stock_alerts_initialized() -> bool:

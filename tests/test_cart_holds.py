@@ -316,10 +316,11 @@ class BotCardTest(unittest.TestCase):
     def test_sold_out_note_becomes_band(self):
         import product_card
         from locales import get_text
-        card = "📦 Kokos chips\n\n" + get_text("product_out_of_stock", "uz")
+        # PR #71: the sold-out note is one of product_out_of_stock_0..4.
+        card = "📦 Kokos chips\n\n" + get_text("product_out_of_stock_0", "uz")
         out = product_card.mark_held(card, {"held_out": True}, "uz")
         self.assertIn(get_text("product_held_out", "uz"), out)
-        self.assertNotIn(get_text("product_out_of_stock", "uz"), out)
+        self.assertNotIn(get_text("product_out_of_stock_0", "uz"), out)
         self.assertEqual(product_card.mark_held(card, {"held_out": False}, "uz"), card)
 
     def test_any_sold_out_wording_is_swapped(self):

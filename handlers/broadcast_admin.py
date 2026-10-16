@@ -488,8 +488,16 @@ async def kun_test(message: Message):
         f"Quyida — mijoz ko'radigan kartochka:",
         parse_mode=ParseMode.HTML,
     )
+    import gamification
     import product_card
-    await product_card.send_card(message.bot, message.from_user.id, product, lang)
+    import product_ideas
+    # The same caption buyers get, recipe included (product_of_day.broadcast).
+    rate = await gamification.buyer_rate(message.from_user.id)
+    caption = await product_card.build_caption(
+        product, lang, rate,
+        product_ideas.recipe_block(product, lang, product_of_day._recipe_seed()))
+    await product_card.send_card(message.bot, message.from_user.id, product, lang,
+                                 rate=rate, caption=caption)
 
 
 @router.message(Command("kun_kanal"))
