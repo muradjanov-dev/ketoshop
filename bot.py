@@ -52,6 +52,7 @@ from onboarding_video import router as onboarding_video_router
 from welcome_recipe import router as welcome_recipe_router
 from bot_discount_campaign import router as bot_discount_campaign_router
 from stock_alerts import router as stock_alerts_router
+from restock_notify import router as restock_notify_router
 from referral_stats import router as referral_stats_router
 from referral_program import router as referral_program_router
 from retention_stats import router as retention_stats_router
@@ -266,6 +267,7 @@ async def main():
     dp.include_router(keto_explainer_router)
     # /ombor — current low / out-of-stock list.
     dp.include_router(stock_alerts_router)
+    dp.include_router(restock_notify_router)
     # Catch-all for free text that no state/handler above claimed — must stay
     # last so it never steals a message a real flow was waiting on.
     # AI sotuvchi support_relay dan oldin: hech kim ushlamagan matnni avval
@@ -380,6 +382,10 @@ async def main():
     # …and the full stock status to the staff group every night at 23:59.
     from stock_alerts import night_report_loop as stock_night_loop
     stock_night_task = asyncio.create_task(stock_night_loop(bot))
+    # "Siz qiziqqan mahsulot qaytdi" — buyers who asked on a sold-out product
+    # hear when it's restocked, 09:00–21:00 (restock_notify.py).
+    from restock_notify import scheduler_loop as restock_notify_loop
+    restock_notify_task = asyncio.create_task(restock_notify_loop(bot))
 
     # "Nima yangi" — this release's notes to every admin, once, in daytime.
     # Daily "Kun mahsuloti": one product to every buyer and to the channel.
@@ -424,6 +430,7 @@ async def main():
         bot_discount_margin_task.cancel()
         stock_alerts_task.cancel()
         stock_night_task.cancel()
+        restock_notify_task.cancel()
         product_of_day_task.cancel()
         channel_posts_task.cancel()
         release_notes_task.cancel()

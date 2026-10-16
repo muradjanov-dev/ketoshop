@@ -354,6 +354,14 @@ async def api_product_detail(request: web.Request):
     data["seller_name"] = p.get("seller_name", "") if request.get("user_id") in ADMIN_IDS else ""
     data["quantity"] = p.get("quantity", 0)
     data["out_of_stock"] = p.get("quantity", 0) <= 0
+    # Sold out: has this buyer already asked to hear when it's back?
+    data["restock_waiting"] = False
+    if data["out_of_stock"] and request.get("user_id"):
+        try:
+            from database import is_waiting_restock
+            data["restock_waiting"] = await is_waiting_restock(request["user_id"], product_id)
+        except Exception:
+            logger.exception("restock_waiting lookup failed")
     data["media"] = [
         {
             "url": f"/api/photo/{m['file_id']}",
@@ -609,6 +617,22 @@ async def api_cart(request: web.Request):
             "checkout_note": bot_discount.admin_checkout_note(lang, bot_shown_pct) if bot_preview else "",
         } if bot_shown > 0 else None,
     })
+
+
+async def api_restock_wait(request: web.Request):
+    """"🔔 Kelganda menga xabar bering" from the product sheet (owner,
+    2026-10-14) — restock_notify.py tells the buyer once it's back."""
+    import restock_notify
+    try:
+        data = await request.json()
+        product_id = int(data.get("product_id"))
+    except Exception:
+        return _json({"error": "bad_request"}, status=400)
+    status = await restock_notify.subscribe(
+        request["user_id"], product_id, request.get("user_lang", "uz"), "site")
+    if status == "not_found":
+        return _json({"error": "not_found"}, status=404)
+    return _json({"ok": True, "status": status})
 
 
 async def api_cart_add(request: web.Request):
@@ -1739,6 +1763,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_get("/api/pickup-config", api_pickup_config)
     app.router.add_get("/api/promo", api_promo)
     app.router.add_get("/api/products", api_products)
+    app.router.add_post("/api/restock-wait", api_restock_wait)
     app.router.add_get("/api/top", api_top)
     app.router.add_get("/api/leaderboard", api_leaderboard)
     app.router.add_get("/api/product/{id}", api_product_detail)

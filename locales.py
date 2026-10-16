@@ -130,10 +130,61 @@ TEXTS = {
     },
     "btn_add_to_cart": {"uz": "🛒 Savatga qo'shish", "ru": "🛒 В корзину"},
     "btn_in_cart_qty": {"uz": "✓ Savatda: {n} ta", "ru": "✓ В корзине: {n} шт"},
-    "btn_coming_soon": {"uz": "⏳ Tez orada qaytadi", "ru": "⏳ Скоро в наличии"},
-    "product_out_of_stock": {
-        "uz": "❌ <b>Sotuvda yo'q</b> — mahsulot yaqin kunlarda qaytadi",
-        "ru": "❌ <b>Нет в наличии</b> — товар появится в ближайшие дни",
+    "btn_coming_soon": {"uz": "⏳ Tez orada qaytadi", "ru": "⏳ Скоро вернётся"},
+    # Sold out, said warmly (owner, 2026-10-14: "kreativroq va samimiyroq").
+    # The same five notes as the Mini App's detail sheet (soonTitle0..4),
+    # picked by product id — see product_card.SOLD_OUT_NOTES.
+    "product_out_of_stock_0": {
+        "uz": "🤍 <b>Siz yolg'iz emassiz</b>\nBu mahsulotni siz kabi ko'pchilik yaxshi ko'radi — "
+              "shuning uchun javonda bittasi ham qolmadi. Yangisini olib kelyapmiz, ko'p kuttirmaymiz.",
+        "ru": "🤍 <b>Вы не одни</b>\nЭтот товар любят многие — как и вы. Поэтому на полке не осталось "
+              "ни одного. Мы уже везём новый и долго ждать не заставим.",
+    },
+    "product_out_of_stock_1": {
+        "uz": "🌿 <b>Qisqa ta'tilga chiqdi</b>\nBu mahsulot shuncha dasturxonni bezadiki, ozgina dam olishga "
+              "haqli. Kuch to'plab, tez orada javonga qaytadi — biz ham uni intiqlik bilan kutyapmiz.",
+        "ru": "🌿 <b>Ушёл в короткий отпуск</b>\nЭтот товар украсил столько столов, что заслужил немного "
+              "отдыха. Наберётся сил и скоро вернётся на полку — мы ждём его вместе с вами.",
+    },
+    "product_out_of_stock_2": {
+        "uz": "🙏 <b>Kechirasiz, biz ulgurmadik</b>\nBu mahsulot biz kutgandan ham tezroq tugadi. Aybni "
+              "bo'ynimizga olamiz va yangisini shoshilib olib kelyapmiz — tez orada shu yerda bo'ladi.",
+        "ru": "🙏 <b>Простите, не успели</b>\nЭтот товар разлетелся быстрее, чем мы ожидали. Это наша "
+              "недоработка — уже спешим привезти новый, совсем скоро он будет здесь.",
+    },
+    "product_out_of_stock_3": {
+        "uz": "🧺 <b>Javon bo'shadi, savatlar to'ldi</b>\nKeto oilamiz bu mahsulotni bir zumda olib ketdi. "
+              "Yangi partiya yo'lda — tez orada yana sizning dasturxoningizda bo'ladi.",
+        "ru": "🧺 <b>Полка пуста — корзины полны</b>\nНаша кето-семья разобрала этот товар в один миг. "
+              "Новая партия в пути — скоро он снова будет на вашем столе.",
+    },
+    "product_out_of_stock_4": {
+        "uz": "💛 <b>Biz ham uni sog'indik</b>\nMahsulot tugab qoldi, lekin xayrlashganimiz yo'q. Yangisi "
+              "allaqachon yo'lda — sal sabr qiling, tez orada yana uchrashamiz.",
+        "ru": "💛 <b>Мы тоже по нему скучаем</b>\nТовар закончился, но мы не прощаемся. Новая партия уже "
+              "в пути — ещё немного терпения, и скоро снова встретимся.",
+    },
+    # "Kelganda xabar bering" (owner, 2026-10-14) — restock_notify.py.
+    "btn_restock_wait": {"uz": "🔔 Kelganda menga xabar bering", "ru": "🔔 Сообщите, когда появится"},
+    "btn_restock_waiting": {"uz": "✅ Qaytishi bilan xabar beramiz", "ru": "✅ Сообщим, как только вернётся"},
+    "btn_held_out": {"uz": "⏳ Hozircha band", "ru": "⏳ Сейчас забронировано"},
+    "restock_wait_added": {
+        "uz": "🔔 Yozib qo'ydik! Mahsulot qaytishi bilan sizga birinchilardan bo'lib xabar beramiz 🤍",
+        "ru": "🔔 Записали! Как только товар вернётся, вы узнаете об этом одним из первых 🤍",
+    },
+    "restock_wait_already": {
+        "uz": "✅ Siz ro'yxatdasiz — mahsulot qaytishi bilan xabar beramiz 🤍",
+        "ru": "✅ Вы уже в списке — сообщим, как только товар вернётся 🤍",
+    },
+    "restock_wait_in_stock": {
+        "uz": "🎉 Xushxabar — mahsulot allaqachon qaytdi! Savatga qo'shishingiz mumkin.",
+        "ru": "🎉 Хорошая новость — товар уже вернулся! Можно добавить в корзину.",
+    },
+    "restock_back_lead": {
+        "uz": "🎉 <b>Siz qiziqqan mahsulot do'konimizga qaytdi!</b>\n"
+              "Siz so'ragan edingiz — biz unutmadik 🤍 Bu safar ham tez tugashi mumkin, ulgurib qoling!",
+        "ru": "🎉 <b>Товар, которым вы интересовались, снова в магазине!</b>\n"
+              "Вы просили — мы не забыли 🤍 Он может снова быстро закончиться — успейте!",
     },
     "btn_prev": {"uz": "⬅️", "ru": "⬅️"},
     "btn_next": {"uz": "➡️", "ru": "➡️"},

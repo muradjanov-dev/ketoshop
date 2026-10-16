@@ -794,6 +794,35 @@
      lost its backslash to a control character and printed "F951". */
   .keto-badge::before { content: "🎁 "; }
 
+  /* Sold out stays on the shelf (owner, 2026-10-14): the photo fades a
+     little and wears a tilted stamp; the line under the price says it is
+     coming back. The stamp sits outside the faded <img>, so it stays crisp. */
+  .card-img-wrap.is-out img, .card-img-wrap.is-out .no-photo { filter: grayscale(.55); opacity: .62; }
+  .sold-out-stamp {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 2;
+    padding: 7px 13px 6px;
+    border-radius: 14px 18px 12px 20px / 16px 12px 18px 14px;
+    border: 1.5px dashed var(--berry);
+    background: var(--surface);
+    color: var(--berry);
+    font: 800 12px/1 var(--font-display);
+    letter-spacing: .01em;
+    white-space: nowrap;
+    transform: translate(-50%, -50%) rotate(-8deg);
+    box-shadow: 0 8px 18px -10px rgba(0,0,0,.35);
+    pointer-events: none;
+  }
+  .card-soon {
+    margin-top: 5px;
+    font-size: 11.5px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--leaf-deep);
+  }
+
   /* Top strip: every product, auto-scrolling (owner, 2026-10-02). Slightly
      smaller tiles and no description line so the strip stays a strip. */
   #home-top-carousel .carousel-card { width: 140px; }
@@ -1961,6 +1990,28 @@
     font-weight: 700;
     line-height: 1.4;
   }
+  /* Sold-out note in the detail sheet: a warm promise instead of a bare
+     "not available". Only inside the product (owner, 2026-10-14) — the
+     catalog card just wears the stamp — and it eases in once the sheet is
+     open, so it reads as a message to this buyer. */
+  .detail-soon {
+    margin-top: 12px;
+    padding: 14px 16px;
+    border-radius: var(--soft-a);
+    background: var(--leaf-soft);
+    border: 1px dashed var(--leaf);
+    color: var(--text);
+    animation: soon-in .55s var(--ease-spring) .25s both;
+  }
+  .detail-soon[hidden] { display: none; }
+  .detail-soon .ds-title { font: 800 15px/1.3 var(--font-display); color: var(--leaf-deep); }
+  .detail-soon .ds-text { margin-top: 6px; font-size: 13.5px; line-height: 1.5; }
+  @keyframes soon-in {
+    from { opacity: 0; transform: translateY(10px) scale(.98); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .detail-soon { animation: none; } }
+  .detail-footer.is-out .qty-controls { display: none; }
   .modal .detail-rating { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--text); }
   .modal .detail-rating:empty, .modal .detail-seller:empty { display: none; }
   .modal .detail-seller { margin-top: 4px; font-size: 12px; color: var(--hint); }
@@ -3308,6 +3359,10 @@
     <div class="detail-body">
       <div class="detail-tip" id="detail-tip" style="display:none"></div>
       <div><span class="detail-price" id="detail-price"></span> <span class="detail-unit" id="detail-unit"></span></div>
+      <div class="detail-soon" id="detail-soon" hidden>
+        <div class="ds-title" id="detail-soon-title"></div>
+        <div class="ds-text" id="detail-soon-text"></div>
+      </div>
       <div class="detail-saving" id="detail-saving" style="display:none"></div>
       <div class="detail-discount-until" id="detail-discount-until" style="margin-top:6px;font-size:12px;color:var(--berry);font-weight:600"></div>
       <div class="detail-bonus" id="detail-bonus" style="display:none"></div>
@@ -3702,6 +3757,27 @@ const L = {
     ordering: 'Buyurtma berilmoqda...',
     comingSoon: '⏳ Tez orada qaytadi',
     outOfStock: '❌ Sotuvda yo\'q — mahsulot yaqin kunlarda qaytadi',
+    // Sold out, said warmly (owner, 2026-10-14: "kreativroq va samimiyroq").
+    // Five notes, picked by product id (SOLD_OUT_NOTES), so the shelf doesn't
+    // repeat one sentence everywhere. The bot card uses the same five.
+    soldOutStamp: 'Tugab qoldi',
+    soonTitle0: '🤍 Siz yolg\'iz emassiz',
+    soonText0: 'Bu mahsulotni siz kabi ko\'pchilik yaxshi ko\'radi — shuning uchun javonda bittasi ham qolmadi. Yangisini olib kelyapmiz, ko\'p kuttirmaymiz.',
+    soonTitle1: '🌿 Qisqa ta\'tilga chiqdi',
+    soonText1: 'Bu mahsulot shuncha dasturxonni bezadiki, ozgina dam olishga haqli. Kuch to\'plab, tez orada javonga qaytadi — biz ham uni intiqlik bilan kutyapmiz.',
+    soonTitle2: '🙏 Kechirasiz, biz ulgurmadik',
+    soonText2: 'Bu mahsulot biz kutgandan ham tezroq tugadi. Aybni bo\'ynimizga olamiz va yangisini shoshilib olib kelyapmiz — tez orada shu yerda bo\'ladi.',
+    soonTitle3: '🧺 Javon bo\'shadi, savatlar to\'ldi',
+    soonText3: 'Keto oilamiz bu mahsulotni bir zumda olib ketdi. Yangi partiya yo\'lda — tez orada yana sizning dasturxoningizda bo\'ladi.',
+    soonTitle4: '💛 Biz ham uni sog\'indik',
+    soonText4: 'Mahsulot tugab qoldi, lekin xayrlashganimiz yo\'q. Yangisi allaqachon yo\'lda — sal sabr qiling, tez orada yana uchrashamiz.',
+    // "Kelganda xabar bering" (owner, 2026-10-14) — the bot writes once
+    // the product is back (restock_notify.py).
+    restockAsk: '🔔 Kelganda menga xabar bering',
+    restockOn: '✅ Qaytishi bilan xabar beramiz',
+    restockAdded: '🔔 Yozib qo\'ydik! Qaytishi bilan sizga birinchilardan bo\'lib xabar beramiz 🤍',
+    restockAlready: '✅ Siz ro\'yxatdasiz — qaytishi bilan xabar beramiz 🤍',
+    restockBack: '🎉 Xushxabar — mahsulot allaqachon qaytdi!',
     discountUntil: '⏳ Chegirma {date} gacha amal qiladi',
     youSave: '💚 {amount} so\'m tejaysiz',
     discountsTab: '🔥 Chegirmalar',
@@ -3873,8 +3949,24 @@ const L = {
     cancelTooLate: 'Этот заказ уже доставлен или отменён',
     errorCancel: 'Не удалось отменить заказ',
     ordering: 'Оформление...',
-    comingSoon: '⏳ Скоро в наличии',
+    comingSoon: '⏳ Скоро вернётся',
     outOfStock: '❌ Нет в наличии — товар появится в ближайшие дни',
+    soldOutStamp: 'Раскупили',
+    soonTitle0: '🤍 Вы не одни',
+    soonText0: 'Этот товар любят многие — как и вы. Поэтому на полке не осталось ни одного. Мы уже везём новый и долго ждать не заставим.',
+    soonTitle1: '🌿 Ушёл в короткий отпуск',
+    soonText1: 'Этот товар украсил столько столов, что заслужил немного отдыха. Наберётся сил и скоро вернётся на полку — мы ждём его вместе с вами.',
+    soonTitle2: '🙏 Простите, не успели',
+    soonText2: 'Этот товар разлетелся быстрее, чем мы ожидали. Это наша недоработка — уже спешим привезти новый, совсем скоро он будет здесь.',
+    soonTitle3: '🧺 Полка пуста — корзины полны',
+    soonText3: 'Наша кето-семья разобрала этот товар в один миг. Новая партия в пути — скоро он снова будет на вашем столе.',
+    soonTitle4: '💛 Мы тоже по нему скучаем',
+    soonText4: 'Товар закончился, но мы не прощаемся. Новая партия уже в пути — ещё немного терпения, и скоро снова встретимся.',
+    restockAsk: '🔔 Сообщите, когда появится',
+    restockOn: '✅ Сообщим, как только вернётся',
+    restockAdded: '🔔 Записали! Как только товар вернётся, вы узнаете одним из первых 🤍',
+    restockAlready: '✅ Вы уже в списке — сообщим, как только вернётся 🤍',
+    restockBack: '🎉 Хорошая новость — товар уже вернулся!',
     discountUntil: '⏳ Скидка действует до {date}',
     youSave: '💚 экономия {amount} сум',
     discountsTab: '🔥 Скидки',
@@ -5316,12 +5408,12 @@ function createCarouselCard(p) {
     imgInner = '<div class="no-photo">📦</div>';
   }
 
-  const descHtml = p.description ? '<div class="card-desc">' + escapeHtml(p.description) + '</div>' : '';
   card.innerHTML =
-    '<div class="card-img-wrap">' +
+    '<div class="card-img-wrap' + (p.out_of_stock ? ' is-out' : '') + '">' +
       discountCornerHtml(p) +
       discountUntilCornerHtml(p) +
       imgInner +
+      soldOutStampHtml(p) +
       '<button class="card-fav-btn" data-id="' + p.id + '">' + (isFav ? '❤️' : '🤍') + '</button>' +
     '</div>' +
     '<div class="card-name">' + (p.is_set ? '🎁 ' : '') + escapeHtml(p.name) + '</div>' +
@@ -5329,7 +5421,7 @@ function createCarouselCard(p) {
     savingHtml(p) +
     bonusBadgeHtml(p) +
     ketoBadgeHtml(p.price) +
-    descHtml;
+    cardNoteHtml(p);
 
   // Fav button click (stop propagation so card click doesn't fire)
   card.querySelector('.card-fav-btn').onclick = (e) => {
@@ -5508,6 +5600,21 @@ window.addEventListener('scroll', () => {
   }
 });
 
+// Sold out stays in the shop (owner, 2026-10-14): a tilted "Tugab qoldi"
+// stamp on the photo, and "Tez orada qaytadi" takes the description's line.
+// The detail sheet picks one of soonTitle0..4 / soonText0..4 by product id;
+// keep the count equal to product_card.SOLD_OUT_NOTES (the bot card).
+const SOLD_OUT_NOTES = 5;
+
+function soldOutStampHtml(p) {
+  return p.out_of_stock ? '<div class="sold-out-stamp">' + escapeHtml(t.soldOutStamp) + '</div>' : '';
+}
+
+function cardNoteHtml(p) {
+  if (p.out_of_stock) return '<div class="card-soon">' + escapeHtml(t.comingSoon) + '</div>';
+  return p.description ? '<div class="card-desc">' + escapeHtml(p.description) + '</div>' : '';
+}
+
 function createProductCard(p) {
   const card = document.createElement('div');
   card.className = 'product-card';
@@ -5521,13 +5628,12 @@ function createProductCard(p) {
     imgInner = '<div class="no-photo">📦</div>';
   }
 
-  const descHtml2 = p.description ? '<div class="card-desc">' + escapeHtml(p.description) + '</div>' : '';
-  const soonBadge = p.out_of_stock ? '<div class="card-desc" style="color:var(--berry);font-weight:600">' + (t.comingSoon || '⏳') + '</div>' : '';
   card.innerHTML =
-    '<div class="card-img-wrap"' + (p.out_of_stock ? ' style="opacity:0.55"' : '') + '>' +
+    '<div class="card-img-wrap' + (p.out_of_stock ? ' is-out' : '') + '">' +
       discountCornerHtml(p) +
       discountUntilCornerHtml(p) +
       imgInner +
+      soldOutStampHtml(p) +
       '<button class="card-fav-btn" data-id="' + p.id + '">' + (isFav ? '❤️' : '🤍') + '</button>' +
     '</div>' +
     '<div class="card-name">' + (p.is_set ? '🎁 ' : '') + escapeHtml(p.name) + '</div>' +
@@ -5535,8 +5641,7 @@ function createProductCard(p) {
     savingHtml(p) +
     bonusBadgeHtml(p) +
     ketoBadgeHtml(p.price) +
-    descHtml2 +
-    soonBadge;
+    cardNoteHtml(p);
 
   card.querySelector('.card-fav-btn').onclick = (e) => {
     e.stopPropagation();
@@ -5646,7 +5751,13 @@ async function openDetail(productId, isSet = false) {
     }
     document.getElementById('qty-value').textContent = qty;
     const addBtn = document.getElementById('add-to-cart-btn');
-    if (p.out_of_stock) {
+    // Held in other buyers' carts (Savat broni) is not sold out: it keeps
+    // the plain disabled "coming soon" button, which markHeld turns into
+    // "⏳ Hozircha band" — no sold-out note, nothing to subscribe to.
+    const soldOut = p.out_of_stock && !p.held_out;
+    if (soldOut) {
+      paintRestockBtn();
+    } else if (p.out_of_stock) {
       addBtn.textContent = t.comingSoon;
       addBtn.disabled = true;
       addBtn.style.opacity = '0.55';
@@ -5654,6 +5765,15 @@ async function openDetail(productId, isSet = false) {
       addBtn.textContent = t.addToCart;
       addBtn.disabled = false;
       addBtn.style.opacity = '';
+    }
+    // No stepper for something that can't be bought yet — the note says when.
+    addBtn.parentElement.classList.toggle('is-out', !!p.out_of_stock);
+    const soonEl = document.getElementById('detail-soon');
+    soonEl.hidden = !soldOut;
+    if (soldOut) {
+      const v = Math.abs(Number(p.id) || 0) % SOLD_OUT_NOTES;
+      document.getElementById('detail-soon-title').textContent = t['soonTitle' + v];
+      document.getElementById('detail-soon-text').textContent = t['soonText' + v];
     }
 
     // Favorite button
@@ -5829,6 +5949,42 @@ function toggleFavFromDetail() {
   document.getElementById('detail-fav-btn').textContent = favorites[currentProduct.id] ? '❤️' : '🤍';
 }
 
+// Sold out: the main button is "🔔 Kelganda menga xabar bering"; once asked
+// it turns into the promise and stops being tappable.
+function paintRestockBtn() {
+  const btn = document.getElementById('add-to-cart-btn');
+  const waiting = !!(currentProduct && currentProduct.restock_waiting);
+  btn.textContent = waiting ? t.restockOn : t.restockAsk;
+  btn.disabled = waiting;
+  btn.style.opacity = waiting ? '0.55' : '';
+}
+
+async function restockWait() {
+  const p = currentProduct;
+  const btn = document.getElementById('add-to-cart-btn');
+  btn.disabled = true;
+  // The message comes from the bot — make sure it may write to this buyer.
+  await ensureBotCanWrite();
+  try {
+    const res = await api('/api/restock-wait', {
+      method: 'POST',
+      body: JSON.stringify({ product_id: p.id })
+    });
+    if (res.status === 'in_stock') {
+      showToast(t.restockBack);
+      openDetail(p.id);
+      return;
+    }
+    p.restock_waiting = true;
+    if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+    showToast(res.status === 'already' ? t.restockAlready : t.restockAdded);
+  } catch (e) {
+    console.error('Restock wait error:', e);
+    showToast(t.errorLoad, true);
+  }
+  if (currentProduct === p) paintRestockBtn();
+}
+
 function toggleFav(product) {
   if (favorites[product.id]) {
     delete favorites[product.id];
@@ -5870,6 +6026,10 @@ function renderFavPage() {
 // ===== CART =====
 async function addToCart() {
   if (!currentProduct) return;
+  if (currentProduct.out_of_stock) {
+    if (!currentProduct.held_out) restockWait();
+    return;
+  }
   const btn = document.getElementById('add-to-cart-btn');
   try {
     if (btn) btn.disabled = true;
