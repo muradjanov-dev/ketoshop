@@ -217,6 +217,47 @@ def order_idea_block(items, lang: str = "uz") -> str | None:
     return f"{ORDER_HEADING['ru' if lang == 'ru' else 'uz']}\n{text}"
 
 
+RECIPE_HEADING = {
+    "uz": "🍳 <b>Bugungi retsept</b>",
+    "ru": "🍳 <b>Рецепт дня</b>",
+}
+
+
+def recipe_for(product: dict, lang: str = "uz", seed: int = 0) -> str | None:
+    """A whole recipe for this product, from the recommendation library
+    (reco_content.py: 2–3 recipes per product family, ingredients + steps).
+    The product's family by name first, then its shop category, then the
+    general one. `seed` rotates between the family's recipes, so a product
+    that comes round again in the next cycle brings a different one."""
+    import personal_recommend
+    import reco_content
+
+    profile = personal_recommend.name_profile(product.get("name") or "")
+    if not profile:
+        key = reco_content.CATEGORY_PROFILE_KEYS.get(product.get("category") or "")
+        by_key = {p["key"]: p for p in reco_content.PROFILES}
+        by_key.update({p["key"]: p for p in reco_content.CATEGORY_GENERIC_PROFILES.values()})
+        profile = by_key.get(key) if key else None
+    recipes = (profile or reco_content.DEFAULT_PROFILE).get("recipes") or []
+    if not recipes:
+        return None
+    return recipes[seed % len(recipes)].get("ru" if lang == "ru" else "uz")
+
+
+def recipe_block(product: dict, lang: str = "uz", seed: int = 0) -> str | None:
+    """«🍳 Bugungi retsept» for the daily spotlight card (owner, 2026-10-16:
+    "kun mahsuloti bilan birga bir retsept ham yozib ber ichida"). It takes
+    the place of the one-line idea, which is the fallback if no recipe is
+    found. Budgeted by product_card.build_caption like any `extra`."""
+    text = recipe_for(product, lang, seed)
+    if not text:
+        return idea_block(product.get("name") or "", lang)
+    if lang == "uz_cyr":
+        from translit import lat_to_cyr
+        return lat_to_cyr(f"{RECIPE_HEADING['uz']}\n{text}")
+    return f"{RECIPE_HEADING['ru' if lang == 'ru' else 'uz']}\n{text}"
+
+
 def idea_block(product_name: str, lang: str = "uz") -> str | None:
     """Ready-to-append block for a product card, or None.
 
