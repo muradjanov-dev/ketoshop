@@ -1563,6 +1563,66 @@ class AiFalseClaimTest(unittest.TestCase):
         self.assertIsNone(ai_sales.false_claim("Savatga qo'shamizmi? 🛒", set(), {}))
 
 
+class AiRussianReplyTest(unittest.TestCase):
+    """Modellarni solishtirish, 2026-10-16: mini ruscha yozgan mijozga o'zbekcha javob berdi."""
+
+    def setUp(self):
+        ai_sales._sessions.clear()
+        _patch(self, ai_sales, "_catalog_cache", (9e18, "13 | Bodom uni 1000gr (ru: Миндальная мука 1 кг) | 169 000 so'm"))
+        _patch(self, database, "get_user_language", AsyncMock(return_value="uz"))
+        saved = ai_sales.PROVIDER
+        self.addCleanup(setattr, ai_sales, "PROVIDER", saved)
+
+    def tearDown(self):
+        ai_sales._sessions.clear()
+
+    def _respond(self, text, turns):
+        _patch(self, ai_sales, "_reply", AsyncMock())
+        message = _FakeMessage(text)
+        _run(ai_sales.on_text(message, None, None))       # mijoz so'zi eslab qolinadi
+        ai_sales.PROVIDER = _FakeProvider(turns)
+        reply = _run(ai_sales._respond(None, message, text))
+        return reply, ai_sales.PROVIDER
+
+    def test_customer_language(self):
+        lang = ai_sales.customer_language
+        self.assertEqual(lang("Здравствуйте, сколько стоит миндальная мука?"), "ru")
+        self.assertEqual(lang("нет, больше ничего"), "ru")
+        self.assertEqual(lang("да"), "ru")
+        self.assertEqual(lang("Ассалому алайкум, эритритол борми? нархи қанча?"), "uz_cyr")
+        self.assertEqual(lang("салом, эритритол борми нархи канча"), "uz_cyr")   # maxsus harfsiz
+        self.assertEqual(lang("bodom uni bormi?"), "lat")
+        self.assertIsNone(lang("кв 5"))
+        self.assertIsNone(lang("[Mijoz telefon raqamini yubordi: +998935550011]"))
+
+    def test_uzbek_reply_to_a_russian_customer_is_rewritten_in_russian(self):
+        reply, provider = self._respond("доставка курьером", [
+            Turn(text="Marhamat, pastdagi tugmalar orqali raqamingiz va lokatsiyangizni yuboring 😊"),
+            Turn(text="Отправьте, пожалуйста, номер и локацию кнопками ниже 😊"),
+        ])
+        self.assertEqual(provider.calls[1]["user"], ai_sales.RU_FIX)
+        self.assertEqual(reply, "Отправьте, пожалуйста, номер и локацию кнопками ниже 😊")
+
+    def test_russian_customer_language_holds_through_contact_and_location(self):
+        self._respond("Здравствуйте, нужна миндальная мука", [Turn(text="Хорошо, оформляем 😊")])
+        message = _FakeMessage("[Mijoz telefon raqamini yubordi: +998935550011]")
+        ai_sales.PROVIDER = _FakeProvider([Turn(text="Endi lokatsiyani yuboring, iltimos 😊"),
+                                           Turn(text="Теперь отправьте локацию 😊")])
+        reply = _run(ai_sales._respond(None, message, message.text))
+        self.assertEqual(reply, "Теперь отправьте локацию 😊")
+
+    def test_a_leftover_uzbek_line_is_dropped_and_uzbek_customers_are_untouched(self):
+        reply, provider = self._respond("Здравствуйте, нужна миндальная мука 1 кг", [
+            Turn(text="Готово, добавили 😊\n\n• Bodom uni 1000gr — 169 000 сум\n\nYana nima olamiz? 😊")])
+        self.assertEqual(len(provider.calls), 1)
+        self.assertNotIn("Yana nima", reply)
+        self.assertIn("Bodom uni 1000gr — 169 000 сум", reply)        # kirill bor qator qoladi
+        ai_sales._sessions.clear()
+        reply, provider = self._respond("bodom uni kerak", [Turn(text="Savatga qo'shamizmi? 🛒")])
+        self.assertEqual(len(provider.calls), 1)
+        self.assertEqual(reply, "Savatga qo'shamizmi? 🛒")
+
+
 class AiCardCheckoutScreenTest(unittest.TestCase):
     """handlers/cart.py tomoni: AI kartasidagi to'lov tugmasi, olib ketish va AI ga signal."""
 
@@ -1865,9 +1925,11 @@ class AiUsagePromoKnowledgeTest(_ProviderSwap):
         ai_sales._catalog_cache = None
         _patch(self, database, "get_all_products_paginated", AsyncMock(return_value=([
             {"id": 12, "name": "Bodom uni 500gr", "price": 89000, "unit": "dona", "quantity": 14,
-             "category": "unlar", "discount_percent": 0, "discount_until": None},
+             "category": "unlar", "discount_percent": 0, "discount_until": None,
+             "name_ru": "Bodom uni 500gr"},                  # lotincha "ru" nom — qo'shilmaydi
             {"id": 13, "name": "Kokos uni 1000gr", "price": 55000, "unit": "kg", "quantity": 2,
-             "category": "unlar", "discount_percent": 0, "discount_until": None},
+             "category": "unlar", "discount_percent": 0, "discount_until": None,
+             "name_ru": "Кокосовая мука 1 кг"},
             {"id": 14, "name": "Tugagan narsa", "price": 1000, "unit": "dona", "quantity": 0,
              "category": "unlar", "discount_percent": 0, "discount_until": None},
         ], 3)))
@@ -1879,6 +1941,7 @@ class AiUsagePromoKnowledgeTest(_ProviderSwap):
         text = _run(ai_sales._catalog_text())
         self.assertIn("# Keto unlar", text)
         self.assertIn("12 | Bodom uni 500gr | 89 000 so'm / dona", text)
+        self.assertIn("13 | Kokos uni 1000gr (ru: Кокосовая мука 1 кг) | 55 000 so'm", text)
         self.assertIn("kam qoldi", text)                    # 2 < chegara
         self.assertNotIn("qoldiq", text)                     # aniq son yo'q
         self.assertNotIn("Tugagan narsa", text)

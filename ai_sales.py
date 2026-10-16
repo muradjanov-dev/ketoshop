@@ -297,6 +297,103 @@ def polish_reply(text: str, lang: str | None = None, customer_text: str | None =
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
+# ─────────────────────── ruscha yozganga — ruscha ────────────────────────
+# Modellarni solishtirish (2026-10-16): gpt-5.4-mini ruscha "сколько стоит
+# миндальная мука?" ga o'zbekcha javob berdi; promptdagi qoida yetmadi. Mijoz
+# ruscha yozsa-yu, javob o'zbekcha chiqsa — bir marta ruscha qayta so'raladi,
+# qolgan o'zbekcha qator ("Yana nima olamiz? 😊") olib tashlanadi.
+
+_RU_WORDS = {
+    "и", "в", "на", "с", "для", "не", "что", "как", "это", "вы", "вам", "вас", "мы", "нам", "ваш",
+    "пожалуйста", "спасибо", "да", "нет", "есть", "можно", "будет", "если", "или", "по", "от", "до",
+    "при", "уже", "ещё", "еще", "тоже", "также", "нужна", "нужно", "нужен", "сколько", "стоит",
+    "здравствуйте", "привет", "доставка", "доставку", "доставим", "заказ", "заказа", "корзину",
+    "сум", "кнопку", "отправьте", "номер", "адрес", "хорошо", "конечно", "больше", "ничего",
+    "хочу", "хотел", "хотела", "купить", "где", "когда", "какой", "какая", "мне", "меня",
+    "наличными", "картой", "курьером", "оформить", "подойдёт", "подойдет", "добавим",
+}
+_UZ_CYR_WORDS = {
+    "салом", "ассалому", "алайкум", "бор", "борми", "йук", "йўқ", "керак", "канча", "қанча",
+    "нархи", "нарх", "ха", "ҳа", "раҳмат", "рахмат", "нима", "кандай", "қандай", "учун", "билан",
+    "ва", "ёки", "мумкинми", "етказиб", "олиб", "беринг", "яхши", "майли", "хоп", "хўп", "менга",
+    "сизларда", "сизда", "борми", "олмоқчиман", "олмокчиман", "буюртма",
+}
+_UZ_REPLY_LATIN = {
+    "va", "bilan", "uchun", "ham", "yoki", "bor", "kerak", "qanday", "nima", "yana", "beramiz",
+    "qilamiz", "yetkazamiz", "yetkazib", "yetkazish", "olasiz", "olamiz", "yuboring", "iltimos",
+    "rahmat", "marhamat", "albatta", "savatga", "buyurtma", "buyurtmani", "buyurtmangizni",
+    "tugma", "tugmani", "tugmalar", "pastdagi", "raqamingiz", "raqamingizni", "lokatsiya",
+    "lokatsiyani", "lokatsiyangizni", "manzil", "sizga", "bo'lsa", "bo'ladi", "mumkin", "xo'p",
+    "mayli", "to'g'rimi", "yozing", "qaysi", "usul", "qulay", "bepul", "ichida", "soat", "kuryer",
+    "do'kondan", "ketish", "tushundik", "oldik", "qo'shildi", "qo'shamizmi", "keldi",
+}
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[\w']+", _same_apostrophes(re.sub(r"\[[^\]]*\]", " ", text or "")).lower())
+
+
+def _uz_reply_words() -> set[str]:
+    global _UZ_REPLY_ALL
+    if _UZ_REPLY_ALL is None:
+        from translit import lat_to_cyr
+        _UZ_REPLY_ALL = _UZ_REPLY_LATIN | {lat_to_cyr(w).lower() for w in _UZ_REPLY_LATIN}
+    return _UZ_REPLY_ALL
+
+
+_UZ_REPLY_ALL: set[str] | None = None
+
+
+def customer_language(text: str) -> str | None:
+    """Mijoz xabari tili: 'ru', 'uz_cyr', 'lat' (o'zbekcha yoki inglizcha lotin)
+    yoki None — aniqlab bo'lmadi ("кв 5", tizim belgisi)."""
+    clean = re.sub(r"\[[^\]]*\]", " ", text or "")
+    latin, cyrillic = len(_LAT_CHAR.findall(clean)), len(_CYR_CHAR.findall(clean))
+    if latin + cyrillic < 2:
+        return None
+    if cyrillic <= latin:
+        return "lat"
+    if _UZ_CYR_LETTERS.search(clean):
+        return "uz_cyr"
+    words = _words(clean)
+    ru = sum(w in _RU_WORDS for w in words) + 2 * bool(re.search("[ыщ]", clean.lower()))
+    uz = sum(w in _UZ_CYR_WORDS for w in words)
+    if ru > uz:
+        return "ru"
+    if uz > ru:
+        return "uz_cyr"
+    return None
+
+
+def uzbek_reply(reply: str) -> bool:
+    """Javob asosan o'zbekcha (lotin yoki kirill) — ruscha yozgan mijozga emas.
+    O'zbekcha belgi so'zlardan boshqa har bir kirill so'z ruscha hisoblanadi."""
+    uz_words = _uz_reply_words() | _UZ_CYR_WORDS
+    words = _words(reply)
+    uz = sum(w in uz_words for w in words)
+    ru = sum(1 for w in words if len(w) > 1 and _CYR_CHAR.search(w) and w not in uz_words)
+    return uz >= 2 and uz > ru
+
+
+def drop_uzbek_lines(reply: str) -> str:
+    """Ruscha javobda qolgan o'zbekcha lotin qatorlar ("Yana nima olamiz? 😊")
+    olib tashlanadi; kirill harfi bor qator (mahsulot nomi + "сум") qoladi."""
+    kept = []
+    for line in (reply or "").split("\n"):
+        words = _words(line)
+        if (not _CYR_CHAR.search(line) and any(w in _UZ_REPLY_LATIN for w in words)
+                and not any(w in _RU_WORDS for w in words)):
+            continue
+        kept.append(line)
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+    return text or (reply or "").strip()
+
+
+RU_FIX = ("[TIZIM: mijoz RUSCHA yozyapti — oxirgi javobingni to'liq rus tilida qayta yoz: mahsulot "
+          "nomlari ham ruscha (katalogda 'ru:' nomi bo'lsa — o'sha), narxlar 'сум'. Mazmunni "
+          "o'zgartirma va vosita chaqirma.]")
+
+
 _EMOJI_OR_END = r"(?=\s*(?:[!.?,;:…)]|[\U0001F300-\U0001FAFF\u2600-\u27BF]|$))"
 _HONORIFIC = r"(?:hurmatli|qadrli|aziz|азиз|ҳурматли|қадрли|уважаемый|уважаемая|dear)"
 _NAME_GIVEN = re.compile(r"\b(?:ismim|ism|исмим|исм|имя|меня зовут|my name is)\s*[:\-]?\s*"
@@ -626,8 +723,12 @@ async def _catalog_text() -> str:
             except Exception:
                 logger.debug("family lookup failed for %s", p.get("name"), exc_info=True)
         category = categories.get(p.get("category")) or p.get("category") or "Boshqa"
+        # Ruscha yozgan mijozga mahsulot nomi ham ruscha bo'lsin — admin kiritgan
+        # kirillcha nom bo'lsa (lotincha "ru" nomlar hisobga olinmaydi).
+        name_ru = (p.get("name_ru") or "").strip()
+        ru = f" (ru: {name_ru})" if name_ru and name_ru != p["name"] and _CYR_CHAR.search(name_ru) else ""
         by_category.setdefault(category, []).append(
-            f"{p['id']} | {p['name']} | {_fmt(price)} so'm / {p.get('unit') or 'dona'}{badge}"
+            f"{p['id']} | {p['name']}{ru} | {_fmt(price)} so'm / {p.get('unit') or 'dona'}{badge}"
             f"{family}{low}"
         )
 
@@ -1983,7 +2084,8 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
                        max_tokens=MAX_TOKENS, history_limit=HISTORY_LIMIT)
     reply_text = ""
     done: set[str] = set()     # shu xabarda muvaffaqiyatli ishlagan vositalar
-    corrected = False
+    corrected: set[str] = set()   # har tuzatish turi bir martadan
+    russian = (session.get("cust_lang") or ("ru" if lang == "ru" else None)) == "ru"
     for attempt in range(MAX_TURNS):
         if turn.refused:
             logger.warning("AI sales refusal for user %s", user_id)
@@ -1996,13 +2098,22 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
             # Jonli sinov va egasi (2026-10-16): model ba'zan vositani chaqirmay
             # "savatga qo'shdik" yoki "buyurtma qabul qilindi" deydi. Bir marta
             # qayta so'raymiz; buyurtma haqidagi yolg'on gap baribir qolmaydi.
-            fix = None if corrected or attempt == MAX_TURNS - 1 else false_claim(reply_text, done, session)
+            fix, kind = None, None
+            if attempt < MAX_TURNS - 1:
+                if "claim" not in corrected:
+                    fix, kind = false_claim(reply_text, done, session), "claim"
+                # Karta chiqadigan javob baribir qat'iy jumla bilan almashadi (_answer).
+                if (fix is None and "lang" not in corrected and russian and not session.get("card")
+                        and uzbek_reply(reply_text)):
+                    fix, kind = RU_FIX, "lang"
             if fix is None:
                 if not session.get("placed") and _ORDER_CLAIM.search(reply_text or ""):
                     reply_text = drop_order_claims(reply_text)
+                if russian:
+                    reply_text = drop_uzbek_lines(reply_text)
                 return reply_text
-            corrected = True
-            logger.warning("AI sales claimed an action it did not take (user %s) — asking again", user_id)
+            corrected.add(kind)
+            logger.warning("AI sales reply needs a fix (%s, user %s) — asking again", kind, user_id)
             turn = await _step(state, rules, catalog, TOOLS, user=fix,
                                max_tokens=MAX_TOKENS, history_limit=HISTORY_LIMIT)
             continue
@@ -3292,9 +3403,13 @@ def _keep_fsm(message: Message, state: FSMContext | None) -> None:
 def _heard(message: Message) -> None:
     """Mijozning o'z so'zlari — kartaga faqat shulardan manzil va izoh tushadi
     (from_customer)."""
-    said = _session(message.from_user.id).setdefault("said", [])
+    session = _session(message.from_user.id)
+    said = session.setdefault("said", [])
     said.append(message.text or "")
     del said[:-30]
+    spoken = customer_language(message.text)
+    if spoken:
+        session["cust_lang"] = spoken   # "кв 5", kontakt, lokatsiya — oldingisi qoladi
 
 
 @router.message(_has_session, F.text & ~F.text.startswith("/"))
