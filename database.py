@@ -7666,6 +7666,25 @@ async def get_recent_reviews(limit: int = 10, max_rating: int | None = None,
         return [dict(r) for r in rows]
 
 
+async def get_all_reviews() -> list[dict]:
+    """Every review ever left, newest first, with product and author.
+    `internal` marks admin / shop accounts (_customer_filter_ids) — their
+    test reviews are listed but flagged, not hidden."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT r.id, r.rating, r.comment, r.created_at, r.user_id,
+                      p.id AS product_id, p.name AS product_name,
+                      u.full_name, u.username,
+                      r.user_id = ANY($1::bigint[]) AS internal
+                 FROM reviews r
+                 LEFT JOIN products p ON p.id = r.product_id
+                 LEFT JOIN users u ON u.user_id = r.user_id
+                ORDER BY r.created_at DESC, r.id DESC""",
+            _customer_filter_ids(),
+        )
+        return [dict(r) for r in rows]
+
+
 async def get_unreviewed_products(limit: int = 10) -> list[dict]:
     """Sotilgan, lekin hali bironta sharh olmagan mahsulotlar, ko'p
     sotilganidan boshlab. Har biri — so'ralmagan sharh.
