@@ -3056,6 +3056,72 @@
   .recipe-hero .rh-badge { background: var(--pop); box-shadow: none; }
 
   #app-toast { box-shadow: 0 8px 20px -12px rgba(0,0,0,.45); }
+
+  /* ── Site feedback sheet (owner, 2026-10-13) ───────────────────────────
+     A friendly bottom sheet: a smiling face in a soft blob, five big stars,
+     an optional comment, ✕ to close and a send button. */
+  .modal.site-fb {
+    padding: 26px 20px calc(22px + var(--safe-b));
+    text-align: center;
+  }
+  .site-fb-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--surface-hi);
+    color: var(--text);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    transition: transform .3s var(--ease-spring);
+  }
+  .site-fb-close:active { transform: scale(.88); }
+  .site-fb-emoji {
+    width: 88px;
+    height: 82px;
+    margin: 2px auto 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 44px;
+    border-radius: var(--blob-a);
+    background: var(--t-sun);
+    animation: blobMorph 9s ease-in-out infinite;
+  }
+  .site-fb-title { margin: 0; font: 800 19px/1.25 var(--font-display); letter-spacing: -.02em; color: var(--text); text-wrap: balance; }
+  .site-fb-sub { margin: 8px auto 16px; max-width: 30em; font-size: 13.5px; line-height: 1.5; color: var(--hint); }
+  .site-fb-stars { display: flex; justify-content: center; gap: 4px; margin-bottom: 14px; }
+  .site-fb-stars button {
+    width: 50px;
+    height: 50px;
+    border: 0;
+    background: none;
+    font-size: 36px;
+    line-height: 1;
+    color: var(--hairline);
+    cursor: pointer;
+    transition: transform .3s var(--ease-spring), color .2s;
+  }
+  .site-fb-stars button.on { color: var(--gold); }
+  .site-fb-stars button:active { transform: scale(1.2); }
+  #site-fb-comment {
+    width: 100%;
+    min-height: 84px;
+    padding: 12px 14px;
+    border: 1.5px solid transparent;
+    border-radius: 18px 22px 16px 24px / 22px 16px 24px 18px;
+    background: var(--surface-hi);
+    color: var(--text);
+    font: 500 14px/1.45 var(--font-body);
+    resize: vertical;
+    outline: none;
+  }
+  #site-fb-comment:focus { border-color: var(--link); }
+  .site-fb-send { margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -3390,6 +3456,21 @@
       </div>
       <button class="add-to-cart-btn" id="add-to-cart-btn" onclick="addToCart()"></button>
     </div>
+  </div>
+</div>
+
+<!-- ===== SITE FEEDBACK (owner, 2026-10-13) — opened by initSiteFeedback() ===== -->
+<div class="modal-overlay" id="site-fb-modal">
+  <div class="modal site-fb" role="dialog" aria-modal="true" aria-labelledby="site-fb-title">
+    <button class="site-fb-close" id="site-fb-close" type="button" onclick="closeSiteFeedback(true)">&times;</button>
+    <div class="site-fb-emoji" id="site-fb-emoji" aria-hidden="true">😊</div>
+    <h2 class="site-fb-title" id="site-fb-title"></h2>
+    <p class="site-fb-sub" id="site-fb-sub"></p>
+    <div class="site-fb-stars" id="site-fb-stars" role="group">
+      <button type="button" data-star="1">★</button><button type="button" data-star="2">★</button><button type="button" data-star="3">★</button><button type="button" data-star="4">★</button><button type="button" data-star="5">★</button>
+    </div>
+    <textarea id="site-fb-comment" rows="3" maxlength="1000"></textarea>
+    <button class="checkout-submit-btn site-fb-send" id="site-fb-send" type="button" onclick="sendSiteFeedback()" disabled></button>
   </div>
 </div>
 
@@ -4218,6 +4299,7 @@ function onBackPressed() {
   if (_isModalOpen('map-modal')) { closeMapPicker(); return; }
   if (_isModalOpen('detail-modal')) { closeDetail(); return; }
   if (_isModalOpen('recipe-modal')) { closeRecipe(); return; }
+  if (_isModalOpen('site-fb-modal')) { closeSiteFeedback(true); return; }
   // Inside a game, back returns to the games menu first.
   if (activePage === 'games' && gameState) { renderGamesPage(); return; }
   // Then page-level: anywhere except home → go home. (Home itself has
@@ -4233,6 +4315,7 @@ function updateBackButton() {
     _isModalOpen('map-modal') ||
     _isModalOpen('detail-modal') ||
     _isModalOpen('recipe-modal') ||
+    _isModalOpen('site-fb-modal') ||
     (activePage && activePage !== 'home')
   );
   if (shouldShow) tg.BackButton.show();
@@ -4778,6 +4861,113 @@ function finishGame(id, value, total) {
   gameHaptic(true);
   renderGamesTeaser();
 }
+
+// ===== SAYT HAQIDA FIKR (site feedback) =====
+// Owner, 2026-10-13: ask buyers who have spent over a minute on the site how
+// convenient it is — five stars and a comment — and send it to the admins
+// (POST /api/site-feedback → site_feedback.py). Asked once per phone: after a
+// send it never comes back; ✕ (or back / a tap outside) postpones it for a
+// week. It waits for a quiet moment — never over checkout, payment, an open
+// sheet or a running game. Only visible time counts towards the minute.
+const SITE_FB_KEY = 'ketoshop_site_fb';
+const SITE_FB_AFTER_MS = 60000;
+const SITE_FB_SNOOZE_MS = 7 * 864e5;
+const SITE_FB_FACES = ['😊', '😔', '😕', '🙂', '😊', '😍'];
+let siteFbRating = 0;
+let siteFbOpenedOnce = false;
+
+function _siteFbState() {
+  try { return JSON.parse(localStorage.getItem(SITE_FB_KEY) || '{}') || {}; } catch (_) { return {}; }
+}
+function _siteFbSave(state) {
+  try { localStorage.setItem(SITE_FB_KEY, JSON.stringify(state)); } catch (_) { /* quota — ignore */ }
+}
+function _siteFbDue() {
+  const s = _siteFbState();
+  if (s.sent) return false;
+  return !(s.snoozed && Date.now() - s.snoozed < SITE_FB_SNOOZE_MS);
+}
+function _siteFbQuietMoment() {
+  if (['checkout', 'cheque', 'order-success'].includes(activePage)) return false;
+  if (activePage === 'games' && typeof gameState !== 'undefined' && gameState) return false;
+  return !document.querySelector('.modal-overlay.show, .map-modal.show');
+}
+function _siteFbPaint() {
+  document.querySelectorAll('#site-fb-stars button').forEach(b => {
+    b.classList.toggle('on', +b.dataset.star <= siteFbRating);
+  });
+  document.getElementById('site-fb-emoji').textContent = SITE_FB_FACES[siteFbRating];
+  const comment = document.getElementById('site-fb-comment').value.trim();
+  document.getElementById('site-fb-send').disabled = !(siteFbRating > 0 || comment);
+}
+
+function openSiteFeedback() {
+  siteFbOpenedOnce = true;
+  siteFbRating = 0;
+  document.getElementById('site-fb-title').textContent = gx('Saytimiz sizga qulaymi?', 'Удобен ли вам наш сайт?');
+  document.getElementById('site-fb-sub').textContent = gx(
+    "Fikringiz biz uchun juda muhim — saytni yanada qulay qilishga yordam beradi. Yulduzcha qo'ying yoki bir-ikki so'z yozing.",
+    'Ваше мнение очень важно — оно поможет сделать сайт ещё удобнее. Поставьте звёзды или напишите пару слов.');
+  const comment = document.getElementById('site-fb-comment');
+  comment.value = '';
+  comment.placeholder = gx("Nima yoqdi, nimani yaxshilaylik? (ixtiyoriy)", 'Что понравилось, что улучшить? (необязательно)');
+  document.getElementById('site-fb-close').setAttribute('aria-label', gx('Yopish', 'Закрыть'));
+  document.querySelectorAll('#site-fb-stars button').forEach(b => {
+    b.setAttribute('aria-label', b.dataset.star + ' / 5');
+  });
+  const send = document.getElementById('site-fb-send');
+  send.textContent = gx('Yuborish', 'Отправить');
+  _siteFbPaint();
+  document.getElementById('site-fb-modal').classList.add('show');
+  updateBackButton();
+}
+
+function closeSiteFeedback(snooze) {
+  document.getElementById('site-fb-modal').classList.remove('show');
+  if (snooze) _siteFbSave({ snoozed: Date.now() });
+  updateBackButton();
+}
+
+async function sendSiteFeedback() {
+  const send = document.getElementById('site-fb-send');
+  const comment = document.getElementById('site-fb-comment').value.trim();
+  if (!(siteFbRating > 0 || comment)) return;
+  send.disabled = true;
+  send.textContent = gx('Yuborilmoqda...', 'Отправляем...');
+  try {
+    await api('/api/site-feedback', { method: 'POST', body: JSON.stringify({ rating: siteFbRating, comment }) });
+    _siteFbSave({ sent: Date.now() });
+    closeSiteFeedback(false);
+    showToast(gx('Rahmat! Fikringiz bizga yetib keldi 💛', 'Спасибо! Ваш отзыв получен 💛'));
+    try { tg.HapticFeedback.notificationOccurred('success'); } catch (_) {}
+  } catch (e) {
+    console.error('Site feedback error:', e);
+    showToast(t.errorLoad, true);
+    send.textContent = gx('Yuborish', 'Отправить');
+    _siteFbPaint();
+  }
+}
+
+document.querySelectorAll('#site-fb-stars button').forEach(b => {
+  b.addEventListener('click', () => { siteFbRating = +b.dataset.star; _siteFbPaint(); });
+});
+document.getElementById('site-fb-comment').addEventListener('input', _siteFbPaint);
+document.getElementById('site-fb-modal').addEventListener('click', function (e) {
+  if (e.target === this) closeSiteFeedback(true);
+});
+
+(function initSiteFeedback() {
+  if (!_siteFbDue()) return;
+  const TICK = 5000;
+  let visibleMs = 0;
+  const timer = setInterval(() => {
+    if (document.visibilityState === 'visible') visibleMs += TICK;
+    if (visibleMs >= SITE_FB_AFTER_MS && !siteFbOpenedOnce && _siteFbQuietMoment()) {
+      clearInterval(timer);
+      openSiteFeedback();
+    }
+  }, TICK);
+})();
 
 // ===== INIT =====
 // ===== START THE BOT FIRST (owner, 2026-10-14: "Mini appni yoki saytni

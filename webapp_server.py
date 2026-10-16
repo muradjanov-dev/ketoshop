@@ -1741,6 +1741,28 @@ def _serialize_set(s: dict, lang: str, bot_price: float | None = None) -> dict:
     return data
 
 
+async def api_site_feedback(request: web.Request):
+    """Stars + comment about how convenient the site is, from the Mini App's
+    feedback sheet (owner, 2026-10-13), relayed to every admin. A second
+    send from the same buyer within the cooldown is accepted but dropped."""
+    import site_feedback
+    try:
+        data = await request.json()
+    except Exception:
+        return _json({"error": "bad_json"}, status=400)
+    parsed = site_feedback.parse(data)
+    if not parsed:
+        return _json({"error": "empty"}, status=400)
+    user_id = request["user_id"]
+    if not site_feedback.allow(user_id):
+        return _json({"ok": True, "duplicate": True})
+    rating, comment = parsed
+    text = site_feedback.admin_text(request.get("telegram_user"), user_id, rating, comment,
+                                    request.get("user_lang", "uz"))
+    await site_feedback.notify_admins(request.app["bot"], text)
+    return _json({"ok": True})
+
+
 async def api_pickup_config(request: web.Request):
     """Customer-visible pickup instructions, behind Telegram initData auth."""
     import pickup
@@ -1780,6 +1802,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_post("/api/cart/update", api_cart_update)
     app.router.add_post("/api/cart/clear", api_cart_clear)
     app.router.add_post("/api/checkout", api_checkout)
+    app.router.add_post("/api/site-feedback", api_site_feedback)
     app.router.add_post("/api/checkout/cheque", api_checkout_cheque)
     app.router.add_post("/api/checkout/pay-in-chat", api_checkout_pay_in_chat)
     app.router.add_get("/api/orders", api_orders)
