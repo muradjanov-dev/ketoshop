@@ -995,6 +995,29 @@ def _b2b_sale_json(o: dict) -> dict:
 
 
 @require_auth
+async def api_reviews(request: web.Request):
+    """GET /admin/api/reviews — every product review, newest first, read-only
+    (owner, 2026-10-16: "shu kungacha qoldirilgan barcha sharhlarni ko'rsat").
+    Admin / shop accounts' reviews carry internal=true."""
+    rows = await database.get_all_reviews()
+    return _json({"reviews": [
+        {
+            "id": r["id"],
+            "rating": int(r["rating"] or 0),
+            "comment": (r.get("comment") or "").strip(),
+            "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+            "product_id": r.get("product_id"),
+            "product": r.get("product_name") or "",
+            "author": (r.get("full_name") or "").strip(),
+            "username": r.get("username") or "",
+            "user_id": r.get("user_id"),
+            "internal": bool(r.get("internal")),
+        }
+        for r in rows
+    ]})
+
+
+@require_auth
 async def api_dashboard(request: web.Request):
     """Aggregated snapshot for the visual dashboard tab (2026-08-12): KPIs for
     the selected period, a 6-month revenue/orders trend, best sellers, and a
@@ -1769,6 +1792,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/orders/{id:\\d+}/costs", api_order_line_costs)
     app.router.add_post("/admin/api/orders/{id:\\d+}/lines/{line:\\d+}/cost", api_order_line_cost_update)
     app.router.add_get("/admin/api/dashboard", api_dashboard)
+    app.router.add_get("/admin/api/reviews", api_reviews)
     app.router.add_get("/admin/api/promos", api_promos_list)
     app.router.add_post("/admin/api/promos", api_promos_create)
     app.router.add_post("/admin/api/promos/{id:\\d+}", api_promos_update)
