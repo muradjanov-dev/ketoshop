@@ -245,7 +245,8 @@ def profile_text(user: dict | None, lang: str, orders: list[dict], all_notes: li
             + (f"telefon {phone}, " if phone else "")
             + f"manzil «{_clean(last_prefs.get('address'))[:160]}». Buyurtmada boshidan "
               "so'rama — tasdiqlat va ikkalasini TO'LIQ ko'rsat, alohida qatorlarda: "
-              "'📍 Manzil: …', '📞 Raqam: …', keyin 'Shu manzil va raqamga yetkazaylikmi?'")
+              "'📍 Manzil: …', '📞 Raqam: …', keyin 'Shu manzil va raqamga yetkazaylikmi?'. "
+              "Rozi bo'lsa — buyurtma_kartasi da oldingi_manzil=true (manzilni qayta yozma).")
 
     if reviews:
         lines.append("Bot orqali qo'ygan baholari: " + "; ".join(

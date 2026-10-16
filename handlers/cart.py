@@ -1446,7 +1446,9 @@ async def process_payment_method(callback: CallbackQuery, state: FSMContext):
 async def cancel_order(callback: CallbackQuery, state: FSMContext):
     """Cancel checkout"""
     lang = await get_user_language(callback.from_user.id)
+    data = await state.get_data()
     await state.clear()
+    await _tell_ai(callback.bot, callback.from_user, data, "cancelled")
     # Checkout swaps the persistent 🏠/🛒 keyboard for one-shot phone/location
     # ones; bailing out mid-flow must put it back, or the buyer is left with a
     # stale prompt keyboard and no way home.
@@ -1836,6 +1838,14 @@ async def _render_confirmation(user_id: int, state: FSMContext, lang: str):
 
     rows = [[InlineKeyboardButton(text=get_text("btn_confirm_order", lang), callback_data="order_confirm:yes")]]
 
+    # AI ochgan karta (ai_sales.buyurtma_kartasi): to'lov alohida savol emas —
+    # bitta tugma naqd <-> karta almashtiradi (egasi, 2026-10-16: "maksimal sodda").
+    if data.get("ai_checkout") and not data.get("online_only"):
+        to_card = data.get("payment_method") != "online"
+        rows.insert(0, [InlineKeyboardButton(
+            text=get_text("btn_ai_pay_card" if to_card else "btn_ai_pay_cash", lang),
+            callback_data="ai_pay:online" if to_card else "ai_pay:cash")])
+
     # Keto-as-discount row — only rendered when the owner has switched
     # redemption on (off by default) and this buyer actually has a balance.
     # No DB reads happen here otherwise, so a disabled feature costs nothing.
@@ -1937,10 +1947,36 @@ async def keto_redeem_clear(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("ai_pay:"), CheckoutStates.confirming)
+async def ai_card_payment_switch(callback: CallbackQuery, state: FSMContext):
+    """AI kartasidagi to'lov tugmasi: naqd <-> karta, karta qayta chiziladi."""
+    data = await state.get_data()
+    choice = callback.data.split(":", 1)[1]
+    if data.get("ai_checkout") and not data.get("online_only") and choice in ("cash", "online"):
+        await state.update_data(payment_method=choice)
+    await _show_order_confirmation(callback, state, data.get("lang") or await get_user_language(callback.from_user.id))
+    await callback.answer()
+
+
+async def _tell_ai(bot, user, data: dict, event: str, **info) -> None:
+    """AI sotuvchi ochgan kartaning taqdiri (ai_sales.checkout_event): AI
+    savdosi hisobga tushadi va keyingi javobida mijoz nima qilganini biladi.
+    Oddiy tugmali checkout da (ai_checkout yo'q) hech narsa qilmaydi."""
+    if not data.get("ai_checkout"):
+        return
+    try:
+        import ai_sales
+        await ai_sales.checkout_event(bot, user, event, **info)
+    except Exception:
+        logging.getLogger(__name__).exception("AI checkout hook failed (%s)", event)
+
+
 @router.callback_query(F.data == "order_confirm:yes", CheckoutStates.confirming)
 async def order_confirm_yes(callback: CallbackQuery, state: FSMContext, bot: Bot):
     data = await state.get_data()
-    if data.get("delivery_method") == "pickup":
+    # AI kartasida olib ketish sozlamasi o'chiq bo'lsa ham bo'ladi: manzili egasi
+    # bergan mo'ljal va havola (ai_sales._pickup_place).
+    if data.get("delivery_method") == "pickup" and not data.get("ai_checkout"):
         import pickup
         if not pickup.public_config(await get_pickup_settings())["enabled"]:
             await state.clear()
@@ -2072,6 +2108,8 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
             "pickup_map_url": data.get("pickup_map_url"),
         }, lang)
         await send_order_thanks(bot, callback.from_user.id, order_id, delivery_method)
+        await _tell_ai(bot, callback.from_user, data, "placed", order_id=order_id,
+                       items=items_data, total=total, payment_method="cash")
 
     elif payment_method == "online":
         # Online → DON'T create the order yet. Stash everything we'll need in
@@ -2287,6 +2325,8 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
     }, lang)
     await send_order_thanks(bot, message.from_user.id, order_id,
                             data.get("pending_delivery_method"))
+    await _tell_ai(bot, message.from_user, data, "placed", order_id=order_id,
+                   items=items_data, total=total, payment_method="online")
 
 
 @router.message(CheckoutStates.waiting_cheque, F.photo)
@@ -2327,8 +2367,10 @@ async def cancel_online_checkout(callback: CallbackQuery, state: FSMContext):
     """Buyer backed out before sending the cheque → drop the FSM state. No
     order was ever inserted, so there is nothing to roll back; the cart is
     preserved so they can try again."""
-    lang = (await state.get_data()).get("lang", "uz")
+    data = await state.get_data()
+    lang = data.get("lang", "uz")
     await state.clear()
+    await _tell_ai(callback.bot, callback.from_user, data, "cancelled")
     await callback.message.edit_text(
         get_text("checkout_cancelled", lang),
         reply_markup=main_menu_keyboard(lang),
