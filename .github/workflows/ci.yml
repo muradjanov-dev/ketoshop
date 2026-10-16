@@ -44,7 +44,7 @@ jobs:
               "config", "database", "locales", "keyboards", "bot",
               "webapp_server", "admin_web", "courier_board", "delivery_costs",
               "broadcast", "broadcast_tips",
-              "personal_recommend", "product_descriptions", "product_card",
+              "personal_recommend", "product_descriptions", "product_card", "quiz_bank", "daily_quiz",
               "product_of_day", "product_ideas", "regions", "gamification", "referral_contest", "promotions",
               "meta_ads", "ads_impact", "meta_leads", "db_backup", "reports", "activity",
               "subscription_gate", "pg_storage", "state_guard", "translit",

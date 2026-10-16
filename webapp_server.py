@@ -240,6 +240,10 @@ async def index(request: web.Request):
     html_path = Path(__file__).parent / "webapp" / "index.html"
     html = html_path.read_text(encoding="utf-8")
     html = html.replace("{{SUPPORT_USERNAME}}", SUPPORT_USERNAME)
+    # The games' questions live in quiz_bank.py, shared with the bot's
+    # question every 2 days (daily_quiz.py).
+    import quiz_bank
+    html = html.replace("{{GAME_BANK}}", quiz_bank.bank_json())
     return web.Response(
         text=html,
         content_type="text/html",

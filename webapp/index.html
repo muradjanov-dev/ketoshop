@@ -3516,6 +3516,8 @@
   </div>
 </nav>
 
+<!-- The games' question bank (quiz_bank.py), filled in by webapp_server.index(). -->
+<script type="application/json" id="game-bank">{{GAME_BANK}}</script>
 <script src="/static/pickup_checkout.js"></script>
 <script>
 const tg = window.Telegram.WebApp;
@@ -4345,92 +4347,17 @@ function gx(uz, ru) {
   return lang === 'uz_cyr' ? latToCyr(uz) : uz;
 }
 
-// [uz name, ru name, net carbs g / 100 g, fits keto?, shop category | null, uz note, ru note]
-const GAME_FOODS = [
-  ['Avokado', 'Авокадо', 2, true, null, "Yog' va tolaga boy, sof uglevodi juda kam.", 'Богат жирами и клетчаткой, чистых углеводов очень мало.'],
-  ['Tuxum', 'Яйцо', 1, true, null, "Deyarli uglevodsiz: oqsil va yog' manbai.", 'Почти без углеводов: источник белка и жира.'],
-  ["Chedder pishlog'i", 'Сыр чеддер', 1, true, null, "Qattiq pishloqlarda uglevod deyarli yo'q.", 'В твёрдых сырах углеводов почти нет.'],
-  ['Losos', 'Лосось', 0, true, null, "Baliqda uglevod yo'q, omega-3 esa ko'p.", 'В рыбе нет углеводов, зато много омега-3.'],
-  ["Tovuq go'shti", 'Курица', 0, true, null, "Go'shtda uglevod yo'q.", 'В мясе нет углеводов.'],
-  ['Brokkoli', 'Брокколи', 4, true, null, "Yashil sabzavotlar keto ratsionining asosi.", 'Зелёные овощи — основа кето-рациона.'],
-  ['Ismaloq', 'Шпинат', 1, true, null, "Barg sabzavotlarida sof uglevod juda kam.", 'В листовых овощах очень мало чистых углеводов.'],
-  ['Bodring', 'Огурец', 3, true, null, "Asosan suvdan iborat, uglevodi kam.", 'В основном вода, углеводов мало.'],
-  ['Bodom uni', 'Миндальная мука', 10, true, 'keto_flour', "Bug'doy unidan taxminan 7 baravar kam sof uglevod.", 'Примерно в 7 раз меньше чистых углеводов, чем в пшеничной муке.'],
-  ["Kokos yog'i", 'Кокосовое масло', 0, true, 'oils', "Toza yog': uglevod yo'q, MCT ga boy.", 'Чистый жир: углеводов нет, много MCT.'],
-  ["Zaytun yog'i", 'Оливковое масло', 0, true, 'oils', "Salat va taomlar uchun uglevodsiz yog'.", 'Масло без углеводов для салатов и блюд.'],
-  ["Chia urug'i", 'Семена чиа', 8, true, 'seeds', "100 g da ~34 g tola bor, shuning uchun sof uglevodi kam.", 'В 100 г ~34 г клетчатки, поэтому чистых углеводов мало.'],
-  ["Zig'ir urug'i", 'Семена льна', 2, true, 'seeds', "Deyarli butunlay tola va yog'dan iborat.", 'Почти целиком состоит из клетчатки и жира.'],
-  ["Qovoq urug'i", 'Тыквенные семечки', 5, true, 'seeds', "Magniy va ruxga boy, uglevodi kam.", 'Богаты магнием и цинком, углеводов мало.'],
-  ['Eritritol', 'Эритритол', 0, true, 'sweeteners', "Qondagi shakarni deyarli oshirmaydi, shakar o'rnini bosadi.", 'Почти не повышает сахар в крови и заменяет сахар.'],
-  ["Grek yong'og'i", 'Грецкий орех', 7, true, null, "Keto uchun eng mos yong'oqlardan biri.", 'Один из самых подходящих для кето орехов.'],
-  ['Qulupnay', 'Клубника', 6, true, null, "Rezavorlar kam miqdorda keto ga sig'adi.", 'Ягоды в небольшом количестве вписываются в кето.'],
-  ["Sariyog'", 'Сливочное масло', 0, true, null, "Deyarli toza yog'.", 'Почти чистый жир.'],
-  ['Banan', 'Банан', 20, false, null, "Bitta banan kunlik keto chegarasining katta qismini egallaydi.", 'Один банан съедает большую часть дневной кето-нормы.'],
-  ['Olma', 'Яблоко', 11, false, null, "Shirin mevalarda fruktoza ko'p.", 'В сладких фруктах много фруктозы.'],
-  ['Guruch (pishgan)', 'Рис (варёный)', 28, false, null, "Kraxmalga boy, keto uchun mos emas.", 'Богат крахмалом, для кето не подходит.'],
-  ['Kartoshka (qaynatilgan)', 'Картофель (варёный)', 18, false, null, "Kraxmal tezda shakarga aylanadi.", 'Крахмал быстро превращается в сахар.'],
-  ['Oq non', 'Белый хлеб', 46, false, 'keto_flour', "O'rniga bodom yoki zig'ir unidan non yopish mumkin.", 'Вместо него можно испечь хлеб из миндальной или льняной муки.'],
-  ["Bug'doy uni", 'Пшеничная мука', 73, false, 'keto_flour', "Keto pishiriqlarida uning o'rniga bodom uni ishlatiladi.", 'В кето-выпечке её заменяют миндальной мукой.'],
-  ['Shakar', 'Сахар', 100, false, 'sweeteners', "Toza uglevod. O'rniga eritritol yoki steviya.", 'Чистые углеводы. Замена — эритритол или стевия.'],
-  ['Xurmo', 'Финики', 67, false, null, "Quritilgan mevalarda shakar juda ko'p.", 'В сухофруктах очень много сахара.'],
-  ['Makaron (pishgan)', 'Макароны (варёные)', 29, false, null, "Bug'doy xamiri, uglevodga boy.", 'Пшеничное тесто, много углеводов.'],
-  ['Keshyu', 'Кешью', 27, false, null, "Yong'oqlar ichida uglevodi eng ko'plaridan biri.", 'Один из самых углеводных орехов.'],
-  ['Uzum', 'Виноград', 17, false, null, "Keto uchun juda shirin rezavor.", 'Слишком сладкая для кето ягода.'],
-];
-
-// Each answer list starts with the right one; options are shuffled on screen.
-const GAME_QUIZ = [
-  { q: ["Ketoz holatida organizm asosiy energiyani nimadan oladi?", 'Откуда организм берёт основную энергию в кетозе?'],
-    a: [["Yog' va keton tanachalaridan", 'Из жиров и кетоновых тел'], ['Shakardan', 'Из сахара'], ['Faqat oqsildan', 'Только из белка'], ['Suvdan', 'Из воды']],
-    e: ["Uglevod kam bo'lsa, jigar yog'dan keton tanachalari ishlab chiqaradi va ular asosiy yoqilg'iga aylanadi.",
-        'Когда углеводов мало, печень делает из жира кетоновые тела — они и становятся основным топливом.'] },
-  { q: ["Klassik keto dietada kuniga odatda qancha sof uglevod iste'mol qilinadi?", 'Сколько чистых углеводов в день обычно на классической кето-диете?'],
-    a: [['20–50 g', '20–50 г'], ['100–150 g', '100–150 г'], ['200–300 g', '200–300 г'], ["Cheklov yo'q", 'Ограничений нет']],
-    e: ["Ko'pchilik uchun ketozga kirish chegarasi kuniga taxminan 20–50 g sof uglevod.",
-        'Для большинства порог входа в кетоз — примерно 20–50 г чистых углеводов в день.'] },
-  { q: ['Sof uglevod qanday hisoblanadi?', 'Как считают чистые углеводы?'],
-    a: [['Umumiy uglevod − tola', 'Все углеводы − клетчатка'], ['Umumiy uglevod + shakar', 'Все углеводы + сахар'], ["Yog' − oqsil", 'Жиры − белки'], ['Kaloriya ÷ 4', 'Калории ÷ 4']],
-    e: ["Tola qondagi shakarni oshirmaydi, shuning uchun u umumiy uglevoddan ayiriladi.",
-        'Клетчатка не повышает сахар в крови, поэтому её вычитают из общих углеводов.'] },
-  { q: ['Eritritol qondagi shakarga qanday ta\'sir qiladi?', 'Как эритритол влияет на сахар в крови?'],
-    a: [["Deyarli ta'sir qilmaydi", 'Почти не влияет'], ['Shakar kabi oshiradi', 'Повышает, как сахар'], ['Ikki baravar oshiradi', 'Повышает вдвое сильнее'], ['Kuchli tushiradi', 'Сильно снижает']],
-    e: ["Eritritolning glikemik indeksi nolga yaqin, shuning uchun u keto pishiriqlarida shakar o'rnini bosadi.",
-        'Гликемический индекс эритритола близок к нулю, поэтому им заменяют сахар в кето-выпечке.'] },
-  { q: ["100 g bodom unida bug'doy uniga nisbatan sof uglevod qancha?", 'Сколько чистых углеводов в 100 г миндальной муки по сравнению с пшеничной?'],
-    a: [['Taxminan 7 baravar kam', 'Примерно в 7 раз меньше'], ['Bir xil', 'Столько же'], ["2 baravar ko'p", 'В 2 раза больше'], ["Umuman yo'q", 'Совсем нет']],
-    e: ["Bodom unida ~10 g, bug'doy unida ~73 g sof uglevod bor (100 g da).",
-        'В миндальной муке ~10 г, в пшеничной ~73 г чистых углеводов (на 100 г).'] },
-  { q: ["Qaysi yog' MCT (o'rta zanjirli triglitseridlar)ga eng boy?", 'Какое масло богаче всего MCT (среднецепочечными триглицеридами)?'],
-    a: [["Kokos yog'i", 'Кокосовое'], ["Kungaboqar yog'i", 'Подсолнечное'], ["Zaytun yog'i", 'Оливковое'], ["Makkajo'xori yog'i", 'Кукурузное']],
-    e: ["Kokos yog'ining yarmidan ko'pi MCT: ular tez energiyaga aylanadi.",
-        'Больше половины кокосового масла — MCT: они быстро превращаются в энергию.'] },
-  { q: ['Keto pishiriqlariga psillium nima uchun qo\'shiladi?', 'Зачем в кето-выпечку добавляют псиллиум?'],
-    a: [['Xamirni bog\'laydi va tola beradi', 'Связывает тесто и даёт клетчатку'], ['Shirinlik beradi', 'Даёт сладость'], ['Rang beradi', 'Даёт цвет'], ["Yog'ni almashtiradi", 'Заменяет жир']],
-    e: ["Psillium suvni shimib, glyuten o'rnida xamirni elastik qiladi.",
-        'Псиллиум впитывает воду и вместо глютена делает тесто эластичным.'] },
-  { q: ["Keto boshidagi holsizlikni ('keto gripp') nima yengillatadi?", 'Что облегчает слабость в начале кето («кето-грипп»)?'],
-    a: [['Suv va elektrolitlar: tuz, kaliy, magniy', 'Вода и электролиты: соль, калий, магний'], ["Ko'proq shakar", 'Больше сахара'], ["Ko'proq qahva", 'Больше кофе'], ["Ovqatni butunlay to'xtatish", 'Полный отказ от еды']],
-    e: ["Keto boshida organizm suv va tuzni ko'proq chiqaradi; ularni to'ldirish holsizlikni kamaytiradi.",
-        'В начале кето организм теряет больше воды и соли; их восполнение уменьшает слабость.'] },
-  { q: ["100 g chia urug'ida taxminan qancha tola bor?", 'Сколько примерно клетчатки в 100 г семян чиа?'],
-    a: [['~34 g', '~34 г'], ['~3 g', '~3 г'], ['~10 g', '~10 г'], ['~80 g', '~80 г']],
-    e: ["Chia tolaga eng boy urug'lardan biri, shuning uchun uning sof uglevodi ~8 g.",
-        'Чиа — одни из самых богатых клетчаткой семян, поэтому чистых углеводов в них ~8 г.'] },
-  { q: ['Qaysi mahsulot keto uchun mos emas?', 'Какой продукт не подходит для кето?'],
-    a: [['Guruch', 'Рис'], ['Avokado', 'Авокадо'], ['Tuxum', 'Яйцо'], ['Losos', 'Лосось']],
-    e: ["100 g pishgan guruchda ~28 g sof uglevod bor: bu kunlik keto chegarasining deyarli hammasi.",
-        'В 100 г варёного риса ~28 г чистых углеводов — почти вся дневная кето-норма.'] },
-];
-
-// Product ↔ what it is good for.
-const GAME_PAIRS = [
-  [["Chia", 'Чиа'], ['Tolaga boy', 'Много клетчатки']],
-  [['Eritritol', 'Эритритол'], ['Shakarsiz shirinlik', 'Сладость без сахара']],
-  [['Bodom uni', 'Миндальная мука'], ['Glyutensiz un', 'Мука без глютена']],
-  [["Kokos yog'i", 'Кокосовое масло'], ['MCT manbai', 'Источник MCT']],
-  [['Psillium', 'Псиллиум'], ["Xamirni bog'laydi", 'Связывает тесто']],
-  [["Zig'ir urug'i", 'Семена льна'], ['Omega-3 manbai', 'Источник омега-3']],
-];
+// The question bank lives in quiz_bank.py (owner, 2026-10-16: more and
+// more varied questions, and the bot asks one of them every 2 days). The
+// server writes it into #game-bank; the shapes are documented there.
+const GAME_BANK = (() => {
+  try { return JSON.parse(document.getElementById('game-bank').textContent) || {}; } catch (_) { return {}; }
+})();
+const GAME_FOODS = GAME_BANK.foods || [];
+const GAME_QUIZ = GAME_BANK.quiz || [];
+const GAME_PAIRS = GAME_BANK.pairs || [];
+const QUIZ_ROUND = 10;     // questions per quiz game, picked at random from the bank
+const MEMORY_PAIRS = 6;    // pairs per memory game
 
 const GAME_TONES = ['sun', 'leaf', 'berry', 'mint', 'lilac', 'sky', 'orange'];
 const GAME_ICONS = {
@@ -4716,7 +4643,7 @@ function answerDuel(k) {
 
 // ── 3. Keto viktorina ────────────────────────────────────────────────
 function startQuizGame() {
-  const items = gameShuffle(GAME_QUIZ).map(item => ({
+  const items = gameShuffle(GAME_QUIZ).slice(0, QUIZ_ROUND).map(item => ({
     item,
     order: gameShuffle([0, 1, 2, 3]),  // shown position → answer index (0 is right)
   }));
@@ -4771,11 +4698,12 @@ function nextQuizRound() {
 // ── 4. Juftini top ───────────────────────────────────────────────────
 function startMemoryGame() {
   const cards = [];
-  GAME_PAIRS.forEach((pair, i) => {
+  const pairs = gameShuffle(GAME_PAIRS).slice(0, MEMORY_PAIRS);
+  pairs.forEach((pair, i) => {
     cards.push({ pair: i, kind: 'product', text: pair[0] });
     cards.push({ pair: i, kind: 'benefit', text: pair[1] });
   });
-  gameState = { id: 'memory', cards: gameShuffle(cards), open: [], found: 0, moves: 0, lock: false };
+  gameState = { id: 'memory', cards: gameShuffle(cards), pairs: pairs.length, open: [], found: 0, moves: 0, lock: false };
   const s = gameState;
   setGameScreen('memory', memoryScoreText(0),
     '<p class="games-intro mem-hint">' + escapeHtml(gx(
@@ -4810,7 +4738,7 @@ function flipMemory(k) {
     s.found++;
     gameHaptic(true);
     els.forEach(e => { e.classList.add('done'); e.disabled = true; });
-    if (s.found === GAME_PAIRS.length) setTimeout(() => finishGame('memory', s.moves, GAME_PAIRS.length), 700);
+    if (s.found === s.pairs) setTimeout(() => finishGame('memory', s.moves, s.pairs), 700);
   } else {
     s.lock = true;
     gameHaptic(false);
@@ -5063,6 +4991,10 @@ async function checkStartGate(manual) {
     if (!isNaN(dpId)) {
       openDetail(dpId).catch(() => {});
     }
+    // ?game=quiz|keto|duel|memory — the "🎮 Davom etish — saytda" button
+    // under the bot's question opens straight into that game.
+    const deepGame = new URLSearchParams(location.search).get('game');
+    if (deepGame && GAMES.some(g => g.id === deepGame)) openGame(deepGame);
   } catch(e) {
     console.error('Init error:', e);
     showToast(t.errorLoad, true);
