@@ -228,8 +228,12 @@ async def detail_keyboard(user_id: int, product_id: int, back_category: str,
         shelf = float((raw or {}).get("quantity") or 0)
     if out_of_stock and shelf and shelf > 0:
         # On the shelf, but every piece is in other buyers' carts (Savat
-        # broni): "⏳ Hozircha band", not sold out — nothing to wait for.
-        primary_row = [InlineKeyboardButton(text=get_text("btn_held_out", lang), callback_data="noop")]
+        # broni): "⏳ band", not sold out — and the buyer may wait for the
+        # hold to run out (owner, 2026-10-16), restock_notify.py tells them.
+        waiting = await database.is_waiting_restock(user_id, product_id)
+        primary_row = [InlineKeyboardButton(
+            text=get_text("btn_held_waiting" if waiting else "btn_held_wait", lang),
+            callback_data=f"restock_wait:{product_id}{ret}")]
     elif out_of_stock:
         # Sold out: "tell me when it's back" (owner, 2026-10-14), or the
         # promise once they asked — restock_notify.py sends the message.
@@ -268,12 +272,13 @@ async def detail_keyboard(user_id: int, product_id: int, back_category: str,
 def mark_held(text: str, product: dict, lang: str) -> str:
     """Savat broni (2026-10-13): a product whose last pieces all sit in other
     buyers' carts (database.apply_holds → held_out) is "⏳ band", not sold
-    out — it may come back within 24 h. Swaps the card's sold-out note for
-    the band note, whichever sold-out wording the card used."""
+    out — it may come back within the hold (database.RESERVE_HOURS). Swaps
+    the card's sold-out note for the band note, whichever sold-out wording
+    the card used."""
     if not product.get("held_out"):
         return text
     from locales import TEXTS
-    held = get_text("product_held_out", lang)
+    held = get_text("product_held_out", lang, hours=database.RESERVE_HOURS)
     for key in [k for k in TEXTS if k.startswith("product_out_of_stock")]:
         note = get_text(key, lang)
         if note and note in text:

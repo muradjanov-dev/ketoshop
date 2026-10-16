@@ -346,7 +346,7 @@ async def main():
     from delivery_costs import scheduler_loop as delivery_cost_loop
     delivery_cost_task = asyncio.create_task(delivery_cost_loop(bot))
 
-    # Tashlab ketilgan savat — 3 h and 24 h reminders with one-tap checkout.
+    # Tashlab ketilgan savat — the 3 h reminder (warns before the hold ends) with one-tap checkout.
     from abandoned_cart import scheduler_loop as cart_reminder_loop
     cart_reminder_task = asyncio.create_task(cart_reminder_loop(bot))
 
@@ -354,8 +354,8 @@ async def main():
     # every buyer, answer + "continue on the site" (daily_quiz.py).
     from daily_quiz import scheduler_loop as daily_quiz_loop
     daily_quiz_task = asyncio.create_task(daily_quiz_loop(bot))
-    # Savat broni: a cart line's 24 h hold ends → back on sale + a note to the
-    # buyer (cart_reservations.py). The ~4 h warning is cart_reminder stage 2.
+    # Savat broni: a cart line's 6 h hold ends → back on sale + a note to the
+    # buyer, and whoever waited for it hears (cart_reservations.py, restock_notify.py).
     from cart_reservations import scheduler_loop as cart_hold_loop
     cart_hold_task = asyncio.create_task(cart_hold_loop(bot))
 

@@ -1630,18 +1630,23 @@ async def reduce_product_quantity(product_id: int, amount: float):
 # olib, bir vaqtda 2 ta yoki ko'p odamlar qolgan narsani talashib qolishmasin".
 #
 # Whoever puts a product in the cart first holds it until cart.reserved_until
-# (24 h after they last touched the cart). The shelf count products.quantity
+# (RESERVE_HOURS after they last touched the cart). The shelf count products.quantity
 # is NOT moved: a hold is derived from live cart rows, so no code path can
 # leak stock by forgetting to give it back. Three places enforce it:
 #   * putting into / changing a cart line is capped at the shelf stock minus
 #     every other live hold (_line_cap), under a row lock on the product, so
 #     two buyers racing for the last pieces are served one after the other;
 #   * create_order never takes what other buyers hold;
-#   * cart_reservations.py deletes lines whose 24 h ran out and tells the
+#   * cart_reservations.py deletes lines whose hold ran out and tells the
 #     buyer (abandoned_cart.py warns them ~4 h before).
 # Lines already in carts when this shipped have reserved_until NULL: they
 # hold nothing until their owner touches the cart.
-RESERVE_HOURS = 24
+#
+# 6 h, not 24 (owner, 2026-10-16: "mijoz savatida 24 soat emas 6 soat
+# saqlansin keyin ogohlantirish bilan do'konga qaytarilsin"). CART_HOLD_HOURS
+# changes it without a code change; abandoned_cart.py and every buyer text
+# follow this number.
+RESERVE_HOURS = max(1, int(os.getenv("CART_HOLD_HOURS", "6")))
 _NOW_UTC = "(NOW() AT TIME ZONE 'UTC')"
 _HOLD_UNTIL = f"({_NOW_UTC} + interval '{RESERVE_HOURS} hours')"
 SET_WITHOUT_ITEMS_STOCK = 999.0   # an empty set never ran out (get_cart's old 999)
@@ -1703,7 +1708,7 @@ async def _line_cap(conn, product_id: int | None, set_id: int | None, cart_id: i
 async def _put_cart_line(conn, user_id: int, product_id: int | None, set_id: int | None,
                          quantity: float, *, add: bool) -> float:
     """Add to (`add`) or set a cart line, capped at what is free, and hold it
-    for 24 h. Returns the line's quantity afterwards; 0 = nothing was free
+    for RESERVE_HOURS. Returns the line's quantity afterwards; 0 = nothing was free
     (an existing line is then removed)."""
     col, ref = ("set_id", set_id) if set_id is not None else ("product_id", product_id)
     existing = await conn.fetchrow(
@@ -1723,7 +1728,7 @@ async def _put_cart_line(conn, user_id: int, product_id: int | None, set_id: int
         await conn.execute(
             f"""INSERT INTO cart (user_id, {col}, quantity, reserved_until)
                 VALUES ($1, $2, $3, {_HOLD_UNTIL})""", user_id, ref, new)
-    # Touching the cart restarts the 24 h for everything this buyer holds —
+    # Touching the cart restarts the hold for everything this buyer holds —
     # only for lines still held: an expired one must be put back to be held.
     await conn.execute(
         f"UPDATE cart SET reserved_until = {_HOLD_UNTIL} WHERE user_id = $1 AND reserved_until > {_NOW_UTC}",
@@ -1741,7 +1746,7 @@ async def add_to_cart(user_id: int, product_id: int = None, quantity: float = 1,
 
 
 async def extend_cart_hold(user_id: int) -> None:
-    """Restart the 24 h on a buyer's held lines — at checkout, so a hold can't
+    """Restart the hold on a buyer's held lines — at checkout, so a hold can't
     run out while they are paying. Best effort: never stops a checkout."""
     try:
         async with pool.acquire() as conn:
@@ -1808,7 +1813,7 @@ async def cart_hold_until(user_id: int):
 
 
 async def release_expired_holds() -> list[dict]:
-    """Take lines whose 24 h ran out out of the carts — back on sale — and
+    """Take lines whose hold ran out out of the carts — back on sale — and
     queue one notice per buyer (cart_reservations.py sends them in daytime).
     Returns the queued notices."""
     async with pool.acquire() as conn:
@@ -3814,15 +3819,22 @@ async def is_waiting_restock(user_id: int, product_id: int) -> bool:
 
 async def get_restock_due(limit: int = 500) -> list[dict]:
     """Open waits whose product is back on sale — oldest first, product by
-    product. Banned buyers are left out (their rows simply stay open)."""
+    product. Banned buyers are left out (their rows simply stay open).
+
+    "On sale" = something on the shelf that no other buyer's cart holds
+    (Savat broni): a product whose last pieces sit in a cart is not back yet,
+    and becomes due when that hold runs out (owner, 2026-10-16: "so'ragan
+    odamga push borsin siz so'ragan mahsulot qaytdi deb")."""
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT w.id, w.user_id, w.product_id, w.lang
+            f"""SELECT w.id, w.user_id, w.product_id, w.lang, w.source
                  FROM restock_waitlist w
                  JOIN products p ON p.id = w.product_id
                 WHERE w.notified_at IS NULL
                   AND p.is_active = 1
-                  AND COALESCE(p.quantity, 0) > 0
+                  AND COALESCE(p.quantity, 0) - COALESCE((
+                        SELECT SUM(h.qty) FROM ({_LIVE_HOLDS}) h
+                         WHERE h.pid = p.id AND h.user_id <> w.user_id), 0) > 0
                   AND (p.b2b_only IS NOT TRUE)
                   AND NOT EXISTS (SELECT 1 FROM banned_users b WHERE b.user_id = w.user_id)
                 ORDER BY w.product_id, w.created_at

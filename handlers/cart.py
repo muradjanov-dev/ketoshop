@@ -2115,7 +2115,7 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
         # Online → DON'T create the order yet. Stash everything we'll need in
         # FSM state and ask for the cheque. The row is inserted in
         # process_cheque_photo / process_cheque_document once we have proof.
-        # The cart stays held while they pay (Savat broni) — a fresh 24 h, so
+        # The cart stays held while they pay (Savat broni) — a fresh hold, so
         # the products can't go back on sale between the transfer and the cheque.
         from database import extend_cart_hold
         await extend_cart_hold(callback.from_user.id)

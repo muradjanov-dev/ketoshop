@@ -704,7 +704,15 @@ async def api_cart_add(request: web.Request):
         asyncio.create_task(_process_new_user(request.app["bot"], tg_user, None))
     added = await add_to_cart(user_id, product_id=product_id, quantity=quantity, set_id=set_id) - float(before or 0)
     if added <= 0:
-        return _json({"error": await _limit_reason(user_id, product_id, set_id)}, status=409)
+        reason = await _limit_reason(user_id, product_id, set_id)
+        body = {"error": reason}
+        if reason == "held" and product_id and not set_id:
+            # They asked for it: on the waitlist, told when the hold runs out
+            # (owner, 2026-10-16: "so'ragan odamga push borsin").
+            import cart_reservations
+            body["waiting"] = await cart_reservations.wait_for_hold(
+                user_id, int(product_id), request.get("user_lang", "uz"), "held")
+        return _json(body, status=409)
 
     if not before:
         import asyncio
@@ -927,7 +935,7 @@ async def api_checkout(request: web.Request):
     # _document (bot chat upload). This guarantees no half-real orders sit
     # in the DB when a buyer abandons before paying.
     if payment_method == "online":
-        # The cart stays held while they pay (Savat broni) — a fresh 24 h.
+        # The cart stays held while they pay (Savat broni) — a fresh hold.
         from database import extend_cart_hold
         await extend_cart_hold(user_id)
         storage = request.app.get("storage")

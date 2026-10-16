@@ -1,15 +1,17 @@
 """
 Tashlab ketilgan savat eslatmasi — abandoned-cart reminders (2026-09-17).
 
-A buyer puts products in the cart and leaves without ordering. Two gentle
-touches bring them back:
+A buyer puts products in the cart and leaves without ordering. A touch
+brings them back — and warns before the cart hold ends (Savat broni,
+cart_reservations.py; database.RESERVE_HOURS):
 
-    stage 1 — cart idle 3 h    "Savatingiz sizni kutyapti" + one-tap checkout
-    stage 2 — cart idle 20 h   "Savatingiz bugun 18:40 gacha siz uchun band" —
-                               the warning before the 24 h cart hold ends
-                               (Savat broni, cart_reservations.py, 2026-10-13).
-                               If 20 h falls at night, it goes at 20:30 to
-                               everyone whose hold ends before the morning.
+    6 h hold (owner, 2026-10-16) — ONE message, cart idle 3 h:
+        "⏳ Savatingiz bugun 18:40 gacha siz uchun band" + one-tap checkout;
+        after 6 h the products go back on sale with a release notice.
+    12 h+ hold — stage 1 at 3 h "Savatingiz sizni kutyapti", stage 2 (the
+        warning) 4 h before the hold ends.
+    If the warning falls at night, it goes at 20:30 to everyone whose hold
+    ends before the morning (idle at least an hour).
 
 Rules that keep it from turning into spam:
   * "idle" is measured from the LAST time the buyer touched the cart (any add,
@@ -58,25 +60,35 @@ MAX_LINES = 8                     # cart lines listed before "… va yana N ta"
 
 # (stage, min idle minutes, max idle minutes). The upper bound is what lets a
 # night-time reminder wait for the morning without ever firing days late.
-STAGES = (
-    (1, 3 * 60, 20 * 60),
-    # Ends with the hold itself: at 24 h the cart is released, not reminded.
-    (2, 20 * 60, 24 * 60),
-)
-HOLD_MINUTES = 24 * 60
+# Both end with the hold itself (database.RESERVE_HOURS): at its end the cart
+# is released, not reminded.
+#   * 6 h hold (owner, 2026-10-16): ONE message at 3 h — "⏳ savatingiz HH:MM
+#     gacha band, keyin sotuvga qaytadi" — then the release notice. A gentle
+#     touch and a warning 2 h apart would be two messages in one afternoon;
+#   * a long hold (12 h+): the gentle touch at 3 h, the warning 4 h before
+#     the end.
+HOLD_MINUTES = database.RESERVE_HOURS * 60
+if HOLD_MINUTES >= 12 * 60:
+    STAGES = ((1, 3 * 60, HOLD_MINUTES - 4 * 60), (2, HOLD_MINUTES - 4 * 60, HOLD_MINUTES))
+    WARN_STAGE = 2
+else:
+    STAGES = ((1, min(3 * 60, HOLD_MINUTES // 2), HOLD_MINUTES),)
+    WARN_STAGE = 1
 LAST_CALL = (20, 30)               # the last daytime half hour
+LAST_CALL_MIN_IDLE = 60            # a cart touched minutes ago isn't warned yet
 
 
-def stage2_min_idle(default: int, now_tk: datetime | None = None) -> int:
-    """Stage 2 warns ~4 h before the hold ends. When that moment would fall
-    in tonight's quiet hours, the last half hour of the day warns everyone
-    whose hold ends before the morning — never a release without a warning."""
+def warn_min_idle(default: int, now_tk: datetime | None = None) -> int:
+    """The warning stage goes at `default` idle minutes. When that moment
+    would fall in tonight's quiet hours, the last half hour of the day warns
+    everyone whose hold ends before the morning (idle at least an hour) — a
+    release at night is never the first the buyer hears of it."""
     now = now_tk or _now_tk()
     if (now.hour, now.minute) < LAST_CALL or now.hour >= QUIET_START:
         return default
     morning = (now + timedelta(days=1)).replace(hour=QUIET_END, minute=0, second=0, microsecond=0)
     until_morning = int((morning - now).total_seconds() // 60)
-    return max(0, min(default, HOLD_MINUTES - until_morning))
+    return max(LAST_CALL_MIN_IDLE, min(default, HOLD_MINUTES - until_morning))
 
 
 def _now_tk() -> datetime:
@@ -129,7 +141,7 @@ async def build_reminder(user_id: int, stage: int, lang: str) -> tuple[str, Inli
     if len(lines) > MAX_LINES:
         shown.append(_t(f"… va yana {len(lines) - MAX_LINES} ta", f"… и ещё {len(lines) - MAX_LINES}", lang))
 
-    if stage == 1:
+    if stage != WARN_STAGE:
         head = _t("🛒 <b>Savatingiz Sizni kutyapti!</b>",
                   "🛒 <b>Ваша корзина ждёт вас!</b>", lang)
         intro = _t("Tanlagan mahsulotlaringizni savatda saqlab qo'ydik:",
@@ -139,7 +151,7 @@ async def build_reminder(user_id: int, stage: int, lang: str) -> tuple[str, Inli
     else:
         until = await database.cart_hold_until(user_id)
         if until:
-            # The warning before the 24 h hold ends (Savat broni).
+            # The warning before the hold ends (Savat broni).
             import cart_reservations
             when = cart_reservations.hold_end_text(until, "ru" if lang == "ru" else "uz")
             head = _t(f"⏳ <b>Savatingiz {when} gacha siz uchun band</b>",
@@ -216,8 +228,8 @@ async def run_once(bot: Bot) -> dict:
 
     banned = set(await _banned_ids())
     for stage, min_idle, max_idle in STAGES:
-        if stage == 2:
-            min_idle = stage2_min_idle(min_idle)
+        if stage == WARN_STAGE:
+            min_idle = warn_min_idle(min_idle)
         carts = await database.get_idle_carts(min_idle, max_idle)
         if not carts:
             continue
@@ -273,11 +285,31 @@ async def scheduler_loop(bot: Bot) -> None:
 
 # ─────────────────────────────── admin view ─────────────────────────────────
 
+def _hours(minutes: int) -> str:
+    return f"{minutes / 60:g}"
+
+
+def _schedule_line() -> str:
+    hold = _hours(HOLD_MINUTES)
+    if WARN_STAGE == 1:
+        return (f"{_hours(STAGES[0][1])} soat tegilmagan savatlarga — bron ({hold} soat) "
+                "tugashidan oldin ogohlantirish")
+    return (f"{_hours(STAGES[0][1])} soat va {_hours(STAGES[1][1])} soat tegilmagan savatlarga "
+            f"(bron {hold} soat)")
+
+
+def _stage_counts(s: dict) -> str:
+    if WARN_STAGE == 1:
+        return f"ogohlantirish: {s['stage1']}" + (f", eski 2-bosqich: {s['stage2']}" if s.get("stage2") else "")
+    return (f"{_hours(STAGES[0][1])} soatlik: {s['stage1']}, "
+            f"{_hours(STAGES[1][1])} soatlik: {s['stage2']}")
+
+
 def _stats_block(title: str, s: dict) -> str:
     rate = (s["converted"] / s["sent"] * 100) if s["sent"] else 0
     return (
         f"<b>{title}</b>\n"
-        f"📨 Yuborildi: {s['sent']} ta (3 soatlik: {s['stage1']}, 24 soatlik: {s['stage2']})\n"
+        f"📨 Yuborildi: {s['sent']} ta ({_stage_counts(s)})\n"
         f"🛒 Eslatilgan savatlar: {fmt_sum(s['reminded_value'])} so'm\n"
         f"✅ Buyurtmaga aylandi: <b>{s['converted']} ta ({rate:.0f}%)</b>\n"
         f"💰 Qaytarilgan savdo: <b>{fmt_sum(s['converted_value'])} so'm</b>"
@@ -291,7 +323,7 @@ async def cmd_cart_reminder_stats(message: Message):
     month = await database.get_cart_reminder_stats(30)
     await message.answer(
         "🛒 <b>Tashlab ketilgan savat eslatmalari</b>\n"
-        "3 soat va 24 soat tegilmagan savatlarga, 09:00–21:00 oralig'ida.\n\n"
+        f"{_schedule_line()}, 09:00–21:00 oralig'ida.\n\n"
         + _stats_block("Oxirgi 7 kun", week) + "\n\n"
         + _stats_block("Oxirgi 30 kun", month),
         parse_mode=ParseMode.HTML,
