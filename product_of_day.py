@@ -126,17 +126,24 @@ async def _send_to_user(bot: Bot, user_id: int, product: dict, lang: str,
         return False
 
 
-async def broadcast(bot: Bot, product: dict) -> tuple[int, int]:
+def _recipe_seed(day=None) -> int:
+    """Which of the family's recipes today's card carries — by date, so the
+    same product brings a different recipe the next time it comes round."""
+    return (day or _now_tk().date()).toordinal()
+
+
+async def broadcast(bot: Bot, product: dict, day=None) -> tuple[int, int]:
     """Send the card to every eligible buyer, each in their own language."""
     user_ids = await database.get_all_user_ids()
     langs = await database.get_user_languages(user_ids)
-    # "Bugun shundan nima tayyorlash mumkin" — one concrete idea under the
-    # card. It is what turns a product announcement into something worth
-    # reading, and it carries the product with it instead of selling it.
+    # «🍳 Bugungi retsept» — a whole recipe with this product inside the card
+    # (owner, 2026-10-16). It is what turns a product announcement into
+    # something worth reading, and it carries the product with it instead of
+    # selling it. It replaced the one-line "Bugungi g'oya".
     import product_ideas
-    name = product.get("name") or ""
+    seed = _recipe_seed(day)
     captions = product_card.CaptionCache(
-        product, extra_for=lambda lang: product_ideas.idea_block(name, lang))
+        product, extra_for=lambda lang: product_ideas.recipe_block(product, lang, seed))
     sent = failed = 0
     for uid in user_ids:
         ok = await _send_to_user(bot, uid, product, langs.get(uid, "uz"), captions)
@@ -156,7 +163,7 @@ def channel_keyboard(product_id: int, lang: str = CHANNEL_LANG) -> InlineKeyboar
     ]])
 
 
-async def post_to_channel(bot: Bot, product: dict) -> bool:
+async def post_to_channel(bot: Bot, product: dict, day=None) -> bool:
     """The same card in the channel. Failure here never stops the broadcast —
     the channel is a bonus reach, the buyers are the point."""
     if not REQUIRED_CHANNEL_ID:
@@ -169,7 +176,7 @@ async def post_to_channel(bot: Bot, product: dict) -> bool:
         import product_ideas
         caption = await product_card.build_caption(
             product, CHANNEL_LANG, rate,
-            product_ideas.idea_block(product.get("name") or "", CHANNEL_LANG))
+            product_ideas.recipe_block(product, CHANNEL_LANG, _recipe_seed(day)))
         markup = channel_keyboard(product["id"])
         await product_card.send_product_message(bot, REQUIRED_CHANNEL_ID, product, caption, markup)
         return True
@@ -198,8 +205,8 @@ async def send_today(bot: Bot, day=None) -> dict | None:
     day = day or _now_tk().date()
     await database.record_product_of_day(product["id"], cycle, 0, 0, False, day)
 
-    channel_ok = await post_to_channel(bot, product)
-    sent, failed = await broadcast(bot, product)
+    channel_ok = await post_to_channel(bot, product, day)
+    sent, failed = await broadcast(bot, product, day)
     await database.record_product_of_day(product["id"], cycle, sent, failed, channel_ok, day)
 
     logger.info("Kun mahsuloti #%s '%s': %d ok, %d failed, channel=%s",
