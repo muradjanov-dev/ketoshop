@@ -1,12 +1,14 @@
 """
-AI sotuvchi — mijoz bilan yozishib, buyurtmani o'zi rasmiylashtiradi.
+AI sotuvchi — mijoz bilan yozishib, uni buyurtma kartasigacha olib boradi.
 
 Bot tugmalar bilan ishlaydi: katalog -> savat -> manzil -> tasdiq. Kim
 tugmalarni bosmay, oddiy odamdek yozsa (meta_leads.py orqali kelgan reklama
 mijozlari ko'pincha shunday qiladi), hozirgacha javob admin yozguncha kutardi.
 Bu modul o'sha suhbatni modelga topshiradi: mahsulotni tanlaydi, savatga
-soladi, ism/telefon/manzilni so'raydi va buyurtmani xuddi tugmali yo'l kabi
-rasmiylashtiradi.
+soladi, yetkazish usuli, raqam va lokatsiyani so'raydi va tugmali checkout ning
+tasdiq kartasini ochadi (buyurtma_kartasi). Summa, chegirma, Keto va buyurtmaning
+o'zi — handlers/cart.py da: mijoz «✅ Tasdiqlash» ni bosadi yoki 'ha' deb yozadi
+(egasi, 2026-10-16: "galyutsinatsiya bo'lyapti ... maksimal sodda qilishimiz kerak").
 
 QAYERDA ISHLAYDI (egasi, 2026-10-12: "kanalga ulangan guruh va botga yozilgan
 xabarlarga AI o'zi javob berishi kerak, biz vaqt ajrata olmayapmiz")
@@ -51,15 +53,12 @@ XOTIRA (ai_memory.py) — har bir Telegram ID ning buyurtmalari, qiziqishlari va
 mahsulotlar haqidagi fikri suhbat boshida modelga beriladi. Yetkazilgan
 mahsulot haqida bir marta fikr so'raladi.
 
-TO'LOV. Mijoz karta orqali to'lamoqchi bo'lsa, AI do'konning karta raqamini
-o'zi beradi (config.PAYMENT_CARD_NUMBER — tugmali checkout bilan bir xil karta)
-va chek rasmini so'raydi. Lekin "to'lov o'tdi" degan qarorni AI hech qachon
-qabul qilmaydi: chek rasmi to'g'ridan-to'g'ri adminlarga uzatiladi va bazada
-buyurtma `payment_method="cash"` bo'lib qoladi — ya'ni "to'langan" deb
-belgilanmaydi. Tugmali online oqim chek tekshirilgandan keyingina online deb
-yoziladi (handlers/cart.py), AI uni yolg'on "to'landi" holatiga qo'ymasligi
-uchun ataylab shunday. Egasining talabi: kartani AI tashlaydi, to'lovni admin
-ko'radi (2026-09-12).
+TO'LOV. Kartada naqd yoki karta tanlanadi (Yandex va pochtada faqat karta).
+Karta bilan to'lovda tugmali checkout ning o'z yo'li ishlaydi: tasdiqdan keyin
+karta raqami chiqadi, buyurtma chek kelgach tuziladi va chek adminlarga boradi.
+"To'lov o'tdi" degan qarorni AI hech qachon qabul qilmaydi. 2026-10-16 gacha
+AI tuzgan karta buyurtmalari (izohida "To'lov: KARTA") uchun chek AI orqali
+qabul qilinadi (_open_order_for_cheque) va "✅ To'lov tasdiqlandi" tugmasi qoladi.
 
 BILIM. Modelga butun katalog (nomi, narxi, qoldig'i, kategoriyasi, mahsulot
 oilasi), setlar, oilalarning tavsifi (product_descriptions.py), keto/PP
@@ -820,7 +819,6 @@ def _shop_knowledge() -> str:
         "  🏪 Do'kondan olib ketish — bepul\n"
         "  📦 Viloyatlarga BTS / EMU pochtasi — pochta haqi alohida\n"
         "  🚖 Toshkentda Yandex Taxi — yo'l haqi haydovchiga\n"
-        f"- Karta: {PAYMENT_CARD_NUMBER} — {PAYMENT_RECIPIENT_NAME}.\n"
         "- DO'KON MANZILI: mijoz do'kon/ofis qayerda, manzilingiz, adres, lokatsiya, qanday "
         f"borsa bo'ladi deb so'rasa — mo'ljalni ayt ({SHOP_LANDMARK}) va shu havolani ber: "
         f"{SHOP_ADDRESS_URL} . Havolani o'zgartirmay, to'liq yoz. Buni mijozning o'z "
@@ -912,8 +910,8 @@ def _sales_rules() -> str:
         "- Mahsulot savatga tushgach — BIR MARTA: 'Yana nima olamiz? 😊' deb so'ra va "
         "chegirmadagi (katalogda -%) yoki shu mahsulotga mos 1-2 mahsulotni taklif qil "
         "(masalan bodom uni -> eritritol yoki psillium). Bosimsiz.\n"
-        "- Mijoz boshqa narsa olmasa — darhol rasmiylashtirishga o't: yetkazish usullarini "
-        "narxi bilan ro'yxat qilib ber va qaysi biri qulayligini, keyin manzilni so'ra.\n"
+        "- Mijoz boshqa narsa olmasa — darhol rasmiylashtirishga o't: 'Qanday olasiz?' deb "
+        "yetkazish usullarini narxi bilan ro'yxat qilib ber.\n"
         "- savatni_korish 'bepul yetkazishga yana N so'm' yoki sovg'a haqida aytsa, buni "
         "mijozga bir marta yetkaz.\n"
         "- Mijoz 'o'ylab ko'raman' desa — hurmat qil, savati saqlanib turishini ayt.\n\n"
@@ -985,62 +983,53 @@ def _sales_rules() -> str:
         "- Mahsulot tanlangach savatga_qoshish (yoki set uchun set_qoshish) bilan savatga "
         "sol va qisqacha tasdiqla. Miqdorni o'zgartirsa — savatga_qoshish ni yangi miqdor "
         "bilan qayta chaqir (u miqdorni almashtiradi, ustiga qo'shmaydi).\n"
-        "- BUYURTMA QADAMLARI — tugmali checkout bilan AYNAN BIR XIL tartib, faqat oson: "
-        "har qadamda bitta qisqa savol, tugma bo'lsa tugmani taklif qil, MIJOZ XOTIRASI da "
-        "bor narsani qayta so'rama — tasdiqlat, va bunda manzil va raqamni TO'LIQ ko'rsat, "
-        "alohida qatorlarda: '📍 Manzil: …' / '📞 Raqam: …' / 'Shu manzil va raqamga "
-        "yetkazaylikmi?'; ixtiyoriy "
-        "qadamni 'kerak bo'lmasa — yo'q deng' deb tez o'tkaz:\n"
-        "  1) Yetkazib beraylikmi yoki do'kondan olib ketasizmi?\n"
-        "  2) TELEFON — lokatsiya_tugmasi ('📞 Raqamni yuborish') yoki yozsin.\n"
-        "  3) LOKATSIYA (olib ketishda yo'q) — '📍 Lokatsiyani yuborish', kelgan manzilni "
-        "tasdiqlat.\n"
-        "  4) MANZIL IZOHI (ixtiyoriy) — uy/xonadon, qavat, kirish, mo'ljal.\n"
-        "  5) YETKAZISH USULI — Toshkent ichida: kuryer yoki Yandex Taxi; tashqarida: BTS yoki "
-        "EMU (narxlari bilan).\n"
-        "  6) QO'SHIMCHA TELEFON (ixtiyoriy) — asosiy raqam javob bermasa kuryer qo'ng'iroq "
-        "qiladigan raqam.\n"
-        "  7) TO'LOV — naqd yoki karta (Yandex va pochtada faqat karta).\n"
-        "  8) KETO TANGACHALAR — savatni_korish 'KETO:' qatorini qaytarsa, BIR MARTA, alohida "
-        "xabarda so'ra: 'Hisobingizda N ta Keto bor (1 Keto = 1 so'm) — shu buyurtmada "
-        "ishlatamizmi?'. Mijoz aniq 'ha, ishlatamiz' demaguncha keto ni BERMA va xulosada "
-        "'ishlatamiz' deb yozma; javob bermasa — ishlatilmaydi. Qayta so'rama.\n"
-        "  9) TASDIQ — savatni_korish dagi mahsulotlar, chegirma, sovg'a, yetkazish narxi va "
-        "JAMI ni qisqa ko'rsat va 'Tasdiqlaysizmi?' de. Mijoz jami summani oldingi xabarda "
-        "ko'rmaguncha buyurtma vositasi ishlamaydi.\n"
-        "  10) BUYURTMA — 'ha' dan keyin buyurtma_rasmiylashtirish; raqam, minnatdorchilik, "
-        "karta bo'lsa karta raqami va chek.\n"
-        "- BITTA XABARDA BITTA SAVOL: Keto va yetkazish usulini, yoki manzil va to'lovni birga "
-        "so'rama. Lokatsiya kelgach — avval 4) manzil izohini so'ra.\n"
+        "- RASMIYLASHTIRISH — MAKSIMAL SODDA (egasi, 2026-10-16). Savatdan keyin atigi 3 ta "
+        "qisqa qadam, har xabarda bitta savol:\n"
+        "  1) QANDAY OLASIZ? — yetkazish usullarini narxi bilan bitta ro'yxatda ber (pastdagi "
+        "ro'yxat). Toshkentdan tashqarida bo'lsa — faqat BTS / EMU pochta.\n"
+        "  2) RAQAM VA LOKATSIYA — lokatsiya_tugmasi ni chaqir va 'pastdagi tugmalar bilan "
+        "raqamingiz va lokatsiyangizni yuboring' de. Do'kondan olib ketishda — faqat raqam. "
+        "MIJOZ XOTIRASI da oxirgi manzil va raqam bo'lsa — qayta so'rama: ikkalasini TO'LIQ, "
+        "alohida qatorlarda ko'rsat ('📍 Manzil: …' / '📞 Raqam: …') va 'Shu manzil va raqamga "
+        "yetkazaylikmi?' de; 'ha' desa — buyurtma_kartasi da oldingi_manzil=true.\n"
+        "  3) Lokatsiya kelgach ('[Mijoz yetkazish lokatsiyasini yubordi: ...]') — manzilni o'qib, "
+        "BITTA xabarda so'ra: 'to'g'rimi? Uy/xonadon raqami yoki mo'ljal bo'lsa yozing'. Javob "
+        "kelgach (yoki 'yo'q', 'to'g'ri' desa) — darhol buyurtma_kartasi ni chaqir.\n"
+        "- buyurtma_kartasi — kod mahsulotlar, chegirma, sovg'a, yetkazish narxi, JAMI, manzil va "
+        "to'lovni kartada ko'rsatadi; mijoz «✅ Tasdiqlash» ni bosadi (yoki 'ha' deb yozadi). "
+        "Kartadan keyin bitta qisqa jumla yetadi: 'Buyurtmangizni tekshiring — hammasi to'g'ri "
+        "bo'lsa «✅ Tasdiqlash» ni bosing 😊'.\n"
+        "- SO'RAMA: ism, qo'shimcha telefon, Keto tangachalar, to'lov turi — kartada tugmasi bor "
+        "(💵 naqd / 💳 karta, Keto). Mijoz o'zi aytsa — tolov_turi yoki qoshimcha_telefon ga yoz.\n"
+        "- O'ZING YOZMA: buyurtma xulosasi, mahsulotlar ro'yxati va narxlari, JAMI, 'Tasdiqlaysizmi?' "
+        "— buni karta qiladi. Buyurtmani sen TUZMAYSAN: 'buyurtmangiz qabul qilindi' DEMA — "
+        "buyurtma faqat mijoz kartada tasdiqlaganda tuziladi va bot o'zi raqami bilan xabar "
+        "beradi.\n"
         "- Mijoz bir xabarda bir nechta narsani aytsa (masalan raqam va manzil) — o'sha "
         "qadamlarni o'tkazib, keyingisiga o't.\n"
-        "- MANZIL (kuryer yoki pochta uchun): HAR DOIM lokatsiya_tugmasi ni chaqir va mijozdan "
-        "pastdagi '📍 Lokatsiyani yuborish' tugmasini bosishini so'ra — kuryerga eng aniq shu. "
-        "Telefon so'raganda ham shu tugmalar ('📞 Raqamni yuborish') ishlaydi. Tugma "
-        "nomlarini matnda alohida qator qilib yozma — 'pastdagi tugmani bosing' yetadi.\n"
-        "- Lokatsiya kelgach ('[Mijoz yetkazish lokatsiyasini yubordi: ...]') manzilni mijozga "
-        "o'qib tasdiqlat ('Chilonzor, ... — to'g'rimi?') va uy, xonadon, podyezd yoki mo'ljalni "
-        "so'ra. Lokatsiya Toshkentdan tashqarida bo'lsa — kuryer emas, pochtani taklif qil.\n"
+        "- buyurtma_kartasi ga FAQAT mijozning o'zi yozgan yoki tugma bilan yuborgan manzil, izoh "
+        "va raqamni ber — o'zingdan to'qima. Lokatsiya ham, yozilgan manzil ham bo'lmasa — avval "
+        "lokatsiya_tugmasi.\n"
+        "- Karta ochiq paytda mijoz o'zgartirish so'rasa (miqdor, mahsulot, manzil, yetkazish "
+        "usuli, to'lov turi) — o'zgartir va buyurtma_kartasi ni qayta chaqir.\n"
+        "- MANZIL (kuryer, Yandex yoki pochta uchun): HAR DOIM lokatsiya_tugmasi ni chaqir — "
+        "kuryerga eng aniq shu. Tugma nomlarini matnda alohida qator qilib yozma — 'pastdagi "
+        "tugmani bosing' yetadi. Lokatsiya Toshkentdan tashqarida bo'lsa — kuryer emas, pochtani "
+        "taklif qil.\n"
         "- Mijoz lokatsiya yubora olmasa — manzilni matn bilan yozsin (tuman, ko'cha, uy, "
         "mo'ljal). Do'kondan olib ketishda manzil kerak emas.\n"
-        "- Tasdiqlatishdan oldin savatni_korish ni chaqir va jami summani FAQAT undan ol — "
-        "o'zing hisoblama. Savat, yetkazish turi va jami summani qisqa takrorlab, mijozdan "
-        "tasdiq so'ra. Mijoz 'ha' degandan keyingina buyurtma_rasmiylashtirish ni chaqir.\n"
-        "- Buyurtma tushgach: 'Xaridingiz uchun katta rahmat!' + raqami + vosita qaytargan "
-        "yetkazish matni (kuryer — 24 soat ichida; Yandex — admin aloqalari).\n\n"
+        "- '[Mijoz «✅ Tasdiqlash» ni bosdi: buyurtma #N ...]' kelsa — buyurtma tuzilgan, rahmat "
+        "xabarini bot yuborgan; qayta rasmiylashtirma.\n\n"
         "TO'LOV\n"
-        "- Toshkent kuryeri va do'kondan olib ketishda ikki yo'l bor: NAQD (qo'lma-qo'l) yoki "
-        "KARTA orqali oldindan. Yandex va pochtada faqat KARTA. Buyurtmani rasmiylashtirishdan oldin "
-        "so'ra va buyurtma_rasmiylashtirish da tolov_turi ni to'g'ri ko'rsat.\n"
-        "- Karta tanlansa, buyurtma tushgandan KEYIN karta raqamini o'zing ber "
-        "(vosita qaytargan raqam va summa bilan) va to'lov chekining rasmini shu chatga "
-        "yuborishni so'ra.\n"
-        "- LEKIN to'lovni sen tasdiqlamaysan. 'Pul tushdi', 'to'lov o'tdi', "
-        "'tasdiqladim' dema. Chek kelgach: 'rahmat, operatorimiz tekshirib "
-        "tasdiqlaydi' de. Tekshirishni faqat admin qiladi.\n"
-        "- Karta raqamini buyurtma tushgandan KEYIN ber (vosita qaytaradi). 'Naqd mumkinmi?' "
-        "kabi savolga — bu usulda karta orqali oldindan ekanini tushuntir, raqamni yozma. "
-        "Faqat mijoz o'zi aniq 'karta raqamini yuboring' desa — berishing mumkin.\n"
+        "- Toshkent kuryeri va do'kondan olib ketishda: NAQD (qo'lma-qo'l) yoki KARTA orqali "
+        "oldindan — mijoz kartada tanlaydi. Yandex va pochtada faqat KARTA.\n"
+        "- Karta tanlansa, karta raqami va 'chekni shu yerga yuboring' ni bot tasdiqdan keyin "
+        "o'zi yuboradi; buyurtma chek kelgach tuziladi. Karta raqamini O'ZING BERMA — mijoz karta "
+        "bilan to'lamoqchi bo'lsa, buyurtma_kartasi ni tolov_turi='karta' bilan och.\n"
+        "- To'lovni sen tasdiqlamaysan: 'pul tushdi', 'to'lov o'tdi', 'tasdiqladim' dema — "
+        "tekshirishni admin qiladi.\n"
+        "- 'Naqd mumkinmi?' — Toshkent kuryeri va olib ketishda mumkin; Yandex va pochtada karta "
+        "orqali oldindan ekanini tushuntir.\n"
         "- Yetkazib berish muddati, aksiya shartlari yoki qaytarish bo'yicha aniq "
         "ma'lumoting bo'lmasa, va'da berma — operator aniqlashtirishini ayt.\n\n"
         "NOQULAY HOLAT — TELEFON RAQAMNI BER\n"
@@ -1181,33 +1170,37 @@ _TOOL_SPECS = [
         },
     },
     {
-        "name": "buyurtma_rasmiylashtirish",
-        "description": "Savatdagi mahsulotlardan haqiqiy buyurtma yaratadi va adminlarga "
-                       "yuboradi. Faqat mijoz savat va summani tasdiqlagandan keyin chaqir. "
-                       "tolov_turi='karta' bo'lsa, javobda karta raqami qaytadi — uni "
-                       "mijozga aytasan, lekin to'lovni admin tekshiradi.",
+        "name": "buyurtma_kartasi",
+        "description": "Buyurtma kartasini ochadi — tugmali checkout ning tasdiq ekrani: "
+                       "mahsulotlar, chegirma, sovg'a, yetkazish narxi, JAMI, manzil, telefon "
+                       "va to'lov. Hisobni KOD qiladi, kartani javobingdan keyin bot o'zi "
+                       "yuboradi. Kartada «✅ Tasdiqlash», to'lov (naqd/karta) va Keto "
+                       "tugmalari bor — buyurtmani mijozning o'zi tasdiqlaydi. Yetkazish "
+                       "usuli, telefon va (kuryer, Yandex, pochta uchun) manzil aniq bo'lgach "
+                       "chaqir. O'zgarish bo'lsa — qayta chaqir.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "ism": {"type": "string", "description": "Mijozning ismi"},
-                "telefon": {"type": "string", "description": "Telefon raqami"},
-                "manzil": {"type": "string", "description": "Yetkazish manzili matn bilan. "
-                           "Mijoz Telegram lokatsiyasini yuborgan bo'lsa yoki do'kondan "
-                           "olib ketsa bo'sh qoldirsa ham bo'ladi."},
                 "yetkazish": {"type": "string", "enum": list(DELIVERY),
                               "description": "Toshkentda toshkent_kuryer, olib_ketish "
                                              "(do'kondan, bepul) yoki yandex_taxi; viloyatda "
                                              "bts yoki emu"},
-                "tolov_turi": {"type": "string", "enum": ["naqd", "karta"],
-                               "description": "Mijoz qanday to'laydi"},
+                "oldingi_manzil": {"type": "boolean",
+                                   "description": "Mijoz MIJOZ XOTIRASI dagi oxirgi buyurtma "
+                                                  "manzili va raqamiga yetkazishni tasdiqladi"},
+                "telefon": {"type": "string", "description": "Mijoz yozgan telefon raqami "
+                            "(tugma bilan yuborgan bo'lsa — shart emas)"},
+                "manzil": {"type": "string", "description": "Manzil matn bilan — faqat "
+                           "mijoz lokatsiya yubormagan bo'lsa"},
                 "izoh": {"type": "string", "description": "Manzil izohi: uy/xonadon, qavat, "
                          "kirish, mo'ljal (ixtiyoriy)"},
+                "tolov_turi": {"type": "string", "enum": ["naqd", "karta"],
+                               "description": "Faqat mijoz o'zi aytgan bo'lsa. Aytmagan "
+                                              "bo'lsa — berma: kartada tanlaydi"},
                 "qoshimcha_telefon": {"type": "string",
-                                      "description": "Qo'shimcha telefon raqami (ixtiyoriy)"},
-                "keto": {"type": "integer", "description": "Mijoz ishlatmoqchi bo'lgan Keto "
-                         "tangachalar soni (ixtiyoriy; savatni_korish KETO qatori bo'lsa)"},
+                                      "description": "Faqat mijoz o'zi bergan bo'lsa"},
             },
-            "required": ["ism", "telefon", "tolov_turi"],
+            "required": ["yetkazish"],
             "additionalProperties": False,
         },
     },
@@ -1312,10 +1305,10 @@ async def _tool_recipe(user_id: int, args: dict) -> str:
 # Savatga tushgach: bitta muloyim qo'shimcha taklif, keyin rasmiylashtirish
 # (egasi, 2026-10-13: "yana nima olamiz yoki chegirmadagi mahsulotlarni taklif
 # qilsin va manzilini so'rasin ... yetkazish, olib ketish, pochta narxlari").
-_NEXT_STEP = ("\nKEYINGI QADAM (bir marta): 'Yana nima olamiz? 😊' deb so'ra va katalogdagi "
+_NEXT_STEP = ("\nKEYINGI QADAM (bir marta): mijoz tilida 'Yana nima olamiz? 😊' deb so'ra va katalogdagi "
               "chegirmali (-%) yoki shu mahsulotga mos 1-2 mahsulotni taklif qil. Mijoz boshqa "
-              "narsa olmasa — yetkazish usullarini narxi bilan ro'yxat qilib ber va manzilni "
-              "so'ra (do'kondan olib ketsa — manzil kerak emas).")
+              "narsa olmasa — 'Qanday olasiz?' deb yetkazish usullarini narxi bilan ro'yxat "
+              "qilib ber, keyin raqam va lokatsiya, keyin buyurtma_kartasi.")
 
 
 async def _tool_add(user_id: int, args: dict) -> str:
@@ -1438,11 +1431,6 @@ async def _tool_cart(user_id: int) -> str:
         lines.append(f"- SOVG'A: {gift['name']} {float(gift.get('quantity') or 0):g} "
                      f"{gift.get('unit') or ''} — bepul")
     fee = max(0.0, float(total) - subtotal)
-    session = _sessions.get(user_id)
-    if session is not None:
-        # Javob matnida shu summalardan biri ko'rinsa — mijoz jamini ko'rdi
-        # (_mark_summary_shown); buyurtma faqat keyingi xabarda mumkin.
-        session["last_totals"] = {int(round(float(total))), int(round(subtotal))}
     lines.append(f"Mahsulotlar: {_fmt(subtotal)} so'm")
     lines.append(f"Toshkent kuryeri bilan: yetkazish {'BEPUL' if fee <= 0 else _fmt(fee) + ' so' + chr(39) + 'm'}"
                  f" -> JAMI {_fmt(total)} so'm")
@@ -1503,45 +1491,16 @@ async def _tool_remove(user_id: int, args: dict) -> str:
     return "OK: savatdan o'chirildi."
 
 
-def _with_order_number(session: dict, reply: str, lang: str) -> str:
-    """Buyurtma tuzilgan xabarda raqam albatta bo'lsin (jonli sinovda model bir
-    marta "Buyurtma qabul qilindi: 101 100 so'm" deb raqamni tashlab ketdi)."""
-    order_id = session.pop("new_order_id", None)
-    if not order_id or not reply or str(order_id) in reply:
-        return reply
-    return reply.rstrip() + "\n\n" + _t(f"🧾 Buyurtma raqami: #{order_id}",
-                                        f"🧾 Номер заказа: #{order_id}", lang)
-
-
 def _same_apostrophes(text: str) -> str:
     return re.sub(r"[ʻʼ‘’`´]", "'", text or "")
 
 
 def _cart_changed(user_id: int) -> None:
-    """Savat o'zgardi — avval ko'rsatilgan jami summa endi eskirgan."""
+    """Savat o'zgardi — ochiq buyurtma kartasi eskirdi: javobdan keyin yangisi
+    chiqadi (_answer), mijoz eski summani tasdiqlab qo'ymasin."""
     session = _sessions.get(user_id)
     if session is not None:
-        session["summary_turn"] = None
-        session.pop("last_totals", None)
-
-
-_DIGIT_GROUP_SEP = re.compile(r"(?<=\d)[ \u00a0\u202f.,'](?=\d{3}\b)")
-_CONFIRM_ASK = re.compile(r"tasdiql|тасдиқл|подтвер|confirm", re.IGNORECASE)
-
-
-def _mark_summary_shown(session: dict, reply: str) -> None:
-    """Jonli sinov (2026-10-13): model savatni_korish ni faqat Keto qatori uchun
-    chaqirib, jami summani mijozga ko'rsatmasdan buyurtmaga o'tdi. Endi summa
-    "ko'rsatildi" deb faqat javob matnida haqiqatan bo'lsa belgilanadi. Oxirgi
-    hisoblangan summa savat o'zgarmaguncha eslab qolinadi — model xulosani
-    vositani qayta chaqirmay takrorlasa ham hisoblanadi."""
-    totals = session.get("last_totals")
-    if not totals or not reply:
-        return
-    compact = _DIGIT_GROUP_SEP.sub("", reply)
-    if (any(total > 0 and str(total) in compact for total in totals)
-            and _CONFIRM_ASK.search(reply)):
-        session["summary_turn"] = session.get("turn", 0)
+        session["card_refresh"] = True
 
 
 async def _tool_remember(user_id: int, args: dict) -> str:
@@ -1556,185 +1515,371 @@ async def _tool_remember(user_id: int, args: dict) -> str:
     return "OK: eslab qolindi. Mijozga bu haqda gapirma, suhbatni davom ettir."
 
 
-async def _tool_order(bot: Bot, message: Message, args: dict) -> str:
-    """Haqiqiy buyurtma. Tugmali checkout bilan bitta yo'ldan yuradi
-    (handlers/cart.py::_build_order_summary -> database.create_order ->
-    _notify_sellers), shuning uchun aksiya sovg'alari, chegirmalar va ombor
-    hisobi o'z-o'zidan to'g'ri bo'ladi."""
-    from handlers.cart import _build_order_summary, _is_tashkent, _notify_sellers
+# ─────────────────────────── buyurtma kartasi ───────────────────────────────
+# Egasi, 2026-10-16: "buyurtma olishda galyutsinatsiya bo'lyapti ... maksimal
+# sodda va tushunarli qilishimiz kerak". Avval xulosani (narxlar, jami, manzil)
+# model o'zi yozardi va buyurtmani o'zi tuzardi. Endi model faqat ma'lumot
+# yig'adi; tasdiq kartasi — tugmali checkout ning o'zi (⚡ Tezkor buyurtma
+# bilan bir yo'l): summa, chegirma, sovg'a, Keto va yetkazish narxini
+# handlers/cart.py hisoblaydi, buyurtmani «✅ Tasdiqlash» tuzadi, karta bilan
+# to'lovda — chek kelgach. Mijoz ko'rgan karta = tuzilgan buyurtma.
+
+AI_CARD_STATE = "CheckoutStates:confirming"
+
+
+async def ai_card_open(state: FSMContext | None) -> bool:
+    """Mijoz oldida AI ochgan, hali tasdiqlanmagan buyurtma kartasi turibdi."""
+    if state is None:
+        return False
+    try:
+        if await state.get_state() != AI_CARD_STATE:
+            return False
+        return bool((await state.get_data()).get("ai_checkout"))
+    except Exception:
+        return False
+
+
+async def _saved_contact(user_id: int) -> dict | None:
+    """Oxirgi bot buyurtmasidagi manzil va raqam — MIJOZ XOTIRASI da
+    ko'rsatilgani (ai_memory.build_profile). Mijoz "shu manzilga" desa, model
+    manzilni qayta yozmaydi — kod o'zi oladi."""
+    prefs = await database.get_last_order_prefs(user_id)
+    if not prefs or not (prefs.get("address") or "").strip():
+        return None
+    phone = next((o["phone"].strip() for o in await database.get_user_orders(user_id)
+                  if (o.get("phone") or "").strip()), "")
+    return {**prefs, "phone": phone}
+
+
+# Manzil so'zlarini solishtirganda e'tiborga olinmaydi — model ularni o'zi qo'shib yozadi.
+_ADDRESS_FILLER = {
+    "shahri", "shahar", "shahrida", "tumani", "tuman", "ko'chasi", "kochasi", "ko'cha", "kocha",
+    "kuchasi", "uy", "uyi", "xonadon", "xonadoni", "kvartal", "kvartira", "mavze", "mavzesi",
+    "viloyati", "viloyat", "mahalla", "mahallasi", "dom", "ulitsa", "ul", "rayon", "gorod", "kv",
+    "toshkent", "tashkent", "uzbekistan", "o'zbekiston", "manzil", "manzili", "podyezd", "qavat",
+}
+
+
+def _tokens(text: str) -> set[str]:
+    from translit import cyr_to_lat
+    plain = _same_apostrophes(cyr_to_lat(text or "")).lower()
+    return set(re.findall(r"[a-z']{2,}|\d+", plain)) - _ADDRESS_FILLER
+
+
+def from_customer(said: list[str], text: str) -> bool:
+    """Model kartaga yozmoqchi bo'lgan manzil yoki izoh mijozning o'z xabarlaridan
+    olinganmi. Jonli sinov (2026-10-16): ruscha yozgan mijoz lokatsiya
+    yubormasidan, model kartaga "Chilonzor tumani, 5-mavze, 12-uy" ni to'qib
+    qo'ydi. So'zlarning kamida 60% i mijoz xabarlarida bo'lishi kerak."""
+    text = (text or "").strip()
+    if not text or text.startswith("["):
+        return False
+    words = _tokens(text)
+    if not words:
+        return True   # faqat "uy", "kvartira" kabi umumiy so'z — zarari yo'q
+    heard = set().union(*(_tokens(t) for t in said)) if said else set()
+    return len(words & heard) >= 0.6 * len(words)
+
+
+def _phone_from_customer(said: list[str], phone: str) -> bool:
+    digits = re.sub(r"\D", "", phone or "")[-9:]
+    return len(digits) == 9 and any(digits in re.sub(r"\D", "", t) for t in said)
+
+
+async def _tool_card(message: Message, args: dict) -> str:
+    from handlers.cart import CheckoutStates, _is_tashkent
 
     user_id = message.from_user.id
-    lang = await database.get_user_language(user_id) or "uz"
     session = _session(user_id)
-    location = session.get("location")   # (lat, lon, o'qiladigan manzil) yoki None
-
-    name = (args.get("ism") or message.from_user.full_name or "—").strip()
-    session.setdefault("names", set()).update(customer_names(None, None, name.split()))
-    phone = (args.get("telefon") or session.get("phone") or "").strip()
-    address = (args.get("manzil") or "").strip()
-    payment = (args.get("tolov_turi") or "naqd").strip().lower()
-    note = (args.get("izoh") or "").strip() or None
-    secondary_phone = (args.get("qoshimcha_telefon") or "").strip() or None
-    keto_wanted = max(0, int(args.get("keto") or 0))
-    delivery = DELIVERY.get((args.get("yetkazish") or "toshkent_kuryer").strip().lower())
-
+    state = session.get("fsm")
+    if state is None:
+        return ("Xato: kartani hozir ochib bo'lmadi. Mijozga pastdagi 🛒 Savat tugmasi orqali "
+                "buyurtma berishni taklif qil.")
+    delivery = DELIVERY.get((args.get("yetkazish") or "").strip().lower())
     if not delivery:
         return ("Xato: yetkazish turi toshkent_kuryer, olib_ketish, yandex_taxi, bts yoki emu "
                 "bo'lishi kerak.")
-    if delivery not in CASH_OK and payment != "karta":
-        return ("Xato: bu yetkazish turida to'lov faqat karta orqali oldindan. Mijozga ayt "
-                "yoki Toshkentda bo'lsa kuryerni taklif qil.")
-    if delivery == "self" and location and not _is_tashkent(location[0], location[1]):
-        return ("Xato: lokatsiya Toshkentdan tashqarida — Ketoshop kuryeri faqat Toshkent "
-                "bo'ylab. Viloyatga BTS yoki EMU (karta orqali) taklif qil.")
-    # Jonli sinov (2026-10-13): mijoz Keto savoliga "ha" degan, model buni buyurtma
-    # tasdig'i deb olib, jami summani ko'rsatmay rasmiylashtirdi. Endi buyurtma
-    # faqat jami summa OLDINGI xabarda ko'rsatilgan va savat o'shandan beri
-    # o'zgarmagan bo'lsa tuziladi — tugmali checkout dagi tasdiq ekrani kabi.
-    # Tugmali checkout dagi "✅ Tasdiqlash" kabi: AYNAN OLDINGI javobda jami summa va
-    # "Tasdiqlaysizmi?" bo'lgan, mijoz shunga javob berdi. Oraliqda boshqa gap
-    # bo'lsa (masalan "naqd") — xulosa qayta ko'rsatiladi.
-    shown = session.get("summary_turn")
-    if shown is None or shown != session.get("turn", 0) - 1:
-        return ("Xato: buyurtmadan oldin mijoz aynan oldingi xabaringizda JAMI summani ko'rib, "
-                "'Tasdiqlaysizmi?' savoliga javob berishi kerak. savatni_korish ni chaqir, "
-                "mahsulotlar, yetkazish usuli va narxi, to'lov va JAMI ni ko'rsatib "
-                "'Tasdiqlaysizmi?' deb so'ra. Mijoz KEYINGI xabarida tasdiqlasa — rasmiylashtir.")
+    if not await database.get_cart(user_id):
+        return "Xato: savat bo'sh — avval mahsulotni savatga_qoshish bilan qo'sh."
 
-    pickup_url = None
+    # Kartaga faqat mijozning o'zi aytgani tushadi: tugma bilan yuborgan raqam va
+    # lokatsiya, o'zi yozgan manzil va izoh yoki u tasdiqlagan oldingi manzil.
+    said = session.get("said") or []
+    saved = await _saved_contact(user_id) if args.get("oldingi_manzil") else None
+    typed_phone = (args.get("telefon") or "").strip()
+    if typed_phone and not _phone_from_customer(said, typed_phone):
+        typed_phone = ""
+    phone = (typed_phone or session.get("phone") or (saved or {}).get("phone") or "").strip()
+    note = (args.get("izoh") or "").strip() or None
+    if note and not from_customer(said, note):
+        note = None
+    secondary = (args.get("qoshimcha_telefon") or "").strip() or None
+    if secondary and not _phone_from_customer(said, secondary):
+        secondary = None
+    typed = (args.get("manzil") or "").strip()
+    invented = bool(typed) and not from_customer(said, typed)
+    location = session.get("location")   # (lat, lon, o'qiladigan manzil) yoki None
+    address, lat, lng, pickup_url = "", None, None, None
+
     if delivery == "pickup":
         # Do'kondan olib ketadi — manzil do'konniki, mijoz lokatsiyasi kerak emas.
         address, pickup_url = await _pickup_place()
-        location = None
-
-    # Lokatsiya bo'lsa u manzilning o'zi bo'la oladi — kuryerga eng aniq shu.
-    # Mijoz ham lokatsiya, ham matn bergan bo'lsa ikkalasi ham yoziladi.
-    if location:
-        pin = location[2] or f"📍 {location[0]:.6f}, {location[1]:.6f}"
+        note = None
+    elif location:
+        # Lokatsiya — manzilning o'zi, kuryerga eng aniq shu. Matn ham bo'lsa
+        # ikkalasi yoziladi, lokatsiyadagi qism ikki marta emas.
+        lat, lng = location[0], location[1]
+        pin = location[2] or f"📍 {lat:.6f}, {lng:.6f}"
         readable = _same_apostrophes(pin.split(" — ", 1)[1]) if " — " in pin else ""
-        if readable and readable in _same_apostrophes(address):
-            # Model lokatsiyadagi manzilni qayta yozgan ("ko‘chasi" / "ko'chasi") —
-            # bir marta qolsin.
-            address = _same_apostrophes(address).replace(readable, "").strip(" ,—-")
-        address = f"{pin} — {address}" if address else pin
+        if readable and readable in _same_apostrophes(typed):
+            typed = _same_apostrophes(typed).replace(readable, "").strip(" ,—-")
+        if typed and not from_customer(said, typed):
+            typed = ""   # lokatsiyaga model qo'shgan gap ("Toshkent ichida") — kerak emas
+        address = f"{pin} — {typed}" if typed else pin
+    elif typed and not invented:
+        address = typed
+    elif saved:
+        address, lat, lng = saved["address"], saved.get("latitude"), saved.get("longitude")
+        note = note or saved.get("address_note")
+        secondary = secondary or saved.get("secondary_phone")
+
     if not phone:
-        return "Xato: telefon raqami kerak. Mijozdan so'ra."
-    if not address:
-        return ("Xato: manzil yo'q. Mijozdan Telegram lokatsiyasini yuborishni yoki "
-                "manzilni yozishni so'ra.")
+        return ("Xato: telefon raqami kerak — lokatsiya_tugmasi ni chaqirib, raqamni so'ra. "
+                "Raqamni o'zingdan yozma.")
+    if delivery != "pickup" and not address:
+        if invented:
+            return ("Xato: bu manzilni mijoz yozmagan va lokatsiya ham kelmagan — manzilni "
+                    "o'zingdan TO'QIMA. lokatsiya_tugmasi ni chaqirib, lokatsiyani so'ra.")
+        return ("Xato: manzil yo'q — lokatsiya_tugmasi ni chaqirib, lokatsiya so'ra (yoki "
+                "manzilni matn bilan yozsin).")
+    in_tashkent = lat is not None and lng is not None and _is_tashkent(float(lat), float(lng))
+    if delivery == "self" and lat is not None and not in_tashkent:
+        return ("Xato: lokatsiya Toshkentdan tashqarida — Ketoshop kuryeri faqat Toshkent "
+                "bo'ylab. Viloyatga BTS yoki EMU pochtani taklif qil.")
 
-    # Karta tanlansa ham bazada payment_method 'cash' bo'lib qoladi: 'online'
-    # tugmali oqimda "chek tekshirilgan" degani (handlers/cart.py), va AI uni
-    # to'langan deb belgilay olmaydi. Tanlov izohda ko'rinadi.
-    if payment == "karta":
-        note = f"To'lov: KARTA (chek kutilmoqda){' · ' + note if note else ''}"
-
-    # _build_order_summary telefon, manzil va to'lov turini ham o'qiydi
-    # (data["phone"], data["payment_method"]) — busiz KeyError beradi.
-    data = {"delivery_method": delivery, "payment_method": "cash", "phone": phone,
-            "address": address, "address_note": note, "pickup_map_url": pickup_url,
-            "secondary_phone": secondary_phone}
-    if keto_wanted:
-        # Tugmali checkout bilan bir xil: _build_order_summary balans va jami
-        # summaga qarab qisqartiradi; sarflash yoqilmagan bo'lsa — umuman yo'q.
-        try:
-            import gamification
-            if await gamification.is_redemption_enabled(user_id):
-                data["keto_redeem"] = keto_wanted
-        except Exception:
-            logger.warning("Keto redemption check failed for %s", user_id, exc_info=True)
-    _, total, items_data, keto_redeem = await _build_order_summary(user_id, data, lang)
-    if not items_data:
-        return "Xato: savat bo'sh — avval mahsulot qo'shish kerak."
-
-    try:
-        order_id, low_stock = await database.create_order(
-            user_id=user_id,
-            customer_name=name,
-            phone=phone,
-            address=address,
-            items=items_data,
-            total=total,
-            payment_method="cash",   # to'lovni admin tasdiqlaydi — AI hech qachon emas
-            latitude=location[0] if location else None,
-            longitude=location[1] if location else None,
-            delivery_method=delivery,
-            address_note=note,
-            secondary_phone=secondary_phone,
-            keto_redeem=keto_redeem,
-            pickup_map_url=pickup_url,
-        )
-    except database.InsufficientStockError:
-        return ("Xato: mahsulot omborda tugab qolibdi. Mijozdan uzr so'ra va "
-                "savatni qayta ko'rib chiq.")
-    except database.InsufficientKetoError:
-        return "Xato: Keto balansi yetmadi, chegirmasiz qayta urinib ko'r."
-    except Exception:
-        logger.exception("AI order creation failed for %s", user_id)
-        return "Xato: buyurtma yaratilmadi. Mijozga operator bog'lanishini ayt."
-
-    await database.clear_cart(user_id)
-
-    try:
-        from handlers.cart import notify_low_stock
-        if low_stock:
-            await notify_low_stock(bot, low_stock)
-    except Exception:
-        logger.warning("low-stock notice failed", exc_info=True)
-
-    try:
-        await _notify_sellers(bot, order_id, items_data, {
-            "customer_name": name,
-            "phone": phone,
-            "address": address,
-            "address_note": note,
-            "secondary_phone": secondary_phone,
-            "latitude": location[0] if location else None,
-            "longitude": location[1] if location else None,
-            "total": total,
-            "user_id": user_id,
-            "username": message.from_user.username,
-            "delivery_method": delivery,
-            "pickup_map_url": pickup_url,
-            "payment_method": "cash",
-            "status": "pending",
-        }, lang)
-    except Exception:
-        # Buyurtma allaqachon bazada — admin xabari ketmasa ham uni yo'qotmaymiz.
-        logger.exception("AI order %s: admin notification failed", order_id)
-
-    session["new_order_id"] = order_id   # javobda raqam bo'lishini _respond tekshiradi
-    logger.info("AI sales created order %s for user %s (payment=%s, delivery=%s)",
-                order_id, user_id, payment, delivery)
-    session["location"] = None   # keyingi buyurtma o'z lokatsiyasini so'rasin
-    session["keyboard"] = "menu"   # buyurtma tushdi — lokatsiya tugmasi o'rniga menyu
-    try:
-        await _celebrate(bot, message.from_user, order_id, items_data, total, payment)
-    except Exception:
-        logger.exception("AI order %s: celebration failed", order_id)
-
-    result = f"OK: buyurtma #{order_id} qabul qilindi, jami {_fmt(total)} so'm."
-    if keto_redeem:
-        result += f" Shundan {_fmt(keto_redeem)} so'm Keto tangachalar bilan to'landi."
-    if delivery == "self":
-        result += " Toshkent bo'ylab 24 soat ichida yetkaziladi."
-    elif delivery == "pickup":
-        result += (f" Mijoz do'kondan olib ketadi — mo'ljal: {SHOP_LANDMARK}, havola: "
-                   f"{SHOP_ADDRESS_URL} . Buyurtma tayyor bo'lgach operatorimiz xabar beradi.")
-    elif delivery == "yandex_taxi":
-        from config import SUPPORT_USERNAME
-        result += (" Yandex orqali yuboriladi — yetkazish vaqti bo'yicha adminimiz: "
-                   f"@{SUPPORT_USERNAME}, {SUPPORT_PHONES}.")
+    # Yandex va pochtada faqat karta. Aks holda mijoz aytgani, aytmagan bo'lsa —
+    # kartadagi tanlovi (to'lov tugmasi) yoki naqd.
+    online_only = delivery not in CASH_OK
+    old = await state.get_data() if await ai_card_open(state) else {}
+    wanted = (args.get("tolov_turi") or "").strip().lower()
+    if online_only or wanted == "karta":
+        payment = "online"
+    elif wanted == "naqd" or old.get("online_only"):
+        payment = "cash"
     else:
-        result += " Yetkazish bo'yicha operator bog'lanadi."
-    if payment == "karta":
-        session["awaiting_cheque"] = order_id
-        result += (f"\nTO'LOV: mijozga shu kartani ayt — {PAYMENT_CARD_NUMBER} "
-                   f"({PAYMENT_RECIPIENT_NAME}), summa {_fmt(total)} so'm, va chek "
-                   f"rasmini shu chatga yuborishni so'ra. To'lovni O'ZING tasdiqlama.")
-    else:
-        result += " To'lov naqd — kuryerga beradi."
+        payment = "online" if old.get("payment_method") == "online" else "cash"
+
+    await state.set_data({
+        "lang": await _lang(user_id), "ai_checkout": True,
+        "phone": phone, "address": address, "latitude": lat, "longitude": lng,
+        "delivery_method": delivery, "payment_method": payment,
+        "online_only": online_only, "in_tashkent": in_tashkent,
+        "address_note": note, "secondary_phone": secondary,
+        "pickup": delivery == "pickup", "pickup_map_url": pickup_url,
+        "keto_redeem": int(old.get("keto_redeem") or 0),
+    })
+    await state.set_state(CheckoutStates.confirming)
+    session["card"] = True
+    session["keyboard"] = "menu"   # lokatsiya tugmalari o'rniga odatdagi menyu
+    result = ("OK: buyurtma kartasi javobingdan keyin chiqadi — mahsulotlar, JAMI, manzil va "
+              f"to'lov ({'karta orqali oldindan' if payment == 'online' else 'naqd'}) unda. "
+              "Javobing — bitta qisqa jumla: kartani tekshirib «✅ Tasdiqlash» ni bosishni so'ra. "
+              "Summa, mahsulot va manzilni QAYTA YOZMA, 'qabul qilindi' DEMA.")
+    if wanted == "naqd" and online_only:
+        result += " Bu usulda to'lov faqat karta orqali oldindan — mijozga qisqa ayt."
     return result
+
+
+async def _send_card(message: Message, state: FSMContext) -> bool:
+    """Kartaning o'zi — handlers/cart.py::_render_confirmation, tugmali
+    checkout dagi bilan bir xil matn va tugmalar."""
+    from handlers.cart import _render_confirmation
+    user_id = message.from_user.id
+    lang = (await state.get_data()).get("lang") or await _lang(user_id)
+    text, keyboard = await _render_confirmation(user_id, state, lang)
+    if text is None:
+        await state.clear()   # savat bo'shab qoldi — karta yo'q
+        return False
+    sent = await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    session = _session(user_id)
+    session["card_msg"] = getattr(sent, "message_id", None)
+    session["card_at"] = time.time()
+    return True
+
+
+CARD_FRESH = 2 * 3600   # yozib 'ha' / 'karta bilan' deyish faqat shu muddatdagi kartaga
+
+
+def _card_fresh(user_id: int) -> bool:
+    """Karta shu suhbatda yaqinda ko'rsatilganmi. FSM holati bazada kunlab turadi:
+    ertasi kuni boshqa gapga yozilgan 'ha' eski kartani tasdiqlab yubormasin —
+    eski kartadagi tugmani bosish esa baribir ishlaydi (bu ongli bosish)."""
+    session = _sessions.get(user_id) or {}
+    return time.time() - float(session.get("card_at") or 0) < CARD_FRESH
+
+
+def _card_intro(lang: str) -> str:
+    return _t("Buyurtmangizni tekshiring 👇 Hammasi to'g'ri bo'lsa — «✅ Tasdiqlash» ni bosing 😊",
+              "Проверьте заказ 👇 Если всё верно — нажмите «✅ Подтвердить» 😊", lang)
+
+
+# Mijoz kartani yozib tasdiqlasa — tugma bosilgandek (modelsiz).
+_CONFIRM_WORDS = {
+    "ha", "xa", "ha tasdiqlayman", "xa tasdiqlayman", "tasdiqlayman", "tasdiqlaymiz", "tasdiqlash",
+    "tasdiq", "ha togri", "togri", "hammasi togri", "ha hammasi togri", "ok", "okey", "mayli",
+    "ha mayli", "xop", "ha xop", "roziman", "ha roziman", "albatta", "ha albatta",
+    "ҳа", "ха", "тасдиқлайман", "ҳа тасдиқлайман", "тасдиқлаймиз", "тўғри", "ҳа тўғри",
+    "ҳаммаси тўғри", "майли", "ҳа майли", "хўп", "розиман",
+    "да", "подтверждаю", "да подтверждаю", "всё верно", "все верно", "верно", "да верно",
+    "yes", "confirm", "yes confirm",
+}
+
+
+def is_confirmation(text: str) -> bool:
+    norm = re.sub(r"[ʻʼ‘’`´']", "", (text or "").lower())
+    norm = " ".join(re.sub(r"[^\w\s]", " ", norm).split())
+    return norm in _CONFIRM_WORDS
+
+
+_CARD_PAY = re.compile(r"\b(?:karta\w*|kartochka\w*|plastik\w*|o'tkazaman|o'tkazamiz|o'tkazib\s+beraman|"
+                       r"perevod\w*|карт\w*|перевод\w*|переведу|card|click|payme)\b", re.IGNORECASE)
+_CASH_PAY = re.compile(r"\b(?:naqd\w*|нақд\w*|налич\w*|cash)\b", re.IGNORECASE)
+
+
+def payment_choice(text: str) -> str | None:
+    """Karta ochiq paytdagi qisqa 'karta bilan' / 'naqd' — kartadagi to'lov
+    tugmasi bosilgandek. Jonli sinov (2026-10-16): mijoz 'kartaga o'tkazaman'
+    dedi, model karta raqamini o'zi berdi, kartada esa naqd qolib, buyurtma naqd
+    tushdi. Uzun gap modelga qoladi (u kartani tolov_turi bilan qayta ochadi)."""
+    norm = _same_apostrophes(text or "").lower()
+    if len(norm.split()) > 6:
+        return None
+    card, cash = bool(_CARD_PAY.search(norm)), bool(_CASH_PAY.search(norm))
+    if card == cash:
+        return None
+    return "online" if card else "cash"
+
+
+async def _switch_card_payment(bot: Bot | None, message: Message, state: FSMContext,
+                               choice: str) -> None:
+    user = message.from_user
+    data = await state.get_data()
+    lang = data.get("lang") or await _lang(user.id)
+    if data.get("online_only") and choice == "cash":
+        reply = _t("Bu yetkazish usulida to'lov faqat karta orqali oldindan 😊",
+                   "При этом способе доставки оплата только картой заранее 😊", lang)
+    else:
+        await state.update_data(payment_method=choice)
+        reply = (_t("Mayli, karta orqali to'laysiz 😊 «✅ Tasdiqlash» dan keyin karta raqami chiqadi.",
+                    "Хорошо, оплата картой 😊 После «✅ Подтвердить» придут реквизиты карты.", lang)
+                 if choice == "online" else
+                 _t("Mayli, naqd to'laysiz 😊", "Хорошо, оплата наличными 😊", lang))
+        _session(user.id)["note"] = (f"[Mijoz kartada to'lovni {'karta' if choice == 'online' else 'naqd'}"
+                                     "ga o'zgartirdi — karta yangilandi.]")
+    await message.answer(reply)
+    await _send_card(message, state)
+    await log_conversation(bot, user, f"👤 {_esc(_short(message.text, 200))}\n🤖 {_esc(reply)}")
+
+
+class _CardMessage:
+    """CallbackQuery.message o'rnida: tasdiq handleri kartani tahrirlaydi."""
+
+    def __init__(self, bot: Bot | None, message: Message, card_id: int | None):
+        self._bot, self._message, self._card_id = bot, message, card_id
+
+    async def edit_text(self, text, reply_markup=None, parse_mode=None, **_):
+        if self._bot is not None and self._card_id:
+            try:
+                await self._bot.edit_message_text(text=text, chat_id=self._message.chat.id,
+                                                  message_id=self._card_id,
+                                                  reply_markup=reply_markup, parse_mode=parse_mode)
+                return
+            except Exception:
+                logger.debug("AI card edit failed — sending anew", exc_info=True)
+        await self._message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
+
+    async def answer(self, text, **kwargs):
+        return await self._message.answer(text, **kwargs)
+
+
+class _TypedConfirm:
+    """CallbackQuery o'rnida: mijoz «✅ Tasdiqlash» o'rniga 'ha' deb yozdi."""
+
+    def __init__(self, bot: Bot | None, message: Message, card_id: int | None):
+        self.from_user = message.from_user
+        self.bot = bot
+        self.message = _CardMessage(bot, message, card_id)
+        self._message = message
+
+    async def answer(self, text=None, show_alert=False, **_):
+        if text and show_alert:
+            await self._message.answer(text)
+
+
+async def _confirm_typed(bot: Bot | None, message: Message, state: FSMContext) -> None:
+    """Karta ochiq, mijoz 'ha' deb yozdi — tugmali checkout ning o'z tasdiq
+    handleri ishlaydi. Model chaqirilmaydi: na qaror, na buyurtma uniki."""
+    from handlers.cart import order_confirm_yes
+    await log_conversation(bot, message.from_user, f"👤 {_esc(_short(message.text, 200))}")
+    await order_confirm_yes(_TypedConfirm(bot, message, _session(message.from_user.id).get("card_msg")),
+                            state, bot)
+
+
+async def checkout_event(bot: Bot | None, user, event: str, order_id: int | None = None,
+                         items: list[dict] | None = None, total: float = 0,
+                         payment_method: str | None = None) -> None:
+    """handlers/cart.py dan: AI ochgan kartaning taqdiri. Buyurtma — AI savdosi
+    (🎉 va kunlik hisob); ikkala holda ham AI keyingi javobida biladi."""
+    session = _sessions.get(user.id)
+    if event == "placed":
+        paid = "karta (chek keldi)" if payment_method == "online" else "naqd"
+        if session is not None:
+            session["placed"] = order_id
+            session["note"] = (f"[Mijoz «✅ Tasdiqlash» ni bosdi: buyurtma #{order_id} tuzildi, jami "
+                               f"{_fmt(total)} so'm, to'lov {paid}. Rahmat xabari va yetkazish "
+                               "vaqtini bot yubordi.]")
+        await _celebrate(bot, user, order_id, items or [], total,
+                         "karta" if payment_method == "online" else "naqd")
+    elif event == "cancelled":
+        if session is not None:
+            session["note"] = "[Mijoz buyurtma kartasini bekor qildi — savat saqlanib turibdi.]"
+        await log_conversation(bot, user, "❌ Buyurtma kartasini bekor qildi")
+
+
+# Model o'zi qilmagan ishni "qildik" desa — bir marta qayta so'raladi.
+_ORDER_CLAIM = re.compile(
+    r"(?:buyurtma\w*|буюртма\w*)\s+(?:[#№]?\s?\d+\s+)?(?:qabul\s+qilindi|rasmiylashtirildi|tuzildi|"
+    r"yaratildi|қабул\s+қилинди|расмийлаштирилди)"
+    r"|заказ\w*\s+(?:[#№]?\s?\d+\s+)?(?:принят|оформлен|создан)"
+    r"|order\s+(?:[#№]?\s?\d+\s+)?(?:has\s+been\s+|is\s+)?(?:placed|confirmed)",
+    re.IGNORECASE)
+_CART_CLAIM = re.compile(
+    r"savat\w*\s+(?:\S+\s+){0,3}?(?:qo['ʻ’`‘]?shildi|qo['ʻ’`‘]?shdik|solindi|soldik)"
+    r"|сават\w*\s+(?:\S+\s+){0,3}?(?:қўшилди|қўшдик|солинди)"
+    r"|(?:добавил[иа]?|добавлен[аоы]?)\s+(?:\S+\s+){0,3}?в\s+корзину"
+    r"|added\s+(?:\S+\s+){0,4}?to\s+(?:your\s+)?cart",
+    re.IGNORECASE)
+_ADD_TOOLS = {"savatga_qoshish", "set_qoshish"}
+
+
+def false_claim(reply: str, done: set[str], session: dict) -> str | None:
+    """Javob vositasiz bajarilgan ishni aytsa — modelga tuzatish izohi, aks holda None."""
+    if _CART_CLAIM.search(reply or "") and not done & _ADD_TOOLS:
+        return ("[TIZIM: bu javobda savatga hech narsa qo'shilmadi. Mijoz mahsulot olmoqchi "
+                "bo'lsa — savatga_qoshish ni chaqir; aks holda 'qo'shdik' dema. Javobni qayta yoz.]")
+    if _ORDER_CLAIM.search(reply or "") and not session.get("placed"):
+        return ("[TIZIM: bu suhbatda buyurtma tuzilmagan — 'qabul qilindi' dema. Buyurtma faqat "
+                "mijoz buyurtma_kartasi dagi «✅ Tasdiqlash» ni bosganda tuziladi. Mijoz oldingi "
+                "buyurtmasini so'rayotgan bo'lsa — MIJOZ XOTIRASI dagi raqami va holatini ayt. "
+                "Javobni qayta yoz.]")
+    return None
+
+
+def drop_order_claims(reply: str) -> str:
+    """Qayta so'ralgandan keyin ham "buyurtma qabul qilindi" qolsa — o'sha gap olib
+    tashlanadi: mijoz tuzilmagan buyurtmani tuzildi deb o'ylamasin."""
+    parts = re.split(r"(?<=[.!?…])\s+|\n", reply or "")
+    return "\n".join(p for p in parts if not _ORDER_CLAIM.search(p)).strip()
 
 
 async def _pickup_place() -> tuple[str, str]:
@@ -1770,8 +1915,8 @@ async def _run_tool(bot: Bot, message: Message, name: str, args: dict) -> str:
         return await _tool_remove(user_id, args)
     if name == "eslab_qol":
         return await _tool_remember(user_id, args)
-    if name == "buyurtma_rasmiylashtirish":
-        return await _tool_order(bot, message, args)
+    if name == "buyurtma_kartasi":
+        return await _tool_card(message, args)
     if name == "javobsiz_savol":
         await database.log_ai_question(str(args.get("savol") or ""), user_id)
         return ("OK: savol adminlarga yozib qo'yildi. Endi mijozga uzr so'rab "
@@ -1815,26 +1960,30 @@ async def _opening_context(user_id: int) -> str:
 
 async def _respond(bot: Bot, message: Message, user_text: str) -> str:
     """Bitta mijoz xabari -> bitta javob. Ichida vosita chaqiruvlari tsikli:
-    model savatga soladi/buyurtma beradi, natijani o'qiydi va yakuniy matnni
+    model savatga soladi/kartani ochadi, natijani o'qiydi va yakuniy matnni
     yozadi. MAX_TURNS — cheksiz tsiklga qarshi to'siq. Model qaysi
     provayderdan ekani bu yerda ahamiyatsiz — ai_provider.step() ikkalasini
     bir xil Turn ga keltiradi."""
     user_id = message.from_user.id
     session = _session(user_id)
     session["last"] = time.time()
-    session["turn"] = session.get("turn", 0) + 1   # mijoz xabarlari hisobi (buyurtma darvozasi)
     state = session.setdefault("ai", {})
     if not session.get("profiled"):
         session["profiled"] = True
         opening = await _opening_context(user_id)
         if opening:
             user_text = f"{opening}\n\n[MIJOZ XABARI]\n{user_text}"
+    note = session.pop("note", None)   # karta tasdiqlandi / bekor qilindi (checkout_event)
+    if note:
+        user_text = f"{note}\n\n{user_text}"
     rules, catalog = _sales_rules(), await _dynamic_block(await _catalog_text())
     lang = await _lang(user_id)
 
     turn = await _step(state, rules, catalog, TOOLS, user=user_text,
                        max_tokens=MAX_TOKENS, history_limit=HISTORY_LIMIT)
     reply_text = ""
+    done: set[str] = set()     # shu xabarda muvaffaqiyatli ishlagan vositalar
+    corrected = False
     for attempt in range(MAX_TURNS):
         if turn.refused:
             logger.warning("AI sales refusal for user %s", user_id)
@@ -1844,8 +1993,19 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
                       "Подробнее по телефону: ", lang) + SUPPORT_PHONES
         reply_text = turn.text or reply_text
         if not turn.calls:
-            _mark_summary_shown(session, reply_text)
-            return _with_order_number(session, reply_text, lang)
+            # Jonli sinov va egasi (2026-10-16): model ba'zan vositani chaqirmay
+            # "savatga qo'shdik" yoki "buyurtma qabul qilindi" deydi. Bir marta
+            # qayta so'raymiz; buyurtma haqidagi yolg'on gap baribir qolmaydi.
+            fix = None if corrected or attempt == MAX_TURNS - 1 else false_claim(reply_text, done, session)
+            if fix is None:
+                if not session.get("placed") and _ORDER_CLAIM.search(reply_text or ""):
+                    reply_text = drop_order_claims(reply_text)
+                return reply_text
+            corrected = True
+            logger.warning("AI sales claimed an action it did not take (user %s) — asking again", user_id)
+            turn = await _step(state, rules, catalog, TOOLS, user=fix,
+                               max_tokens=MAX_TOKENS, history_limit=HISTORY_LIMIT)
+            continue
 
         results = []
         for call in turn.calls:
@@ -1855,6 +2015,8 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
             except Exception:
                 logger.exception("AI tool %s failed", call.name)
                 output, is_error = "Xato: ichki nosozlik.", True
+            if not is_error:
+                done.add(call.name)
             results.append(ai_provider.ToolResult(call.id, output, is_error))
 
         if attempt == MAX_TURNS - 1:
@@ -1924,19 +2086,41 @@ async def _answer(bot: Bot, message: Message, user_text: str) -> None:
         ai_provider.reset(_session(user_id).setdefault("ai", {}))
         await _fallback_to_admins(bot, message, user_text)
         return
-    if not reply:
-        return
+    session = _sessions.get(user_id) or {}
+    fsm = session.get("fsm")
+    # Karta shu xabarda ochildi yoki savat o'zgarib, ochiq karta eskirdi.
+    want_card = session.pop("card", False) | session.pop("card_refresh", False)
+    card_open = await ai_card_open(fsm)
+    card = want_card and card_open
     if _is_paused(user_id):
         return   # javob tayyorlanguncha admin o'zi gapga kirdi — ustidan gapirmaymiz
-    reply = polish_reply(reply, await _lang(user_id), customer_text=user_text)
-    session = _sessions.get(user_id) or {}
-    names = customer_names(message.from_user, user_text, session.get("names", ()))
-    session.setdefault("names", set()).update(names)
-    reply = thank_politely(strip_name_address(reply, names))
+    lang = await _lang(user_id)
+    card_digits = re.sub(r"\D", "", PAYMENT_CARD_NUMBER or "")
+    if card:
+        # Kartadan oldin qat'iy jumla, mijoz tilida. Model yozgan xulosa yoki summa
+        # kartadagidan farq qilishi mumkin edi — raqamlar faqat kartada.
+        reply = _card_intro(lang)
+    elif card_open and card_digits and card_digits in re.sub(r"\D", "", reply or ""):
+        # Karta ochiq — to'lov kartada tanlanadi, karta raqamini tasdiqdan keyin
+        # checkout o'zi beradi (aks holda mijoz to'laydi-yu, buyurtma naqd tushadi).
+        reply = _t("Karta bilan to'lash uchun kartadagi «💳 Karta orqali to'layman» ni bosing — "
+                   "«✅ Tasdiqlash» dan keyin karta raqami o'zi chiqadi 😊",
+                   "Чтобы оплатить картой, нажмите в заказе «💳 Оплачу картой» — после "
+                   "«✅ Подтвердить» придут реквизиты 😊", lang)
+    elif reply:
+        # Modelning o'z matni — yozuv, ism va minnatdorchilik tekshiruvidan o'tadi.
+        reply = polish_reply(reply, lang, customer_text=user_text)
+        names = customer_names(message.from_user, user_text, session.get("names", ()))
+        session.setdefault("names", set()).update(names)
+        reply = thank_politely(strip_name_address(reply, names))
+    if not reply:
+        return
     session = _sessions.get(user_id)
     if session and session.get("keyboard") == "location" and SHOP_ADDRESS_URL in reply:
         session.pop("keyboard", None)   # do'kon manzili haqida — mijoz lokatsiyasi kerak emas
     await message.answer(reply, reply_markup=await _reply_keyboard(user_id))
+    if card and await _send_card(message, fsm):
+        reply += "\n🧾 [buyurtma kartasi ko'rsatildi]"
     await _mirror(bot, message, user_text, reply)
     if user_id not in ADMIN_IDS and user_id not in database.LEADERBOARD_EXCLUDED_USER_IDS:
         await ai_stats.record_turn(user_id, "bot", user_text)   # /ai_hisobot
@@ -2350,7 +2534,7 @@ async def cmd_ai_on(message: Message):
     if user_id in ADMIN_IDS:
         text = ("🤖 <b>AI sotuvchi — yangi suhbat.</b>\n\n"
                 "Oddiy mijozdek yozing: mahsulot tanlaydi, savatga soladi, "
-                "lokatsiya/telefon so'raydi va buyurtmani rasmiylashtiradi.\n\n"
+                "lokatsiya/telefon so'raydi va buyurtma kartasini ochadi.\n\n"
                 "O'chirish: /ai_off · Holat: /ai_holat")
     else:
         # Mijoz ko'radigan matn — kim bilan yozishayotgani haqida ortiqcha gap yo'q.
@@ -2789,7 +2973,7 @@ async def _celebrate(bot: Bot | None, user, order_id: int, items: list[dict], to
     text = (f"🎉🎉 <b>AI sotuv!</b> Buyurtma <b>#{order_id}</b>\n"
             f"👤 {_who(user)} · <code>{user.id}</code>\n"
             f"📦 {len(lines)} ta mahsulot · <b>{_fmt(goods)} so'm</b>"
-            + (" · 💳 karta (chek kutilmoqda)" if payment == "karta" else " · 💵 naqd")
+            + (" · 💳 karta (chek keldi)" if payment == "karta" else " · 💵 naqd")
             + (f"\n🛍 {names}" if names else ""))
     if today and today["orders"]:
         text += (f"\n\n🏆 <b>Bugun AI:</b> {today['orders']} ta buyurtma · "
@@ -2982,13 +3166,19 @@ async def _in_bot_form(state: FSMContext | None) -> bool:
     formaniki — AI aralashmaydi (egasi, 2026-10-13: "mijozga o'zim javob
     bermoqchi edim, lekin AI menga javob beryapti"). support_relay routeri AI
     dan KEYIN turadi, shuning uchun bu tekshiruvsiz AI uning formasini yutib
-    yuborardi; oldingi routerlardagi formalar baribir AI dan oldin ushlaydi."""
+    yuborardi; oldingi routerlardagi formalar baribir AI dan oldin ushlaydi.
+
+    Istisno — AI o'zi ochgan buyurtma kartasi: u ochiq turganda mijoz yozsa
+    ham suhbat AI da qoladi ('ha' — tasdiq, savol — javob)."""
     if state is None:
         return False
     try:
-        return await state.get_state() is not None
+        current = await state.get_state()
     except Exception:
         return False
+    if current is None:
+        return False
+    return not await ai_card_open(state)
 
 
 async def _has_session(message: Message, state: FSMContext | None = None) -> bool:
@@ -3093,22 +3283,49 @@ def is_thanks_only(text: str) -> bool:
     return bool(_THANKS_RE.match(text or ""))
 
 
+def _keep_fsm(message: Message, state: FSMContext | None) -> None:
+    """buyurtma_kartasi checkout holatini shu FSMContext orqali yozadi."""
+    if state is not None:
+        _session(message.from_user.id)["fsm"] = state
+
+
+def _heard(message: Message) -> None:
+    """Mijozning o'z so'zlari — kartaga faqat shulardan manzil va izoh tushadi
+    (from_customer)."""
+    said = _session(message.from_user.id).setdefault("said", [])
+    said.append(message.text or "")
+    del said[:-30]
+
+
 @router.message(_has_session, F.text & ~F.text.startswith("/"))
-async def on_text(message: Message, bot: Bot):
+async def on_text(message: Message, bot: Bot, state: FSMContext | None = None):
     """AI javob beradigan odamning oddiy matni. Router bot.py da support_relay
     dan OLDIN, qolgan hammasidan KEYIN turadi: menyu tugmalari va FSM oqimlari
     avvalgidek ishlayveradi, faqat hech kim ushlamagan matn AI ga tushadi."""
+    _keep_fsm(message, state)
+    _heard(message)
     if is_thanks_only(message.text):
         return   # "rahmat" ga javob shart emas — token ham ketmaydi
+    if _card_fresh(message.from_user.id) and await ai_card_open(state):
+        # Karta ochiq: "ha" — tasdiq, "karta bilan" / "naqd" — to'lov tugmasi.
+        # Ikkalasi ham modelsiz, tugmali checkout ning o'z kodi bilan.
+        if is_confirmation(message.text):
+            await _confirm_typed(bot, message, state)
+            return
+        choice = payment_choice(message.text)
+        if choice:
+            await _switch_card_payment(bot, message, state, choice)
+            return
     await _reply(bot, message, message.text)
 
 
 @router.message(_has_session, F.location)
-async def on_location(message: Message, bot: Bot):
+async def on_location(message: Message, bot: Bot, state: FSMContext | None = None):
     """Mijoz manzilni Telegram lokatsiyasi bilan yubordi. Tugmali checkout
     bilan bir xil ishlov: O'zbekiston chegarasi tekshiriladi va koordinata
     o'qiladigan manzilga aylantiriladi (handlers/cart.py::process_location) —
     kuryer 'Yunusobod, Mustaqillik 12' ni koordinatadan afzal ko'radi."""
+    _keep_fsm(message, state)
     lat = message.location.latitude
     lng = message.location.longitude
     try:
@@ -3135,12 +3352,16 @@ async def on_location(message: Message, bot: Bot):
         where = "Toshkent ichida" if _is_tashkent(lat, lng) else "Toshkentdan TASHQARIDA (viloyat)"
     except Exception:
         where = "hududi noma'lum"
-    await _reply(bot, message, f"[Mijoz yetkazish lokatsiyasini yubordi: {pin} — {where}]")
+    # Koordinata modelga kerak emas (mijozga "41.311081, 69.240562" deb o'qib berardi) —
+    # u kartada va kuryer xabarida bor.
+    place = readable or "xaritadagi nuqta, ko'cha nomi aniqlanmadi"
+    await _reply(bot, message, f"[Mijoz yetkazish lokatsiyasini yubordi: {place} — {where}]")
 
 
 @router.message(_has_session, F.contact)
-async def on_contact(message: Message, bot: Bot):
+async def on_contact(message: Message, bot: Bot, state: FSMContext | None = None):
     """Kontakt tugmasi orqali kelgan telefon — qo'lda yozishdan ishonchliroq."""
+    _keep_fsm(message, state)
     phone = (message.contact.phone_number or "").strip()
     if phone and not phone.startswith("+"):
         phone = "+" + phone

@@ -891,6 +891,9 @@ TEXTS = {
     "btn_cancel": {"uz": "❌ Bekor qilish", "ru": "❌ Отмена"},
     "btn_pay_online": {"uz": "💳 Onlayn to'lash", "ru": "💳 Оплатить онлайн"},
     "btn_pay_cash": {"uz": "💵 Naqd to'lash", "ru": "💵 Оплата наличными"},
+    # AI ochgan buyurtma kartasidagi to'lov almashtirgich (handlers/cart.py).
+    "btn_ai_pay_card": {"uz": "💳 Karta orqali to'layman", "ru": "💳 Оплачу картой"},
+    "btn_ai_pay_cash": {"uz": "💵 Naqd to'layman", "ru": "💵 Оплачу наличными"},
     "btn_change_payment": {"uz": "💳 To'lov usulini o'zgartirish", "ru": "💳 Изменить способ оплаты"},
     "btn_add_more_before_order": {"uz": "🛍 Yana mahsulot qo'shish", "ru": "🛍 Добавить ещё товар"},
     "btn_finish_adding": {"uz": "✅ Buyurtmani yakunlash", "ru": "✅ Завершить заказ"},

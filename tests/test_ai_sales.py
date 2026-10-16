@@ -190,53 +190,6 @@ class AiSalesToolLoopTest(_ProviderSwap):
         self.assertTrue(result.is_error)
         self.assertIn("qolgan", result.output)
 
-    def test_order_tool_creates_a_real_order_and_clears_the_cart(self):
-        items = [{"product_id": 10, "name": "Kokos uni", "quantity": 2,
-                  "price": 55000, "unit": "kg", "seller_id": 1}]
-
-        async def fake_summary(user_id, data, lang):
-            # Haqiqiy _build_order_summary shu kalitlarni o'qiydi — bo'lmasa
-            # KeyError (2026-10-12 gacha AI buyurtmasi shu sababli yiqilardi).
-            data["phone"], data["address"], data["payment_method"]
-            return "matn", 110000, items, 0
-
-        notified = {}
-
-        async def fake_notify(bot, order_id, items_data, data, lang):
-            notified["order_id"] = order_id
-            notified["payment_method"] = data["payment_method"]
-
-        import handlers.cart as cart
-        saved = (cart._build_order_summary, cart._notify_sellers, cart.notify_low_stock)
-        cart._build_order_summary = fake_summary
-        cart._notify_sellers = fake_notify
-        cart.notify_low_stock = AsyncMock()
-        database.create_order = AsyncMock(return_value=(4242, []))
-        database.clear_cart = AsyncMock()
-        database.get_user_language = AsyncMock(return_value="uz")
-        try:
-            self.use([
-                Turn(calls=[ToolCall("t9", "buyurtma_rasmiylashtirish", {
-                    "ism": "Dilnoza", "telefon": "+998901234567",
-                    "manzil": "Chilonzor 9", "tolov_turi": "naqd"})]),
-                Turn(text="Buyurtmangiz #4242 qabul qilindi."),
-            ])
-            message = _FakeMessage("ha, tasdiqlayman")
-            ai_sales._session(message.from_user.id)["summary_turn"] = 0   # jami oldin ko'rsatilgan
-            reply = _run(ai_sales._respond(None, message, message.text))
-        finally:
-            cart._build_order_summary, cart._notify_sellers, cart.notify_low_stock = saved
-
-        self.assertIn("4242", reply)
-        database.clear_cart.assert_awaited_once_with(777)
-        self.assertEqual(notified["order_id"], 4242)
-        self.assertEqual(notified["payment_method"], "cash")
-        kwargs = database.create_order.await_args.kwargs
-        self.assertEqual(kwargs["payment_method"], "cash")
-        self.assertEqual(kwargs["phone"], "+998901234567")
-        self.assertEqual(kwargs["customer_name"], "Dilnoza")
-        self.assertEqual(kwargs["delivery_method"], "self")   # default — Toshkent kuryeri
-
     def test_turn_limit_stops_a_tool_loop_and_resets_the_chain(self):
         database.get_cart = AsyncMock(return_value=[])
         self.addCleanup(setattr, ai_sales, "MAX_TURNS", ai_sales.MAX_TURNS)
@@ -807,7 +760,7 @@ class AiLocationButtonTest(unittest.TestCase):
     def test_rules_always_ask_for_the_location_button(self):
         rules = ai_sales._sales_rules()
         self.assertIn("HAR DOIM lokatsiya_tugmasi", rules)
-        self.assertIn("uy, xonadon, podyezd yoki mo'ljal", rules)
+        self.assertIn("Uy/xonadon raqami yoki mo'ljal", rules)
 class AiOwnerOnlySettingsTest(unittest.TestCase):
     """Sozlama tugmalarini faqat do'kon egasi o'zgartiradi (egasi, 2026-10-13)."""
 
@@ -1228,124 +1181,317 @@ class AiMemoryProfileTest(unittest.TestCase):
         self.assertIn("Bodom uni 500gr ★5 «zo'r keks chiqdi»", text)
 
 
-class AiSalesLocationAndPaymentTest(unittest.TestCase):
-    """Lokatsiya manzil bo'lib tushadimi, karta tanlansa nima qaytadi."""
+class _FakeState:
+    """aiogram FSMContext o'rnida — bazasiz."""
+
+    def __init__(self, state=None, data=None):
+        self.state, self.data = state, dict(data or {})
+
+    async def get_state(self):
+        return self.state
+
+    async def set_state(self, value):
+        self.state = getattr(value, "state", value)
+
+    async def get_data(self):
+        return dict(self.data)
+
+    async def set_data(self, data):
+        self.data = dict(data)
+
+    async def update_data(self, **values):
+        self.data.update(values)
+        return dict(self.data)
+
+    async def clear(self):
+        self.state, self.data = None, {}
+
+
+class AiOrderCardTest(unittest.TestCase):
+    """Egasi, 2026-10-16: "buyurtma olishda galyutsinatsiya bo'lyapti ... maksimal
+    sodda". Model faqat ma'lumot yig'adi; xulosa, jami va buyurtma — tugmali
+    checkout ning tasdiq kartasi (handlers/cart.py)."""
 
     def setUp(self):
         ai_sales._sessions.clear()
-        self._saved = {n: getattr(database, n) for n in
-                       ("create_order", "clear_cart", "get_user_language")}
-        self._items = [{"product_id": 10, "name": "Kokos uni", "quantity": 2,
-                        "price": 55000, "unit": "kg", "seller_id": 1}]
+        _patch(self, ai_sales, "_catalog_cache", (9e18, "10 | Kokos uni 1000gr | 55 000 so'm / kg"))
+        self.state = _FakeState()
+        session = ai_sales._session(777)
+        session["fsm"] = self.state
+        session["phone"] = "+998901234567"
+        _patch(self, database, "get_cart", AsyncMock(return_value=[{"product_id": 10}]))
+        _patch(self, database, "get_user_language", AsyncMock(return_value="uz"))
 
     def tearDown(self):
-        for name, fn in self._saved.items():
-            setattr(database, name, fn)
         ai_sales._sessions.clear()
 
-    def _order(self, tool_input, location=None):
-        """Buyurtma vositasini bir marta ishga tushiradi va (javob, create_order
-        kwargs, adminlarga ketgan ma'lumot) ni qaytaradi."""
-        items = self._items
+    def _card(self, args, location=None, said=()):
+        session = ai_sales._sessions[777]
+        if location:
+            session["location"] = location
+        session.setdefault("said", []).extend(said)
+        return _run(ai_sales._tool_card(_FakeMessage("ha"), args))
 
-        async def fake_summary(user_id, data, lang):
-            data["phone"], data["address"], data["payment_method"]
-            return "matn", 110000, items, 0
+    def test_location_opens_the_checkout_confirm_screen_with_cash_by_default(self):
+        out = self._card({"yetkazish": "toshkent_kuryer"},
+                         location=(41.311081, 69.240562, "📍 41.311081, 69.240562 — Chilonzor"))
+        self.assertTrue(out.startswith("OK:"), out)
+        self.assertIn("QAYTA YOZMA", out)
+        self.assertEqual(self.state.state, "CheckoutStates:confirming")
+        data = self.state.data
+        self.assertTrue(data["ai_checkout"])
+        self.assertEqual(data["delivery_method"], "self")
+        self.assertEqual(data["payment_method"], "cash")
+        self.assertEqual(data["phone"], "+998901234567")          # kontakt tugmasidan
+        self.assertIn("Chilonzor", data["address"])
+        self.assertAlmostEqual(data["latitude"], 41.311081)
+        self.assertTrue(data["in_tashkent"])
+        self.assertTrue(ai_sales._sessions[777]["card"])          # javobdan keyin karta chiqadi
 
-        notified = {}
+    def test_typed_address_and_location_are_both_kept_but_never_twice(self):
+        self._card({"yetkazish": "toshkent_kuryer",
+                    "manzil": "Chilonzor tumani, Bunyodkor ko‘chasi 5, 3-uy, 12-xonadon"},
+                   location=(41.31, 69.24, "📍 41.310000, 69.240000 — Chilonzor tumani, Bunyodkor ko'chasi 5"),
+                   said=["ha to'g'ri, 3-uy 12-xonadon"])
+        address = self.state.data["address"]
+        self.assertEqual(address.count("Bunyodkor"), 1)
+        self.assertIn("3-uy, 12-xonadon", address)
+        self.assertIn("41.310000", address)
 
-        async def fake_notify(bot, order_id, items_data, data, lang):
-            notified.update(data)
+    def test_missing_phone_address_cart_or_fsm_is_an_error_and_no_card(self):
+        ai_sales._sessions[777]["phone"] = None
+        self.assertTrue(self._card({"yetkazish": "olib_ketish"}).startswith("Xato:"))
+        ai_sales._sessions[777]["phone"] = "+998901234567"
+        self.assertTrue(self._card({"yetkazish": "toshkent_kuryer"}).startswith("Xato:"))   # manzil yo'q
+        database.get_cart = AsyncMock(return_value=[])
+        self.assertIn("savat bo'sh", self._card({"yetkazish": "olib_ketish"}))
+        ai_sales._sessions[777]["fsm"] = None
+        self.assertTrue(self._card({"yetkazish": "olib_ketish"}).startswith("Xato:"))
+        self.assertIsNone(self.state.state)
+        self.assertNotIn("card", ai_sales._sessions[777])
 
-        import handlers.cart as cart
-        saved = (cart._build_order_summary, cart._notify_sellers, cart.notify_low_stock)
-        cart._build_order_summary = fake_summary
-        cart._notify_sellers = fake_notify
-        cart.notify_low_stock = AsyncMock()
-        database.create_order = AsyncMock(return_value=(4242, []))
-        database.clear_cart = AsyncMock()
-        database.get_user_language = AsyncMock(return_value="uz")
-        try:
-            message = _FakeMessage("ha")
-            session = ai_sales._session(message.from_user.id)
-            session["turn"], session["summary_turn"] = 2, 1
-            if location:
-                session["location"] = location
-            result = _run(ai_sales._tool_order(None, message, tool_input))
-        finally:
-            cart._build_order_summary, cart._notify_sellers, cart.notify_low_stock = saved
-        kwargs = database.create_order.await_args.kwargs if database.create_order.await_count else None
-        return result, kwargs, notified
+    def test_regional_post_and_yandex_are_card_only(self):
+        out = self._card({"yetkazish": "bts", "manzil": "Samarqand, Registon 5", "tolov_turi": "naqd"},
+                         said=["manzil Samarqand registon 5, Yunusobod 4"])
+        self.assertTrue(out.startswith("OK:"), out)
+        self.assertIn("faqat karta", out)
+        self.assertEqual(self.state.data["payment_method"], "online")
+        self.assertTrue(self.state.data["online_only"])
+        self._card({"yetkazish": "yandex_taxi", "manzil": "Yunusobod 4"})
+        self.assertEqual(self.state.data["payment_method"], "online")
 
-    def test_shared_location_becomes_the_address_and_the_admin_pin(self):
-        result, kwargs, notified = self._order(
-            {"ism": "Dilnoza", "telefon": "+998901234567", "tolov_turi": "naqd"},
-            location=(41.311081, 69.240562, "📍 41.311081, 69.240562 — Chilonzor"),
-        )
-        self.assertTrue(result.startswith("OK:"), result)
-        self.assertIn("Chilonzor", kwargs["address"])
-        # Koordinata create_order ga ham, admin xabariga ham tushadi —
-        # _notify_sellers o'shandan lokatsiya pin ini yuboradi.
-        self.assertAlmostEqual(kwargs["latitude"], 41.311081)
-        self.assertAlmostEqual(notified["longitude"], 69.240562)
-        self.assertIn("24 soat", result)
-
-    def test_typed_address_and_location_are_both_kept(self):
-        _, kwargs, _ = self._order(
-            {"ism": "Dilnoza", "telefon": "+998901234567", "manzil": "3-uy, 12-xonadon",
-             "tolov_turi": "naqd"},
-            location=(41.3, 69.2, "📍 41.300000, 69.200000"),
-        )
-        self.assertIn("41.300000", kwargs["address"])
-        self.assertIn("3-uy, 12-xonadon", kwargs["address"])
-
-    def test_no_address_and_no_location_is_an_error_not_an_order(self):
-        result, kwargs, _ = self._order(
-            {"ism": "Dilnoza", "telefon": "+998901234567", "tolov_turi": "naqd"})
-        self.assertTrue(result.startswith("Xato:"), result)
-        self.assertIsNone(kwargs)
-
-    def test_card_payment_returns_the_card_but_never_marks_the_order_paid(self):
-        result, kwargs, notified = self._order(
-            {"ism": "Dilnoza", "telefon": "+998901234567", "manzil": "Chilonzor 9",
-             "tolov_turi": "karta"})
-        # AI kartani aytadi...
-        self.assertIn(ai_sales.PAYMENT_CARD_NUMBER, result)
-        self.assertIn("tasdiqlama", result.lower())
-        # ...lekin bazada buyurtma "to'langan" bo'lib qolmaydi: online = chek
-        # tekshirilgan degani (handlers/cart.py), buni faqat admin qo'yadi.
-        self.assertEqual(kwargs["payment_method"], "cash")
-        self.assertEqual(notified["payment_method"], "cash")
-        self.assertIn("KARTA", kwargs["address_note"])
-        # Endi chek kutilyapti — rasm kelsa adminlarga uzatiladi.
-        self.assertEqual(ai_sales._sessions[777]["awaiting_cheque"], 4242)
-
-    def test_regional_post_is_card_only(self):
-        result, kwargs, _ = self._order(
-            {"ism": "Aziz", "telefon": "+998901234567", "manzil": "Samarqand, Registon 5",
-             "yetkazish": "bts", "tolov_turi": "naqd"})
-        self.assertTrue(result.startswith("Xato:"), result)
-        self.assertIsNone(kwargs)
-        result, kwargs, _ = self._order(
-            {"ism": "Aziz", "telefon": "+998901234567", "manzil": "Samarqand, Registon 5",
-             "yetkazish": "bts", "tolov_turi": "karta"})
-        self.assertTrue(result.startswith("OK:"), result)
-        self.assertEqual(kwargs["delivery_method"], "bts")
-
-    def test_store_pickup_needs_no_address_and_takes_cash(self):
+    def test_store_pickup_needs_no_address_and_ignores_the_location(self):
         _patch(self, database, "get_pickup_settings",
                AsyncMock(return_value={"enabled": False, "address": "", "map_url": ""}))
-        result, kwargs, notified = self._order(
-            {"ism": "Aziz", "telefon": "+998901234567", "yetkazish": "olib_ketish",
-             "tolov_turi": "naqd"},
-            location=(39.654, 66.975, "📍 Samarqand"))         # lokatsiya e'tiborsiz
-        self.assertTrue(result.startswith("OK:"), result)
-        self.assertEqual(kwargs["delivery_method"], "pickup")
-        self.assertIn("Ko'kcha masjidi", kwargs["address"])
-        self.assertEqual(kwargs["pickup_map_url"], "https://t.me/ketoshop_uz/1071")
-        self.assertIsNone(kwargs["latitude"])
-        self.assertEqual(notified["delivery_method"], "pickup")
-        self.assertIn("olib ketadi", result)
+        out = self._card({"yetkazish": "olib_ketish"}, location=(39.654, 66.975, "📍 Samarqand"))
+        self.assertTrue(out.startswith("OK:"), out)
+        data = self.state.data
+        self.assertEqual(data["delivery_method"], "pickup")
+        self.assertIn("Ko'kcha masjidi", data["address"])
+        self.assertEqual(data["pickup_map_url"], "https://t.me/ketoshop_uz/1071")
+        self.assertIsNone(data["latitude"])
+        self.assertEqual(data["payment_method"], "cash")
+
+    def test_saved_address_is_taken_by_the_code_not_retyped_by_the_model(self):
+        ai_sales._sessions[777]["phone"] = None
+        _patch(self, database, "get_last_order_prefs", AsyncMock(return_value={
+            "address": "📍 41.300000, 69.200000 — Yunusobod 7", "latitude": 41.3, "longitude": 69.2,
+            "address_note": "4-podyezd", "secondary_phone": None}))
+        _patch(self, database, "get_user_orders", AsyncMock(return_value=[
+            {"phone": ""}, {"phone": "+998935551122"}]))
+        out = self._card({"yetkazish": "toshkent_kuryer", "oldingi_manzil": True})
+        self.assertTrue(out.startswith("OK:"), out)
+        data = self.state.data
+        self.assertEqual(data["address"], "📍 41.300000, 69.200000 — Yunusobod 7")
+        self.assertEqual(data["phone"], "+998935551122")
+        self.assertEqual(data["address_note"], "4-podyezd")
+        self.assertAlmostEqual(data["longitude"], 69.2)
+
+    def test_tashkent_courier_refuses_a_location_outside_tashkent(self):
+        out = self._card({"yetkazish": "toshkent_kuryer"}, location=(39.654, 66.975, "📍 Samarqand"))
+        self.assertTrue(out.startswith("Xato:"), out)
+        self.assertIn("BTS", out)
+        self.assertIsNone(self.state.state)
+
+    def test_reopening_the_card_keeps_the_payment_and_keto_the_customer_tapped(self):
+        location = (41.31, 69.24, "📍 41.310000, 69.240000 — Chilonzor")
+        self._card({"yetkazish": "toshkent_kuryer"}, location=location, said=["3-uy"])
+        self.state.data.update(payment_method="online", keto_redeem=15000)   # kartada bosdi
+        self._card({"yetkazish": "toshkent_kuryer", "izoh": "3-uy"}, location=location)
+        self.assertEqual(self.state.data["payment_method"], "online")
+        self.assertEqual(self.state.data["keto_redeem"], 15000)
+        self.assertEqual(self.state.data["address_note"], "3-uy")
+        self._card({"yetkazish": "toshkent_kuryer", "tolov_turi": "naqd"}, location=location)
+        self.assertEqual(self.state.data["payment_method"], "cash")   # mijoz o'zi aytdi
+
+    def test_the_card_follows_the_reply_and_a_model_summary_is_never_sent(self):
+        import ai_stats
+        import handlers.cart as cart
+        _patch(self, ai_stats, "record_turn", AsyncMock())
+        _patch(self, cart, "_render_confirmation", AsyncMock(return_value=("KARTA", "KB")))
+        ai_sales._sessions[777]["location"] = (41.31, 69.24, "📍 41.310000, 69.240000 — Chilonzor")
+        saved = ai_sales.PROVIDER
+        self.addCleanup(setattr, ai_sales, "PROVIDER", saved)
+        ai_sales.PROVIDER = _FakeProvider([
+            Turn(calls=[ToolCall("c1", "buyurtma_kartasi", {"yetkazish": "toshkent_kuryer"})]),
+            # Model buyruqqa qaramay xulosani o'zi yozdi — boshqa summa bilan.
+            Turn(text="Jami: 175 000 so'm. Tasdiqlaysizmi? 😊"),
+        ])
+        message = _FakeMessage("3-uy 12-xonadon")
+        _run(ai_sales._answer(None, message, message.text))
+        sent = [c.args[0] for c in message.answer.await_args_list]
+        self.assertEqual(sent[1], "KARTA")                                # karta — kodniki
+        self.assertNotIn("175 000", sent[0])                              # model summasi ketmadi
+        self.assertIn("✅ Tasdiqlash", sent[0])
+        self.assertEqual(message.answer.await_args_list[1].kwargs["reply_markup"], "KB")
+
+    def test_typed_yes_on_an_open_card_places_the_order_through_the_checkout(self):
+        import handlers.cart as cart
+        items = [{"product_id": 10, "name": "Kokos uni", "quantity": 2, "price": 55000,
+                  "unit": "kg", "seller_id": 1}]
+        _patch(self, cart, "_build_order_summary", AsyncMock(return_value=("KARTA", 135000, items, 0)))
+        _patch(self, cart, "create_order", AsyncMock(return_value=(4242, [])))
+        _patch(self, cart, "_notify_sellers", AsyncMock())
+        _patch(self, cart, "send_order_thanks", AsyncMock())
+        celebrate = AsyncMock()
+        _patch(self, ai_sales, "_celebrate", celebrate)
+        _patch(self, ai_sales, "_reply", AsyncMock())
+        self.state.state = "CheckoutStates:confirming"
+        self.state.data = {"ai_checkout": True, "lang": "uz", "phone": "+998901234567",
+                           "address": "📍 Chilonzor", "delivery_method": "self",
+                           "payment_method": "cash", "latitude": 41.3, "longitude": 69.2}
+        ai_sales._sessions[777]["card_at"] = time.time()                  # karta hozirgina chiqdi
+        message = _FakeMessage("Ha, tasdiqlayman!")
+        _run(ai_sales.on_text(message, None, self.state))
+
+        ai_sales._reply.assert_not_awaited()                              # model chaqirilmadi
+        kwargs = cart.create_order.await_args.kwargs
+        self.assertEqual(kwargs["phone"], "+998901234567")
+        self.assertEqual(kwargs["payment_method"], "cash")
+        self.assertEqual(kwargs["delivery_method"], "self")
+        self.assertEqual(kwargs["total"], 135000)
+        self.assertIsNone(self.state.state)
+        self.assertIn("4242", message.answer.await_args_list[-1].args[0])   # karta o'rnida "yaratildi"
+        celebrate.assert_awaited_once()                                    # AI savdosi
+        session = ai_sales._sessions[777]
+        self.assertEqual(session["placed"], 4242)
+        self.assertIn("#4242", session["note"])
+
+    def test_yes_without_an_open_card_goes_to_the_model(self):
+        _patch(self, ai_sales, "_reply", AsyncMock())
+        _patch(self, ai_sales, "_confirm_typed", AsyncMock())
+        message = _FakeMessage("ha")
+        _run(ai_sales.on_text(message, None, self.state))
+        ai_sales._reply.assert_awaited_once()
+        # Karta bazada ochiq qolgan, lakin kecha ko'rsatilgan: bugungi 'ha' boshqa
+        # gapga javob bo'lishi mumkin — buyurtma tuzilmaydi, model javob beradi.
+        self.state.state = "CheckoutStates:confirming"
+        self.state.data = {"ai_checkout": True}
+        ai_sales._sessions[777]["card_at"] = time.time() - 26 * 3600
+        _run(ai_sales.on_text(_FakeMessage("ha"), None, self.state))
+        ai_sales._confirm_typed.assert_not_awaited()
+        self.assertEqual(ai_sales._reply.await_count, 2)
+
+    def test_confirmation_words(self):
+        for text in ("ha", "Ha!", "ha, tasdiqlayman", "Tasdiqlayman 😊", "hammasi to'g'ri", "xo'p",
+                     "ҳа", "Да", "подтверждаю", "yes"):
+            self.assertTrue(ai_sales.is_confirmation(text), text)
+        for text in ("ha, lekin 3 ta bo'lsin", "yo'q", "karta bilan", "manzilni o'zgartiraman", "👍"):
+            self.assertFalse(ai_sales.is_confirmation(text), text)
+
+    def test_an_open_ai_card_keeps_the_conversation_with_the_ai(self):
+        ai_card = _FakeState("CheckoutStates:confirming", {"ai_checkout": True})
+        button_checkout = _FakeState("CheckoutStates:confirming", {"lang": "uz"})
+        self.assertFalse(_run(ai_sales._in_bot_form(ai_card)))
+        self.assertTrue(_run(ai_sales._in_bot_form(button_checkout)))
+        self.assertTrue(_run(ai_sales._in_bot_form(_FakeState("CheckoutStates:waiting_cheque",
+                                                              {"ai_checkout": True}))))
+
+    def test_cancelled_card_is_told_to_the_model_on_the_next_message(self):
+        _run(ai_sales.checkout_event(None, _FakeUser(), "cancelled"))
+        provider = _FakeProvider([Turn(text="Mayli 😊")])
+        saved = ai_sales.PROVIDER
+        self.addCleanup(setattr, ai_sales, "PROVIDER", saved)
+        ai_sales.PROVIDER = provider
+        _run(ai_sales._respond(None, _FakeMessage("boshqa narsa ko'raman"), "boshqa narsa ko'raman"))
+        self.assertIn("bekor qildi", provider.calls[0]["user"])
+        self.assertNotIn("note", ai_sales._sessions[777])
+
+    def test_cart_change_redraws_an_open_card(self):
+        ai_sales._cart_changed(777)
+        self.assertTrue(ai_sales._sessions[777]["card_refresh"])
+
+    def test_an_address_the_customer_never_gave_never_reaches_the_card(self):
+        # Jonli sinov, 2026-10-16: ruscha mijoz lokatsiya yubormasdan, model
+        # kartaga "Chilonzor tumani, 5-mavze, 12-uy" ni o'zi yozdi.
+        said = ["Здравствуйте, нужна миндальная мука 1 кг", "нет, больше ничего", "доставка курьером"]
+        out = self._card({"yetkazish": "toshkent_kuryer",
+                          "manzil": "[Mijoz yetkazish lokatsiyasini yubordi: Toshkent, Chilonzor tumani, 5-mavze, 12-uy]"},
+                         said=said)
+        self.assertIn("TO'QIMA", out)
+        self.assertIsNone(self.state.state)
+        out = self._card({"yetkazish": "toshkent_kuryer", "manzil": "Chilonzor tumani, 5-mavze, 12-uy"})
+        self.assertTrue(out.startswith("Xato:"), out)
+        # Mijoz o'zi yozgan manzil — kirillda yozgan bo'lsa ham — o'tadi.
+        out = self._card({"yetkazish": "toshkent_kuryer", "manzil": "Yakkasaroy, Shota Rustaveli 20, kv 5"},
+                         said=["Яккасарай, ул. Шота Руставели 20, кв 5"])
+        self.assertTrue(out.startswith("OK:"), out)
+        self.assertEqual(self.state.data["address"], "Yakkasaroy, Shota Rustaveli 20, kv 5")
+
+    def test_model_additions_to_a_location_and_invented_notes_or_phones_are_dropped(self):
+        self._card({"yetkazish": "toshkent_kuryer", "manzil": "Toshkent ichida", "izoh": "3-uy, 12-xonadon",
+                    "telefon": "+998935557788"},
+                   location=(41.33, 69.28, "📍 41.330000, 69.280000 — Mirzo Ulug'bek tumani"),
+                   said=["yo'q, izoh yo'q"])
+        data = self.state.data
+        self.assertEqual(data["address"], "📍 41.330000, 69.280000 — Mirzo Ulug'bek tumani")
+        self.assertIsNone(data["address_note"])
+        self.assertEqual(data["phone"], "+998901234567")            # tugma bilan kelgani
+        self._card({"yetkazish": "toshkent_kuryer", "telefon": "+998 93 555 77 88"},
+                   said=["raqamim 935557788"])
+        self.assertEqual(self.state.data["phone"], "+998 93 555 77 88")   # mijoz o'zi yozgan
+
+    def test_customer_typing_card_or_cash_switches_the_card_without_the_model(self):
+        import handlers.cart as cart
+        _patch(self, cart, "_render_confirmation", AsyncMock(return_value=("KARTA", "KB")))
+        _patch(self, ai_sales, "_reply", AsyncMock())
+        self.state.state = "CheckoutStates:confirming"
+        self.state.data = {"ai_checkout": True, "lang": "uz", "payment_method": "cash"}
+        ai_sales._sessions[777]["card_at"] = time.time()
+        message = _FakeMessage("kartaga o'tkazaman")
+        _run(ai_sales.on_text(message, None, self.state))
+        ai_sales._reply.assert_not_awaited()
+        self.assertEqual(self.state.data["payment_method"], "online")
+        texts = [c.args[0] for c in message.answer.await_args_list]
+        self.assertIn("karta raqami chiqadi", texts[0])
+        self.assertEqual(texts[1], "KARTA")                             # yangilangan karta
+        self.assertIn("karta", ai_sales._sessions[777]["note"])
+        _run(ai_sales.on_text(_FakeMessage("yo'q, naqd beraman"), None, self.state))
+        self.assertEqual(self.state.data["payment_method"], "cash")
+        self.state.data["online_only"] = True                            # pochta — faqat karta
+        message = _FakeMessage("naqd")
+        _run(ai_sales.on_text(message, None, self.state))
+        self.assertEqual(self.state.data["payment_method"], "cash")      # o'zgarmadi
+        self.assertIn("faqat karta", message.answer.await_args_list[0].args[0])
+        for text, want in (("karta bilan", "online"), ("наличными", "cash"), ("Click orqali", "online"),
+                           ("naqd emas, karta", None), ("kartani keyin ko'ramiz, hozircha manzilni "
+                                                        "o'zgartirib yuboring iltimos", None)):
+            self.assertEqual(ai_sales.payment_choice(text), want, text)
+
+    def test_the_model_never_hands_out_the_card_number_while_the_card_is_open(self):
+        import ai_stats
+        _patch(self, ai_stats, "record_turn", AsyncMock())
+        self.state.state = "CheckoutStates:confirming"
+        self.state.data = {"ai_checkout": True, "lang": "uz", "payment_method": "cash"}
+        saved = ai_sales.PROVIDER
+        self.addCleanup(setattr, ai_sales, "PROVIDER", saved)
+        ai_sales.PROVIDER = _FakeProvider([Turn(text=f"Karta raqami: {ai_sales.PAYMENT_CARD_NUMBER}. "
+                                                     "Chekni yuboring.")])
+        message = _FakeMessage("kartaga pul o'tkazsam bo'ladimi, raqam bering")
+        _run(ai_sales._answer(None, message, message.text))
+        sent = message.answer.await_args_list[0].args[0]
+        self.assertNotIn(ai_sales.PAYMENT_CARD_NUMBER, sent)
+        self.assertIn("Karta orqali to'layman", sent)
 
     def test_add_to_cart_leads_to_upsell_then_delivery_options(self):
         _patch(self, database, "get_product", AsyncMock(return_value={
@@ -1361,126 +1507,115 @@ class AiSalesLocationAndPaymentTest(unittest.TestCase):
                          "📦 Viloyatlarga BTS / EMU"):
             self.assertIn(expected, rules)
 
-    def test_secondary_phone_and_keto_ride_into_the_order_like_the_button_checkout(self):
-        import gamification
-        _patch(self, gamification, "is_redemption_enabled", AsyncMock(return_value=True))
-        seen = {}
-        items = self._items
-
-        async def fake_summary(user_id, data, lang):
-            seen.update(data)
-            return "matn", 110000 - 20000, items, 20000          # 20 000 Keto ishlatildi
-
-        import handlers.cart as cart
-        _patch(self, cart, "_build_order_summary", fake_summary)
-        _patch(self, cart, "_notify_sellers", AsyncMock())
-        _patch(self, cart, "notify_low_stock", AsyncMock())
-        database.create_order = AsyncMock(return_value=(4242, []))
-        database.clear_cart = AsyncMock()
-        database.get_user_language = AsyncMock(return_value="uz")
-        session = ai_sales._session(777)
-        session["turn"], session["summary_turn"] = 2, 1
-        result = _run(ai_sales._tool_order(None, _FakeMessage("ha"), {
-            "ism": "Dilnoza", "telefon": "+998901234567", "manzil": "Chilonzor 9",
-            "tolov_turi": "naqd", "qoshimcha_telefon": "+998935556677", "keto": 20000}))
-        self.assertEqual(seen["keto_redeem"], 20000)
-        self.assertEqual(seen["secondary_phone"], "+998935556677")
-        kwargs = database.create_order.await_args.kwargs
-        self.assertEqual(kwargs["keto_redeem"], 20000)
-        self.assertEqual(kwargs["secondary_phone"], "+998935556677")
-        self.assertIn("Keto tangachalar bilan", result)
-
-    def test_rules_follow_the_button_checkout_steps(self):
+    def test_rules_have_three_short_steps_and_no_model_written_summary(self):
         rules = ai_sales._sales_rules()
-        for step in ("1) Yetkazib beraylikmi yoki do'kondan olib ketasizmi?", "2) TELEFON",
-                     "3) LOKATSIYA", "4) MANZIL IZOHI", "5) YETKAZISH USULI",
-                     "6) QO'SHIMCHA TELEFON", "7) TO'LOV", "8) KETO TANGACHALAR", "9) TASDIQ",
-                     "10) BUYURTMA"):
-            self.assertIn(step, rules)
+        for expected in ("QANDAY OLASIZ?", "RAQAM VA LOKATSIYA", "buyurtma_kartasi",
+                         "SO'RAMA: ism, qo'shimcha telefon, Keto", "'buyurtmangiz qabul qilindi' DEMA",
+                         "Uy/xonadon raqami yoki mo'ljal"):
+            self.assertIn(expected, rules)
+        names = {t.name for t in ai_sales.TOOLS}
+        self.assertIn("buyurtma_kartasi", names)
+        self.assertNotIn("buyurtma_rasmiylashtirish", names)
+        self.assertNotIn("buyurtma_rasmiylashtirish", rules)
 
-    def test_no_order_until_the_total_was_shown_in_an_earlier_message(self):
-        args = {"ism": "Aziz", "telefon": "+998901234567", "manzil": "Chilonzor 9",
-                "tolov_turi": "naqd"}
-        session = ai_sales._session(777)
-        session["turn"], session["summary_turn"] = 3, None           # jami umuman ko'rsatilmagan
-        result, kwargs, _ = self._order_raw(args)
-        self.assertTrue(result.startswith("Xato:"), result)
-        self.assertIsNone(kwargs)
-        session["summary_turn"] = 3                                  # shu xabarda ko'rsatildi
-        result, kwargs, _ = self._order_raw(args)
-        self.assertIn("KEYINGI", result)
-        self.assertIsNone(kwargs)
-        session["summary_turn"] = 1                                  # ikki xabar oldin — yetmaydi
-        result, kwargs, _ = self._order_raw(args)
-        self.assertTrue(result.startswith("Xato:"), result)
-        self.assertIsNone(kwargs)
-        session["summary_turn"] = 2                                  # aynan oldingi xabarda — mumkin
-        ai_sales._cart_changed(777)                                  # ...lekin savat o'zgardi
-        result, kwargs, _ = self._order_raw(args)
-        self.assertTrue(result.startswith("Xato:"), result)
 
-    def test_total_counts_as_shown_only_when_the_reply_really_shows_it(self):
-        session = {"turn": 4, "last_totals": {185200, 160200}}
-        ai_sales._mark_summary_shown(session, "Hisobingizda 15 000 ta Keto bor — ishlatamizmi?")
-        self.assertNotIn("summary_turn", session)                    # summa ko'rsatilmadi
-        ai_sales._mark_summary_shown(session, "Jami: 185 200 so'm. To'lov naqdmi yoki kartami?")
-        self.assertNotIn("summary_turn", session)                    # tasdiq so'ralmadi
-        session["turn"] = 5                                          # keyingi xabarda, vositasiz
-        ai_sales._mark_summary_shown(session, "Jami: 185 200 so'm. Tasdiqlaysizmi? 🛒")
-        self.assertEqual(session["summary_turn"], 5)
+class AiFalseClaimTest(unittest.TestCase):
+    """Model vositani chaqirmay "savatga qo'shdik" / "buyurtma qabul qilindi" desa."""
 
-    def test_location_address_is_not_written_twice(self):
-        session = ai_sales._session(777)
-        session["turn"], session["summary_turn"] = 2, 1
-        session["location"] = (41.31, 69.24, "📍 41.310000, 69.240000 — Chilonzor tumani, Bunyodkor 5")
-        result, kwargs, _ = self._order_raw({
-            "ism": "Aziz", "telefon": "+998901234567", "tolov_turi": "naqd",
-            "manzil": "Chilonzor tumani, Bunyodkor 5, 3-uy, 12-xonadon"})
-        self.assertEqual(kwargs["address"].count("Bunyodkor 5"), 1)
-        self.assertIn("3-uy, 12-xonadon", kwargs["address"])
+    def setUp(self):
+        ai_sales._sessions.clear()
+        _patch(self, ai_sales, "_catalog_cache", (9e18, "10 | Kokos uni 1000gr | 55 000 so'm / kg"))
+        ai_sales._session(777)
+        saved = ai_sales.PROVIDER
+        self.addCleanup(setattr, ai_sales, "PROVIDER", saved)
 
-    def test_location_address_with_other_apostrophes_is_not_written_twice(self):
-        session = ai_sales._session(777)
-        session["turn"], session["summary_turn"] = 2, 1
-        session["location"] = (41.31, 69.24, "📍 41.310000, 69.240000 — Chilonzor tumani, Bunyodkor ko'chasi 5")
-        _, kwargs, _ = self._order_raw({
-            "ism": "Aziz", "telefon": "+998901234567", "tolov_turi": "naqd",
-            "manzil": "Chilonzor tumani, Bunyodkor ko‘chasi 5, 3-uy, 12-xonadon"})
-        self.assertEqual(kwargs["address"].count("Bunyodkor"), 1)
-        self.assertIn("3-uy, 12-xonadon", kwargs["address"])
+    def tearDown(self):
+        ai_sales._sessions.clear()
 
-    def test_order_number_is_always_in_the_reply(self):
-        session = {"new_order_id": 5001}
-        out = ai_sales._with_order_number(session, "Buyurtma qabul qilindi: 101 100 so'm.", "uz")
-        self.assertIn("#5001", out)
-        session = {"new_order_id": 5002}
-        self.assertEqual(ai_sales._with_order_number(session, "Buyurtma #5002 qabul qilindi.", "uz"),
-                         "Buyurtma #5002 qabul qilindi.")
+    def _respond(self, turns):
+        ai_sales.PROVIDER = _FakeProvider(turns)
+        reply = _run(ai_sales._respond(None, _FakeMessage("2 ta bodom uni"), "2 ta bodom uni"))
+        return reply, ai_sales.PROVIDER
 
-    def _order_raw(self, tool_input):
-        items = self._items
+    def test_added_to_cart_without_the_tool_is_asked_again(self):
+        reply, provider = self._respond([
+            Turn(text="Bodom uni 2 dona savatga qo'shildi 😊"),
+            Turn(text="Bodom uni 500gr — 89 000 so'm. Savatga qo'shamizmi? 🛒"),
+        ])
+        self.assertTrue(provider.calls[1]["user"].startswith("[TIZIM"))
+        self.assertIn("qo'shamizmi", reply)
 
-        async def fake_summary(user_id, data, lang):
-            return "matn", 110000, items, 0
+    def test_order_placed_claim_without_an_order_never_reaches_the_customer(self):
+        reply, provider = self._respond([
+            Turn(text="Buyurtmangiz qabul qilindi! Sizga rahmat 😊"),
+            Turn(text="Buyurtmangiz qabul qilindi! Sizga rahmat 😊"),       # yana o'sha
+        ])
+        self.assertEqual(len(provider.calls), 2)                           # bir marta qayta so'raldi
+        self.assertNotIn("qabul qilindi", reply)
+        self.assertIn("rahmat", reply)
 
+    def test_real_order_or_real_add_is_not_questioned(self):
+        ai_sales._sessions[777]["placed"] = 4242
+        reply, provider = self._respond([Turn(text="Buyurtmangiz #4242 qabul qilindi 😊")])
+        self.assertEqual(len(provider.calls), 1)
+        self.assertIn("#4242", reply)
+        self.assertIsNone(ai_sales.false_claim("Savatga qo'shildi 😊", {"savatga_qoshish"}, {}))
+        self.assertIsNone(ai_sales.false_claim("Savatga qo'shamizmi? 🛒", set(), {}))
+
+
+class AiCardCheckoutScreenTest(unittest.TestCase):
+    """handlers/cart.py tomoni: AI kartasidagi to'lov tugmasi, olib ketish va AI ga signal."""
+
+    def setUp(self):
+        import gamification
         import handlers.cart as cart
-        _patch(self, cart, "_build_order_summary", fake_summary)
-        _patch(self, cart, "_notify_sellers", AsyncMock())
-        _patch(self, cart, "notify_low_stock", AsyncMock())
-        database.create_order = AsyncMock(return_value=(4242, []))
-        database.clear_cart = AsyncMock()
-        database.get_user_language = AsyncMock(return_value="uz")
-        result = _run(ai_sales._tool_order(None, _FakeMessage("ha"), tool_input))
-        kwargs = database.create_order.await_args.kwargs if database.create_order.await_count else None
-        return result, kwargs, None
+        self.cart = cart
+        _patch(self, cart, "_build_order_summary", AsyncMock(return_value=("KARTA", 100000, [{}], 0)))
+        _patch(self, gamification, "is_redemption_enabled", AsyncMock(return_value=False))
 
-    def test_tashkent_courier_refuses_a_location_outside_tashkent(self):
-        result, kwargs, _ = self._order(
-            {"ism": "Aziz", "telefon": "+998901234567", "tolov_turi": "naqd"},
-            location=(39.654, 66.975, "📍 Samarqand"))
-        self.assertTrue(result.startswith("Xato:"), result)
-        self.assertIn("BTS", result)
-        self.assertIsNone(kwargs)
+    def _buttons(self, data):
+        _, keyboard = _run(self.cart._render_confirmation(777, _FakeState("CheckoutStates:confirming", data), "uz"))
+        return [b.callback_data for row in keyboard.inline_keyboard for b in row]
+
+    def test_ai_card_has_a_payment_switch_and_the_button_checkout_does_not(self):
+        self.assertIn("ai_pay:online", self._buttons({"ai_checkout": True, "payment_method": "cash"}))
+        self.assertIn("ai_pay:cash", self._buttons({"ai_checkout": True, "payment_method": "online"}))
+        self.assertFalse([b for b in self._buttons({"ai_checkout": True, "online_only": True,
+                                                    "payment_method": "online"}) if b.startswith("ai_pay")])
+        self.assertFalse([b for b in self._buttons({"payment_method": "cash"}) if b.startswith("ai_pay")])
+
+    def test_payment_switch_redraws_the_card(self):
+        state = _FakeState("CheckoutStates:confirming", {"ai_checkout": True, "payment_method": "cash",
+                                                         "lang": "uz"})
+        callback = NS(data="ai_pay:online", from_user=NS(id=777), answer=AsyncMock(),
+                      message=NS(edit_text=AsyncMock()))
+        _run(self.cart.ai_card_payment_switch(callback, state))
+        self.assertEqual(state.data["payment_method"], "online")
+        callback.message.edit_text.assert_awaited_once()
+        locked = _FakeState("CheckoutStates:confirming", {"ai_checkout": True, "online_only": True,
+                                                          "payment_method": "online", "lang": "uz"})
+        _run(self.cart.ai_card_payment_switch(NS(data="ai_pay:cash", from_user=NS(id=777), answer=AsyncMock(),
+                                                 message=NS(edit_text=AsyncMock())), locked))
+        self.assertEqual(locked.data["payment_method"], "online")         # Yandex/pochta — faqat karta
+
+    def test_ai_pickup_at_the_landmark_works_even_with_pickup_switched_off(self):
+        _patch(self, self.cart, "get_pickup_settings", AsyncMock(return_value={"enabled": False}))
+        _patch(self, self.cart, "_create_and_process_order", AsyncMock())
+        callback = NS(answer=AsyncMock(), message=NS(edit_text=AsyncMock()))
+        _run(self.cart.order_confirm_yes(callback, _FakeState("CheckoutStates:confirming", {
+            "ai_checkout": True, "delivery_method": "pickup"}), None))
+        self.cart._create_and_process_order.assert_awaited_once()
+        _run(self.cart.order_confirm_yes(callback, _FakeState("CheckoutStates:confirming", {
+            "delivery_method": "pickup", "lang": "uz"}), None))
+        self.assertEqual(self.cart._create_and_process_order.await_count, 1)   # oddiy checkout — yo'q
+
+    def test_the_ai_hears_only_about_its_own_cards(self):
+        event = AsyncMock()
+        _patch(self, ai_sales, "checkout_event", event)
+        _run(self.cart._tell_ai(None, NS(id=777), {"lang": "uz"}, "cancelled"))
+        event.assert_not_awaited()
+        _run(self.cart._tell_ai(None, NS(id=777), {"ai_checkout": True}, "cancelled"))
+        event.assert_awaited_once()
 
 
 class AiGroupModeTest(_ProviderSwap):
@@ -1816,7 +1951,7 @@ class OpenAIProviderFormatTest(unittest.TestCase):
         rendered = {t["name"]: t for t in ai_provider.OpenAIProvider.render_tools(TOOLS)}
         self.assertTrue(rendered["savatga_qoshish"]["strict"])
         # manzil/izoh ixtiyoriy — OpenAI strict rejimi buni 400 bilan rad etadi.
-        self.assertFalse(rendered["buyurtma_rasmiylashtirish"]["strict"])
+        self.assertFalse(rendered["buyurtma_kartasi"]["strict"])
         self.assertEqual(rendered["savatga_qoshish"]["type"], "function")
 
     def test_refusal_is_reported(self):
