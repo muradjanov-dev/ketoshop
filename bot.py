@@ -44,6 +44,7 @@ from ads_impact import router as ads_impact_router
 from ad_sources import router as ad_sources_router
 from ai_sales import router as ai_sales_router
 from abandoned_cart import router as abandoned_cart_router
+from daily_quiz import router as daily_quiz_router
 from cart_reservations import router as cart_reservations_router
 from retention import router as retention_router
 from keto_explainer import router as keto_explainer_router
@@ -52,7 +53,6 @@ from onboarding_video import router as onboarding_video_router
 from welcome_recipe import router as welcome_recipe_router
 from bot_discount_campaign import router as bot_discount_campaign_router
 from stock_alerts import router as stock_alerts_router
-from daily_quiz import router as daily_quiz_router
 from referral_stats import router as referral_stats_router
 from referral_program import router as referral_program_router
 from retention_stats import router as retention_stats_router
@@ -262,12 +262,12 @@ async def main():
     dp.include_router(bloggers_router)
     # /savat_eslatma and /sovga admin stats — before the AI/relay catch-alls.
     dp.include_router(abandoned_cart_router)
+    dp.include_router(daily_quiz_router)
     dp.include_router(cart_reservations_router)
     dp.include_router(retention_router)
     dp.include_router(keto_explainer_router)
     # /ombor — current low / out-of-stock list.
     dp.include_router(stock_alerts_router)
-    dp.include_router(daily_quiz_router)
     # Catch-all for free text that no state/handler above claimed — must stay
     # last so it never steals a message a real flow was waiting on.
     # AI sotuvchi support_relay dan oldin: hech kim ushlamagan matnni avval
@@ -347,6 +347,11 @@ async def main():
     # Tashlab ketilgan savat — 3 h and 24 h reminders with one-tap checkout.
     from abandoned_cart import scheduler_loop as cart_reminder_loop
     cart_reminder_task = asyncio.create_task(cart_reminder_loop(bot))
+
+    # Keto savol: every 2 days at 20:00 one question from the site's games to
+    # every buyer, answer + "continue on the site" (daily_quiz.py).
+    from daily_quiz import scheduler_loop as daily_quiz_loop
+    daily_quiz_task = asyncio.create_task(daily_quiz_loop(bot))
     # Savat broni: a cart line's 24 h hold ends → back on sale + a note to the
     # buyer (cart_reservations.py). The ~4 h warning is cart_reminder stage 2.
     from cart_reservations import scheduler_loop as cart_hold_loop
@@ -382,11 +387,6 @@ async def main():
     # …and the full stock status to the staff group every night at 23:59.
     from stock_alerts import night_report_loop as stock_night_loop
     stock_night_task = asyncio.create_task(stock_night_loop(bot))
-
-    # Keto savol: every 2 days at 20:00 one question from the site's games to
-    # every buyer, answer + "continue on the site" (daily_quiz.py).
-    from daily_quiz import scheduler_loop as daily_quiz_loop
-    daily_quiz_task = asyncio.create_task(daily_quiz_loop(bot))
 
     # "Nima yangi" — this release's notes to every admin, once, in daytime.
     # Daily "Kun mahsuloti": one product to every buyer and to the channel.
@@ -424,6 +424,7 @@ async def main():
         gift_task.cancel()
         delivery_cost_task.cancel()
         cart_reminder_task.cancel()
+        daily_quiz_task.cancel()
         retention_task.cancel()
         keto_explainer_task.cancel()
         bot_discount_campaign_task.cancel()
@@ -431,7 +432,6 @@ async def main():
         bot_discount_margin_task.cancel()
         stock_alerts_task.cancel()
         stock_night_task.cancel()
-        daily_quiz_task.cancel()
         product_of_day_task.cancel()
         channel_posts_task.cancel()
         release_notes_task.cancel()
