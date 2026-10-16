@@ -52,6 +52,7 @@ from onboarding_video import router as onboarding_video_router
 from welcome_recipe import router as welcome_recipe_router
 from bot_discount_campaign import router as bot_discount_campaign_router
 from stock_alerts import router as stock_alerts_router
+from daily_quiz import router as daily_quiz_router
 from referral_stats import router as referral_stats_router
 from referral_program import router as referral_program_router
 from retention_stats import router as retention_stats_router
@@ -266,6 +267,7 @@ async def main():
     dp.include_router(keto_explainer_router)
     # /ombor — current low / out-of-stock list.
     dp.include_router(stock_alerts_router)
+    dp.include_router(daily_quiz_router)
     # Catch-all for free text that no state/handler above claimed — must stay
     # last so it never steals a message a real flow was waiting on.
     # AI sotuvchi support_relay dan oldin: hech kim ushlamagan matnni avval
@@ -381,6 +383,11 @@ async def main():
     from stock_alerts import night_report_loop as stock_night_loop
     stock_night_task = asyncio.create_task(stock_night_loop(bot))
 
+    # Keto savol: every 2 days at 20:00 one question from the site's games to
+    # every buyer, answer + "continue on the site" (daily_quiz.py).
+    from daily_quiz import scheduler_loop as daily_quiz_loop
+    daily_quiz_task = asyncio.create_task(daily_quiz_loop(bot))
+
     # "Nima yangi" — this release's notes to every admin, once, in daytime.
     # Daily "Kun mahsuloti": one product to every buyer and to the channel.
     from product_of_day import scheduler_loop as product_of_day_loop
@@ -424,6 +431,7 @@ async def main():
         bot_discount_margin_task.cancel()
         stock_alerts_task.cancel()
         stock_night_task.cancel()
+        daily_quiz_task.cancel()
         product_of_day_task.cancel()
         channel_posts_task.cancel()
         release_notes_task.cancel()

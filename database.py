@@ -853,6 +853,41 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS idx_cart_reminders_sent ON cart_reminders(sent_at)"
         )
 
+        # ===== Keto savol / question every 2 days (2026-10-16) =====
+        # daily_quiz.py. One row per send; `day` is UNIQUE so a restart can't
+        # send the same day twice (an admin's test send has day NULL). Answers
+        # are one per buyer per send.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_quiz_state (
+                id INTEGER PRIMARY KEY,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE
+            )
+        """)
+        await conn.execute(
+            "INSERT INTO daily_quiz_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING"
+        )
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_quiz_sends (
+                id SERIAL PRIMARY KEY,
+                day DATE UNIQUE,
+                item_key TEXT NOT NULL,
+                is_test BOOLEAN NOT NULL DEFAULT FALSE,
+                sent INTEGER NOT NULL DEFAULT 0,
+                failed INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_quiz_answers (
+                send_id INTEGER NOT NULL,
+                user_id BIGINT NOT NULL,
+                choice INTEGER NOT NULL,
+                correct BOOLEAN NOT NULL,
+                answered_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (send_id, user_id)
+            )
+        """)
+
         # ===== Maqsadlar / targets (2026-09-02) =====
         # Owner's two numbers: 10 sales a day, $2 000 net profit a month.
         # The single settings row keeps them editable without a deploy — the
@@ -3731,6 +3766,98 @@ async def set_stock_alert_levels(levels: dict[int, str]) -> None:
                   SET level = EXCLUDED.level, updated_at = CURRENT_TIMESTAMP""",
             list(levels.items()),
         )
+
+
+async def daily_quiz_enabled() -> bool:
+    async with pool.acquire() as conn:
+        return bool(await conn.fetchval("SELECT enabled FROM daily_quiz_state WHERE id = 1"))
+
+
+async def set_daily_quiz_enabled(enabled: bool) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO daily_quiz_state (id, enabled) VALUES (1, $1)
+               ON CONFLICT (id) DO UPDATE SET enabled = EXCLUDED.enabled""",
+            enabled,
+        )
+
+
+async def daily_quiz_last_day():
+    """Day of the last real (non-test) send, or None before the first."""
+    async with pool.acquire() as conn:
+        return await conn.fetchval("SELECT MAX(day) FROM daily_quiz_sends WHERE NOT is_test")
+
+
+async def daily_quiz_sent_keys() -> set[str]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT DISTINCT item_key FROM daily_quiz_sends WHERE NOT is_test")
+        return {r["item_key"] for r in rows}
+
+
+async def start_daily_quiz(day, item_key: str, is_test: bool = False) -> int | None:
+    """Claim the day's send before the long broadcast. None = that day is
+    already taken (another pass, or a restart mid-send)."""
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            """INSERT INTO daily_quiz_sends (day, item_key, is_test) VALUES ($1, $2, $3)
+               ON CONFLICT (day) DO NOTHING RETURNING id""",
+            day, item_key, is_test,
+        )
+
+
+async def finish_daily_quiz(send_id: int, sent: int, failed: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE daily_quiz_sends SET sent = $2, failed = $3 WHERE id = $1",
+            send_id, sent, failed,
+        )
+
+
+async def get_daily_quiz_send(send_id: int) -> dict | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM daily_quiz_sends WHERE id = $1", send_id)
+        return dict(row) if row else None
+
+
+async def record_daily_quiz_answer(send_id: int, user_id: int, choice: int, correct: bool) -> bool:
+    """One answer per buyer per send. False = they had already answered."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO daily_quiz_answers (send_id, user_id, choice, correct)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (send_id, user_id) DO NOTHING RETURNING send_id""",
+            send_id, user_id, choice, correct,
+        )
+        return row is not None
+
+
+async def daily_quiz_stats(send_id: int) -> tuple[int, int]:
+    """(answered, answered right) for one send."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) AS n, COUNT(*) FILTER (WHERE correct) AS ok
+                 FROM daily_quiz_answers WHERE send_id = $1""",
+            send_id,
+        )
+        return int(row["n"]), int(row["ok"])
+
+
+async def daily_quiz_recent(limit: int = 5) -> list[dict]:
+    """The last real sends with their answer counts, newest first."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT s.id, s.day, s.item_key, s.sent, s.failed,
+                      COUNT(a.user_id) AS answered,
+                      COUNT(a.user_id) FILTER (WHERE a.correct) AS right_answers
+                 FROM daily_quiz_sends s
+                 LEFT JOIN daily_quiz_answers a ON a.send_id = s.id
+                WHERE NOT s.is_test
+                GROUP BY s.id
+                ORDER BY s.day DESC
+                LIMIT $1""",
+            limit,
+        )
+        return [dict(r) for r in rows]
 
 
 async def stock_alerts_initialized() -> bool:

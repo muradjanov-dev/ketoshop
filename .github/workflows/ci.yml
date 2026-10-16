@@ -48,7 +48,7 @@ jobs:
               "product_of_day", "product_ideas", "regions", "gamification", "referral_contest", "promotions",
               "meta_ads", "ads_impact", "meta_leads", "db_backup", "reports", "activity",
               "subscription_gate", "pg_storage", "state_guard", "translit",
-              "mystery_gift", "news_announce",
+              "mystery_gift", "news_announce", "quiz_bank", "daily_quiz",
               "translator", "nps_survey",
           ]
           for m in mods:
