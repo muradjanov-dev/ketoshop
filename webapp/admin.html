@@ -387,6 +387,9 @@
   .kb-card.landed{animation:kbLand .75s ease-out}
   @keyframes kbLand{0%{box-shadow:0 0 0 0 var(--tone)}100%{box-shadow:0 0 0 13px rgba(0,0,0,0)}}
   .kb-card.leaving{animation:kbOut .22s ease-in forwards}
+  /* A refresh repaints in place: no entrance animation replayed on every
+     card every 12 seconds (owner, 2026-10-17: "pirillab yangilanib qolyapti"). */
+  .kanban.kb-quiet .kb-card:not(.landed):not(.leaving){animation:none}
   @keyframes kbOut{to{opacity:0;transform:scale(.94);margin-top:-8px}}
   .kb-card.busy{pointer-events:none;opacity:.55}
 
@@ -2862,6 +2865,13 @@ const KB_POLL_MS=12000;
 let KB_BOARD=null, KB_COURIERS=[], KB_TIMER=null, KB_AUTO=true, KB_SCOPE='all';
 let KB_DRAG=null, KB_BUSY=new Set(), KB_DETAIL_ID=null, KB_LOADED=false;
 let KB_COUNTS={};
+// The last board actually painted, and when the courier last touched it — a
+// poll neither repaints an unchanged board nor pulls one out from under a
+// thumb that is scrolling it (owner, 2026-10-17: "pastga tushishga
+// qiynalyapti yana tepaga chiqib qolyapti").
+let KB_RENDER_SIG='', KB_LAST_TOUCH=0;
+const KB_IDLE_MS=4000;
+function kbUserBusy(){return Date.now()-KB_LAST_TOUCH<KB_IDLE_MS;}
 
 /* ── formatting ── */
 function kbTime(iso){
@@ -2939,6 +2949,7 @@ function kbCard(id){
 
 /* ── load ── */
 function kbSkeleton(){
+  KB_RENDER_SIG='';
   const n=KB_SCOPE==='all'?5:4;
   $('#kanban').style.setProperty('--kb-cols',n);
   $('#kanban').innerHTML=Array.from({length:n},()=>
@@ -2951,7 +2962,9 @@ async function loadCourier(opts){
   if(!KB_LOADED&&!silent)kbSkeleton();
   try{
     const d=await api('/admin/api/courier/board?scope='+KB_SCOPE);
-    KB_BOARD=d;KB_LOADED=true;renderKanban();
+    KB_BOARD=d;KB_LOADED=true;
+    if(silent&&kbUserBusy())return;   // painted by the next quiet tick
+    renderKanban();
     if(KB_DETAIL_ID&&$('#kbModal').classList.contains('open'))kbRenderDetail(KB_DETAIL_ID);
   }catch(err){
     if(!silent)toast('⚠️ '+err.message);
@@ -2985,8 +2998,9 @@ function renderKanbanCols(q,match){
   $('#kbDoneSum').textContent=t.done_sum?kbSom(t.done_sum)+" so'm":'';
   $('#kbDoneLab').textContent=KB_SCOPE==='all'?'Yetkazildi':'Bugun yetkazildi';
 
-  $('#kanban').style.setProperty('--kb-cols',KB_BOARD.columns.length);
-  $('#kanban').innerHTML=KB_BOARD.columns.map(col=>{
+  const k=$('#kanban');
+  k.style.setProperty('--kb-cols',KB_BOARD.columns.length);
+  const html=KB_BOARD.columns.map(col=>{
     const cards=col.cards.filter(match);
     const body=cards.length
       ? cards.map((c,i)=>kbCardHtml(c,col,i)).join('')
@@ -3001,6 +3015,19 @@ function renderKanbanCols(q,match){
       <div class="kb-body" data-body="${col.key}"><div class="kb-slot"></div>${body}</div>
     </div>`;
   }).join('');
+  if(html!==KB_RENDER_SIG){
+    // Repaint, but leave the courier exactly where they were (owner: "tepaga
+    // chiqib qolmasin ... shu buyurtmani topguncha vaqt ketadi"). Each
+    // column remembers the order at the top of its view and puts that same
+    // order back at the same height — even when orders were added or removed
+    // above it. The board's sideways scroll and the page scroll come back
+    // too, and the cards don't fade in again (.kb-quiet).
+    const keep=kbKeepView(k);
+    k.classList.toggle('kb-quiet',!!KB_RENDER_SIG);
+    k.innerHTML=html;
+    kbRestoreView(k,keep);
+    KB_RENDER_SIG=html;
+  }
 
   // bump the counter only when it actually changed, so a poll that finds
   // nothing new doesn't make the whole header twitch every 12 seconds
@@ -3012,6 +3039,35 @@ function renderKanbanCols(q,match){
     KB_COUNTS[col.key]=n;
   });
   kbNavRender();
+}
+
+/* Where the courier is looking, per column: the first order still in view
+   and how far below the column's top edge it sits. */
+function kbKeepView(k){
+  const keep={left:k.scrollLeft,y:window.scrollY,cols:{}};
+  k.querySelectorAll('.kb-body[data-body]').forEach(b=>{
+    const top=b.getBoundingClientRect().top;
+    const card=[...b.querySelectorAll('.kb-card[data-id]')]
+      .find(c=>c.getBoundingClientRect().bottom>top+1);
+    keep.cols[b.dataset.body]={scroll:b.scrollTop,
+      id:card&&card.dataset.id, offset:card?card.getBoundingClientRect().top-top:0};
+  });
+  return keep;
+}
+function kbRestoreView(k,keep){
+  k.querySelectorAll('.kb-body[data-body]').forEach(b=>{
+    const was=keep.cols[b.dataset.body];
+    if(!was||!was.scroll)return;
+    const card=was.id&&b.querySelector(`.kb-card[data-id="${was.id}"]`);
+    if(card){
+      // the same order, at the same height as before the refresh
+      b.scrollTop+=card.getBoundingClientRect().top-b.getBoundingClientRect().top-was.offset;
+    }else{
+      b.scrollTop=was.scroll;   // that order left the column — stay at the same depth
+    }
+  });
+  if(k.scrollLeft!==keep.left)k.scrollLeft=keep.left;
+  if(window.scrollY!==keep.y)window.scrollTo(window.scrollX,keep.y);
 }
 
 /* ── column tabs + arrows ── */
@@ -3055,6 +3111,12 @@ $('#kbNext').addEventListener('click',()=>kbScrollToCol(kbCurrentCol()+1));
   let raf=0;
   $('#kanban').addEventListener('scroll',()=>{cancelAnimationFrame(raf);raf=requestAnimationFrame(kbNavSync);},{passive:true});
   window.addEventListener('resize',()=>{cancelAnimationFrame(raf);raf=requestAnimationFrame(kbNavSync);});
+}
+{
+  const touched=()=>{KB_LAST_TOUCH=Date.now();};
+  const k=$('#kanban');
+  ['scroll','wheel','touchstart','touchmove','pointerdown'].forEach(ev=>
+    k.addEventListener(ev,touched,{capture:true,passive:true}));
 }
 // Mouse: grab the empty board (not a card, not a control) and pull it sideways.
 {
@@ -3458,7 +3520,7 @@ function kbPollOn(){
   kbPollOff();
   if(!KB_AUTO)return;
   KB_TIMER=setInterval(()=>{
-    if(document.hidden||KB_DRAG||KB_BUSY.size)return;
+    if(document.hidden||KB_DRAG||KB_BUSY.size||kbUserBusy())return;
     if(!$('#view-courier').classList.contains('active'))return;
     if($('#kbModal').classList.contains('open'))return;   // don't repaint under the admin's hands
     loadCourier({silent:true});
