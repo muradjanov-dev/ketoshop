@@ -46,6 +46,14 @@ CATALOG = [
     product(16, "Qora kunjut 300 gr", 25000),
     product(17, "Zaytun yog'i (sovuq siqim, Extra virgin)", 120000),
     product(18, "Kepakli bug'doy uni", 12000),
+    # 2026-10-17 recipes
+    product(19, "Kokos uni 200gr", 30000),
+    product(20, "Zig'ir uni 400g «Кудесница»", 35000),
+    product(21, "Yashil grechka doni 500gr", 30000),
+    product(22, "Qora guruch 500gr", 40000),
+    product(23, "Pista mag'zi 500gr", 150000),
+    product(24, "Zaytun yog‘i Rossiya (5 l, qovurish uchun)", 400000),
+    product(25, "Kokos chipsi 100g", 25000),
 ]
 
 
