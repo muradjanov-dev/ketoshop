@@ -78,7 +78,9 @@ class TsLoanwordTest(unittest.TestCase):
                           ("ratsion", "рацион"), ("ratsioningizga", "рационингизга"),
                           ("kombinatsiya", "комбинация"), ("integratsiyasi", "интеграцияси"),
                           ("tsikl", "цикл"), ("Tsikli", "Цикли"),
-                          ("antotsianinlarga", "антоцианинларга")):
+                          ("antotsianinlarga", "антоцианинларга"),
+                          ("aksiya", "акция"), ("Aksiyasi", "Акцияси"), ("AKSIYA", "АКЦИЯ"),
+                          ("porsiyada", "порцияда")):
             self.assertEqual(lat_to_cyr(src), want, src)
 
     def test_native_ts_stays(self):

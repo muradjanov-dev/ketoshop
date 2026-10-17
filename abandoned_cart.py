@@ -338,14 +338,25 @@ async def cmd_gift_stats(message: Message):
 
 @router.message(Command("sovga_elon"), F.from_user.id.in_(ADMIN_IDS))
 async def cmd_gift_upgrade_preview(message: Message):
-    """Preview of the "sovg'a endi har bir buyurtmaga" announcement in all
-    three languages, exactly as buyers get it (photo + caption)."""
+    """Preview of the "aksiya davom etadi" announcement (2026-10-18) in all
+    three languages plus the channel's copy, exactly as they go out (photo +
+    caption) — to the admin who asked only."""
     from datetime import timedelta as _td
-    row = await gift_campaign._state(force=True)
-    until = (row["ends_at"] + gift_campaign.TZ_OFFSET) if row and row.get("ends_at") \
-        else gift_campaign._now_tk() + _td(days=gift_campaign.DURATION_DAYS)
-    photo = await gift_campaign._product_photo(await gift_campaign.gift_product(force=True))
+    g = gift_campaign
+    row = await g._state(force=True)
+    if row and row.get("ends_at") and g._active_row(row) and g._now_tk().date() >= g.EXTEND_FROM:
+        until = row["ends_at"] + g.TZ_OFFSET
+    else:
+        # Not extended yet: the date it will carry when it goes out at 09:00.
+        start = datetime.combine(max(g.EXTEND_FROM, g._now_tk().date()), datetime.min.time())
+        until = start + _td(hours=g.EXTEND_WINDOW[0], days=g.EXTEND_DAYS)
+    photo = await g._product_photo(await g.gift_product(force=True))
+    await message.answer(
+        f"👀 Eritritol aksiyasi uzaytirilishi e'loni — {g.EXTEND_FROM:%d.%m.%Y} soat "
+        f"{g.EXTEND_WINDOW[0]:02d}:00 da hammaga (3 tilda) va kanalga avtomatik ketadi. "
+        "Quyida — faqat sizga ko'rinishi:")
     for lang in ("uz", "uz_cyr", "ru"):
-        await gift_campaign._send_photo(message.bot, message.from_user.id, photo,
-                                        gift_campaign.upgrade_text(lang, until),
-                                        gift_campaign.announcement_keyboard(lang))
+        await g._send_photo(message.bot, message.from_user.id, photo,
+                            g.extension_text(lang, until), g.announcement_keyboard(lang))
+    await message.answer("📢 Kanal posti (tugmasiz — izohlar ochiq qoladi):")
+    await g.post_extension_to_channel(message.bot, until, photo, chat_id=message.from_user.id)
