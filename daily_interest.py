@@ -67,8 +67,8 @@ _INTROS = [
 
 _BENEFIT_LABEL = {"uz": "💡 <b>Foydasi:</b>", "ru": "💡 <b>Польза:</b>"}
 _PRICE_LABEL = {"uz": "💰 Narxi:", "ru": "💰 Цена:"}
-_OUT_OF_STOCK = {"uz": "⏳ Hozircha tugagan — tez orada qaytadi.",
-                 "ru": "⏳ Пока закончился — скоро вернётся."}
+_OUT_OF_STOCK = {"uz": "⏳ Hozircha javonda yo'q — yangi partiya yo'lda, tez orada qaytadi.",
+                 "ru": "⏳ Пока нет на полке — новая партия уже в пути, скоро вернётся."}
 
 
 def _now_tk() -> datetime:

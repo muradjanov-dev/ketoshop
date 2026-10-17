@@ -3840,21 +3840,23 @@ const L = {
     errorCancel: 'Buyurtmani bekor qilib bo\'lmadi',
     ordering: 'Buyurtma berilmoqda...',
     comingSoon: '⏳ Tez orada qaytadi',
-    outOfStock: '❌ Sotuvda yo\'q — mahsulot yaqin kunlarda qaytadi',
+    outOfStock: '⏳ Tez orada qaytadi — yangi partiya yo\'lda',
     // Sold out, said warmly (owner, 2026-10-14: "kreativroq va samimiyroq").
     // Five notes, picked by product id (SOLD_OUT_NOTES), so the shelf doesn't
     // repeat one sentence everywhere. The bot card uses the same five.
-    soldOutStamp: 'Tugab qoldi',
+    // Not "Tugab qoldi" (owner, 2026-10-17: "tugadi emas, tez orada qaytadi
+    // deganga o'xshash") — the stamp says it is on its way back.
+    soldOutStamp: 'Yo\'lda 🚚',
     soonTitle0: '🤍 Siz yolg\'iz emassiz',
     soonText0: 'Bu mahsulotni siz kabi ko\'pchilik yaxshi ko\'radi — shuning uchun javonda bittasi ham qolmadi. Yangisini olib kelyapmiz, ko\'p kuttirmaymiz.',
     soonTitle1: '🌿 Qisqa ta\'tilga chiqdi',
     soonText1: 'Bu mahsulot shuncha dasturxonni bezadiki, ozgina dam olishga haqli. Kuch to\'plab, tez orada javonga qaytadi — biz ham uni intiqlik bilan kutyapmiz.',
     soonTitle2: '🙏 Kechirasiz, biz ulgurmadik',
-    soonText2: 'Bu mahsulot biz kutgandan ham tezroq tugadi. Aybni bo\'ynimizga olamiz va yangisini shoshilib olib kelyapmiz — tez orada shu yerda bo\'ladi.',
+    soonText2: 'Bu mahsulot biz kutgandan ham tezroq tarqalib ketdi. Aybni bo\'ynimizga olamiz va yangisini shoshilib olib kelyapmiz — tez orada shu yerda bo\'ladi.',
     soonTitle3: '🧺 Javon bo\'shadi, savatlar to\'ldi',
     soonText3: 'Keto oilamiz bu mahsulotni bir zumda olib ketdi. Yangi partiya yo\'lda — tez orada yana sizning dasturxoningizda bo\'ladi.',
     soonTitle4: '💛 Biz ham uni sog\'indik',
-    soonText4: 'Mahsulot tugab qoldi, lekin xayrlashganimiz yo\'q. Yangisi allaqachon yo\'lda — sal sabr qiling, tez orada yana uchrashamiz.',
+    soonText4: 'Mahsulot hozircha javonda yo\'q, lekin xayrlashganimiz yo\'q. Yangisi allaqachon yo\'lda — sal sabr qiling, tez orada yana uchrashamiz.',
     // "Kelganda xabar bering" (owner, 2026-10-14) — the bot writes once
     // the product is back (restock_notify.py).
     restockAsk: '🔔 Kelganda menga xabar bering',
@@ -4037,8 +4039,8 @@ const L = {
     errorCancel: 'Не удалось отменить заказ',
     ordering: 'Оформление...',
     comingSoon: '⏳ Скоро вернётся',
-    outOfStock: '❌ Нет в наличии — товар появится в ближайшие дни',
-    soldOutStamp: 'Раскупили',
+    outOfStock: '⏳ Скоро вернётся — новая партия уже в пути',
+    soldOutStamp: 'В пути 🚚',
     soonTitle0: '🤍 Вы не одни',
     soonText0: 'Этот товар любят многие — как и вы. Поэтому на полке не осталось ни одного. Мы уже везём новый и долго ждать не заставим.',
     soonTitle1: '🌿 Ушёл в короткий отпуск',
@@ -4048,7 +4050,7 @@ const L = {
     soonTitle3: '🧺 Полка пуста — корзины полны',
     soonText3: 'Наша кето-семья разобрала этот товар в один миг. Новая партия в пути — скоро он снова будет на вашем столе.',
     soonTitle4: '💛 Мы тоже по нему скучаем',
-    soonText4: 'Товар закончился, но мы не прощаемся. Новая партия уже в пути — ещё немного терпения, и скоро снова встретимся.',
+    soonText4: 'Товар ненадолго ушёл с полки, но мы не прощаемся. Новая партия уже в пути — ещё немного терпения, и скоро снова встретимся.',
     restockAsk: '🔔 Сообщите, когда появится',
     restockOn: '✅ Сообщим, как только вернётся',
     restockAskHeld: '⏳ Занято · 🔔 Сообщите, когда освободится',
@@ -5728,8 +5730,8 @@ window.addEventListener('scroll', () => {
   }
 });
 
-// Sold out stays in the shop (owner, 2026-10-14): a tilted "Tugab qoldi"
-// stamp on the photo, and "Tez orada qaytadi" takes the description's line.
+// Sold out stays in the shop (owner, 2026-10-14): a tilted "Yo'lda 🚚"
+// stamp on the photo (was "Tugab qoldi" until 2026-10-17), and "Tez orada qaytadi" takes the description's line.
 // The detail sheet picks one of soonTitle0..4 / soonText0..4 by product id;
 // keep the count equal to product_card.SOLD_OUT_NOTES (the bot card).
 const SOLD_OUT_NOTES = 5;
