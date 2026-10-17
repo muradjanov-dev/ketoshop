@@ -4108,7 +4108,7 @@ const _UZ_SINGLES = {
 // regexes: older iOS WebViews reject it and the whole script would fail.
 const _UZ_TS_STEMS = [['retsept','рецепт'],['ratsion','рацион'],['antotsian','антоциан'],
   ['protsess','процесс'],['protsedur','процедур'],['kontsentrat','концентрат'],['kontsert','концерт'],
-  ['pitsa','пицца']];
+  ['pitsa','пицца'],['porsiya','порция']];
 const _UZ_LETTER = "A-Za-zЀ-ӿ";
 function _uzSameCase(src, cyr) {
   if (src.length > 1 && src === src.toUpperCase()) return cyr.toUpperCase();
@@ -5004,11 +5004,15 @@ async function checkStartGate(manual) {
     // under the bot's question opens straight into that game.
     const deepGame = new URLSearchParams(location.search).get('game');
     if (deepGame && GAMES.some(g => g.id === deepGame)) openGame(deepGame);
-    // ?recipe=<slug> — «📖 Retseptni ochish» under the channel's new-recipe
-    // post (recipe_channel.py) opens today's recipe straight away.
-    if (new URLSearchParams(location.search).get('recipe')) {
+    // The channel's recipe link (recipe_channel.py) opens that recipe:
+    // ?startapp=recipe-<slug> arrives as start_param, the bot's «📖 Retseptni
+    // ochish» button as ?recipe=<slug>.
+    const startParam = (tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '';
+    const deepRecipe = new URLSearchParams(location.search).get('recipe')
+      || (startParam.startsWith('recipe-') ? startParam.slice(7) : '');
+    if (deepRecipe) {
       if (!recipesData) await loadRecipes();
-      if (recipesData) openRecipe();
+      if (recipesData) await openRecipe(deepRecipe);
     }
   } catch(e) {
     console.error('Init error:', e);
@@ -5260,10 +5264,15 @@ async function loadRecipes() {
 }
 
 // Only today's recipe is ever shown — no archive (owner, 2026-10-08:
-// "har kuni faqat 1 ta retsept ko'rsat ... hammasini emas").
-function openRecipe() {
+// "har kuni faqat 1 ta retsept ko'rsat ... hammasini emas"). The one
+// exception is a channel link naming an earlier recipe: it opens that one.
+async function openRecipe(slug) {
   if (!recipesData) return;
-  renderRecipe(recipesData.current);
+  let r = recipesData.current;
+  if (slug && slug !== r.slug) {
+    try { r = await api('/api/recipes/' + encodeURIComponent(slug)); } catch (_) {}
+  }
+  renderRecipe(r);
   try { tg.expand(); } catch (_) {}
   document.getElementById('recipe-modal').classList.add('show');
   updateBackButton();
