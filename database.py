@@ -909,6 +909,18 @@ async def init_db():
             "ON restock_waitlist(user_id, product_id) WHERE notified_at IS NULL"
         )
 
+        # Past baho sababi (review_followup.py, 2026-10-17): one row per 1–2★
+        # review we politely asked about — claimed before sending, so never
+        # twice. delivered stays NULL while the send is in flight.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS review_followups (
+                review_id INTEGER PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                delivered BOOLEAN
+            )
+        """)
+
         # ===== Maqsadlar / targets (2026-09-02) =====
         # Owner's two numbers: 10 sales a day, $2 000 net profit a month.
         # The single settings row keeps them editable without a deploy — the
@@ -7709,6 +7721,86 @@ async def get_all_reviews() -> list[dict]:
             _customer_filter_ids(),
         )
         return [dict(r) for r in rows]
+
+
+async def get_low_reviews_to_follow_up(max_rating: int, lookback_days: int,
+                                       min_age_minutes: int) -> list[dict]:
+    """Customers' low ratings with no comment, not yet asked about
+    (review_followup.py), oldest first."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT r.id, r.user_id, r.rating, r.created_at,
+                      p.name AS product_name, p.name_ru AS product_name_ru,
+                      u.full_name, u.username, u.phone, u.language
+                 FROM reviews r
+                 JOIN products p ON p.id = r.product_id
+                 JOIN users u ON u.user_id = r.user_id
+                WHERE r.rating <= $1
+                  AND COALESCE(BTRIM(r.comment), '') = ''
+                  AND r.created_at >= CURRENT_TIMESTAMP - make_interval(days => $2)
+                  AND r.created_at <= CURRENT_TIMESTAMP - make_interval(mins => $3)
+                  AND NOT (r.user_id = ANY($4::bigint[]))
+                  AND NOT EXISTS (SELECT 1 FROM review_followups f WHERE f.review_id = r.id)
+                ORDER BY r.created_at, r.id""",
+            max_rating, lookback_days, min_age_minutes, _customer_filter_ids(),
+        )
+        return [dict(r) for r in rows]
+
+
+async def claim_review_followup(review_id: int, user_id: int) -> bool:
+    """True for the one caller that may send the follow-up for this review."""
+    async with pool.acquire() as conn:
+        got = await conn.fetchval(
+            """INSERT INTO review_followups (review_id, user_id) VALUES ($1, $2)
+               ON CONFLICT (review_id) DO NOTHING RETURNING review_id""",
+            review_id, user_id,
+        )
+        return got is not None
+
+
+async def set_review_followup_delivered(review_id: int, delivered: bool) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE review_followups SET delivered = $2 WHERE review_id = $1",
+            review_id, delivered,
+        )
+
+
+async def get_review_followup_pauses(days: int) -> list[dict]:
+    """Buyers asked about a low rating in the last `days` and how many
+    seconds of that window are left (review_followup.restore_ai_pauses).
+    sent_at was stored as CURRENT_TIMESTAMP, so LOCALTIMESTAMP is its clock."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT user_id,
+                      EXTRACT(EPOCH FROM MAX(sent_at) + make_interval(days => $1)
+                                         - LOCALTIMESTAMP)::int AS seconds_left
+                 FROM review_followups
+                WHERE delivered
+                GROUP BY user_id
+               HAVING MAX(sent_at) + make_interval(days => $1) > LOCALTIMESTAMP""",
+            days,
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_recent_review_followup(user_id: int, days: int) -> dict | None:
+    """The latest delivered follow-up to this buyer within `days`, with the
+    review it asked about — for the support card's context line."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT f.review_id, f.sent_at, r.rating,
+                      p.name AS product_name, p.name_ru AS product_name_ru
+                 FROM review_followups f
+                 JOIN reviews r ON r.id = f.review_id
+                 LEFT JOIN products p ON p.id = r.product_id
+                WHERE f.user_id = $1 AND f.delivered
+                  AND f.sent_at >= CURRENT_TIMESTAMP - make_interval(days => $2)
+                ORDER BY f.sent_at DESC
+                LIMIT 1""",
+            user_id, days,
+        )
+        return dict(row) if row else None
 
 
 async def get_unreviewed_products(limit: int = 10) -> list[dict]:

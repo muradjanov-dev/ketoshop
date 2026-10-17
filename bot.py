@@ -399,6 +399,11 @@ async def main():
     # hear when it's restocked, 09:00–21:00 (restock_notify.py).
     from restock_notify import scheduler_loop as restock_notify_loop
     restock_notify_task = asyncio.create_task(restock_notify_loop(bot))
+    # 1–2★ with no comment: a polite "what went wrong?" to the buyer, 10:00–
+    # 20:00, once per review; the answer comes back through the support relay
+    # (review_followup.py). REVIEW_FOLLOWUP=0 switches it off.
+    from review_followup import scheduler_loop as review_followup_loop
+    review_followup_task = asyncio.create_task(review_followup_loop(bot))
 
     # "Nima yangi" — this release's notes to every admin, once, in daytime.
     # Daily "Kun mahsuloti": one product to every buyer and to the channel.
@@ -446,6 +451,7 @@ async def main():
         stock_night_task.cancel()
         recipe_channel_task.cancel()
         restock_notify_task.cancel()
+        review_followup_task.cancel()
         product_of_day_task.cancel()
         channel_posts_task.cancel()
         release_notes_task.cancel()
