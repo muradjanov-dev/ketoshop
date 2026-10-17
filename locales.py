@@ -147,7 +147,7 @@ TEXTS = {
               "отдыха. Наберётся сил и скоро вернётся на полку — мы ждём его вместе с вами.",
     },
     "product_out_of_stock_2": {
-        "uz": "🙏 <b>Kechirasiz, biz ulgurmadik</b>\nBu mahsulot biz kutgandan ham tezroq tugadi. Aybni "
+        "uz": "🙏 <b>Kechirasiz, biz ulgurmadik</b>\nBu mahsulot biz kutgandan ham tezroq tarqalib ketdi. Aybni "
               "bo'ynimizga olamiz va yangisini shoshilib olib kelyapmiz — tez orada shu yerda bo'ladi.",
         "ru": "🙏 <b>Простите, не успели</b>\nЭтот товар разлетелся быстрее, чем мы ожидали. Это наша "
               "недоработка — уже спешим привезти новый, совсем скоро он будет здесь.",
@@ -159,9 +159,9 @@ TEXTS = {
               "Новая партия в пути — скоро он снова будет на вашем столе.",
     },
     "product_out_of_stock_4": {
-        "uz": "💛 <b>Biz ham uni sog'indik</b>\nMahsulot tugab qoldi, lekin xayrlashganimiz yo'q. Yangisi "
+        "uz": "💛 <b>Biz ham uni sog'indik</b>\nMahsulot hozircha javonda yo'q, lekin xayrlashganimiz yo'q. Yangisi "
               "allaqachon yo'lda — sal sabr qiling, tez orada yana uchrashamiz.",
-        "ru": "💛 <b>Мы тоже по нему скучаем</b>\nТовар закончился, но мы не прощаемся. Новая партия уже "
+        "ru": "💛 <b>Мы тоже по нему скучаем</b>\nТовар ненадолго ушёл с полки, но мы не прощаемся. Новая партия уже "
               "в пути — ещё немного терпения, и скоро снова встретимся.",
     },
     # "Kelganda xabar bering" (owner, 2026-10-14) — restock_notify.py.

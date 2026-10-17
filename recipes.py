@@ -40,7 +40,7 @@ LABELS = {
     "per_serving": {"uz": "1 porsiyada, taxminan", "ru": "на порцию, примерно"},
     "ingredients": {"uz": "Masalliqlar", "ru": "Ингредиенты"},
     "from_home": {"uz": "uydan", "ru": "из дома"},
-    "out_of_stock": {"uz": "hozir tugagan", "ru": "нет в наличии"},
+    "out_of_stock": {"uz": "⏳ tez orada qaytadi", "ru": "⏳ скоро вернётся"},
     "add_all": {"uz": "🛒 Barcha masalliqlarni savatga", "ru": "🛒 Все ингредиенты в корзину"},
     "add_all_sub": {"uz": "Ketoshop mahsulotlari — har biridan 1 qadoq",
                     "ru": "Продукты Ketoshop — по 1 упаковке"},
@@ -52,7 +52,8 @@ LABELS = {
              "ru": "Следующий рецепт выйдет {date} — следите за обновлениями"},
     "added": {"uz": "✅ {n} ta mahsulot savatga qo'shildi", "ru": "✅ Добавлено в корзину: {n}"},
     "already": {"uz": "👍 Masalliqlar allaqachon savatingizda", "ru": "👍 Ингредиенты уже в корзине"},
-    "missing": {"uz": "Hozir tugagan: {names}", "ru": "Нет в наличии: {names}"},
+    "missing": {"uz": "⏳ Tez orada qaytadi, hozircha savatga qo'shilmadi: {names}",
+                "ru": "⏳ Скоро вернутся, пока не добавлены: {names}"},
     "back": {"uz": "← Orqaga", "ru": "← Назад"},
 }
 
