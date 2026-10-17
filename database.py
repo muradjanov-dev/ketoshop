@@ -3758,6 +3758,19 @@ async def mark_gift_announced(key: str, days: int) -> None:
         )
 
 
+async def extend_gift_campaign(key: str, days: int) -> None:
+    """Switch an announced campaign (back) on for `days` from now; its
+    wrap-up message is owed again at the new end."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE gift_campaigns
+                  SET ends_at = CURRENT_TIMESTAMP + make_interval(days => $2),
+                      ended_notified_at = NULL
+                WHERE key = $1 AND announced_at IS NOT NULL""",
+            key, days,
+        )
+
+
 async def mark_gift_ended_notified(key: str) -> None:
     async with pool.acquire() as conn:
         await conn.execute(

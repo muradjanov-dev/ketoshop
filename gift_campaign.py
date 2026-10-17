@@ -608,6 +608,103 @@ async def announce(bot: Bot) -> tuple[int, int]:
     return sent, failed
 
 
+# ──────────────── 30 more days (owner, 2026-10-17) ───────────────────────────
+# "Har bir bot orqali buyurtmaga 100gr bepul eritritol aksiyasi davom etadi
+# yana 30 kun. buni ertalab e'lon qil hammaga kanalda ham, talablarga va
+# takliflarga binoan deb ham gap boshla chiroyli qilib." The first 30 days
+# ended on 17.10 in the morning. At 09:00 on EXTEND_FROM the campaign is
+# switched back on for EXTEND_DAYS together with the announcement — as at
+# launch, nobody gets a gift they weren't told about — and everybody hears it:
+# every bot user (the gift's photo + the shop button) and the channel (same
+# photo, Cyrillic, no inline button so its comments stay open; the bot is a
+# link in the text). Once: the key is claimed before anything is sent.
+
+EXTEND_KEY = "gift-extend-2026-10-18"
+EXTEND_FROM = datetime(2026, 10, 18).date()
+EXTEND_DAYS = 30
+EXTEND_WINDOW = (9, 12)
+EXTEND_RETRY_DAYS = 2      # 18–20.10 mornings, if the gift product was missing on the first
+CHANNEL_LANG = "uz_cyr"
+
+_EXTEND = {
+    "uz": (
+        "🎉 <b>Talab va takliflaringizga binoan — sovg'a aksiyasi davom etadi!</b>\n\n"
+        "Aziz mijozlarimiz, aksiyani davom ettirish haqidagi so'rov va takliflaringizni "
+        "oldik — va albatta eshitdik 🤍\n\n"
+        "Ketoshop botida berilgan <b>har bir buyurtmaga</b> — summasidan qat'i nazar — "
+        "<b>100 gr Eritritol</b> yana <b>{days} kun</b> davomida mutlaqo <b>BEPUL!</b>\n\n"
+        "✨ Minimal summa yo'q — bitta mahsulot olsangiz ham sovg'a\n"
+        "✨ Hech qanday kod kerak emas — sovg'a buyurtmangizga o'zi qo'shiladi\n"
+        "✨ Har safar buyurtma berganingizda — yana sovg'a\n"
+        "🍬 Eritritol — shakarsiz shirinlik: choy, qahva, pishiriq va desertlar uchun\n\n"
+        "⏳ Aksiya <b>{until}</b> gacha davom etadi.\n\n"
+        "Sog'lom hayotni biz bilan tanlaganingiz uchun rahmat! 🤍"
+    ),
+    "ru": (
+        "🎉 <b>По вашим просьбам и пожеланиям — акция с подарком продолжается!</b>\n\n"
+        "Дорогие покупатели, мы получили ваши просьбы и пожелания продлить акцию — "
+        "и, конечно, услышали их 🤍\n\n"
+        "К <b>каждому заказу</b> в боте Ketoshop — на любую сумму — <b>100 г эритрита</b> "
+        "ещё <b>{days} дней</b> совершенно <b>БЕСПЛАТНО!</b>\n\n"
+        "✨ Никакой минимальной суммы — подарок даже за один товар\n"
+        "✨ Никаких промокодов — подарок добавится к заказу сам\n"
+        "✨ Каждый новый заказ — снова подарок\n"
+        "🍬 Эритрит — сладость без сахара: для чая, кофе, выпечки и десертов\n\n"
+        "⏳ Акция действует до <b>{until}</b>.\n\n"
+        "Спасибо, что выбираете здоровую жизнь вместе с нами! 🤍"
+    ),
+}
+_EXTEND_TAIL = {
+    # In the bot the shop button sits right under the message.
+    "bot": {"uz": "\n👇 Hoziroq buyurtma bering:", "ru": "\n👇 Оформите заказ прямо сейчас:"},
+    # The channel has no button — the bot is a link in the text.
+    "channel": {"uz": "\n\n🛒 Buyurtma berish: {bot}", "ru": "\n\n🛒 Заказать: {bot}"},
+}
+
+
+def extension_text(lang: str, until: datetime, channel: bool = False) -> str:
+    """The "davom etadi" announcement. The bot's @username goes in after the
+    transliteration, so it stays a working link in Cyrillic too."""
+    from config import BOT_USERNAME
+    base = "ru" if lang == "ru" else "uz"
+    text = (_EXTEND[base] + _EXTEND_TAIL["channel" if channel else "bot"][base]) \
+        .replace("{days}", str(EXTEND_DAYS)).replace("{until}", until.strftime("%d.%m.%Y"))
+    if lang == "uz_cyr":
+        from translit import lat_to_cyr
+        text = lat_to_cyr(text)
+    bot_link = f'<a href="https://t.me/{BOT_USERNAME}">@{BOT_USERNAME}</a>'
+    return text.replace("{bot}", bot_link).replace("{бот}", bot_link)
+
+
+async def post_extension_to_channel(bot: Bot, until: datetime, photo: str | None,
+                                    chat_id: int | None = None) -> bool:
+    """The channel's copy — or `chat_id`'s, for the admin preview."""
+    from config import REQUIRED_CHANNEL_ID
+    target = chat_id or REQUIRED_CHANNEL_ID
+    if not target:
+        return False
+    return await _send_photo(bot, target, photo, extension_text(CHANNEL_LANG, until, channel=True), None)
+
+
+async def announce_extension(bot: Bot) -> dict:
+    row = await _state(force=True)
+    until = (row["ends_at"] + TZ_OFFSET) if row and row.get("ends_at") else _now_tk() + timedelta(days=EXTEND_DAYS)
+    photo = await _product_photo(await gift_product(force=True))
+    channel = await post_extension_to_channel(bot, until, photo)
+    user_ids = await database.get_all_user_ids()
+    langs = await database.get_user_languages(user_ids)
+    bodies = {lang: (extension_text(lang, until), announcement_keyboard(lang)) for lang in ("uz", "uz_cyr", "ru")}
+    sent = failed = 0
+    for uid in user_ids:
+        text, markup = bodies.get(langs.get(uid, "uz")) or bodies["uz"]
+        if await _send_photo(bot, uid, photo, text, markup):
+            sent += 1
+        else:
+            failed += 1
+        await asyncio.sleep(SEND_DELAY)
+    return {"sent": sent, "failed": failed, "channel": channel, "until": until}
+
+
 # ─────────────────────────────── accounting ─────────────────────────────────
 
 async def book_delivered_gifts() -> tuple[int, float]:
@@ -712,6 +809,32 @@ async def _tick(bot: Bot) -> None:
             f"🆕 «Xabaringiz bormi?» — {stats['new']} ta\n"
             f"🔁 «Yana sovg'a olishni istaysizmi?» — {stats['again']} ta\n"
             f"⚠️ Yetmadi: {stats['failed']} ta"))
+
+    # 1d. 30 more days from 09:00 on EXTEND_FROM (owner, 2026-10-17): the
+    # campaign comes back on together with the announcement to everyone and
+    # the channel. Claimed first — never twice. Not without the gift product.
+    if (row.get("announced_at") is not None and not _active_row(row)
+            and EXTEND_FROM <= now_tk.date() <= EXTEND_FROM + timedelta(days=EXTEND_RETRY_DAYS)
+            and EXTEND_WINDOW[0] <= now_tk.hour < EXTEND_WINDOW[1]):
+        prod = await gift_product(force=True)
+        if prod is None:
+            if await database.claim_gift_stock_alert(CAMPAIGN_KEY, now_tk.date()):
+                await _notify_admins(bot, (
+                    "⚠️ <b>Sovg'a aksiyasi uzaytirilmadi</b>\n"
+                    "Katalogda faol <b>Eritritol 100gr</b> mahsuloti topilmadi. "
+                    "Mahsulotni faollashtiring — uzaytirish va e'lon avtomatik ketadi."))
+        elif await database.claim_release_notes(EXTEND_KEY):
+            await database.extend_gift_campaign(CAMPAIGN_KEY, EXTEND_DAYS)
+            row = await _state(force=True)
+            stats = await announce_extension(bot)
+            await _notify_admins(bot, (
+                f"🎉 <b>Eritritol sovg'asi yana {EXTEND_DAYS} kunga uzaytirildi</b> — "
+                f"{stats['until']:%d.%m.%Y} gacha\n"
+                "Botdagi har bir buyurtmaga 100 gr Eritritol, minimal summa yo'q.\n"
+                f"📣 E'lon: ✅ {stats['sent']} ta yetkazildi, ⚠️ {stats['failed']} ta yetmadi\n"
+                f"📢 Kanal: {'✅ chiqdi' if stats['channel'] else '⚠️ chiqmadi'}\n"
+                f"📦 Ombordagi qoldiq: {fmt_sum(float(prod.get('quantity') or 0))} — "
+                "har buyurtmaga ketadi, zaxirani kuzatib boring."))
 
     # 2. Book every delivered gift into Chiqimlar.
     try:
