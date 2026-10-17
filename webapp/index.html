@@ -5911,6 +5911,7 @@ async function openDetail(productId, isSet = false) {
     // No stepper for something that can't be bought yet — the note says when.
     addBtn.parentElement.classList.toggle('is-out', !!p.out_of_stock);
     const soonEl = document.getElementById('detail-soon');
+    const soldOut = !!p.out_of_stock;
     soonEl.hidden = !soldOut;
     if (soldOut) {
       const v = Math.abs(Number(p.id) || 0) % SOLD_OUT_NOTES;
