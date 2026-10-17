@@ -165,12 +165,15 @@ async def cmd_start_deep_link(message: Message, command: CommandObject, state: F
     import bloggers
     import ad_sources
     import product_card
+    import recipe_channel
     referrer_id = referral_contest.parse_ref_payload(command.args)
-    blogger_code = bloggers.parse_payload(command.args)
+    # ?start=retsept — the channel's «To'liq retseptni ko'rish» (recipe_channel.py)
+    recipe_link = recipe_channel.parse_payload(command.args)
+    blogger_code = None if recipe_link else bloggers.parse_payload(command.args)
     ad_source = ad_sources.parse_payload(command.args)
     product_id = product_card.parse_product_payload(command.args)
     await _handle_start(message, referrer_id, blogger_code, ad_source,
-                        product_id=product_id)
+                        product_id=product_id, recipe_link=recipe_link)
     await _remind_pending_cheque(message, state)
 
 
@@ -184,7 +187,8 @@ async def cmd_start(message: Message, state: FSMContext):
 async def _handle_start(message: Message, referrer_id: int | None,
                         blogger_code: str | None = None,
                         ad_source: str | None = None,
-                        product_id: int | None = None):
+                        product_id: int | None = None,
+                        recipe_link: bool = False):
     if not _is_private_chat(message):
         return
 
@@ -213,6 +217,15 @@ async def _handle_start(message: Message, referrer_id: int | None,
         lang = await get_user_language(message.from_user.id)
         opened = await product_card.open_from_link(message.bot, message.from_user.id,
                                                    product_id, lang)
+        if opened and not is_new:
+            return
+
+    # Came in from the channel's new-recipe post: the recipe with a button
+    # that opens it in the Mini App.
+    if recipe_link:
+        import recipe_channel
+        lang = await get_user_language(message.from_user.id)
+        opened = await recipe_channel.open_from_link(message.bot, message.from_user.id, lang)
         if opened and not is_new:
             return
 

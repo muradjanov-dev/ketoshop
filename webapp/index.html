@@ -4105,7 +4105,8 @@ const _UZ_SINGLES = {
 // stays "тс" (aytsa → айтса, shartsiz → шартсиз). No lookbehind in these
 // regexes: older iOS WebViews reject it and the whole script would fail.
 const _UZ_TS_STEMS = [['retsept','рецепт'],['ratsion','рацион'],['antotsian','антоциан'],
-  ['protsess','процесс'],['protsedur','процедур'],['kontsentrat','концентрат'],['kontsert','концерт']];
+  ['protsess','процесс'],['protsedur','процедур'],['kontsentrat','концентрат'],['kontsert','концерт'],
+  ['pitsa','пицца']];
 const _UZ_LETTER = "A-Za-zЀ-ӿ";
 function _uzSameCase(src, cyr) {
   if (src.length > 1 && src === src.toUpperCase()) return cyr.toUpperCase();
@@ -5001,6 +5002,12 @@ async function checkStartGate(manual) {
     // under the bot's question opens straight into that game.
     const deepGame = new URLSearchParams(location.search).get('game');
     if (deepGame && GAMES.some(g => g.id === deepGame)) openGame(deepGame);
+    // ?recipe=<slug> — «📖 Retseptni ochish» under the channel's new-recipe
+    // post (recipe_channel.py) opens today's recipe straight away.
+    if (new URLSearchParams(location.search).get('recipe')) {
+      if (!recipesData) await loadRecipes();
+      if (recipesData) openRecipe();
+    }
   } catch(e) {
     console.error('Init error:', e);
     showToast(t.errorLoad, true);

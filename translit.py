@@ -107,6 +107,7 @@ _TS_STEMS: tuple[tuple[str, str], ...] = (
     ("protsedur", "процедур"),
     ("kontsentrat", "концентрат"),
     ("kontsert", "концерт"),
+    ("pitsa", "пицца"),           # keto pitsa (site recipes, 2026-10-17)
 )
 _TS_STEM_RES = tuple((re.compile(lat, re.IGNORECASE), cyr) for lat, cyr in _TS_STEMS)
 _TSIYA_RE = re.compile(r"(?<=[^\W\d_])ts(?=iya)", re.IGNORECASE)
