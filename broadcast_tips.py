@@ -33,9 +33,15 @@ Masalliqlar:
 • 2 ta tuxum
 • 2 osh qoshiq kokos uni
 • 2 osh qoshiq suv
+• 1 chimdim tuz
+• 1 choy qoshiq yog' (tova uchun)
 
 Tayyorlanishi:
-Aralashtirib, qizigan tovada ikki tomonini 2 daqiqadan pishiring.
+1. Idishda tuxumni vilka bilan ko'pirtiring.
+2. Kokos uni, suv va tuzni qo'shib aralashtiring va 3 daqiqa qo'yib qo'ying — un suvni shimib, xamir quyuqlashadi.
+3. Tovani o'rtacha olovda qizdirib, yog' surting.
+4. Har bir quymoq uchun 2 osh qoshiq xamir quying (3–4 ta chiqadi).
+5. Har tomonini 2 daqiqadan, qizarguncha pishiring.
 
 🛒 Mahsulotlar:
 • Kokos uni
@@ -99,9 +105,12 @@ Quymoq yoki keks tayyorlashni sinab ko'ring.
 Masalliqlar:
 • 1 osh qoshiq yeryong'oq pastasi
 • 1 choy qoshiq chia urug'i
+• Ixtiyoriy: 1 ta olma yoki 2 dona keto non bo'lagi
 
 Tayyorlanishi:
-Chia urug'ini pasta ustiga sepib iste'mol qiling.
+1. Yeryong'oq pastasini kichik kosaga yoki nonga surting.
+2. Ustiga chia urug'ini tekis seping.
+3. Darhol yeng; olma bo'laklariga surtib yesangiz ham bo'ladi.
 
 🛒 Mahsulotlar:
 • Yeryong'oq pastasi
@@ -159,15 +168,18 @@ Keks yoki pechenyega eritritol qo'shib tayyorlang.
 
 🌱 Kichik maslahat ham katta o'zgarishlarga sabab bo'lishi mumkin. Ushbu postni ulashing.
 @@@
-**🍳 Bugungi retsept — Kokos sharchalari**
+**🍳 Bugungi retsept — Kokos sharchalari (pishirilmaydigan konfet)**
 
 Masalliqlar:
-• 3 osh qoshiq kokos qirindisi
+• 3 osh qoshiq kokos qirindisi (taxminan 25 g)
 • 1 osh qoshiq yeryong'oq pastasi
-• 1 choy qoshiq eritritol
+• 1 choy qoshiq eritritol (kofe maydalagichda unga aylantirilgan)
 
 Tayyorlanishi:
-Masalliqlarni aralashtirib, shar shakliga keltiring va 20 daqiqa muzlatkichda qoldiring.
+1. Kichik idishda kokos qirindisi, yeryong'oq pastasi va eritritolni aralashtiring.
+2. Massani qo'l bilan siqib ko'ring: yopishib tursa — tayyor; to'kilsa, yana yarim qoshiq pasta qo'shing.
+3. Ho'l qo'l bilan yong'oqdek 5–6 ta sharcha (yumaloq konfet) yasang.
+4. Likopchaga terib, muzlatkichda 20 daqiqa qotiring.
 
 🛒 Mahsulotlar:
 • Kokos qirindisi
@@ -223,7 +235,9 @@ Masalliqlar:
 • 1 osh qoshiq kokos qirindisi
 
 Tayyorlanishi:
-Aralashtiring va darhol iste'mol qiling.
+1. Kichik kosada pasta va kokos qirindisini qoshiq bilan aralashtiring.
+2. Qoshiq bilan yeng — tez to'yimli gazak.
+3. Xohlasangiz, 2 ta sharcha yasab, 10 daqiqa muzlatkichda qotiring.
 
 🛒 Mahsulotlar:
 • Yeryong'oq pastasi
@@ -259,13 +273,16 @@ Kechqurun chia puding tayyorlab qo'ying.
 ☕️ 3 daqiqada shakarsiz issiq kakao.
 
 Masalliqlar:
-• 1 stakan issiq sut (yoki kokos suti)
-• 1 osh qoshiq achchiq kakao
+• 1 stakan (200 ml) issiq sut (yoki kokos suti)
+• 1 osh qoshiq achchiq kakao kukuni
 • 1 choy qoshiq eritritol
-• bir chimdim tuz
+• 1 chimdim tuz
 
 Tayyorlanishi:
-Kakao va eritritolni quruq holda aralashtiring — shunda quyuq bo'lib qolmaydi. Ustiga issiq sutni sekin quyib, aralashtiring. Tuz kakao ta'mini ochadi.
+1. Krujkaga kakao, eritritol va tuzni quruq holda soling va aralashtiring — shunda kakao bo'lak bo'lib qolmaydi.
+2. 2–3 osh qoshiq issiq sutni qo'shib, qoshiq bilan silliq pasta qiling.
+3. Qolgan issiq sutni sekin quyib, aralashtiring.
+4. Issiq holda iching. Tuz kakao ta'mini ochadi.
 
 Bir piyola: ~2 gr uglevod. Oddiy issiq shokolad qutisida 18-22 gr bo'ladi.
 
@@ -299,11 +316,14 @@ Bodom unidan quymoq tayyorlab ko'ring.
 
 Masalliqlar:
 • 2 ta tuxum
-• 1 choy qoshiq GHEE
-• Himalay tuzi
+• 1 choy qoshiq eritilgan sariyog' (gxi)
+• 1 chimdim Himalay tuzi
 
 Tayyorlanishi:
-Tuxumni GHEE yog'ida pishirib, ustidan ozgina tuz seping.
+1. Tovada eritilgan sariyog'ni o'rtacha olovda 1 daqiqa qizdiring.
+2. Tuxumni chaqib, tovaga soling va olovni pasaytiring.
+3. Oqi oqarib, sarig'i suyuq qolguncha 3–4 daqiqa pishiring (qattiq sevsangiz — qopqoq ostida yana 2 daqiqa).
+4. Tarelkaga olib, ustidan tuz seping.
 
 🛒 Mahsulotlar:
 • Tabiiy GHEE
@@ -374,12 +394,19 @@ Bugun bitta ichimlikni eritritol bilan iching.
 🍚 Sodda va mazali tushlik.
 
 Masalliqlar:
-• Basmati guruch
-• Tovuq go'shti
-• Himalay tuzi
+• 1 stakan (200 g) basmati guruch
+• 2 stakan (400 ml) suv
+• 300 g tovuq filesi
+• 1 osh qoshiq yog'
+• 1 choy qoshiq Himalay tuzi (yarmi guruchga, yarmi tovuqqa)
+• 1 chimdim qora murch
 
 Tayyorlanishi:
-Guruchni alohida pishiring, tovuqni qovurib, birga torting.
+1. Guruchni sovuq suvda 3 marta, suvi tiniq bo'lguncha yuving.
+2. Qozonda 2 stakan suvni qaynatib, guruch va yarim choy qoshiq tuz soling. Qopqoqni yopib, past olovda 12–15 daqiqa pishiring.
+3. Shu vaqtda tovuqni 2 sm bo'laklarga kesing.
+4. Tovada yog'ni qizdirib, tovuqni o'rtacha olovda 8–10 daqiqa, ichi oqarguncha qovuring; qolgan tuz va murchni seping.
+5. Guruchni olovdan olib, 5 daqiqa dam bering va tovuq bilan birga torting.
 
 🛒 Mahsulotlar:
 • Basmati guruch
@@ -435,6 +462,15 @@ Masalliqlar:
 • 2 ta tuxum
 • 2 osh qoshiq bodom uni
 • 2 osh qoshiq qaymoq
+• 1 chimdim tuz
+• 1 choy qoshiq yog' (tova uchun)
+
+Tayyorlanishi:
+1. Idishda tuxum va qaymoqni vilka bilan ko'pirtiring.
+2. Bodom uni va tuzni qo'shib, quyruqsiz aralashtiring.
+3. Tovani o'rtacha olovda qizdirib, yog' surting.
+4. Har bir quymoq uchun 1 osh qoshiq xamir quying (5–6 ta chiqadi).
+5. Har tomonini 2 daqiqadan, qizarguncha pishiring.
 
 Foydasi:
 Bodom uni oq un o'rniga yaxshi muqobil bo'lib, retseptni oqsil va foydali yog'lar bilan boyitadi.
@@ -488,9 +524,17 @@ Keto non tayyorlaganda psillium qo'shib ko'ring.
 **🍳 Bugungi retsept — Kokos pechenyesi**
 
 Masalliqlar:
-• 2 ta tuxum
-• 4 osh qoshiq kokos qirindisi
+• 2 ta tuxum oqi
+• 4 osh qoshiq kokos qirindisi (40 g)
 • 1 choy qoshiq eritritol
+• 1 chimdim tuz
+
+Tayyorlanishi:
+1. Pechni 170°C ga qizdiring. Laganga pergament qog'oz to'shang.
+2. Tuxum oqi, eritritol va tuzni vilka bilan 1 daqiqa ko'pirtiring.
+3. Kokos qirindisini qo'shib aralashtiring.
+4. Qoshiq bilan pergamentga 6 ta kichik uyum qilib qo'ying.
+5. 170°C da 12–15 daqiqa, uchlari oltinrang bo'lguncha pishiring. Sovigach qattiqlashadi.
 
 Foydasi:
 Oq shakar ishlatilmaydi va tayyorlanishi juda oson.
@@ -581,8 +625,14 @@ Yogurt + chia + kokos qirindisi + eritritol.
 
 Masalliqlar:
 • 200 ml sut
-• 1 osh qoshiq kakao
+• 1 osh qoshiq kakao kukuni
 • 1 choy qoshiq eritritol
+
+Tayyorlanishi:
+1. Sutni kichik qozonda qaynash arafasigacha isiting.
+2. Krujkada kakao va eritritolni aralashtirib, 2 osh qoshiq issiq sut bilan silliq pasta qiling.
+3. Qolgan issiq sutni sekin quyib aralashtiring.
+4. Issiq holda iching.
 
 Foydasi:
 Shirin ta'mdan voz kechmasdan, oq shakarni kamaytirishga yordam beradigan ichimlik.
@@ -642,6 +692,12 @@ Masalliqlar:
 • 2 osh qoshiq kokos qirindisi
 • 1 choy qoshiq eritritol
 
+Tayyorlanishi:
+1. Bankaga sut va eritritolni solib aralashtiring.
+2. Chia va kokos qirindisini qo'shib, 30 soniya yaxshilab aralashtiring.
+3. 10 daqiqadan keyin YANA aralashtiring — aks holda chia pastda bir bo'lak bo'lib qotadi.
+4. Muzlatkichda kamida 4 soat, yaxshisi tun bo'yi qoldiring va ertalab yeng.
+
 Foydasi:
 Tolaga boy nonushta bo'lib, uzoqroq vaqt to'qlik hissini saqlashga yordam beradi.
 
@@ -696,8 +752,15 @@ Sabzavotli salat ustiga bir hovuch qovoq urug'i seping.
 
 Masalliqlar:
 • 100 g yashil grechka
-• Suv
-• Bir chimdim Himalay tuzi
+• 200 ml suv
+• 1 chimdim Himalay tuzi
+• Ixtiyoriy: 1 choy qoshiq sariyog'
+
+Tayyorlanishi:
+1. Grechkani elakda sovuq suvda 2–3 marta yuving.
+2. Qozonda 200 ml suvni qaynatib, grechka va tuzni soling.
+3. Qaynagach, olovni pasaytiring va qopqoq ostida 10–12 daqiqa pishiring.
+4. Olovdan olib, 5 daqiqa dam bering, sariyog' qo'shib torting.
 
 Foydasi:
 Ratsioningizni xilma-xil qilishning oddiy usullaridan biri.
@@ -770,9 +833,15 @@ Yeryong'oq pastasi va chia urug'idan kichik gazak tayyorlang.
 **🍳 Bugungi retsept — GHEE bilan qovurilgan sabzavotlar**
 
 Masalliqlar:
-• Brokkoli yoki gulkaram
-• 1 osh qoshiq GHEE
-• Himalay tuzi
+• 300 g brokkoli yoki gulkaram
+• 1 osh qoshiq eritilgan sariyog' (gxi)
+• 1 chimdim Himalay tuzi
+
+Tayyorlanishi:
+1. Brokkoli (yoki gulkaram)ni yuvib, mayda shoxchalarga ajrating.
+2. Tovada eritilgan sariyog'ni o'rtacha olovda qizdiring.
+3. Sabzavotni solib, 7–8 daqiqa, aralashtirib turib qovuring — tashqarisi qizarib, ichi biroz qarsillab qolsin.
+4. Olovdan olishdan oldin tuz seping va garnir sifatida torting.
 
 Foydasi:
 Oddiy, mazali va tez tayyor bo'ladigan garnir.
@@ -794,10 +863,23 @@ Oddiy, mazali va tez tayyor bo'ladigan garnir.
 Oddiy guruch o'rniga basmati guruchini sinab ko'ring. Uning donalari alohida pishadi va taom yanada chiroyli ko'rinadi.
 
 Masalliqlar:
-• Basmati guruch
-• Go'sht
-• Sabzi
-• Himalay tuzi
+• 500 g basmati guruch
+• 500 g go'sht (mol yoki qo'y)
+• 500 g sabzi
+• 2 ta piyoz
+• 100 ml yog'
+• 1 osh qoshiq Himalay tuzi
+• 1 choy qoshiq zira
+• 750 ml issiq suv
+
+Tayyorlanishi:
+1. Guruchni 3 marta yuvib, iliq suvda 30 daqiqa ivitib qo'ying.
+2. Qozonda yog'ni qizdirib, go'shtni 3 sm bo'laklarda 10 daqiqa qovuring.
+3. Piyozni yarim halqa qilib qo'shing va 5 daqiqa qovuring.
+4. Sabzini somoncha qilib to'g'rab qo'shing va 10 daqiqa qovuring.
+5. Tuz, zira va 750 ml issiq suvni qo'shib, 20 daqiqa past olovda qaynating (zirvak).
+6. Guruchni suvini to'kib, zirvak ustiga tekis yoying.
+7. Suv bug'lanib ketguncha baland olovda pishiring, so'ng guruchni do'ppaytirib, qopqoqni yopib, past olovda 20 daqiqa dimlang.
 
 🛒 Mahsulotlar:
 • Basmati guruch
@@ -829,13 +911,17 @@ Keyingi non retseptingizga 1-2 osh qoshiq psillium qo'shib ko'ring.
 🫙 Pishirmasdan tayyorlanadigan chia-jem. Muzlatgichda 5 kun turadi.
 
 Masalliqlar:
-• 1 stakan muzlatilgan yoki yangi rezavor (qulupnay, malina)
+• 1 stakan (150 g) muzlatilgan yoki yangi rezavor (qulupnay, malina)
 • 2 osh qoshiq chia urug'i
-• 1-2 osh qoshiq eritritol
+• 1–2 osh qoshiq eritritol
 • 2 osh qoshiq suv
 
 Tayyorlanishi:
-Rezavorni vilka bilan ezing, hammasini aralashtiring va muzlatgichga 2 soatga qo'ying. Chia suvni tortib, jemni quyultiradi — pektin ham, uzoq qaynatish ham kerak emas.
+1. Muzlatilgan rezavorni 15 daqiqa xonada erishga qo'ying.
+2. Rezavorni idishda vilka bilan ezing.
+3. Chia, eritritol va suvni qo'shib aralashtiring.
+4. Bankaga solib, muzlatkichda 2 soat qoldiring — chia suvni tortib, jemni quyultiradi.
+5. Muzlatkichda 5 kungacha saqlang.
 
 Do'kon jemining 100 grammida ~60 gr shakar bor. Bunda — deyarli yo'q.
 
@@ -852,9 +938,18 @@ Do'kon jemining 100 grammida ~60 gr shakar bor. Bunda — deyarli yo'q.
 Eritritol yordamida shirin ta'mni saqlagan holda pechenye tayyorlashingiz mumkin.
 
 Masalliqlar:
-• Kokos uni
-• Eritritol
-• Tuxum
+• 4 osh qoshiq kokos uni (40 g)
+• 2 osh qoshiq eritritol
+• 2 ta tuxum
+• 2 osh qoshiq sariyog' (eritilgan)
+• 1 chimdim tuz
+
+Tayyorlanishi:
+1. Pechni 180°C ga qizdiring. Laganga pergament qog'oz to'shang.
+2. Tuxum va eritritolni vilka bilan ko'pirtiring, eritilgan sariyog'ni qo'shing.
+3. Kokos uni va tuzni qo'shib aralashtiring va 5 daqiqa qo'yib qo'ying — kokos uni suyuqlikni shimadi.
+4. Xamirdan 8 ta sharcha yasab, laganga terib, kaft bilan 1 sm gacha bosing.
+5. 180°C da 12–15 daqiqa, chetlari qizarguncha pishiring.
 
 🛒 Mahsulotlar:
 • Kokos uni
@@ -918,9 +1013,18 @@ Shirinlik o'rniga bir osh qoshiq yeryong'oq pastasi ustiga chia urug'i sepib ist
 Kokos unini ko'proq tuxum bilan ishlatsangiz, natija yanada yumshoq chiqadi.
 
 Masalliqlar:
-• 3 tuxum
-• 3 osh qoshiq kokos uni
-• Eritritol
+• 3 ta tuxum
+• 3 osh qoshiq kokos uni (30 g)
+• 2 osh qoshiq eritritol
+• 2 osh qoshiq sariyog' (eritilgan)
+• 1/2 choy qoshiq pishirish kukuni
+
+Tayyorlanishi:
+1. Pechni 180°C ga qizdiring. Keks qoliplariga qog'oz stakancha qo'ying (4 ta).
+2. Tuxum va eritritolni 2 daqiqa ko'pirtiring, eritilgan sariyog'ni qo'shing.
+3. Kokos uni va pishirish kukunini qo'shib aralashtiring va 5 daqiqa qo'yib qo'ying.
+4. Qoliplarni 3/4 qismigacha to'ldiring.
+5. 180°C da 20–25 daqiqa pishiring; tish kavlagich quruq chiqsa — tayyor.
 
 🛒 Mahsulotlar:
 • Kokos uni
@@ -1043,16 +1147,22 @@ Mashqdan 30–60 daqiqa oldin yengil gazak tanlash mashq paytida o'zingizni qula
 
 🤝 Sport bilan shug'ullanadigan do'stingizga yuboring.
 @@@
-**🎉 Mehmon uchun retsept — Kokos sharchalari**
+**🎉 Mehmon uchun retsept — Kokos sharchalari (pishirilmaydigan konfet)**
 
 🍰 Mehmon kelganda shakarsiz desert tayyorlash qiyin deb o'ylaysizmi?
 
 Atigi bir necha daqiqada mazali kokos sharchalari tayyorlashingiz mumkin.
 
 Masalliqlar:
-• Kokos qirindisi
-• Yeryong'oq pastasi
-• Eritritol
+• 100 g kokos qirindisi
+• 3 osh qoshiq yeryong'oq pastasi
+• 2 osh qoshiq eritritol (kofe maydalagichda unga aylantirilgan)
+
+Tayyorlanishi:
+1. Idishda kokos qirindisi, yeryong'oq pastasi va maydalangan eritritolni aralashtiring.
+2. Massani qo'l bilan siqib ko'ring: yopishib tursa — tayyor; to'kilsa, yana 1 osh qoshiq pasta qo'shing.
+3. Ho'l qo'l bilan yong'oqdek 12 ta sharcha (yumaloq konfet) yasang.
+4. Likopchaga terib, muzlatkichda 30 daqiqa qotiring va mehmonlarga torting.
 
 🛒 Mahsulotlar:
 • Kokos qirindisi
@@ -1129,9 +1239,18 @@ Kechqurun choy ichadigan odatingiz bo'lsa — aynan o'shani almashtiring. Uxlash
 Dam olish kuni uyda sog'lom pechenye tayyorlab qo'ysangiz, hafta davomida tayyor gazagingiz bo'ladi.
 
 Masalliqlar:
-• Bodom uni
-• Eritritol
-• Tuxum
+• 200 g bodom uni
+• 3 osh qoshiq eritritol
+• 1 ta tuxum
+• 50 g sariyog' (yumshatilgan)
+• 1 chimdim tuz
+
+Tayyorlanishi:
+1. Pechni 170°C ga qizdiring. Laganga pergament qog'oz to'shang.
+2. Yumshoq sariyog' va eritritolni vilka bilan ezib aralashtiring, tuxumni qo'shing.
+3. Bodom uni va tuzni qo'shib, yumshoq xamir qoring.
+4. 12 ta sharcha yasab, laganga terib, kaft bilan 1 sm gacha bosing.
+5. 170°C da 12–15 daqiqa pishiring. Sovigach qattiqlashadi — idishda 1 hafta saqlanadi.
 
 🛒 Mahsulotlar:
 • Bodom uni
@@ -1169,9 +1288,15 @@ Tuxum + GHEE + sabzavot.
 Shakarsiz issiq kakao ham mazali, ham oson tayyorlanadi.
 
 Masalliqlar:
-• Sut
-• Kakao
-• Eritritol
+• Har bir mehmonga: 200 ml sut
+• 1 osh qoshiq kakao kukuni
+• 1–2 choy qoshiq eritritol
+
+Tayyorlanishi:
+1. Sutni qozonda qaynash arafasigacha isiting (mehmonlar soniga qarab ko'paytiring).
+2. Har bir krujkaga kakao va eritritolni soling, 2 osh qoshiq issiq sut bilan silliq pasta qiling.
+3. Qolgan issiq sutni sekin quyib aralashtiring.
+4. Issiq holda torting.
 
 🛒 Mahsulotlar:
 • Eritritol
@@ -1214,7 +1339,10 @@ Masalliqlar:
 • 1 choy qoshiq eritritol
 
 Tayyorlanishi:
-Aralashtirib, shar shakliga keltiring va 20 daqiqa muzlatkichga qo'ying.
+1. Kichik idishda barcha masalliqlarni aralashtiring.
+2. Ho'l qo'l bilan 4–5 ta kichik sharcha yasang.
+3. Muzlatkichda 20 daqiqa qotiring.
+4. Yopiq idishda maktabga gazak sifatida bering.
 
 🛒 Mahsulotlar:
 • Yeryong'oq pastasi
@@ -1254,12 +1382,14 @@ Mashqdan oldin juda og'ir ovqat yeyish noqulaylik tug'dirishi mumkin. Yengil gaz
 Atigi 10 daqiqada mazali kokos desertini tayyorlashingiz mumkin.
 
 Masalliqlar:
-• Kokos qirindisi
-• Eritritol
-• Yeryong'oq pastasi
+• 100 g kokos qirindisi
+• 2 osh qoshiq eritritol (maydalangan)
+• 3 osh qoshiq yeryong'oq pastasi
 
 Tayyorlanishi:
-Aralashtirib, kichik sharlar yasang va muzlatkichga qo'ying.
+1. Idishda barcha masalliqlarni yaxshilab aralashtiring.
+2. Ho'l qo'l bilan yong'oqdek 10–12 ta kichik shar yasang.
+3. Likopchaga terib, muzlatkichda 30 daqiqa qotiring.
 
 🛒 Mahsulotlar:
 • Kokos qirindisi
@@ -1363,11 +1493,17 @@ Eritritol yordamida ham mazali pishiriqlar tayyorlash mumkin.
 
 Masalliqlar:
 • 2 ta tuxum
-• 3 osh qoshiq bodom uni
+• 3 osh qoshiq bodom uni (30 g)
 • 1 choy qoshiq eritritol
+• 1 chimdim pishirish kukuni
+• 1 choy qoshiq sariyog' (qolipga)
 
 Tayyorlanishi:
-Aralashtirib, 180°C da 20 daqiqa pishiring.
+1. Pechni 180°C ga qizdiring. 2 ta keks qolipini sariyog' bilan yog'lang.
+2. Tuxum va eritritolni vilka bilan ko'pirtiring.
+3. Bodom uni va pishirish kukunini qo'shib aralashtiring.
+4. Xamirni qoliplarga quying.
+5. 180°C da 20 daqiqa pishiring; tish kavlagich quruq chiqsa — tayyor.
 
 🛒 Mahsulotlar:
 • Bodom uni
@@ -1426,12 +1562,15 @@ Bugun bitta foydali mahsulotni sinab ko'ring.
 
 Masalliqlar:
 • 1 litr sovuq suv
-• 1 ta limon sharbati
-• 2-3 osh qoshiq eritritol
-• bir necha barg yalpiz
+• 1 ta limon sharbati (taxminan 3 osh qoshiq)
+• 2–3 osh qoshiq eritritol
+• 5–6 ta yalpiz bargi
 
 Tayyorlanishi:
-Eritritolni ozgina issiq suvda eriting (sovuqda sekin eriydi), keyin qolgan sovuq suv, limon va yalpizni qo'shing. 30 daqiqa muzlatgichda tursa, ta'mi to'liq ochiladi.
+1. Eritritolni 100 ml issiq suvda aralashtirib eriting (sovuqda sekin eriydi).
+2. Grafinga qolgan sovuq suvni quying, erigan eritritolni qo'shing.
+3. Limon sharbati va yalpiz barglarini qo'shib aralashtiring.
+4. 30 daqiqa muzlatkichda tursa, ta'mi to'liq ochiladi.
 
 Bir litr do'kon limonadida ~100 gr shakar bor. Bunda — 0.
 
@@ -1486,13 +1625,18 @@ Tushlikning yarmini sabzavotlar bilan to'ldiring.
 Tabiiy zakvaska bilan tayyorlangan nonning ta'mi va tuzilishi boshqacha bo'ladi.
 
 Masalliqlar:
-• Zakvaska
-• Javdar uni
-• Suv
-• Himalay tuzi
+• 100 g faol zakvaska
+• 400 g javdar uni
+• 300 ml iliq suv
+• 1 choy qoshiq Himalay tuzi
 
 Tayyorlanishi:
-Xamirni tindirib, pechda pishiring.
+1. Idishda javdar uni va tuzni aralashtiring.
+2. Zakvaska va iliq suvni qo'shib, qoshiq bilan yopishqoq xamir qoring.
+3. Ho'l qo'l bilan non shaklini berib, pergament to'shalgan qolipga soling.
+4. Sochiq bilan yopib, iliq joyda 4–6 soat, xamir 1,5 baravar ko'tarilguncha tindiring.
+5. Pechni 200°C ga qizdirib, nonni 50–60 daqiqa pishiring.
+6. Panjarada kamida 2 soat sovuting, keyin kesing.
 
 🛒 Mahsulotlar:
 • Tabiiy zakvaska
@@ -1531,11 +1675,13 @@ Bu safar shakarsiz kakao bilan ularni hayratda qoldiring.
 
 Masalliqlar:
 • 200 ml sut
-• Kakao
-• Eritritol
+• 1 osh qoshiq kakao kukuni
+• 1–2 choy qoshiq eritritol
 
 Tayyorlanishi:
-Aralashtirib, iliq holda torting.
+1. Sutni qaynash arafasigacha isiting.
+2. Krujkada kakao va eritritolni 2 osh qoshiq issiq sut bilan silliq pasta qiling.
+3. Qolgan sutni sekin quyib aralashtiring va iliq holda torting.
 
 🛒 Mahsulotlar:
 • Kakao nibs
@@ -1609,13 +1755,18 @@ Sabzavotli salatingiz ustiga bir hovuch qovoq urug'i seping.
 Bulgur va sabzavotlardan tayyorlangan yengil taomni sinab ko'ring.
 
 Masalliqlar:
-• Bulgur
-• Pomidor
-• Bodring
-• Zaytun yog'i
+• 1/2 stakan (100 g) bulgur
+• 1 stakan (200 ml) qaynoq suv
+• 2 ta pomidor
+• 1 ta bodring
+• 2 osh qoshiq zaytun yog'i
+• 1 chimdim tuz
 
 Tayyorlanishi:
-Bulgurni pishirib, sabzavotlar bilan aralashtiring.
+1. Bulgurni idishga solib, qaynoq suv quying, yopib 15 daqiqa qo'ying (pishirish shart emas).
+2. Pomidor va bodringni 1 sm kubik qilib to'g'rang.
+3. Bulgur yumshagach, ortiqcha suvini to'king.
+4. Bulgur, sabzavot, zaytun yog'i va tuzni aralashtirib torting.
 
 🛒 Mahsulotlar:
 • Bulgur
@@ -1694,11 +1845,16 @@ Kokos unini ko'p ishlatish quymoqni qattiq qilib yuborishi mumkin. Tuxum miqdori
 
 Masalliqlar:
 • 3 ta tuxum
-• 2 osh qoshiq kokos uni
+• 2 osh qoshiq kokos uni (20 g)
 • 1 choy qoshiq eritritol
+• 1 choy qoshiq yog' (tova uchun)
 
 Tayyorlanishi:
-Aralashtirib, past olovda pishiring.
+1. Tuxum va eritritolni vilka bilan ko'pirtiring.
+2. Kokos unini qo'shib aralashtiring va 5 daqiqa qo'yib qo'ying.
+3. Tovani past-o'rtacha olovda qizdirib, yog' surting.
+4. Har biriga 2 osh qoshiq xamir quyib, 4–5 ta quymoq pishiring.
+5. Har tomonini 2 daqiqadan, qizarguncha pishiring — olov baland bo'lsa, kuyib qoladi.
 
 🛒 Mahsulotlar:
 • Kokos uni
@@ -1753,12 +1909,17 @@ Birinchi marta o'zingiz doim pishiradigan retseptda sinab ko'ring — farqni shu
 Pechsiz tayyor bo'ladigan kokos desertini sinab ko'ring.
 
 Masalliqlar:
-• Kokos qirindisi
-• Yeryong'oq pastasi
-• Eritritol
+• 200 g kokos qirindisi
+• 100 g yeryong'oq pastasi
+• 3 osh qoshiq eritritol (maydalangan)
+• 2 osh qoshiq kokos yog'i (eritilgan)
 
 Tayyorlanishi:
-Aralashtirib, qolipga soling va 1 soat muzlatkichda qoldiring.
+1. Idishda barcha masalliqlarni yaxshilab aralashtiring.
+2. 18–20 sm li qolipga pergament qog'oz to'shang.
+3. Massani qolipga solib, qoshiq bilan zich bosib tekislang (1,5–2 sm qalinlikda).
+4. Muzlatkichda 1 soat qotiring.
+5. Qolipdan olib, 8 bo'lakka kesib torting.
 
 🛒 Mahsulotlar:
 • Kokos qirindisi
@@ -1835,12 +1996,16 @@ Non retseptingizga javdar unidan ozgina qo'shib ko'ring.
 Atigi 5 daqiqada tayyor bo'ladigan chia yogurtini sinab ko'ring.
 
 Masalliqlar:
-• 200 ml yogurt
+• 200 ml tabiiy yogurt (shakarsiz)
 • 2 osh qoshiq chia urug'i
 • 1 choy qoshiq eritritol
+• Ixtiyoriy: 1 hovuch rezavor
 
 Tayyorlanishi:
-Aralashtirib, 15–20 daqiqa kuting.
+1. Kosada yogurt va eritritolni aralashtiring.
+2. Chia urug'ini qo'shib, 30 soniya aralashtiring.
+3. 15–20 daqiqa kuting — chia shishib, yogurt quyuqlashadi.
+4. Yana bir aralashtirib, ustiga rezavor qo'yib yeng.
 
 🛒 Mahsulotlar:
 • Chia urug'i
@@ -1874,10 +2039,15 @@ Masalliqlar:
 • 3 osh qoshiq zig'ir uni
 • 1 ta tuxum
 • 100 ml suv yoki sut
-• Bir chimdim tuz
+• 1 chimdim tuz
+• 1 choy qoshiq yog' (tova uchun)
 
 Tayyorlanishi:
-Barcha masalliqlarni aralashtirib, issiq tovada ikki tomonini qovuring.
+1. Idishda tuxum va tuzni vilka bilan ko'pirtiring.
+2. Zig'ir uni va sutni qo'shib aralashtiring, 5 daqiqa qo'yib qo'ying.
+3. Tovani o'rtacha olovda qizdirib, yog' surting.
+4. 1 cho'mich (50 ml) xamir quyib, tovani aylantirib yoying.
+5. Har tomonini 1,5–2 daqiqadan pishiring (2–3 ta blin chiqadi).
 
 🛒 Mahsulotlar:
 • Zig'ir uni
@@ -1938,13 +2108,16 @@ Ertalabki kefirga 1 choy qoshiq rastaropsha uni qo'shib ko'ring.
 **🍳 Bugungi retsept — Ovsyanka uni bilan smuzi-bowl**
 
 Masalliqlar:
-• 3 osh qoshiq ovsyanka uni
-• 1 stakan sut yoki suv
+• 3 osh qoshiq suli (ovsyanka) uni
+• 1 stakan (200 ml) sut yoki suv
 • 1 choy qoshiq eritritol
-• Mavsumiy meva (ixtiyoriy)
+• Ixtiyoriy: 50 g mavsumiy meva yoki rezavor
 
 Tayyorlanishi:
-Ovsyanka unini sut bilan aralashtirib, 5 daqiqa qaynating, ustiga meva qo'shing.
+1. Kichik qozonda suli uni va sutni aralashtiring — quyruqsiz bo'lsin.
+2. O'rtacha olovda, to'xtovsiz aralashtirib, qaynatib oling.
+3. Olovni pasaytirib, 5 daqiqa quyuqlashguncha pishiring.
+4. Eritritolni qo'shib, kosaga soling va ustiga meva qo'ying.
 
 🛒 Mahsulotlar:
 • Ovsyanka uni
@@ -2008,10 +2181,14 @@ Masalliqlar:
 • 3 osh qoshiq chia urug'i
 • 200 ml sut yoki kokos suti
 • 1 choy qoshiq eritritol
-• bir chimdim dolchin
+• 1 chimdim dolchin
+• Ertalab ustiga: 1 hovuch mag'iz yoki rezavor
 
 Tayyorlanishi:
-Bankaga solib chayqating, muzlatgichga qo'ying. Ertalab ustiga bir hovuch mag'iz yoki rezavor soling.
+1. Kechqurun bankaga sut, eritritol va dolchinni soling.
+2. Chiani qo'shib, qopqoqni yopib 30 soniya chayqating.
+3. 10 daqiqadan keyin yana chayqating va muzlatkichga qo'ying.
+4. Ertalab ustiga mag'iz yoki rezavor solib yeng.
 
 Tayyor nonushta bo'tqalarining aksariyatida birinchi o'rinda shakar turadi. Bunda tarkibni o'zingiz yozasiz.
 
@@ -2025,11 +2202,20 @@ Tayyor nonushta bo'tqalarining aksariyatida birinchi o'rinda shakar turadi. Bund
 
 Masalliqlar:
 • 2 osh qoshiq qora fermentlangan solod
-• 300 gr kepakli bug'doy uni
-• Suv, tuz, xamirturush
+• 100 ml qaynoq suv (solod uchun)
+• 300 g kepakli bug'doy uni
+• 150 ml iliq suv
+• 1 choy qoshiq tuz
+• 1 choy qoshiq (5 g) quruq xamirturush
+• 1 choy qoshiq asal
 
 Tayyorlanishi:
-Barcha masalliqlarni xamir holiga aralashtirib, 40 daqiqa dam berib, so'ng pishiring.
+1. Solodni 100 ml qaynoq suvda damlab, 15 daqiqa iliq bo'lguncha soviting.
+2. 150 ml iliq suvda asal va xamirturushni eritib, 10 daqiqa ko'pik chiqquncha qo'ying.
+3. Idishda un va tuzni aralashtirib, solod damlamasi va xamirturushli suvni qo'shing va 5 daqiqa xamir qoring.
+4. Qolipga solib, yopib, iliq joyda 40 daqiqa ko'tarilishga qo'ying.
+5. Pechni 200°C ga qizdirib, 35–40 daqiqa pishiring.
+6. Panjarada sovutib, keyin kesing.
 
 🛒 Mahsulotlar:
 • Qora fermentlangan Solod
@@ -2089,13 +2275,16 @@ Ertalabki choyingizga bir necha tomchi toza steviya qo'shing.
 **🍳 Bugungi retsept — Steviyali limonad**
 
 Masalliqlar:
-• 1 dona limon
-• 1 litr suv
-• Toza steviya (ta'mga qarab)
-• Muz bo'laklari
+• 1 ta limon
+• 1 litr sovuq suv
+• 1/4 choy qoshiq toza steviya (yoki 2–3 tomchi suyuq steviya)
+• 8–10 ta muz bo'lagi
 
 Tayyorlanishi:
-Limon sharbatini suvga siqing, steviya qo'shing va sovutib xizmat qiling.
+1. Limonni ikkiga kesib, sharbatini siqib oling.
+2. Grafinga suv quyib, limon sharbatini qo'shing.
+3. Steviyani qo'shib, yaxshilab aralashtiring va tatib ko'ring — shirin bo'lmasa, yana bir chimdim qo'shing.
+4. Muz solib, sovuq holda torting.
 
 🛒 Mahsulotlar:
 • Toza Steviya
@@ -2158,7 +2347,10 @@ Masalliqlar:
 • 1 osh qoshiq chia urug'i
 
 Tayyorlanishi:
-Barchasini aralashtirib, kichik idishda saqlang — kun davomida gazak sifatida iste'mol qiling.
+1. Qovoq urug'ini quruq tovada 2 daqiqa qizdiring va sovuting (ixtiyoriy, mazaliroq bo'ladi).
+2. Kichik idishda uchala urug'ni aralashtiring.
+3. Qopqoqli idishda saqlang va kun davomida gazak sifatida 1–2 osh qoshiqdan yeng.
+4. Ketidan bir stakan suv iching — urug'lar suv bilan yaxshi ishlaydi.
 
 🛒 Mahsulotlar:
 • Qovoq urug'i
@@ -2216,12 +2408,17 @@ Tushlikka losos tushonkasidan salat tayyorlang.
 **🍳 Bugungi retsept — Losos salatasi**
 
 Masalliqlar:
-• 1 banka losos tushonkasi
-• Bodring, pomidor
-• Zaytun yog'i, Himalay tuzi
+• 1 banka (taxminan 240 g) losos tushonkasi
+• 1 ta bodring
+• 1 ta pomidor
+• 1 osh qoshiq zaytun yog'i
+• 1 chimdim Himalay tuzi
 
 Tayyorlanishi:
-Sabzavotlarni maydalab, losos bilan aralashtiring, zaytun yog'i va tuz bilan tatiting.
+1. Bankaning suyuqligini to'kib, baliqni vilka bilan yirik bo'laklarga ajrating.
+2. Bodring va pomidorni 1 sm kubik qilib to'g'rang.
+3. Baliq va sabzavotni aralashtiring.
+4. Zaytun yog'i va tuz qo'shib, ehtiyotkorlik bilan aralashtiring va darhol torting.
 
 🛒 Mahsulotlar:
 • Losos baliq tushonkasi
@@ -2301,12 +2498,15 @@ Ertalabki qahvangizga kokos shakaridan solib ko'ring.
 **🍳 Bugungi retsept — Kokos shakarli qahva**
 
 Masalliqlar:
-• 1 stakan issiq qahva
+• 1 stakan (200 ml) issiq qahva
 • 1 choy qoshiq kokos shakari
-• Ozgina kokos suti (ixtiyoriy)
+• 2 osh qoshiq kokos suti (ixtiyoriy)
 
 Tayyorlanishi:
-Barcha masalliqlarni aralashtirib, iliq holda iching.
+1. Qahvani tayyorlang (1 choy qoshiq eruvchan qahva + 200 ml qaynoq suv yoki 1 ta espresso + suv).
+2. Kokos shakarini qo'shib, eriguncha aralashtiring.
+3. Xohlasangiz, kokos sutini qo'shing.
+4. Iliq holda iching.
 
 🛒 Mahsulotlar:
 • Kokos shakari
@@ -2368,9 +2568,13 @@ Masalliqlar:
 • 2 osh qoshiq yeryong'oq pastasi
 • 1 osh qoshiq kakao nibs
 • 1 choy qoshiq eritritol
+• 1 osh qoshiq kokos qirindisi
 
 Tayyorlanishi:
-Masalliqlarni aralashtirib, sharcha shakliga keltiring va sovutgichda ushlab turing.
+1. Kichik idishda yeryong'oq pastasi, kakao nibs va eritritolni aralashtiring.
+2. Ho'l qo'l bilan 4–5 ta kichik sharcha yasang.
+3. Har birini kokos qirindisiga bulab oling.
+4. Muzlatkichda 20 daqiqa qotiring.
 
 🛒 Mahsulotlar:
 • Yeryong'oq pastasi
@@ -2432,11 +2636,14 @@ Ertalabki tuxumni saryog'da qovuring.
 
 Masalliqlar:
 • 2 ta tuxum
-• 1 choy qoshiq uy kuvi saryog'i
-• Himalay tuzi
+• 1 choy qoshiq uy kuvi sariyog'i
+• 1 chimdim Himalay tuzi
 
 Tayyorlanishi:
-Saryog'ni tovada eritib, tuxumni solib, tuz bilan tatiting.
+1. Tovada sariyog'ni past-o'rtacha olovda eriting.
+2. Tuxumni chaqib, tovaga soling.
+3. Oqi oqarib, sarig'i suyuq qolguncha 3–4 daqiqa pishiring.
+4. Tarelkaga olib, tuz seping.
 
 🛒 Mahsulotlar:
 • Uy kuvi saryog'i
@@ -2497,12 +2704,17 @@ Tushlikka qora guruch va sabzavotdan taom tayyorlang.
 🥜 Uch masalliqdan pechene. 15 daqiqa.
 
 Masalliqlar:
-• 200 gr bodom uni
-• 80 gr eritritol
+• 200 g bodom uni
+• 80 g eritritol
 • 1 ta tuxum
+• 1 chimdim tuz
 
 Tayyorlanishi:
-Aralashtiring, qo'l bilan yumaloqlang, bosib yassilang. 180°C da 12-15 daqiqa. Sovuganda qattiqlashadi — issiqligida yumshoq bo'lgani normal.
+1. Pechni 180°C ga qizdiring. Laganga pergament qog'oz to'shang.
+2. Idishda bodom uni, eritritol va tuzni aralashtiring, tuxumni qo'shib xamir qoring.
+3. Yong'oqdek 12 ta sharcha yasab, laganga terib, kaft bilan 1 sm gacha bosing.
+4. 180°C da 12–15 daqiqa pishiring.
+5. Sovuganda qattiqlashadi — issiqligida yumshoq bo'lgani normal.
 
 Xohlasangiz: kakao, dolchin yoki bir chimdim tuz qo'shing.
 
@@ -2517,12 +2729,19 @@ Bitta pechene: ~2 gr uglevod.
 **🍳 Bugungi retsept — Bulgur guruchli salat**
 
 Masalliqlar:
-• 1 stakan bulgur guruchi
-• Pomidor, bodring, ko'katlar
-• Zaytun yog'i, Himalay tuzi
+• 1 stakan (200 g) bulgur
+• 2 stakan (400 ml) suv
+• 2 ta pomidor
+• 1 ta bodring
+• 1 bog' ko'kat (shivit yoki petrushka)
+• 2 osh qoshiq zaytun yog'i
+• 1/2 choy qoshiq Himalay tuzi
 
 Tayyorlanishi:
-Bulgurni qaynatib soving, sabzavotlar bilan aralashtirib, yog' va tuz bilan tatiting.
+1. Qozonda suvni qaynatib, bulgur va bir chimdim tuz soling.
+2. Past olovda qopqoq ostida 15 daqiqa pishiring va sovuting.
+3. Pomidor va bodringni 1 sm kubik, ko'katni mayda to'g'rang.
+4. Bulgur, sabzavot va ko'katni aralashtiring, zaytun yog'i va qolgan tuzni qo'shing.
 
 🛒 Mahsulotlar:
 • Bulgur guruchi
@@ -2583,10 +2802,13 @@ Bugungi sho'rvaga bir chimdim fenxel urug'i qo'shing.
 
 Masalliqlar:
 • 1 choy qoshiq arpabodiyon (fenxel) urug'i
-• 1 stakan qaynoq suv
+• 1 stakan (250 ml) qaynoq suv
 
 Tayyorlanishi:
-Urug'ni qaynoq suvga solib, 5-7 daqiqa damlab iching.
+1. Urug'ni qoshiqning orqasi bilan yengil ezing — aromati ochiladi.
+2. Krujkaga solib, qaynoq suv quying.
+3. Likopcha bilan yopib, 5–7 daqiqa damlang.
+4. Suzib, iliq holda iching (kechki ovqatdan keyin yaxshi).
 
 🛒 Mahsulotlar:
 • Arpabodiyon (fenxel)
@@ -2644,12 +2866,17 @@ Bugungi lepyoshkani polba unidan tayyorlang.
 **🍳 Bugungi retsept — Polba unidan lepyoshka**
 
 Masalliqlar:
-• 250 gr polba uni
-• 150 ml suv
-• Bir chimdim tuz va zaytun yog'i
+• 250 g polba uni
+• 150 ml iliq suv
+• 1/2 choy qoshiq tuz
+• 1 osh qoshiq zaytun yog'i
 
 Tayyorlanishi:
-Xamir qorib, 10 daqiqa dam bering, so'ng yupqa yoyib issiq tovada pishiring.
+1. Idishda polba uni va tuzni aralashtiring.
+2. Suv va zaytun yog'ini qo'shib, 5 daqiqa yumshoq xamir qoring.
+3. Xamirni yopib, 10 daqiqa dam bering.
+4. 6 bo'lakka bo'lib, har birini 2–3 mm qalinlikda yoying.
+5. Quruq tovani o'rtacha olovda qizdirib, har bir lepyoshkani har tomoniga 1–2 daqiqadan pishiring.
 
 🛒 Mahsulotlar:
 • Polba uni
@@ -2711,11 +2938,17 @@ Bugungi sho'rvaga bir osh qoshiq arpa uni qo'shing.
 
 Masalliqlar:
 • 2 ta tuxum
-• 3 osh qoshiq kepak (o'rtacha kattalikda)
+• 3 osh qoshiq kepak
 • 100 ml sut
+• 1 chimdim tuz
+• 1 choy qoshiq yog' (tova uchun)
 
 Tayyorlanishi:
-Masalliqlarni aralashtirib, issiq tovada ikki tomonini qovuring.
+1. Idishda tuxum, sut va tuzni aralashtiring.
+2. Kepakni qo'shib, 5 daqiqa qo'yib qo'ying — kepak shishadi.
+3. Tovani o'rtacha olovda qizdirib, yog' surting.
+4. Har biriga 2 osh qoshiq xamir quyib, 4 ta quymoq pishiring.
+5. Har tomonini 2–3 daqiqadan, qizarguncha pishiring.
 
 🛒 Mahsulotlar:
 • Kepak (o'rtacha kattalikda)
@@ -2743,13 +2976,16 @@ Odatiy grechka o'rniga yashil grechka donidan bo'tqa tayyorlang.
 💪 Ertalabki "quvvat qahvasi" — tushgacha och qolmaysiz.
 
 Masalliqlar:
-• 1 chashka issiq qahva
-• 1 choy qoshiq kokos yog'i yoki MCT
+• 1 chashka (200 ml) issiq qahva
+• 1 choy qoshiq kokos yog'i yoki MCT yog'i
 • 1 choy qoshiq eritritol
-• bir chimdim tuz
+• 1 chimdim tuz
 
 Tayyorlanishi:
-Blenderda 20 soniya aylantiring — yog' sut kabi ko'pikli bo'lib qo'shiladi. Oddiy aralashtirishda yog' ustida suzib qoladi.
+1. Qahvani tayyorlang.
+2. Blender idishiga issiq qahva, yog', eritritol va tuzni soling.
+3. Blenderda 20 soniya aylantiring — yog' sut kabi ko'pik bo'lib aralashadi.
+4. Darhol krujkaga quyib iching (oddiy aralashtirsangiz, yog' ustida suzib qoladi).
 
 Sut qo'shmasdan ham to'yimli chiqadi: yog' uzoq quvvat beradi, eritritol esa shirinlikni qondagi shakarni ko'tarmasdan beradi.
 
@@ -2799,7 +3035,9 @@ Masalliqlar:
 • 1 osh qoshiq yeryong'oq pastasi
 
 Tayyorlanishi:
-Barchasini aralashtirib, sharcha shakliga keltiring va sovutgichda ushlab turing.
+1. Kichik idishda barcha masalliqlarni aralashtiring.
+2. Ho'l qo'l bilan 3–4 ta sharcha yasang.
+3. Muzlatkichda 20 daqiqa qotiring.
 
 🛒 Mahsulotlar:
 • Kokos qirindisi
@@ -2860,11 +3098,14 @@ Bugungi qovurmaga kokos yog'idan foydalaning.
 
 Masalliqlar:
 • 1 osh qoshiq kokos yog'i
-• Sabzavotlar (ixtiyoriy)
-• Himalay tuzi
+• 300 g sabzavot (kabachok, bulg'or qalampiri, brokkoli — xohlaganingiz)
+• 1 chimdim Himalay tuzi
 
 Tayyorlanishi:
-Kokos yog'ini tovada eritib, sabzavotlarni qovuring, tuz bilan tatiting.
+1. Sabzavotni 2 sm bo'laklarga to'g'rang.
+2. Tovada kokos yog'ini o'rtacha olovda eriting.
+3. Sabzavotni solib, aralashtirib turib 7–8 daqiqa qovuring — biroz qizarib, ichi qarsillab qolsin.
+4. Tuz seping va issiq holda torting.
 
 🛒 Mahsulotlar:
 • Kokos yog'i
@@ -2924,12 +3165,15 @@ Ish stoli yoniga bir hovuch pista mag'zi qo'yib qo'ying.
 
 Masalliqlar:
 • 2 osh qoshiq chia urug'i
-• 1 osh qoshiq zig'ir urug'i
+• 1 osh qoshiq maydalangan zig'ir urug'i
 • 200 ml sut
 • 1 choy qoshiq eritritol
 
 Tayyorlanishi:
-Barchasini aralashtirib, kechasi sovutgichda qoldiring — ertalab tayyor pudding.
+1. Kechqurun bankaga sut va eritritolni solib aralashtiring.
+2. Chia va zig'irni qo'shib, 30 soniya aralashtiring.
+3. 10 daqiqadan keyin yana aralashtiring va muzlatkichda tunab qoldiring.
+4. Ertalab aralashtirib yeng.
 
 🛒 Mahsulotlar:
 • Chia urug'i
@@ -2991,10 +3235,16 @@ Bugungi ichimlikka 1 choy qoshiq psillium uni qo'shing.
 Masalliqlar:
 • 2 osh qoshiq bodom uni
 • 1 choy qoshiq psillium uni
-• 1 tuxum
+• 1 ta tuxum
+• 1 chimdim tuz
+• 1 choy qoshiq yog' (tova uchun)
 
 Tayyorlanishi:
-Masalliqlarni aralashtirib, issiq tovada ikki tomonini pishiring.
+1. Idishda bodom uni, psillium va tuzni aralashtiring.
+2. Tuxumni qo'shib, vilka bilan aralashtiring va 3 daqiqa qo'yib qo'ying — psillium massani quyuqlashtiradi.
+3. Tovani o'rtacha olovda qizdirib, yog' surting.
+4. Massani tovaga quyib, qoshiq bilan 0,5 sm qalinlikda doira qilib yoying.
+5. Har tomonini 2 daqiqadan pishiring.
 
 🛒 Mahsulotlar:
 • Bodom uni
