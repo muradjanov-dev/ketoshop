@@ -24,7 +24,7 @@ from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
-RELEASE_KEY = "2026-10-yangi-sayt-dizayni"
+RELEASE_KEY = "2026-10-17-oktyabr-3-yangiliklari"
 TZ_OFFSET = timedelta(hours=5)
 SEND_WINDOW = (8, 22)          # never wake admins at night
 # True bypasses the daytime window (used once, 2026-09-25). Normal releases
@@ -33,24 +33,38 @@ SEND_NOW = False
 CHECK_EVERY = 300
 
 NOTES = (
-    '🆕 <b>Saytimiz yangilandi — yangi dizayn</b>\n'
+    "🆕 <b>13-oktabrdan beri botda nimalar o'zgardi</b>\n"
     '\n'
-    "🎨 <b>Ko'rinish</b>\n"
-    "• Yumshoq, tinch ranglar: sariyog', o'rik, shalfey, chang-pushti. Ko'z charchamaydi, mahsulot rasmi oldinga chiqadi.\n"
-    "• Har bir mahsulot kartochkasi o'z rangida, rasm katta, narx va chegirmali narx aniq ko'rinadi, «N so'm tejaysiz» yoziladi.\n"
-    "• Yangi chiroyli shriftlar; o'zbek kirill harflari (Қ Ғ Ҳ) ham to'g'ri chiqadi.\n"
-    "• Pastki menyu ixcham, ochiq bo'lim nomi bilan ko'rinadi. Birinchi ochilganda kunduzgi ko'rinish; tungi va «bog'» ko'rinishlari profilda.\n"
+    '🤖 <b>AI sotuvchi</b>\n'
+    "• Buyurtmani endi tugmali checkout kartasi tuzadi: jami, chegirma, Keto va yetkazish narxini kod hisoblaydi. AI summani o'zi yozmaydi, manzil va raqamni to'qimaydi. Mijoz «✅ Tasdiqlash» ni bosadi yoki «ha» deb yozadi.\n"
+    '• Qadamlar qisqardi: qanday olasiz → raqam va lokatsiya → uy/xonadon → karta (avval ~10 ta savol edi).\n'
+    "• Karta bilan to'lovda buyurtma chek kelgach tuziladi — sizga to'lanmagan buyurtma kelmaydi.\n"
+    '• Ruscha yozganga ruscha, kirillda yozganga kirillda javob beradi; ism bilan murojaat qilmaydi, «Sizga rahmat» deydi.\n'
+    "• Mavzudan tashqari savollarga (she'r, uy vazifasi, kod, siyosat, sport, ob-havo) javob bermaydi — muloyim rad etib, mahsulotga qaytaradi.\n"
+    '• Siz «↩️ Javob berish» bilan yozayotganingizda AI aralashmaydi. Chek har doim qabul qilinadi. /ai_hisobot — AI kim bilan va qaysi mavzularda gaplashgani.\n'
     '\n'
-    "🎮 <b>Bilim o'yinlari — yangi</b>\n"
-    '• «Keto mi, emas mi?», «Qaysi birida uglevod kam?», «Keto viktorina», «Juftini top».\n'
-    "• Mijoz o'ynab keto haqida o'rganadi: har javobdan keyin 100 g dagi uglevod va qisqa izoh.\n"
-    "• Javob ostida «Do'konda ko'rish» — mijoz o'yindan to'g'ri mahsulotga o'tadi. Saytda ko'proq vaqt o'tkazadi, ko'proq ko'radi.\n"
-    "• Mukofot yo'q, pul bilan bog'liq emas; natija mijoz telefonida saqlanadi.\n"
+    '🛒 <b>Savat va buyurtma</b>\n'
+    '• Savat broni: savatga solingan mahsulot 6 soat shu mijozniki — oxirgi donani ikki kishi talashmaydi. 3 soatda «HH:MM gacha band» ogohlantirishi, 6 soatda mahsulot sotuvga qaytadi.\n'
+    '• /bron — kimning savatida nima band; «⏱ Hozirgi bronlarni 1 soatga qisqartirish» tugmasi.\n'
+    "• Band yoki tugagan mahsulotni so'ragan mijozga u qaytishi bilan «Siz so'ragan mahsulot qaytdi» xabari boradi — mahsulotni siz qo'shsangiz ham.\n"
+    "• Har bir buyurtma holati xabarida va kuryer panelida to'liq mijoz bloki va Yandex havolasi.\n"
+    '• Kuryer tabida «🗺 Xarita» — barcha faol buyurtmalar bitta xaritada.\n'
     '\n'
-    '🛒 <b>Sotuv avvalgidek ishonchli</b>\n'
-    "• Savat, buyurtma, naqd/onlayn to'lov, chek yuklash, 10% chegirma, Stevia sovg'asi, retseptdan savatga — hammasi o'sha-o'sha.\n"
-    "• Eski va yangi dizayn bir xil ssenariyda tekshirildi: serverga ketadigan har bir so'rov va mijoz ko'radigan har bir narx bir xil chiqdi.\n"
-    "• Mahsulot oynasi to'liq ekranda, katta «← Orqaga» tugmasi bilan.\n"
+    "🏪 <b>Sayt va do'kon</b>\n"
+    '• Sayt faqat botda START bosganlarga ochiladi — buyurtma holati va chek javoblari mijozga yetib boradi.\n'
+    "• Tugagan mahsulot do'konda qoladi: «Yo'lda 🚚», «⏳ Tez orada qaytadi» va «🔔 Kelganda xabar bering».\n"
+    "• Tillar aralashmaydi (aksiya, birlik, set nomlari kirill va ruscha). Mahsulot rasmi va to'liq tavsifi botda ham chiqadi.\n"
+    '• Saytda 1 daqiqadan keyin «Saytimiz sizga qulaymi?» — 5 yulduz va izoh sizga keladi.\n'
+    '• Admin saytida mahsulotning sotuv turi (oddiy / faqat B2B) tanlanadi va tahrirlanadi.\n'
+    '\n'
+    '🍳 <b>Retsept va kontent</b>\n'
+    "• Kun mahsuloti kartochkasi ichida to'liq «🍳 Bugungi retsept».\n"
+    "• Saytga 10 ta yangi retsept (05.11 gacha), har biri kanalda havola bilan e'lon qilinadi. 80 ta retsept va 50 ta postda miqdorlar va qadamlar to'ldirildi.\n"
+    "• Yangi mijozga video qo'llanmadan keyin bugungi retsept rasmi bilan boradi.\n"
+    "• Har 2 kunda 20:00 da «🧠 Keto savol» — sayt o'yinlaridan; o'yinlarda 50 ta savol.\n"
+    '\n'
+    '⭐ <b>Sharhlar</b>\n'
+    "• 1–2★ qo'yib izoh yozmagan mijozdan sababi muloyim so'raladi, javobi sizga keladi.\n"
     '\n'
     'Mijozlardan fikr eshitsangiz — yozing 🤝'
 )

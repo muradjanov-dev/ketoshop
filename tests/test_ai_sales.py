@@ -1623,6 +1623,49 @@ class AiRussianReplyTest(unittest.TestCase):
         self.assertEqual(reply, "Savatga qo'shamizmi? 🛒")
 
 
+class AiOffTopicTest(unittest.TestCase):
+    """Egasi, 2026-10-17: "mavzudan tashqari savollarga javob bermasliging kerak".
+    Jonli sinovda model she'r yozdi, uy vazifasini yechdi, poytaxt aholisini aytdi."""
+
+    def setUp(self):
+        ai_sales._sessions.clear()
+        _patch(self, database, "get_user_language", AsyncMock(return_value="uz"))
+
+    def tearDown(self):
+        ai_sales._sessions.clear()
+
+    def test_requests_to_make_non_shop_things_are_caught(self):
+        for text in ("sevgi haqida qisqa she'r yozib bering", "uy vazifam bor: 2x + 5 = 15 tenglamani yeching",
+                     "menga pythonda kalkulyator kodi yozib bering", "vatan haqida insho yozib bering",
+                     "напиши стих про любовь", "помогите решить уравнение", "иншо ёзиб беринг"):
+            self.assertTrue(ai_sales.off_topic_request(text), text)
+        for text in ("eritritol bormi?", "sherik bo'lib ulgurji olsak bo'ladimi", "promo kod bormi",
+                     "keto dietada kuniga qancha suv ichish kerak?", "bodom uni bilan retsept bering",
+                     "кето рецепт есть?"):
+            self.assertFalse(ai_sales.off_topic_request(text), text)
+
+    def test_off_topic_never_reaches_the_model_and_is_declined_politely(self):
+        import ai_stats
+        _patch(self, ai_sales, "_reply", AsyncMock())
+        _patch(self, ai_stats, "record_turn", AsyncMock())
+        message = _FakeMessage("sevgi haqida qisqa she'r yozib bering")
+        _run(ai_sales.on_text(message, None, None))
+        ai_sales._reply.assert_not_awaited()
+        reply = message.answer.await_args.args[0]
+        self.assertIn("bu mavzuda yordam bera olmaymiz", reply)
+        self.assertNotIn("+998", reply)                                  # raqam berilmaydi
+        message = _FakeMessage("напиши стих про любовь")
+        _run(ai_sales.on_text(message, None, None))
+        self.assertIn("помочь не сможем", message.answer.await_args.args[0])
+
+    def test_rules_keep_the_bot_and_the_group_on_topic(self):
+        rules = ai_sales._sales_rules()
+        self.assertIn("MAVZU CHEGARASI", rules)
+        self.assertIn("MAZMUNAN JAVOB BERMA", rules)
+        self.assertIn("raqamimizni BERMA", rules)
+        self.assertIn("MAVZUDAN TASHQARI", ai_sales._group_rules())
+
+
 class AiCardCheckoutScreenTest(unittest.TestCase):
     """handlers/cart.py tomoni: AI kartasidagi to'lov tugmasi, olib ketish va AI ga signal."""
 

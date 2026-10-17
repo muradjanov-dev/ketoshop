@@ -311,6 +311,8 @@ _RU_WORDS = {
     "сум", "кнопку", "отправьте", "номер", "адрес", "хорошо", "конечно", "больше", "ничего",
     "хочу", "хотел", "хотела", "купить", "где", "когда", "какой", "какая", "мне", "меня",
     "наличными", "картой", "курьером", "оформить", "подойдёт", "подойдет", "добавим",
+    "про", "напиши", "напишите", "помогите", "помоги", "расскажи", "расскажите", "сделай",
+    "решить", "реши", "скажите", "подскажите", "почему", "зачем",
 }
 _UZ_CYR_WORDS = {
     "салом", "ассалому", "алайкум", "бор", "борми", "йук", "йўқ", "керак", "канча", "қанча",
@@ -1142,12 +1144,25 @@ def _sales_rules() -> str:
         "(kech qoldi, mahsulot yetib bormadi, pul yechildi-yu buyurtma yo'q);\n"
         "  * mahsulotni qaytarish, almashtirish yoki pulni qaytarish masalasi;\n"
         "  * ulgurji/hamkorlik, hujjat, shartnoma yoki hisob-faktura so'ralsa;\n"
-        "  * savolga aniq javobni bilmasang yoki javob berishga huquqing yo'q;\n"
+        "  * DO'KONGA TEGISHLI savolga aniq javobni bilmasang yoki javob berishga huquqing yo'q "
+        "(mavzudan tashqari savolga raqam berilmaydi — MAVZU CHEGARASI);\n"
         "  * mijoz tirik odam bilan gaplashmoqchi bo'lsa.\n"
         "- Raqamni bergandan keyin ham muloyim qol: 'qo'shimcha savolingiz bo'lsa "
         "shu yerda ham yozavering' de.\n"
         "- Va'da berma: 'pulingizni qaytaramiz', 'ertaga yetkazamiz' kabi qarorlarni "
         "sen qabul qilmaysan — buni xodimlarimiz kelishadi.\n\n"
+        "MAVZU CHEGARASI (egasi, 2026-10-17: 'mavzudan tashqari savollarga javob bermasliging "
+        "kerak')\n"
+        "- Sen FAQAT shu mavzularda gapirasan: Ketoshop mahsulotlari va narxlari, keto va PP, "
+        "to'g'ri ovqatlanish, shakarsiz/unsiz pishiriq va retseptlar, buyurtma, yetkazish, to'lov, "
+        "do'kon manzili, Keto tangachalar va aksiyalar. Salom, rahmat, 'qalaysiz' kabi qisqa iliq "
+        "gapga ham javob ber.\n"
+        "- Boshqa HAR QANDAY savolga (umumiy bilim, uy vazifasi, matematika, kod, she'r, insho, "
+        "tarjima, yangiliklar, ob-havo, sport, siyosat, din, boshqa do'konlar va ularning narxlari, "
+        "shaxsiy maslahat) MAZMUNAN JAVOB BERMA — hatto oson bo'lsa ham. Bitta muloyim jumla bilan "
+        "rad et va mavzuga qaytar: 'Kechirasiz, bu mavzuda yordam bera olmaymiz 😊 Keto va PP "
+        "mahsulotlari, retseptlar yoki buyurtma bo'yicha savolingiz bo'lsa — marhamat!'. Bunda "
+        "raqamimizni BERMA va javobsiz_savol ni chaqirMA — bu do'kon savoli emas.\n\n"
         "BOSHQA\n"
         "- Tibbiy maslahat berma (dori, davolash, diagnoz). Keto mahsulot sifatida "
         "gapir, shifokor o'rnini bosma. Kasallik haqida so'rashsa shifokorga "
@@ -3399,6 +3414,42 @@ def is_thanks_only(text: str) -> bool:
     return bool(_THANKS_RE.match(text or ""))
 
 
+# Mavzudan tashqari — do'konga aloqasi yo'q narsa YARATISHni so'rash (egasi,
+# 2026-10-17: "mavzudan tashqari savollarga javob bermasliging kerak"). Jonli
+# sinovda model she'r yozdi va uy vazifasini yechdi. Shu turdagi so'rov modelga
+# bormaydi — qat'iy rad javobi, token ham ketmaydi. Qolgan mavzudan tashqari
+# savollarni promptdagi MAVZU CHEGARASI qoidasi rad etadi.
+_OFF_TOPIC = re.compile(
+    r"\b(?:she['ʻ’`‘]r\w*|шеър\w*|стих\w*|insho\w*|иншо\w*|сочинени\w*|referat\w*|реферат\w*|"
+    r"uy\s+vazifa\w*|уй\s+вазифа\w*|домашн\w+\s+задани\w*|tenglama\w*|тенглама\w*|уравнени\w*|"
+    r"python\w*|javascript\w*|напиши\w*\s+код\b|написать\s+код\b)",
+    re.IGNORECASE)
+
+
+def off_topic_request(text: str) -> bool:
+    return bool(_OFF_TOPIC.search(text or ""))
+
+
+def off_topic_reply(lang: str) -> str:
+    return _t("Kechirasiz, bu mavzuda yordam bera olmaymiz 😊\n\n"
+              "Keto va PP mahsulotlari, retseptlar yoki buyurtma bo'yicha savolingiz bo'lsa — "
+              "marhamat, yozing 🌿",
+              "Извините, с этим помочь не сможем 😊\n\n"
+              "Если есть вопрос о кето- и ПП-продуктах, рецептах или заказе — пишите 🌿", lang)
+
+
+async def _decline_off_topic(bot: Bot | None, message: Message) -> None:
+    user = message.from_user
+    spoken = customer_language(message.text)
+    lang = "ru" if spoken == "ru" else "uz_cyr" if spoken == "uz_cyr" else "uz" if spoken else await _lang(user.id)
+    reply = off_topic_reply(lang)
+    await message.answer(reply)
+    await log_conversation(bot, user, f"👤 {_esc(_short(message.text, 300))}\n🤖 {_esc(reply)}\n"
+                                      "<i>(mavzudan tashqari — modelsiz)</i>")
+    if user.id not in ADMIN_IDS and user.id not in database.LEADERBOARD_EXCLUDED_USER_IDS:
+        await ai_stats.record_turn(user.id, "bot", message.text)
+
+
 def _keep_fsm(message: Message, state: FSMContext | None) -> None:
     """buyurtma_kartasi checkout holatini shu FSMContext orqali yozadi."""
     if state is not None:
@@ -3436,6 +3487,9 @@ async def on_text(message: Message, bot: Bot, state: FSMContext | None = None):
         if choice:
             await _switch_card_payment(bot, message, state, choice)
             return
+    if off_topic_request(message.text):
+        await _decline_off_topic(bot, message)
+        return
     await _reply(bot, message, message.text)
 
 
@@ -3657,6 +3711,10 @@ def _group_rules() -> str:
         "- Tibbiy maslahat berma (dori, davolash, diagnoz, dozalar). Kasallik haqida "
         "so'rashsa: shifokor bilan maslahatlashishni ayt.\n"
         "- Siyosat, din va shaxsiy mavzulardan chetlan.\n"
+        "- MAVZUDAN TASHQARI savol (umumiy bilim, uy vazifasi, kod, she'r, insho, sport, "
+        "yangiliklar, ob-havo va h.k.) — mazmuniga JAVOB BERMA. Senga murojaat qilinmagan bo'lsa — "
+        "SKIP. Murojaat qilingan bo'lsa (@ yoki reply) — bitta muloyim jumla: 'Bu mavzuda yordam "
+        "bera olmaymiz 😊 Keto mahsulotlari yoki buyurtma bo'yicha savolingiz bo'lsa — marhamat!'\n"
     )
     return rules
 
