@@ -1860,6 +1860,20 @@ async def mark_release_notice_sent(notice_id: int) -> bool:
             notice_id) is not None
 
 
+async def shorten_live_holds(hours: int) -> int:
+    """Every hold that ends later than `hours` from now ends in `hours`
+    instead (owner's one-off "6 soatni 1 soatga tushir"). New and renewed
+    holds still get RESERVE_HOURS. Returns how many cart lines changed."""
+    hours = max(1, int(hours))
+    async with pool.acquire() as conn:
+        status = await conn.execute(
+            f"""UPDATE cart SET reserved_until = {_NOW_UTC} + make_interval(hours => $1)
+                 WHERE reserved_until > {_NOW_UTC} + make_interval(hours => $1)""",
+            hours,
+        )
+    return int(status.split()[-1]) if status else 0
+
+
 async def live_holds() -> list[dict]:
     """Every live hold for the admins' /bron screen."""
     async with pool.acquire() as conn:

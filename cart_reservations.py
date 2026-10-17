@@ -38,7 +38,7 @@ from aiogram import Bot, F, Router
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import database
 from config import ADMIN_IDS
@@ -245,7 +245,51 @@ def holds_text(rows: list[dict], now_utc: datetime | None = None) -> str:
     return "\n".join(parts)
 
 
+SHORTEN_TO_HOURS = 1
+
+
+def holds_keyboard(rows: list[dict]) -> InlineKeyboardMarkup | None:
+    """«⏱ … 1 soatga qisqartirish» under /bron while anything is held."""
+    if not rows:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+        text=f"⏱ Hozirgi bronlarni {SHORTEN_TO_HOURS} soatga qisqartirish",
+        callback_data="bron:short")]])
+
+
 @router.message(Command("bron"), F.from_user.id.in_(ADMIN_IDS))
 async def cmd_holds(message: Message):
     from bot_discount import send_long
-    await send_long(message.bot, message.chat.id, holds_text(await database.live_holds()))
+    rows = await database.live_holds()
+    await send_long(message.bot, message.chat.id, holds_text(rows))
+    markup = holds_keyboard(rows)
+    if markup:
+        await message.answer(
+            f"Hozirgi bronlar tezroq sotuvga qaytsinmi? Qoida ({database.RESERVE_HOURS} soat) "
+            "yangi bronlar uchun o'zgarmaydi.", reply_markup=markup)
+
+
+@router.callback_query(F.data == "bron:short", F.from_user.id.in_(ADMIN_IDS))
+async def on_shorten_ask(callback: CallbackQuery):
+    await callback.message.edit_text(
+        f"⏱ Hozir savatlarda turgan barcha bronlar {SHORTEN_TO_HOURS} soatdan keyin tugaydi va mahsulotlar "
+        f"sotuvga qaytadi (mijozga xabar boradi). Yangi bronlar avvalgidek {database.RESERVE_HOURS} soat. "
+        "Tasdiqlaysizmi?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="✅ Ha, qisqartirish", callback_data="bron:short:yes"),
+            InlineKeyboardButton(text="❌ Yo'q", callback_data="bron:short:no")]]))
+    await callback.answer()
+
+
+@router.callback_query(F.data.in_({"bron:short:yes", "bron:short:no"}), F.from_user.id.in_(ADMIN_IDS))
+async def on_shorten(callback: CallbackQuery):
+    if callback.data.endswith(":no"):
+        await callback.message.edit_text("Bronlar o'zgarmadi.")
+        await callback.answer()
+        return
+    changed = await database.shorten_live_holds(SHORTEN_TO_HOURS)
+    await callback.message.edit_text(
+        f"✅ {changed} ta savat qatorining broni {SHORTEN_TO_HOURS} soatga qisqartirildi — "
+        f"{SHORTEN_TO_HOURS} soatdan keyin sotuvga qaytadi. Mijoz savatiga tegsa, uning broni "
+        f"yana {database.RESERVE_HOURS} soatga yangilanadi. Ko'rish: /bron")
+    await callback.answer()
