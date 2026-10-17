@@ -24,7 +24,7 @@ class RecipeBlockTest(unittest.TestCase):
     def test_recipe_of_the_products_own_family(self):
         block = product_ideas.recipe_block(product(), "uz", 0)
         self.assertTrue(block.startswith("🍳 <b>Bugungi retsept</b>\n"))
-        self.assertIn("Kerak:", block)
+        self.assertIn("Masalliqlar:", block)
         self.assertIn("chia", block.lower())
         self.assertTrue(product_ideas.recipe_block(product(), "ru", 0).startswith("🍳 <b>Рецепт дня</b>\n"))
         cyr = product_ideas.recipe_block(product(), "uz_cyr", 0)
