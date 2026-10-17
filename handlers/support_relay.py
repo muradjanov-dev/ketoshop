@@ -333,6 +333,15 @@ async def relay_text(message: Message, bot: Bot, text: str) -> None:
     except Exception:
         logger.exception("Could not reset support claim for %s", buyer_id)
 
+    # An answer to our "why the low rating?" (review_followup.py) says so on
+    # top of the card, so whoever replies knows what it is about.
+    context = ""
+    try:
+        import review_followup
+        context = await review_followup.reply_context(buyer_id)
+    except Exception:
+        logger.exception("Could not look up review follow-up for %s", buyer_id)
+
     for admin_id in ADMIN_IDS:
         admin_lang = await get_user_language(admin_id)
         try:
@@ -342,9 +351,9 @@ async def relay_text(message: Message, bot: Bot, text: str) -> None:
             # fail outright, and the bare except below turned that into the
             # admins simply never hearing about it. `contact` is markup on
             # purpose (buyer_contact_link escapes the name inside it).
-            body = get_text("freeform_from_buyer", admin_lang,
-                            name=html.escape(name), contact=contact,
-                            text=html.escape(text)) + waiting
+            body = context + get_text("freeform_from_buyer", admin_lang,
+                                      name=html.escape(name), contact=contact,
+                                      text=html.escape(text)) + waiting
             sent = await bot.send_message(
                 admin_id, body, parse_mode="HTML", reply_markup=_reply_kb(buyer_id),
             )
