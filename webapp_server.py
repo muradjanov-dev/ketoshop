@@ -1615,6 +1615,17 @@ async def api_recipes(request: web.Request):
     })
 
 
+async def api_recipe_one(request: web.Request):
+    """One published recipe by slug — the channel post's link names its
+    recipe, so a post opened days later still shows that one. Future recipes
+    stay hidden (recipes.find)."""
+    import recipes
+    recipe = recipes.find(request.match_info["slug"])
+    if not recipe:
+        return _json({"error": "not_found"}, status=404)
+    return _json(await recipes.view(recipe, request.get("user_lang", "uz")))
+
+
 async def api_recipe_to_cart(request: web.Request):
     """"🛒 Barcha masalliqlarni savatga" — one pack of every in-stock product."""
     import recipes
@@ -1803,6 +1814,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_get("/api/product/{id}", api_product_detail)
     app.router.add_get("/api/set/{id}", api_set_detail)
     app.router.add_get("/api/recipes", api_recipes)
+    app.router.add_get("/api/recipes/{slug}", api_recipe_one)
     app.router.add_post("/api/recipes/{slug}/cart", api_recipe_to_cart)
     app.router.add_get("/api/product/{id}/reviews", api_product_reviews)
     app.router.add_post("/api/product/{id}/reviews", api_product_review_submit)

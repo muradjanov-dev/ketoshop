@@ -108,6 +108,7 @@ _TS_STEMS: tuple[tuple[str, str], ...] = (
     ("kontsentrat", "концентрат"),
     ("kontsert", "концерт"),
     ("pitsa", "пицца"),           # keto pitsa (site recipes, 2026-10-17)
+    ("porsiya", "порция"),        # "1 porsiyada" — no "ts" in the Latin, but порция in Cyrillic
 )
 _TS_STEM_RES = tuple((re.compile(lat, re.IGNORECASE), cyr) for lat, cyr in _TS_STEMS)
 _TSIYA_RE = re.compile(r"(?<=[^\W\d_])ts(?=iya)", re.IGNORECASE)

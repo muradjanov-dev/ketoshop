@@ -167,7 +167,7 @@ async def cmd_start_deep_link(message: Message, command: CommandObject, state: F
     import product_card
     import recipe_channel
     referrer_id = referral_contest.parse_ref_payload(command.args)
-    # ?start=retsept — the channel's «To'liq retseptni ko'rish» (recipe_channel.py)
+    # ?start=retsept[_<slug>] — the channel's recipe link (recipe_channel.py)
     recipe_link = recipe_channel.parse_payload(command.args)
     blogger_code = None if recipe_link else bloggers.parse_payload(command.args)
     ad_source = ad_sources.parse_payload(command.args)
@@ -188,7 +188,7 @@ async def _handle_start(message: Message, referrer_id: int | None,
                         blogger_code: str | None = None,
                         ad_source: str | None = None,
                         product_id: int | None = None,
-                        recipe_link: bool = False):
+                        recipe_link: str | None = None):
     if not _is_private_chat(message):
         return
 
@@ -225,7 +225,8 @@ async def _handle_start(message: Message, referrer_id: int | None,
     if recipe_link:
         import recipe_channel
         lang = await get_user_language(message.from_user.id)
-        opened = await recipe_channel.open_from_link(message.bot, message.from_user.id, lang)
+        opened = await recipe_channel.open_from_link(message.bot, message.from_user.id, lang,
+                                                     recipe_link)
         if opened and not is_new:
             return
 
