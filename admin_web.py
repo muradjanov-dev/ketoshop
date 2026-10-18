@@ -1028,6 +1028,13 @@ async def api_activity(request: web.Request):
 
 
 @require_auth
+async def api_feedback(request: web.Request):
+    """GET /admin/api/feedback — read-only: product reviews, site ratings and
+    NPS answers (database.get_feedback_overview)."""
+    return _json(await database.get_feedback_overview())
+
+
+@require_auth
 async def api_site_analytics(request: web.Request):
     """GET /admin/api/site-analytics?period=today|7d|30d|90d — read-only:
     how the Mini App is used (database.get_site_analytics)."""
@@ -1820,6 +1827,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/reviews", api_reviews)
     app.router.add_get("/admin/api/activity", api_activity)
     app.router.add_get("/admin/api/site-analytics", api_site_analytics)
+    app.router.add_get("/admin/api/feedback", api_feedback)
     app.router.add_get("/admin/api/site-analytics/user/{user_id:\\d+}", api_site_user)
     app.router.add_get("/admin/api/promos", api_promos_list)
     app.router.add_post("/admin/api/promos", api_promos_create)

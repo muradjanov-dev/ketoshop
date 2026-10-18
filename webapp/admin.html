@@ -248,6 +248,23 @@
   .fa-list li b{font-variant-numeric:tabular-nums;white-space:nowrap}
   #view-faollik .data-table td,#view-faollik .data-table th{white-space:nowrap}
   #view-faollik .data-table td.wrap{white-space:normal;min-width:180px}
+  /* izohlar tab (2026-10-18) */
+  .iz-filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:4px 0 14px}
+  .iz-filters .period-switch{margin:0}
+  .iz-filters label{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--ink-2);font-weight:600}
+  .iz-filters input[type=search]{border:1px solid var(--line);background:var(--input-bg);color:var(--ink);border-radius:9px;padding:7px 10px;min-width:200px;font:inherit}
+  .iz-feed{display:grid;gap:10px}
+  .iz-item{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:6px}
+  .iz-item.low{border-left:4px solid var(--red)}
+  .iz-item.mid{border-left:4px solid var(--amber)}
+  .iz-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;color:var(--ink-2)}
+  .iz-stars{color:var(--amber);letter-spacing:1px;font-size:15px;white-space:nowrap}
+  .iz-score{font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums}
+  .iz-type{font-size:11.5px;font-weight:800;border-radius:20px;padding:2px 9px;background:var(--chip-bg);color:var(--ink-2)}
+  .iz-flag{font-size:11.5px;font-weight:700;border-radius:20px;padding:2px 9px;background:var(--green-wash);color:var(--green)}
+  .iz-text{font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+  .iz-none{font-size:13px;color:var(--ink-3);font-style:italic}
+  .iz-dist .hb-lab{width:64px}
 
   .chart-tip{position:fixed;pointer-events:none;background:#1F1B14;color:#fff;font-size:12px;font-weight:600;border-radius:8px;padding:6px 10px;z-index:300;opacity:0;transition:opacity .1s;white-space:nowrap}
   .chart-tip.show{opacity:1}
@@ -623,6 +640,7 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
   <div class="tabs">
     <button class="tab active" data-view="dashboard">📊 Dashboard</button>
     <button class="tab" data-view="faollik">📈 Faollik</button>
+    <button class="tab" data-view="izohlar">💬 Izohlar</button>
     <button class="tab" data-view="order-costs">🧾 Buyurtma tannarxi</button>
     <button class="tab" data-view="courier">🚚 Kuryer</button>
     <button class="tab" data-view="products">📦 Mahsulotlar</button>
@@ -659,6 +677,15 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
         <button class="btn btn-o btn-sm" type="button" id="faStripBtn">Batafsil →</button>
       </div>
       <div class="kpi-grid" id="faStripKpis" style="margin:12px 0 0"></div>
+    </div>
+
+    <div class="dash-card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h3 style="margin:0">💬 Izoh va baholar</h3>
+        <button class="btn btn-o btn-sm" type="button" id="izStripBtn">Hammasi →</button>
+      </div>
+      <div class="kpi-grid" id="izStripKpis" style="margin:12px 0 10px"></div>
+      <div class="iz-feed" id="izStripFeed"></div>
     </div>
 
     <div class="dash-grid">
@@ -844,6 +871,56 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
         <div class="fa-days" id="faHours" style="height:130px"></div>
         <div class="fa-axis" id="faHoursAxis"></div>
       </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-izohlar">
+    <p class="hint" style="margin:0 0 14px">
+      Mahsulot sharhlari (botda va saytda), sayt qulayligi bahosi va do'konga berilgan baho (NPS, 1–10) — hammasi bir joyda.
+      Sayt bahosi <b>18.10.2026 dan</b> saqlanadi; undan oldingilari faqat adminlarning Telegramiga kelgan.
+    </p>
+    <div class="kpi-grid" id="izKpis"></div>
+
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3>📦 Mahsulotlar bo'yicha baholar</h3>
+        <p class="hint" style="margin:4px 0 10px">Past baho olgan mahsulotlar tepada.</p>
+        <div class="tbl-wrap" style="box-shadow:none;max-height:420px"><table class="data-table" style="font-size:13.5px">
+          <thead><tr><th>Mahsulot</th><th style="text-align:right">Sharh</th><th style="text-align:right">O'rtacha</th><th style="text-align:right">1–2★</th><th>Oxirgi izoh</th></tr></thead>
+          <tbody id="izProducts"></tbody></table></div>
+      </div>
+      <div class="dash-card">
+        <h3>📊 Baholar taqsimoti</h3>
+        <h3 style="margin:12px 0 6px;font-size:13px;color:var(--ink-2)">📦 Mahsulot sharhlari</h3>
+        <div class="hbar-list iz-dist" id="izDistProduct"></div>
+        <h3 style="margin:14px 0 6px;font-size:13px;color:var(--ink-2)">🖥 Sayt bahosi</h3>
+        <div class="hbar-list iz-dist" id="izDistSite"></div>
+        <h3 style="margin:14px 0 6px;font-size:13px;color:var(--ink-2)">⭐ Do'kon bahosi (NPS)</h3>
+        <div class="hbar-list iz-dist" id="izDistNps"></div>
+      </div>
+    </div>
+
+    <div class="dash-card">
+      <h3>💬 Barcha izoh va baholar</h3>
+      <div class="iz-filters">
+        <div class="period-switch" id="izType">
+          <button class="active" data-v="all">Hammasi</button>
+          <button data-v="product">📦 Mahsulot</button>
+          <button data-v="site">🖥 Sayt</button>
+          <button data-v="nps">⭐ Do'kon (NPS)</button>
+        </div>
+        <div class="period-switch" id="izRate">
+          <button class="active" data-v="all">Har qanday baho</button>
+          <button data-v="low">😞 Past</button>
+          <button data-v="mid">😐 O'rta</button>
+          <button data-v="high">😊 Yaxshi</button>
+        </div>
+        <label><input type="checkbox" id="izText"> Faqat izohlilar</label>
+        <label><input type="checkbox" id="izInternal"> Ichki akkauntlar ham</label>
+        <input type="search" id="izSearch" placeholder="Izoh, mahsulot yoki mijoz…">
+      </div>
+      <p class="hint" id="izCount" style="margin:0 0 10px"></p>
+      <div class="iz-feed" id="izFeed"></div>
     </div>
   </section>
 
@@ -1779,7 +1856,7 @@ $('#dashCustomDateBtn').addEventListener('click', () => {
 });
 
 /* ===== tabs ===== */
-const VIEWS=['dashboard','faollik','order-costs','courier','products','sets','promos','keto','bloggers','reklama','retention','expenses','pickup'];
+const VIEWS=['dashboard','faollik','izohlar','order-costs','courier','products','sets','promos','keto','bloggers','reklama','retention','expenses','pickup'];
 function switchView(v){
   if(!VIEWS.includes(v))v='dashboard';
   if(!window.KURYER_MODE)localStorage.setItem('ketoshop_admin_view',v);
@@ -1788,8 +1865,9 @@ function switchView(v){
   // the Kanban needs the full width; every other tab keeps the 1200px column
   $('#shell').classList.toggle('wide',v==='courier');
   if(v==='courier'){loadCourier();kbPollOn();}else{kbPollOff();}
-  if(v==='dashboard'){loadDashboard();loadFaStrip();}
+  if(v==='dashboard'){loadDashboard();loadFaStrip();loadIzohStrip();}
   if(v==='faollik')loadFaollik();
+  if(v==='izohlar')loadIzohlar();
   if(v==='order-costs')$('#orderCostId').focus();
   if(v==='products')loadProducts();
   if(v==='sets')loadSets();
@@ -3034,6 +3112,98 @@ $$('#faSitePeriod button').forEach(b=>b.addEventListener('click',()=>{
 }));
 $$('#faBtnPeriod button').forEach(b=>b.addEventListener('click',()=>{FA_BTN=b.dataset.k;faRenderButtons();}));
 $('#faStripBtn').addEventListener('click',()=>switchView('faollik'));
+
+/* ===== izohlar va baholar (2026-10-18) =====
+   Egasi: "Sayt haqida va maxsulotlar haqidagi barcha izoh va baholar uchun ham
+   bir bo'lim qil dashboardda". Ma'lumot: /admin/api/feedback — mahsulot
+   sharhlari (reviews), sayt bahosi (site_feedback) va NPS (nps_responses). */
+let IZ=null, IZ_TYPE='all', IZ_RATE='all';
+const IZ_TYPES={product:'📦 Mahsulot',site:'🖥 Sayt',nps:"⭐ Do'kon (NPS)"};
+function izItems(withInternal){
+  if(!IZ)return [];
+  const who=x=>x.full_name||(x.username?'@'+x.username:'ID '+x.user_id);
+  const lvl5=r=>r<=2?'low':r===3?'mid':'high', lvl10=r=>r<=6?'low':r<=8?'mid':'high';
+  const all=[
+    ...(IZ.reviews||[]).map(x=>({...x,type:'product',score:+x.rating,max:5,level:lvl5(+x.rating),who:who(x)})),
+    ...(IZ.site||[]).map(x=>({...x,type:'site',score:x.rating==null?null:+x.rating,max:5,
+                              level:x.rating==null?'none':lvl5(+x.rating),who:who(x)})),
+    ...(IZ.nps||[]).map(x=>({...x,type:'nps',score:+x.score,max:10,level:lvl10(+x.score),who:who(x)})),
+  ];
+  return all.filter(x=>withInternal||!x.internal).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+}
+function izStars(x){
+  if(x.score==null)return `<span class="iz-score" style="color:var(--ink-3)">baho yo'q</span>`;
+  return x.max===5?`<span class="iz-stars">${'★'.repeat(x.score)}${'☆'.repeat(5-x.score)}</span>`:`<span class="iz-score">${x.score}/10</span>`;
+}
+function izCard(x){
+  return `<div class="iz-item ${x.level==='low'?'low':x.level==='mid'?'mid':''}">
+    <div class="iz-head">${izStars(x)}<span class="iz-type">${IZ_TYPES[x.type]}</span>
+      ${x.type==='product'?`<b style="color:var(--ink)">${esc(x.product_name||'#'+x.product_id)}</b>`:''}
+      <span>${esc(x.who)}${x.phone?' · '+esc(x.phone):''}${x.username?' · <a href="https://t.me/'+esc(x.username)+'" target="_blank">@'+esc(x.username)+'</a>':''}</span>
+      <span>${faWhen(x.created_at)}</span>
+      ${x.asked_why?'<span class="iz-flag">Sababi so\'raldi</span>':''}${x.internal?'<span class="iz-type">ichki akkaunt</span>':''}</div>
+    ${x.comment?`<div class="iz-text">${esc(x.comment)}</div>`:'<div class="iz-none">Izohsiz</div>'}</div>`;
+}
+function izAvg(arr,k){const v=arr.filter(x=>x[k]!=null);return v.length?(v.reduce((a,x)=>a+(+x[k]||0),0)/v.length):0;}
+function izNps(arr){if(!arr.length)return null;const p=arr.filter(x=>x.score>=9).length,d=arr.filter(x=>x.score<=6).length;return Math.round((p-d)/arr.length*100);}
+function izDist(sel,arr,max){
+  arr=arr.filter(x=>x.score!=null);
+  const rows=[];
+  if(max===5){for(let r=5;r>=1;r--){const n=arr.filter(x=>x.score===r).length;rows.push({lab:'★'.repeat(r),val:n,show:`${n} · ${faPct(n,arr.length)}`});}}
+  else{[['9–10',x=>x.score>=9],['7–8',x=>x.score>=7&&x.score<=8],['1–6',x=>x.score<=6]].forEach(([l,f])=>{const n=arr.filter(f).length;rows.push({lab:l,val:n,show:`${n} · ${faPct(n,arr.length)}`});});}
+  faBars(sel,arr.length?rows:[], 'var(--amber)');
+}
+function renderIzoh(){
+  const withInt=$('#izInternal').checked, all=izItems(withInt);
+  const P=all.filter(x=>x.type==='product'),S=all.filter(x=>x.type==='site'),N=all.filter(x=>x.type==='nps');
+  const fmtA=v=>v?(Math.round(v*10)/10).toLocaleString('ru-RU'):'—';
+  const nps=izNps(N);
+  $('#izKpis').innerHTML=[
+    ['Mahsulot sharhlari',`${P.length} · ${fmtA(izAvg(P,'score'))} ★`],
+    ['Sayt bahosi',`${S.length} · ${fmtA(izAvg(S,'score'))} ★`],
+    ["Do'kon bahosi (NPS)",nps==null?'—':`${nps>0?'+':''}${nps} · ${N.length} javob`],
+    ['Past baholar',`${all.filter(x=>x.level==='low').length} ta`],
+    ['Izohli',`${all.filter(x=>x.comment).length} ta`],
+  ].map(([l,v])=>`<div class="kpi-card"><div class="lab">${l}</div><div class="val">${v}</div></div>`).join('');
+  const byP={};
+  P.forEach(x=>{const k=x.product_id||x.product_name;(byP[k]=byP[k]||{name:x.product_name||('#'+x.product_id),items:[]}).items.push(x);});
+  const prows=Object.values(byP).map(g=>({name:g.name,n:g.items.length,avg:izAvg(g.items,'score'),low:g.items.filter(x=>x.score<=2).length,
+    last:(g.items.find(x=>x.comment)||{}).comment||''})).sort((a,b)=>(b.low-a.low)||(a.avg-b.avg)||(b.n-a.n));
+  $('#izProducts').innerHTML=prows.map(r=>`<tr><td class="wrap">${esc(r.name)}</td><td class="tnum" style="text-align:right">${r.n}</td>
+      <td class="tnum" style="text-align:right">${fmtA(r.avg)} ★</td><td class="tnum" style="text-align:right;${r.low?'color:var(--red);font-weight:700':''}">${r.low}</td>
+      <td class="wrap" style="font-size:12.5px;color:var(--ink-2);white-space:normal;min-width:200px">${esc(r.last.length>120?r.last.slice(0,120)+'…':r.last)||'—'}</td></tr>`).join('')
+    ||'<tr><td colspan="5" style="color:var(--ink-3)">Hali sharh yo\'q</td></tr>';
+  izDist('#izDistProduct',P,5);izDist('#izDistSite',S,5);izDist('#izDistNps',N,10);
+  const q=$('#izSearch').value.trim().toLowerCase(), onlyText=$('#izText').checked;
+  const feed=all.filter(x=>(IZ_TYPE==='all'||x.type===IZ_TYPE)&&(IZ_RATE==='all'||x.level===IZ_RATE)&&(!onlyText||x.comment)
+    &&(!q||[x.comment,x.product_name,x.who,x.phone,x.username].some(v=>v&&String(v).toLowerCase().includes(q))));
+  $('#izCount').textContent=`${feed.length} ta${feed.length>300?' (oxirgi 300 tasi ko\'rsatilgan)':''}`;
+  $('#izFeed').innerHTML=feed.slice(0,300).map(izCard).join('')||'<p class="hint">Bu filtr bo\'yicha hech narsa yo\'q.</p>';
+}
+async function loadIzohlar(){
+  try{IZ=await api('/admin/api/feedback');renderIzoh();}catch(e){toast('⚠️ '+e.message);}
+}
+async function loadIzohStrip(){
+  try{
+    IZ=await api('/admin/api/feedback');
+    const all=izItems(false),weekAgo=new Date(Date.now()-7*864e5).toISOString().slice(0,19);
+    const week=all.filter(x=>(x.created_at||'')>=weekAgo);
+    const P=all.filter(x=>x.type==='product'),S=all.filter(x=>x.type==='site');
+    const fmtA=v=>v?(Math.round(v*10)/10).toLocaleString('ru-RU'):'—';
+    $('#izStripKpis').innerHTML=[
+      ["Mahsulotlar o'rtacha bahosi",`${fmtA(izAvg(P,'score'))} ★ · ${P.length} sharh`],
+      ['Sayt bahosi',`${fmtA(izAvg(S,'score'))} ★ · ${S.length}`],
+      ['7 kunda yangi',`${week.length} ta`],
+      ['7 kunda past baho',`${week.filter(x=>x.level==='low').length} ta`],
+    ].map(([l,v])=>`<div class="kpi-card"><div class="lab">${l}</div><div class="val" style="font-size:18px">${v}</div></div>`).join('');
+    $('#izStripFeed').innerHTML=all.filter(x=>x.comment).slice(0,3).map(izCard).join('')||'<p class="hint">Hali izoh yo\'q.</p>';
+  }catch(e){$('#izStripKpis').innerHTML='<p class="hint">⚠️ '+esc(e.message)+'</p>';}
+}
+$$('#izType button').forEach(b=>b.addEventListener('click',()=>{$$('#izType button').forEach(x=>x.classList.toggle('active',x===b));IZ_TYPE=b.dataset.v;renderIzoh();}));
+$$('#izRate button').forEach(b=>b.addEventListener('click',()=>{$$('#izRate button').forEach(x=>x.classList.toggle('active',x===b));IZ_RATE=b.dataset.v;renderIzoh();}));
+['#izText','#izInternal'].forEach(s=>$(s).addEventListener('change',()=>IZ&&renderIzoh()));
+$('#izSearch').addEventListener('input',()=>IZ&&renderIzoh());
+$('#izStripBtn').addEventListener('click',()=>switchView('izohlar'));
 
 /* ===== blogerlar =====
    Hamkor blogerlar: shaxsiy havola -> taklif qilingan mijozlar -> har bir
