@@ -235,6 +235,19 @@ async def init_db():
             )
         """)
 
+        # The Mini App's counterpart (2026-10-18): one row per thing a buyer
+        # did in the shop — opened it, opened a product, added to cart,
+        # ordered… (activity._SITE_ACTIONS). Before this the site left no
+        # trace except product_views, which it shares with the bot.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS site_activity (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                action TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Scheduled tips broadcast — single-row state table tracking which tip
         # goes out next and when the last one was sent. Survives restarts so the
         # 2-day cadence isn't reset every deploy.
@@ -678,6 +691,7 @@ async def init_db():
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_product_views_time ON product_views(viewed_at)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_bot_activity_time ON bot_activity(created_at)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_bot_activity_kind_time ON bot_activity(kind, created_at)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_site_activity_time ON site_activity(created_at)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_nps_responses_user ON nps_responses(user_id)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_products_seller ON products(seller_id)")
@@ -4346,6 +4360,161 @@ async def log_activity(user_id: int, kind: str, action: str) -> None:
             "INSERT INTO bot_activity (user_id, kind, action) VALUES ($1, $2, $3)",
             user_id, kind, action,
         )
+
+
+async def log_site_activity(user_id: int, action: str) -> None:
+    """One Mini App action (see activity._SITE_ACTIONS). Best-effort, like
+    log_activity."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO site_activity (user_id, action) VALUES ($1, $2)", user_id, action,
+        )
+
+
+_ACTIVITY_DAY_KEYS = (
+    "active_users", "bot_users", "bot_taps", "bot_messages",
+    "site_users", "site_events", "site_opens",
+    "site_viewers_est", "site_views_est",
+    "new_users", "orders", "order_buyers", "site_orders_est",
+)
+
+
+async def get_activity_report(top: int = 25) -> dict:
+    """Day-by-day engagement in the bot and the Mini App plus the most-used
+    buttons, for GET /admin/api/activity — read-only (owner, 2026-10-18:
+    "saytdan va botdan foydalanish faolligi va qaysi tugmalar eng ko'p
+    bosilgani ... qaysi yangilanishlardan keyin faollik oshgani").
+
+    Days are Tashkent calendar days; admin and shop accounts are left out
+    (_activity_excluded_ids). The bot has logged every tap and message since
+    bot_activity existed; the Mini App only since site_activity did. For the
+    days before that, two estimates:
+      * site_views_est / site_viewers_est — product pages opened with no bot
+        tap or message by the same person within 10 s either side (the bot
+        logs one with every view it records; the Mini App logs none);
+      * site_orders_est — self-service orders with no bot tap or message by
+        the buyer in the 20 minutes before (a bot checkout is all taps and
+        typed answers; a Mini App checkout is none)."""
+    from datetime import datetime, timedelta
+    ex = _activity_excluded_ids()
+    tz = DISPLAY_TZ_OFFSET_HOURS
+    local = "make_interval(hours => $2)"
+    async with pool.acquire() as conn:
+        first = await conn.fetchval("SELECT MIN(created_at) FROM bot_activity")
+        site_first = await conn.fetchval("SELECT MIN(created_at) FROM site_activity")
+        bot = await conn.fetch(f"""
+            SELECT (created_at + {local})::date AS d, COUNT(DISTINCT user_id) AS users,
+                   COUNT(*) FILTER (WHERE kind = 'callback') AS taps,
+                   COUNT(*) FILTER (WHERE kind = 'message') AS messages
+              FROM bot_activity WHERE user_id <> ALL($1::bigint[]) GROUP BY d""", ex, tz)
+        site = await conn.fetch(f"""
+            SELECT (created_at + {local})::date AS d, COUNT(DISTINCT user_id) AS users,
+                   COUNT(*) AS events, COUNT(*) FILTER (WHERE action = 'Saytni ochdi') AS opens
+              FROM site_activity WHERE user_id <> ALL($1::bigint[]) GROUP BY d""", ex, tz)
+        site_est = await conn.fetch(f"""
+            SELECT (v.viewed_at + {local})::date AS d, COUNT(*) AS views,
+                   COUNT(DISTINCT v.user_id) AS viewers
+              FROM product_views v
+             WHERE v.user_id IS NOT NULL AND v.user_id <> ALL($1::bigint[])
+               AND NOT EXISTS (SELECT 1 FROM bot_activity a
+                                WHERE a.user_id = v.user_id
+                                  AND a.created_at BETWEEN v.viewed_at - interval '10 seconds'
+                                                       AND v.viewed_at + interval '10 seconds')
+             GROUP BY d""", ex, tz)
+        anyone = await conn.fetch(f"""
+            SELECT d, COUNT(DISTINCT user_id) AS users FROM (
+                SELECT (created_at + {local})::date AS d, user_id FROM bot_activity
+                 WHERE user_id <> ALL($1::bigint[])
+                UNION ALL
+                SELECT (created_at + {local})::date, user_id FROM site_activity
+                 WHERE user_id <> ALL($1::bigint[])
+                UNION ALL
+                SELECT (viewed_at + {local})::date, user_id FROM product_views
+                 WHERE user_id IS NOT NULL AND user_id <> ALL($1::bigint[])
+            ) x GROUP BY d""", ex, tz)
+        joined = await conn.fetch(f"""
+            SELECT (created_at + {local})::date AS d, COUNT(*) AS users
+              FROM users WHERE user_id <> ALL($1::bigint[]) GROUP BY d""", ex, tz)
+        orders = await conn.fetch(f"""
+            SELECT (o.created_at + {local})::date AS d, COUNT(*) AS orders,
+                   COUNT(DISTINCT o.user_id) AS buyers,
+                   COUNT(*) FILTER (WHERE NOT EXISTS (
+                       SELECT 1 FROM bot_activity a
+                        WHERE a.user_id = o.user_id
+                          AND a.created_at BETWEEN o.created_at - interval '20 minutes'
+                                               AND o.created_at + interval '5 seconds')) AS site_est
+              FROM orders o
+             WHERE COALESCE(o.source, 'bot') NOT IN ('manual', 'b2b') AND o.status <> 'cancelled'
+               AND o.user_id IS NOT NULL AND o.user_id <> ALL($1::bigint[])
+             GROUP BY d""", ex, tz)
+
+        now = datetime.utcnow()
+        windows = {"7d": now - timedelta(days=7), "30d": now - timedelta(days=30), "all": datetime(1970, 1, 1)}
+        top_buttons, top_site, totals = {}, {}, {}
+        for key, since in windows.items():
+            top_buttons[key] = [dict(r) for r in await conn.fetch("""
+                SELECT action, COUNT(*) AS taps, COUNT(DISTINCT user_id) AS users
+                  FROM bot_activity
+                 WHERE kind = 'callback' AND user_id <> ALL($1::bigint[]) AND created_at >= $2
+                 GROUP BY action ORDER BY taps DESC LIMIT $3""", ex, since, top)]
+            top_site[key] = [dict(r) for r in await conn.fetch("""
+                SELECT action, COUNT(*) AS taps, COUNT(DISTINCT user_id) AS users
+                  FROM site_activity
+                 WHERE user_id <> ALL($1::bigint[]) AND created_at >= $2
+                 GROUP BY action ORDER BY taps DESC LIMIT $3""", ex, since, top)]
+            row = await conn.fetchrow("""
+                SELECT (SELECT COUNT(DISTINCT user_id) FROM bot_activity
+                         WHERE user_id <> ALL($1::bigint[]) AND created_at >= $2) AS bot_users,
+                       (SELECT COUNT(DISTINCT user_id) FROM site_activity
+                         WHERE user_id <> ALL($1::bigint[]) AND created_at >= $2) AS site_users,
+                       (SELECT COUNT(DISTINCT user_id) FROM (
+                            SELECT user_id FROM bot_activity WHERE created_at >= $2
+                            UNION SELECT user_id FROM site_activity WHERE created_at >= $2
+                            UNION SELECT user_id FROM product_views WHERE viewed_at >= $2
+                        ) u WHERE user_id IS NOT NULL AND user_id <> ALL($1::bigint[])) AS active_users""",
+                ex, since)
+            totals[key] = {k: int(v or 0) for k, v in dict(row).items()}
+        hours = await conn.fetch(f"""
+            SELECT EXTRACT(HOUR FROM created_at + {local})::int AS h,
+                   COUNT(*) AS events, COUNT(DISTINCT user_id) AS users
+              FROM bot_activity
+             WHERE user_id <> ALL($1::bigint[]) AND created_at >= $3
+             GROUP BY h""", ex, tz, windows["30d"])
+
+    days: dict = {}
+
+    def put(rows, mapping):
+        for r in rows:
+            day = days.setdefault(r["d"], {})
+            for out, col in mapping.items():
+                day[out] = int(r[col] or 0)
+
+    put(bot, {"bot_users": "users", "bot_taps": "taps", "bot_messages": "messages"})
+    put(site, {"site_users": "users", "site_events": "events", "site_opens": "opens"})
+    put(site_est, {"site_views_est": "views", "site_viewers_est": "viewers"})
+    put(anyone, {"active_users": "users"})
+    put(joined, {"new_users": "users"})
+    put(orders, {"orders": "orders", "order_buyers": "buyers", "site_orders_est": "site_est"})
+
+    today = (now + timedelta(hours=tz)).date()
+    start = (first + timedelta(hours=tz)).date() if first else today
+    series, d = [], start
+    while d <= today:
+        series.append({"date": d.isoformat(), **{k: days.get(d, {}).get(k, 0) for k in _ACTIVITY_DAY_KEYS}})
+        d += timedelta(days=1)
+    by_hour = {r["h"]: r for r in hours}
+    return {
+        "since": start.isoformat(),
+        "today": today.isoformat(),
+        "site_logging_since": (site_first + timedelta(hours=tz)).isoformat() if site_first else None,
+        "excluded_users": len(ex),
+        "days": series,
+        "totals": totals,
+        "top_buttons": top_buttons,
+        "top_site_actions": top_site,
+        "hours_30d": [{"hour": h, "events": int(by_hour[h]["events"]) if h in by_hour else 0,
+                       "users": int(by_hour[h]["users"]) if h in by_hour else 0} for h in range(24)],
+    }
 
 
 def _activity_excluded_ids() -> list[int]:

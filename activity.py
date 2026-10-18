@@ -6,6 +6,7 @@ never adds latency to the actual handler or breaks a request on DB hiccups.
 """
 import asyncio
 import logging
+import re
 
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery
@@ -70,6 +71,51 @@ _PREFIX_LABELS = {
 # Non-events: disabled/no-op buttons (page-number display, etc.) aren't
 # real interactions worth ranking.
 _IGNORED = {"noop"}
+
+
+# Mini App actions for the same report (owner, 2026-10-18). Every opening
+# preloads products, top sellers, the promo, the cart, the recipe list and the
+# Keto rate, so those calls say nothing about the buyer — GET /api/categories
+# (once per opening) stands for "opened the shop", the rest are things the
+# buyer chose to do. Logged only when the request succeeded.
+_SITE_ACTIONS = tuple((method, re.compile(pattern), label) for method, pattern, label in (
+    ("GET", r"/api/categories", "Saytni ochdi"),
+    ("GET", r"/api/product/\d+", "Mahsulot sahifasi"),
+    ("GET", r"/api/set/\d+", "To'plam sahifasi"),
+    ("POST", r"/api/product/\d+/reviews", "Sharh yozish"),
+    ("GET", r"/api/search", "Qidiruv"),
+    ("POST", r"/api/cart/add", "Savatga qo'shish"),
+    ("POST", r"/api/cart/update", "Savatda +/-"),
+    ("POST", r"/api/cart/remove", "Savatdan o'chirish"),
+    ("POST", r"/api/cart/clear", "Savatni tozalash"),
+    ("POST", r"/api/checkout", "Buyurtma berdi"),
+    ("POST", r"/api/checkout/cheque", "Chek yubordi"),
+    ("POST", r"/api/orders/\d+/cheque", "Chek yubordi"),
+    ("POST", r"/api/checkout/pay-in-chat", "Chatda to'lash"),
+    ("GET", r"/api/orders", "Buyurtmalarim"),
+    ("POST", r"/api/orders/\d+/cancel", "Buyurtmani bekor qilish"),
+    ("GET", r"/api/recipes/[^/]+", "Retsept ochildi"),
+    ("POST", r"/api/recipes/[^/]+/cart", "Retseptdan savatga"),
+    ("POST", r"/api/restock-wait", "Kelganda xabar bering"),
+    ("POST", r"/api/site-feedback", "Saytga baho"),
+    ("POST", r"/api/lang", "Til tanlash"),
+))
+
+
+def site_action(method: str, path: str) -> str | None:
+    for m, pattern, label in _SITE_ACTIONS:
+        if m == method and pattern.fullmatch(path):
+            return label
+    return None
+
+
+def log_site(user_id: int, action: str) -> None:
+    async def _go():
+        try:
+            await database.log_site_activity(user_id, action)
+        except Exception:
+            logger.exception("Failed to log site activity")
+    asyncio.create_task(_go())
 
 
 def _label_for_callback(data: str) -> str | None:

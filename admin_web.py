@@ -1018,6 +1018,16 @@ async def api_reviews(request: web.Request):
 
 
 @require_auth
+async def api_activity(request: web.Request):
+    """GET /admin/api/activity — read-only: bot and Mini App engagement per
+    Tashkent day since tracking began, unique users for 7/30 days and all
+    time, the most-tapped bot buttons and Mini App actions, and the hour of
+    day people use the bot (owner, 2026-10-18). See
+    database.get_activity_report for what each number counts."""
+    return _json(await database.get_activity_report())
+
+
+@require_auth
 async def api_dashboard(request: web.Request):
     """Aggregated snapshot for the visual dashboard tab (2026-08-12): KPIs for
     the selected period, a 6-month revenue/orders trend, best sellers, and a
@@ -1793,6 +1803,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_post("/admin/api/orders/{id:\\d+}/lines/{line:\\d+}/cost", api_order_line_cost_update)
     app.router.add_get("/admin/api/dashboard", api_dashboard)
     app.router.add_get("/admin/api/reviews", api_reviews)
+    app.router.add_get("/admin/api/activity", api_activity)
     app.router.add_get("/admin/api/promos", api_promos_list)
     app.router.add_post("/admin/api/promos", api_promos_create)
     app.router.add_post("/admin/api/promos/{id:\\d+}", api_promos_update)
