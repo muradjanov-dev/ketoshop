@@ -216,7 +216,15 @@ async def auth_middleware(request: web.Request, handler):
         from config import BOT_USERNAME
         return _json({"error": "start_bot", "bot": BOT_USERNAME}, status=403)
 
-    return await handler(request)
+    response = await handler(request)
+    try:
+        import activity
+        label = activity.site_action(request.method, path)
+        if label and response.status < 400:
+            activity.log_site(user_id, label)
+    except Exception:
+        logger.exception("Site activity logging failed")
+    return response
 
 
 # ===== ROUTES =====
