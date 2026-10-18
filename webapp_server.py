@@ -1772,6 +1772,56 @@ def _serialize_set(s: dict, lang: str, bot_price: float | None = None) -> dict:
     return data
 
 
+# The Mini App tracker's batches (see "SITE ANALYTICS" in webapp/index.html).
+# Anything malformed is dropped silently — analytics must never cost a buyer
+# an error, and a bad client can't push more than 60 short rows per call.
+TRACK_KINDS = {"open", "view", "time", "scroll", "row", "search", "cart_add", "fav", "checkout", "game"}
+_TRACK_SID = re.compile(r"[A-Za-z0-9_-]{6,40}")
+
+
+def clean_track_batch(body) -> tuple[str, list[tuple]] | None:
+    """(session_id, [(kind, screen, ref, src, ms)…]) or None for a bad batch."""
+    if not isinstance(body, dict):
+        return None
+    sid, events = body.get("sid"), body.get("ev")
+    if not isinstance(sid, str) or not _TRACK_SID.fullmatch(sid) or not isinstance(events, list):
+        return None
+
+    def text(e, key, limit):
+        v = e.get(key)
+        if v is None or isinstance(v, (dict, list, bool)):
+            return None
+        v = str(v).strip()[:limit]
+        return v or None
+
+    rows = []
+    for e in events[:60]:
+        if not isinstance(e, dict) or e.get("k") not in TRACK_KINDS:
+            continue
+        ms = e.get("ms")
+        ms = int(ms) if isinstance(ms, (int, float)) and not isinstance(ms, bool) and 0 <= ms <= 600_000 else None
+        rows.append((e["k"], text(e, "s", 32), text(e, "r", 80), text(e, "f", 48), ms))
+    return sid, rows
+
+
+async def api_track(request: web.Request):
+    import database
+    try:
+        body = await request.json()
+    except Exception:
+        return _json({"ok": False}, status=400)
+    batch = clean_track_batch(body)
+    if batch is None:
+        return _json({"ok": False}, status=400)
+    sid, rows = batch
+    if rows:
+        try:
+            await database.insert_site_events(request["user_id"], sid, rows)
+        except Exception:
+            logger.exception("Site analytics insert failed")
+    return _json({"ok": True})
+
+
 async def api_site_feedback(request: web.Request):
     """Stars + comment about how convenient the site is, from the Mini App's
     feedback sheet (owner, 2026-10-13), relayed to every admin. A second
@@ -1835,6 +1885,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_post("/api/cart/clear", api_cart_clear)
     app.router.add_post("/api/checkout", api_checkout)
     app.router.add_post("/api/site-feedback", api_site_feedback)
+    app.router.add_post("/api/track", api_track)
     app.router.add_post("/api/checkout/cheque", api_checkout_cheque)
     app.router.add_post("/api/checkout/pay-in-chat", api_checkout_pay_in_chat)
     app.router.add_get("/api/orders", api_orders)

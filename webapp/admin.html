@@ -223,6 +223,31 @@
   .hbar-row .hb-track{flex:1;background:var(--chip-bg);border-radius:4px;height:13px;overflow:hidden}
   .hbar-row .hb-fill{height:100%;border-radius:4px;min-width:3px}
   .hbar-row .hb-val{flex:0 0 auto;font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap}
+  /* faollik tab (2026-10-18) */
+  .fa-sec{margin:28px 0 12px;font-size:18px}
+  .fa-sec:first-of-type{margin-top:6px}
+  .fa-days{display:flex;align-items:flex-end;gap:2px;height:150px;padding-top:6px}
+  .fa-days .d{flex:1;min-width:2px;display:flex;align-items:flex-end;height:100%}
+  .fa-days .d i{display:block;width:100%;background:var(--accent);border-radius:2px 2px 0 0;min-height:1px;opacity:.8}
+  .fa-days .d.ev i{background:var(--green);opacity:1}
+  .fa-days .d.top i{opacity:1}
+  .fa-days .d:hover i{opacity:1;background:var(--accent-2)}
+  .fa-axis{display:flex;justify-content:space-between;gap:6px;font-size:10.5px;color:var(--ink-3);margin-top:5px;font-weight:700}
+  .fa-funnel .hb-lab,.fa-wide .hb-lab{width:200px;white-space:normal;line-height:1.25}
+  .fa-step{display:grid;gap:3px;padding:6px 8px;border-radius:9px}
+  .fa-step.worst{background:var(--red-wash)}
+  .fa-drop{font-size:11.5px;color:var(--red);font-weight:700;padding-left:210px}
+  @media (max-width:640px){.fa-funnel .hb-lab,.fa-wide .hb-lab{width:120px}.fa-drop{padding-left:0}}
+  .fa-path{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 14px}
+  .fa-path span{font-size:12px;background:var(--chip-bg);border-radius:6px;padding:2px 7px}
+  .fa-path span.cart{background:var(--green-wash);color:var(--green);font-weight:700}
+  .fa-path span.err{background:var(--red-wash);color:var(--red);font-weight:700}
+  .fa-path span.ok{background:var(--green);color:var(--panel);font-weight:700}
+  .fa-list{display:grid;gap:6px;font-size:13px;margin:0;padding:0;list-style:none}
+  .fa-list li{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding-bottom:5px}
+  .fa-list li b{font-variant-numeric:tabular-nums;white-space:nowrap}
+  #view-faollik .data-table td,#view-faollik .data-table th{white-space:nowrap}
+  #view-faollik .data-table td.wrap{white-space:normal;min-width:180px}
 
   .chart-tip{position:fixed;pointer-events:none;background:#1F1B14;color:#fff;font-size:12px;font-weight:600;border-radius:8px;padding:6px 10px;z-index:300;opacity:0;transition:opacity .1s;white-space:nowrap}
   .chart-tip.show{opacity:1}
@@ -597,6 +622,7 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
 
   <div class="tabs">
     <button class="tab active" data-view="dashboard">📊 Dashboard</button>
+    <button class="tab" data-view="faollik">📈 Faollik</button>
     <button class="tab" data-view="order-costs">🧾 Buyurtma tannarxi</button>
     <button class="tab" data-view="courier">🚚 Kuryer</button>
     <button class="tab" data-view="products">📦 Mahsulotlar</button>
@@ -626,6 +652,14 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
     </div>
 
     <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="dash-card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h3 style="margin:0">📈 Faollik: bot va sayt</h3>
+        <button class="btn btn-o btn-sm" type="button" id="faStripBtn">Batafsil →</button>
+      </div>
+      <div class="kpi-grid" id="faStripKpis" style="margin:12px 0 0"></div>
+    </div>
 
     <div class="dash-grid">
       <div class="dash-card">
@@ -667,6 +701,152 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
   </section>
 
   <!-- ===== ORDER COST REVIEW VIEW ===== -->
+  <section class="view" id="view-faollik">
+    <p class="hint" style="margin:0 0 6px">
+      Bot va saytda odamlar nima qilyapti. Admin va do'kon akkauntlari hisobga olinmaydi, vaqt — Toshkent vaqti.
+      Saytda faqat ekran ochiq turgan vaqt sanaladi. Sayt bo'yicha batafsil kuzatuv shu yangilanishdan boshlab yoziladi.
+    </p>
+
+    <h2 class="fa-sec">🖥 Sayt (Mini App)</h2>
+    <div class="period-switch" id="faSitePeriod">
+      <button data-period="today">Bugun</button>
+      <button class="active" data-period="7d">7 kun</button>
+      <button data-period="30d">30 kun</button>
+      <button data-period="90d">90 kun</button>
+    </div>
+    <div class="kpi-grid" id="faSiteKpis"></div>
+    <p class="hint" id="faSiteEmpty" style="display:none;margin-bottom:16px">Bu davrda saytdan hali ma'lumot yo'q — kuzatuv yangilanish chiqqandan keyin to'planadi.</p>
+
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3>⚠️ Qayerda qolib ketishyapti: buyurtmagacha yo'l</h3>
+        <p class="hint" style="margin:4px 0 12px">Saytni ochgan tashriflardan nechtasi har bir qadamga yetdi. Qizil fon — eng ko'p odam tushib qolgan qadam.</p>
+        <div class="hbar-list fa-funnel" id="faFunnel"></div>
+      </div>
+      <div class="dash-card">
+        <h3>🚪 Saytni qaysi ekranda yopishdi</h3>
+        <p class="hint" style="margin:4px 0 12px">Tashrifning oxirgi ekrani. Foiz — shu ekranni ochganlarning necha foizi saytni shu yerda tark etgani.</p>
+        <div class="hbar-list fa-wide" id="faExits"></div>
+        <h3 style="margin-top:18px">Aniq qaysi joyda</h3>
+        <ul class="fa-list" id="faExitTop" style="margin-top:8px"></ul>
+      </div>
+    </div>
+
+    <div class="dash-card" style="margin-bottom:16px">
+      <h3>⏱ Ekranlar: qayerda qancha vaqt o'tkazishyapti</h3>
+      <div class="tbl-wrap" style="margin-top:10px;box-shadow:none"><table class="data-table" style="font-size:13.5px">
+        <thead><tr><th>Ekran</th><th style="text-align:right">Ochildi</th><th style="text-align:right">Odam</th>
+          <th style="text-align:right">Jami vaqt</th><th style="text-align:right">1 ochilishga</th><th style="text-align:right">Shu yerda chiqib ketdi</th></tr></thead>
+        <tbody id="faScreens"></tbody></table></div>
+    </div>
+
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3>📜 Sahifani qayergacha pastga aylantirishdi</h3>
+        <p class="hint" style="margin:4px 0 10px">Ochilganlarning necha foizi sahifaning 25%, 50%, 75% va oxirigacha (90%+) tushgan.</p>
+        <div class="tbl-wrap" style="box-shadow:none"><table class="data-table" style="font-size:13.5px">
+          <thead><tr><th>Ekran</th><th style="text-align:right">Ochildi</th><th style="text-align:right">25%</th><th style="text-align:right">50%</th><th style="text-align:right">75%</th><th style="text-align:right">90%+</th></tr></thead>
+          <tbody id="faScroll"></tbody></table></div>
+      </div>
+      <div class="dash-card">
+        <h3>🏠 Bosh sahifa qatorlari</h3>
+        <p class="hint" style="margin:4px 0 10px">Qator ekranga chiqqan tashriflar va undan ochilgan mahsulotlar. Pastdagi qatorlarni kam odam ko'radi.</p>
+        <div class="tbl-wrap" style="box-shadow:none"><table class="data-table" style="font-size:13.5px">
+          <thead><tr><th>Qator</th><th style="text-align:right">Ko'rgan tashriflar</th><th style="text-align:right">Ochilgan mahsulot</th></tr></thead>
+          <tbody id="faRows"></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="dash-card" style="margin-bottom:16px">
+      <h3>📦 Mahsulotlar: qaysi biri ochildi, qayerdan, qancha qarashdi</h3>
+      <div class="tbl-wrap" style="margin-top:10px;box-shadow:none"><table class="data-table" style="font-size:13.5px">
+        <thead><tr><th>Mahsulot</th><th style="text-align:right">Ochildi</th><th style="text-align:right">Odam</th>
+          <th style="text-align:right">O'rtacha qarash</th><th style="text-align:right">Savatga</th><th style="text-align:right">Savatga / ochilish</th><th>Qayerdan ochildi</th></tr></thead>
+        <tbody id="faProducts"></tbody></table></div>
+    </div>
+
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3>🗂 Kategoriyalar: nimaga qiziqishyapti</h3>
+        <p class="hint" style="margin:4px 0 10px">Katalogda va shu kategoriya mahsulotlarida o'tkazilgan vaqt.</p>
+        <div class="tbl-wrap" style="box-shadow:none"><table class="data-table" style="font-size:13.5px">
+          <thead><tr><th>Kategoriya</th><th style="text-align:right">Vaqt</th><th style="text-align:right">Katalogda</th><th style="text-align:right">Mahsulot ochildi</th><th style="text-align:right">Odam</th></tr></thead>
+          <tbody id="faCats"></tbody></table></div>
+      </div>
+      <div class="dash-card">
+        <h3>🔎 Nima qidirishdi</h3>
+        <p class="hint" style="margin:4px 0 10px">«Topilmadi» — qidiruv hech narsa bermagan. Bu do'konda yo'q, lekin so'ralayotgan narsa.</p>
+        <div class="tbl-wrap" style="box-shadow:none"><table class="data-table" style="font-size:13.5px">
+          <thead><tr><th>So'z</th><th style="text-align:right">Marta</th><th style="text-align:right">Odam</th><th style="text-align:right">Topilmadi</th></tr></thead>
+          <tbody id="faSearch"></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3>📍 Mahsulotni qayerdan ochishdi</h3>
+        <div class="hbar-list fa-wide" id="faSources" style="margin-top:12px"></div>
+      </div>
+      <div class="dash-card">
+        <h3>🧾 Rasmiylashtirish: qadamlar va xatolar</h3>
+        <div class="hbar-list fa-wide" id="faSteps" style="margin-top:12px"></div>
+        <h3 style="margin-top:18px">🚪 Saytga qanday kirishdi</h3>
+        <ul class="fa-list" id="faEntries" style="margin-top:8px"></ul>
+        <h3 style="margin-top:18px">🎮 O'yinlar</h3>
+        <ul class="fa-list" id="faGames" style="margin-top:8px"></ul>
+      </div>
+    </div>
+
+    <div class="dash-card" style="margin-bottom:16px">
+      <h3>👥 Kim qancha vaqt o'tkazyapti va nimaga qiziqyapti</h3>
+      <p class="hint" style="margin:4px 0 10px">Qatorni bosing — o'sha odamning saytdagi yo'li, ko'rgan mahsulotlari va qidiruvlari ochiladi.</p>
+      <div class="tbl-wrap" style="box-shadow:none"><table class="data-table" style="font-size:13.5px">
+        <thead><tr><th>Mijoz</th><th>Telefon</th><th style="text-align:right">Saytda vaqt</th><th style="text-align:right">Tashrif</th>
+          <th style="text-align:right">Oxirgi marta</th><th style="text-align:right">Mahsulot ko'rdi</th><th style="text-align:right">Savatga</th>
+          <th style="text-align:right">Buyurtma</th><th>Qiziqishi</th></tr></thead>
+        <tbody id="faPeople"></tbody></table></div>
+    </div>
+
+    <div class="dash-card" style="margin-bottom:16px">
+      <h3>📅 Saytda kunlar bo'yicha vaqt</h3>
+      <div class="fa-days" id="faSiteDays" style="margin-top:10px"></div>
+      <div class="fa-axis" id="faSiteDaysAxis"></div>
+    </div>
+
+    <h2 class="fa-sec">🤖 Bot va sayt: umumiy faollik</h2>
+    <div class="kpi-grid" id="faActKpis"></div>
+    <div class="dash-card" style="margin-bottom:16px">
+      <h3>📅 Har kuni nechta odam faol (19.07 dan)</h3>
+      <p class="hint" style="margin:4px 0 10px">Botda tugma bosgan, xabar yozgan yoki mahsulot ochgan, saytda biror narsa qilgan odamlar. Yashil ustun — o'sha kuni yangilanish yoki e'lon chiqqan.</p>
+      <div class="fa-days" id="faActDays"></div>
+      <div class="fa-axis" id="faActAxis"></div>
+    </div>
+    <div class="dash-card" style="margin-bottom:16px">
+      <h3>🔁 Yangilanishdan oldingi va keyingi 7 kun (kunlik o'rtacha)</h3>
+      <p class="hint" style="margin:4px 0 10px">Bir haftada bir nechta yangilanish chiqqanda natijani bittasiga bog'lab bo'lmaydi.</p>
+      <div class="tbl-wrap" style="box-shadow:none"><table class="data-table" style="font-size:13.5px">
+        <thead><tr><th>Sana</th><th>Nima chiqdi</th><th style="text-align:right">Faol odam</th><th style="text-align:right">Buyurtma</th><th style="text-align:right">Yangi odam</th><th style="text-align:right">Keyin</th></tr></thead>
+        <tbody id="faEvents"></tbody></table></div>
+    </div>
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3>👆 Botda eng ko'p bosilgan tugmalar</h3>
+        <div class="period-switch" id="faBtnPeriod" style="margin:10px 0">
+          <button data-k="7d">7 kun</button>
+          <button class="active" data-k="30d">30 kun</button>
+          <button data-k="all">Hammasi</button>
+        </div>
+        <div class="hbar-list fa-wide" id="faButtons"></div>
+      </div>
+      <div class="dash-card">
+        <h3>🕐 Qaysi soatda faol (botda, 30 kun)</h3>
+        <p class="hint" style="margin:4px 0 10px">Shu soatda faol bo'lgan odamlar. E'lon va postlarni eng baland ustunlarga qo'ying.</p>
+        <div class="fa-days" id="faHours" style="height:130px"></div>
+        <div class="fa-axis" id="faHoursAxis"></div>
+      </div>
+    </div>
+  </section>
+
   <section class="view" id="view-order-costs">
     <div class="dash-card">
       <h3>🧾 Tarixiy buyurtma tannarxini tuzatish</h3>
@@ -1599,7 +1779,7 @@ $('#dashCustomDateBtn').addEventListener('click', () => {
 });
 
 /* ===== tabs ===== */
-const VIEWS=['dashboard','order-costs','courier','products','sets','promos','keto','bloggers','reklama','retention','expenses','pickup'];
+const VIEWS=['dashboard','faollik','order-costs','courier','products','sets','promos','keto','bloggers','reklama','retention','expenses','pickup'];
 function switchView(v){
   if(!VIEWS.includes(v))v='dashboard';
   if(!window.KURYER_MODE)localStorage.setItem('ketoshop_admin_view',v);
@@ -1608,7 +1788,8 @@ function switchView(v){
   // the Kanban needs the full width; every other tab keeps the 1200px column
   $('#shell').classList.toggle('wide',v==='courier');
   if(v==='courier'){loadCourier();kbPollOn();}else{kbPollOff();}
-  if(v==='dashboard')loadDashboard();
+  if(v==='dashboard'){loadDashboard();loadFaStrip();}
+  if(v==='faollik')loadFaollik();
   if(v==='order-costs')$('#orderCostId').focus();
   if(v==='products')loadProducts();
   if(v==='sets')loadSets();
@@ -2588,6 +2769,271 @@ $('#expForm').addEventListener('submit', async e => {
     btn.disabled=false;
   }
 });
+
+/* ===== faollik: bot + sayt (2026-10-18) =====
+   Egasi: "saytni har bir qismi kuzatib borilishi kerak … qaysi qismida odamlar
+   ko'proq qolib ketishyapti" va "statistikani dashboardga ham qo'sh".
+   Ma'lumot: /admin/api/site-analytics (site_events, Mini App kuzatuvi) va
+   /admin/api/activity (bot_activity + sayt). */
+let FA_PERIOD='7d', FA_BTN='30d', FA_ACT=null, FA_CATS={}, FA_PNAMES={};
+const FA_SCREENS={home:'🏠 Bosh sahifa',catalog:'🗂 Katalog',product:'📦 Mahsulot oynasi',set:"🎁 To'plam oynasi",
+  recipe:'🍳 Retsept',cart:'🛒 Savat',checkout:'🧾 Rasmiylashtirish','order-success':'✅ Buyurtma qabul qilindi',
+  cheque:'💳 Chek yuklash',fav:'❤️ Sevimlilar',profile:'👤 Profil',orders:'📋 Buyurtmalarim',games:"🎮 O'yinlar menyusi",
+  game:"🎮 O'yin",promo:'🎁 Aksiya oynasi'};
+const FA_GAMES={keto:'Keto mi, emas mi?',duel:'Qaysi birida uglevod kam?',quiz:'Keto viktorina',memory:'Juftini top'};
+const FA_ENTRIES={direct:"Menyu tugmasi / to'g'ridan",recipe:'Retsept havolasi',product:'Mahsulot havolasi',
+  game:"O'yin havolasi (Keto savol)",link:'Boshqa havola',resume:"30+ daqiqadan keyin qaytdi"};
+const FA_STEPS={map:'Xaritani ochdi',submit:"«Buyurtma berish»ni bosdi",success:'Buyurtma berildi',
+  'error:phone':'Xato: telefon raqami','error:address':'Xato: lokatsiya yuborilmagan','error:delivery':'Xato: yetkazish usuli tanlanmagan'};
+const FA_BTN_LABELS={keto_contest:"Musobaqani ko'rish (avgust)",added:"Savatga qo'shildi → Buyurtma berish / Yana qo'shish",
+  kabinetim:'Kabinetim',dq:'Keto savol javobi',fulfillment:'Yetkazib berish yoki olib ketish',loc_confirm:'Lokatsiyani tasdiqlash',
+  skip_step:"Izohni o'tkazib yuborish",order_confirm:'Buyurtmani tasdiqlash',promo:'Aksiya',
+  catalog_keep:"Katalogga o'tish (yuborilgan kartadan)",free_buy:'Bepul xarid qilish',checkout_cancel:'Rasmiylashtirishni bekor qilish',
+  'Mahsulot +/- (kartadan)':'Mahsulot sonini +/− (kartada)','Til tanlash':'Til tanlash (birinchi kirishda)'};
+// Yangilanish va e'lonlar — grafikdagi yashil ustunlar va «oldin/keyin» jadvali.
+const FA_EVENTS=[
+  ['2026-08-06',"Avgust to'lqini: referal musobaqasi"],
+  ['2026-09-17',"Oson buyurtma, savat eslatmasi, Eritritol sovg'asi"],
+  ['2026-10-02',"Shaxsiy tavsiyalar, «Bepul xarid qilish»"],
+  ['2026-10-08',"10% chegirma va hammaga e'lon"],
+  ['2026-10-13',"Saytning yangi dizayni, 100 Keto, AI sotuvchi"],
+  ['2026-10-15',"10% chegirma tugadi"],
+  ['2026-10-16',"Keto savol, «Kelganda xabar bering», Bugungi retsept"],
+  ['2026-10-18',"Eritritol sovg'asi +30 kun; saytda faollik yozuvi"],
+];
+const faN=n=>(+n||0).toLocaleString('ru-RU');
+function faDur(ms){const s=Math.round((+ms||0)/1000);if(s<60)return s+' s';const m=Math.round(s/60);if(m<60)return m+' daq';return Math.floor(m/60)+' soat '+(m%60)+' daq';}
+function faPct(a,b){return b?Math.round(a/b*100)+'%':'—';}
+function faWhen(iso){if(!iso)return '—';const d=new Date(iso.length<=10?iso+'T00:00:00Z':iso+'Z');
+  return d.toLocaleString('ru-RU',{timeZone:'Asia/Tashkent',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
+function faDay(iso){const [y,m,d]=iso.split('-');return d+'.'+m;}
+function faCat(k){return ({all:'Hammasi',discounts:'Chegirmalar',search:'Qidiruv natijalari',sets:"To'plamlar"})[k]||FA_CATS[k]||k||'—';}
+function faRef(screen,ref){
+  if(ref==null||ref==='')return '';
+  if(screen==='catalog')return faCat(ref);
+  if(screen==='product'||screen==='set')return FA_PNAMES[screen+':'+ref]||('#'+ref);
+  if(screen==='game')return FA_GAMES[ref]||ref;
+  return ref;
+}
+function faScreen(s,ref){const r=faRef(s,ref);return (FA_SCREENS[s]||s||'—')+(r?' · '+r:'');}
+function faSrc(s){
+  if(!s)return "Noma'lum";
+  if(s==='back')return 'Orqaga qaytib';
+  const i=s.indexOf(':'),a=i<0?s:s.slice(0,i),b=i<0?'':s.slice(i+1);
+  if(a==='home')return 'Bosh sahifa'+(b?' · '+({carousel:'karusel',top:'Top-3',customers:'faol mijozlar'}[b]||faCat(b)):'');
+  if(a==='catalog')return 'Katalog · '+faCat(b||'all');
+  if(a==='search')return 'Qidiruv';
+  if(a==='recipe')return 'Retsept'+(b?' · '+b:'');
+  if(a==='product'||a==='set')return 'Boshqa mahsulot oynasidan';
+  if(a==='cart_nudge')return 'Savatdagi taklif';
+  return FA_SCREENS[a]||s;
+}
+function faBars(sel,rows,color){
+  const max=Math.max(1,...rows.map(r=>r.val));
+  $(sel).innerHTML=rows.map(r=>`<div class="hbar-row" data-tip="${esc(r.tip||r.lab+': '+r.val)}">
+      <div class="hb-lab" title="${esc(r.lab)}">${esc(r.lab)}</div>
+      <div class="hb-track"><div class="hb-fill" style="width:${Math.max(2,Math.round(r.val/max*100))}%;background:${color||'var(--accent)'}"></div></div>
+      <div class="hb-val tnum">${r.show!=null?r.show:faN(r.val)}</div></div>`).join('')
+    || '<p class="hint">Hozircha ma\'lumot yo\'q.</p>';
+  bindTips(sel+' .hbar-row');
+}
+function faColumns(sel,axisSel,items){
+  if(!items.length){$(sel).innerHTML="<p class=\"hint\">Hozircha ma'lumot yo'q.</p>";if(axisSel)$(axisSel).innerHTML='';return;}
+  const max=Math.max(1,...items.map(x=>x.val));
+  $(sel).innerHTML=items.map(x=>`<div class="d${x.cls?' '+x.cls:''}" data-tip="${esc(x.tip)}"><i style="height:${Math.max(1,Math.round(x.val/max*100))}%"></i></div>`).join('');
+  bindTips(sel+' .d');
+  if(axisSel){const n=items.length,pick=n<=8?items:[items[0],items[Math.floor(n/4)],items[Math.floor(n/2)],items[Math.floor(3*n/4)],items[n-1]];
+    $(axisSel).innerHTML=pick.map(x=>`<span>${esc(x.lab)}</span>`).join('');}
+}
+const FA_FUNNEL=[['opened','Saytni ochdi'],['product','Mahsulot ochdi'],['cart_add',"Savatga qo'shdi"],['cart','Savatni ochdi'],
+  ['checkout',"Rasmiylashtirishga o'tdi"],['submit',"«Buyurtma berish»ni bosdi"],['ordered','Buyurtma berildi']];
+function faFunnel(f){
+  const top=+f.opened||0;let worst=-1,worstPct=0;
+  FA_FUNNEL.forEach(([k],i)=>{if(!i)return;const prev=+f[FA_FUNNEL[i-1][0]]||0,cur=+f[k]||0;
+    if(prev>0&&prev>cur){const p=(prev-cur)/prev;if(p>worstPct){worstPct=p;worst=i;}}});
+  $('#faFunnel').innerHTML=top?FA_FUNNEL.map(([k,lab],i)=>{
+    const v=+f[k]||0,prev=i?(+f[FA_FUNNEL[i-1][0]]||0):v,drop=i&&prev>v?prev-v:0;
+    return `<div class="fa-step${i===worst?' worst':''}"><div class="hbar-row">
+      <div class="hb-lab">${esc(lab)}</div>
+      <div class="hb-track"><div class="hb-fill" style="width:${Math.max(2,Math.round(v/top*100))}%;background:var(--accent)"></div></div>
+      <div class="hb-val tnum">${faN(v)} · ${faPct(v,top)}</div></div>
+      ${drop?`<div class="fa-drop">−${faN(drop)} (${faPct(drop,prev)}) shu yerda to'xtadi</div>`:''}</div>`;
+  }).join(''):'<p class="hint">Hozircha ma\'lumot yo\'q.</p>';
+}
+async function loadFaSite(){
+  const d=await api('/admin/api/site-analytics?period='+FA_PERIOD);
+  FA_CATS={};FA_PNAMES={};
+  (d.categories||[]).forEach(c=>{if(c.name)FA_CATS[c.key]=c.name;});
+  (d.rows||[]).forEach(r=>{if(r.name)FA_CATS[r.row]=r.name;});
+  (d.products||[]).forEach(p=>{if(p.name)FA_PNAMES[p.screen+':'+p.ref]=p.name;});
+  const s=d.summary||{},f=d.funnel||{};
+  $('#faSiteEmpty').style.display=s.sessions?'none':'';
+  $('#faSiteKpis').innerHTML=[
+    ['Odamlar',faN(s.users)],['Tashriflar',faN(s.sessions)],['Saytda jami vaqt',faDur(s.ms)],
+    ["O'rtacha tashrif (mediana)",faDur(s.median_ms)],['1 odamga',faDur(s.users?s.ms/s.users:0)],['Buyurtma berildi',faN(f.ordered)+' ta'],
+  ].map(([l,v])=>`<div class="kpi-card"><div class="lab">${l}</div><div class="val">${v}</div></div>`).join('');
+  faFunnel(f);
+  const screens=(d.screens||[]).slice().sort((a,b)=>b.exits-a.exits);
+  const sess=+s.sessions||0;
+  faBars('#faExits',screens.filter(x=>x.exits>0).map(x=>({lab:faScreen(x.screen),val:+x.exits,
+    show:`${faN(x.exits)} · ${faPct(+x.exits,+x.sessions)}`,tip:`${faScreen(x.screen)}: ${x.exits} ta tashrif shu yerda tugadi (ochganlarning ${faPct(+x.exits,+x.sessions)})`})),'var(--red)');
+  $('#faExitTop').innerHTML=(d.exits||[]).filter(x=>x.ref).slice(0,10).map(x=>`<li><span>${esc(faScreen(x.screen,x.ref))}</span><b>${faN(x.exits)}</b></li>`).join('')
+    ||'<li><span class="hint">Hozircha yo\'q</span></li>';
+  $('#faScreens').innerHTML=(d.screens||[]).slice().sort((a,b)=>b.ms-a.ms).map(x=>{const v=+x.visits||+x.sessions||0;
+    return `<tr><td>${esc(faScreen(x.screen))}</td><td class="tnum" style="text-align:right">${faN(x.visits)}</td>
+      <td class="tnum" style="text-align:right">${faN(x.users)}</td><td class="tnum" style="text-align:right">${faDur(x.ms)}</td>
+      <td class="tnum" style="text-align:right">${faDur(v?x.ms/v:0)}</td><td class="tnum" style="text-align:right">${faN(x.exits)} · ${faPct(+x.exits,+x.sessions)}</td></tr>`;}).join('')
+    ||'<tr><td colspan="6" style="color:var(--ink-3)">Ma\'lumot yo\'q</td></tr>';
+  $('#faScroll').innerHTML=(d.scroll||[]).slice().sort((a,b)=>b.n-a.n).map(x=>`<tr><td>${esc(faScreen(x.screen))}</td>
+      <td class="tnum" style="text-align:right">${faN(x.n)}</td>${['d25','d50','d75','d90'].map(k=>`<td class="tnum" style="text-align:right">${faPct(+x[k],+x.n)}</td>`).join('')}</tr>`).join('')
+    ||'<tr><td colspan="6" style="color:var(--ink-3)">Ma\'lumot yo\'q</td></tr>';
+  const homeSess=+((d.screens||[]).find(x=>x.screen==='home')||{}).sessions||0;
+  const srcMap={};(d.sources||[]).forEach(x=>srcMap[x.src]=+x.opens);
+  $('#faRows').innerHTML=(d.rows||[]).slice().sort((a,b)=>b.sessions-a.sessions).map(x=>`<tr><td>${esc(faSrc('home:'+x.row).replace('Bosh sahifa · ',''))}</td>
+      <td class="tnum" style="text-align:right">${faN(x.sessions)} · ${faPct(+x.sessions,homeSess)}</td>
+      <td class="tnum" style="text-align:right">${faN(srcMap['home:'+x.row]||0)}</td></tr>`).join('')
+    ||'<tr><td colspan="3" style="color:var(--ink-3)">Ma\'lumot yo\'q</td></tr>';
+  $('#faProducts').innerHTML=(d.products||[]).map(p=>`<tr><td class="wrap">${esc(p.name||('#'+p.ref))}${p.screen==='set'?' <span class="hint">(to\'plam)</span>':''}</td>
+      <td class="tnum" style="text-align:right">${faN(p.opens)}</td><td class="tnum" style="text-align:right">${faN(p.users)}</td>
+      <td class="tnum" style="text-align:right">${faDur(p.opens?p.ms/p.opens:p.ms)}</td><td class="tnum" style="text-align:right">${faN(p.cart_adds)}</td>
+      <td class="tnum" style="text-align:right">${faPct(+p.cart_adds,+p.opens)}</td>
+      <td class="wrap" style="font-size:12.5px;color:var(--ink-2)">${(p.sources||[]).slice(0,3).map(x=>esc(faSrc(x.src))+' ('+x.n+')').join(', ')}</td></tr>`).join('')
+    ||'<tr><td colspan="7" style="color:var(--ink-3)">Ma\'lumot yo\'q</td></tr>';
+  $('#faCats').innerHTML=(d.categories||[]).map(c=>`<tr><td>${esc(faCat(c.key))}</td><td class="tnum" style="text-align:right">${faDur(c.ms)}</td>
+      <td class="tnum" style="text-align:right">${faN(c.visits)}</td><td class="tnum" style="text-align:right">${faN(c.product_opens)}</td>
+      <td class="tnum" style="text-align:right">${faN(c.users)}</td></tr>`).join('')
+    ||'<tr><td colspan="5" style="color:var(--ink-3)">Ma\'lumot yo\'q</td></tr>';
+  $('#faSearch').innerHTML=(d.searches||[]).map(x=>`<tr><td>${esc(x.q)}</td><td class="tnum" style="text-align:right">${faN(x.times)}</td>
+      <td class="tnum" style="text-align:right">${faN(x.users)}</td><td class="tnum" style="text-align:right;${+x.empty?'color:var(--red);font-weight:700':''}">${faN(x.empty)}</td></tr>`).join('')
+    ||'<tr><td colspan="4" style="color:var(--ink-3)">Hali qidiruv yo\'q</td></tr>';
+  faBars('#faSources',(d.sources||[]).map(x=>({lab:faSrc(x.src),val:+x.opens,show:`${faN(x.opens)} · ${faN(x.users)} odam`})));
+  const steps=(d.checkout_steps||[]).slice().sort((a,b)=>(a.step.startsWith('error')-b.step.startsWith('error'))||(b.sessions-a.sessions));
+  faBars('#faSteps',steps.map(x=>({lab:FA_STEPS[x.step]||('Xato: '+x.step.replace('error:','')),val:+x.sessions,
+    show:`${faN(x.sessions)} tashrif`})),'var(--accent)');
+  $('#faEntries').innerHTML=(d.entries||[]).map(x=>`<li><span>${esc(FA_ENTRIES[x.entry]||x.entry)}</span><b>${faN(x.opens)} · ${faN(x.users)} odam</b></li>`).join('')
+    ||'<li><span class="hint">Hozircha yo\'q</span></li>';
+  $('#faGames').innerHTML=(d.games||[]).map(x=>`<li><span>${esc(FA_GAMES[x.game]||x.game)}</span><b>${faN(x.plays)} marta · ${faN(x.users)} odam</b></li>`).join('')
+    ||'<li><span class="hint">Hozircha yo\'q</span></li>';
+  $('#faPeople').innerHTML=(d.people||[]).map(u=>`<tr style="cursor:pointer" onclick="openFaUser(${u.user_id})">
+      <td>${esc(u.full_name||(u.username?'@'+u.username:'ID '+u.user_id))}</td><td>${esc(u.phone||'—')}</td>
+      <td class="tnum" style="text-align:right">${faDur(u.ms)}</td><td class="tnum" style="text-align:right">${faN(u.sessions)}</td>
+      <td class="tnum" style="text-align:right">${faWhen(u.last_seen)}</td><td class="tnum" style="text-align:right">${faN(u.product_views)}</td>
+      <td class="tnum" style="text-align:right">${faN(u.cart_adds)}</td><td class="tnum" style="text-align:right">${faN(u.orders)}</td>
+      <td class="wrap" style="font-size:12.5px">${esc([u.top_category?(u.top_category_name||faCat(u.top_category)):'',u.top_product||''].filter(Boolean).join(' · ')||'—')}</td></tr>`).join('')
+    ||'<tr><td colspan="9" style="color:var(--ink-3)">Ma\'lumot yo\'q</td></tr>';
+  faColumns('#faSiteDays','#faSiteDaysAxis',(d.daily||[]).map(x=>({val:+x.ms,lab:faDay(x.d),
+    tip:`${faDay(x.d)}: ${faN(x.users)} odam, ${faN(x.sessions)} tashrif, ${faDur(x.ms)}`})));
+}
+window.openFaUser=async function(userId){
+  const box=$('#custBody');
+  box.innerHTML='<p style="color:var(--ink-3)">Yuklanmoqda…</p>';
+  $('#custModal').classList.add('open');
+  try{
+    const d=await api('/admin/api/site-analytics/user/'+userId+'?period=90d');
+    const u=d.user||{},t=d.totals||{};
+    $('#custTitle').textContent='🖥 '+(u.full_name||(u.username?'@'+u.username:'ID '+userId));
+    const step=x=>{
+      const nm=x.name||faRef(x.screen,x.ref);
+      if(x.kind==='open')return `<span>▶ kirdi: ${esc(FA_ENTRIES[x.ref]||x.ref||'')}</span>`;
+      if(x.kind==='view')return x.src==='back'?'':`<span>${esc((FA_SCREENS[x.screen]||x.screen)+(nm?' · '+nm:''))}</span>`;
+      if(x.kind==='cart_add')return `<span class="cart">🛒 savatga: ${esc(nm||x.ref||'')}</span>`;
+      if(x.kind==='search')return `<span>🔎 «${esc(x.ref||'')}»${x.ms===0?' — topilmadi':''}</span>`;
+      if(x.kind==='fav')return `<span>❤️ ${esc(nm||'')}</span>`;
+      if(x.kind==='game')return `<span>🎮 ${esc(FA_GAMES[x.ref]||x.ref||'')}</span>`;
+      if(x.kind==='checkout'){const err=(x.ref||'').startsWith('error');return `<span class="${x.ref==='success'?'ok':err?'err':''}">🧾 ${esc(FA_STEPS[x.ref]||x.ref)}</span>`;}
+      return '';
+    };
+    box.innerHTML=`
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card"><div class="lab">Saytda vaqt (90 kun)</div><div class="val">${faDur(t.ms)}</div></div>
+        <div class="kpi-card"><div class="lab">Tashriflar</div><div class="val">${faN(t.sessions)}</div></div>
+        <div class="kpi-card"><div class="lab">Mahsulot ko'rdi</div><div class="val">${faN(t.product_views)}</div></div>
+        <div class="kpi-card"><div class="lab">Savatga qo'shdi</div><div class="val">${faN(t.cart_adds)}</div></div>
+        <div class="kpi-card"><div class="lab">Saytdan buyurtma</div><div class="val">${faN(t.orders)}</div></div>
+        <div class="kpi-card"><div class="lab">Botda harakat</div><div class="val">${faN(d.bot_taps)}</div></div>
+      </div>
+      <p style="font-size:13.5px;color:var(--ink-2);margin-bottom:12px">
+        Birinchi marta: <b>${faWhen(t.first_seen)}</b> · Oxirgi marta: <b>${faWhen(t.last_seen)}</b>
+        ${u.phone?' · 📞 <b>'+esc(u.phone)+'</b>':''}
+        ${u.username?' · 💬 <a href="https://t.me/'+esc(u.username)+'" target="_blank">@'+esc(u.username)+'</a>':''}</p>
+      <h3 style="margin:6px 0 8px">Nimaga qiziqadi (vaqt bo'yicha)</h3>
+      <div class="hbar-list fa-wide" id="faUserCats"></div>
+      <h3 style="margin:16px 0 8px">Ko'rgan mahsulotlari</h3>
+      <div class="tbl-wrap"><table class="data-table" style="font-size:13.5px">
+        <thead><tr><th>Mahsulot</th><th style="text-align:right">Ochdi</th><th style="text-align:right">Qaradi</th><th style="text-align:right">Savatga</th></tr></thead>
+        <tbody>${(d.products||[]).map(p=>`<tr><td>${esc(p.name||('#'+p.ref))}</td><td class="tnum" style="text-align:right">${faN(p.opens)}</td>
+          <td class="tnum" style="text-align:right">${faDur(p.ms)}</td><td class="tnum" style="text-align:right">${p.cart_adds?'✅ '+p.cart_adds:'—'}</td></tr>`).join('')
+          ||'<tr><td colspan="4" style="color:var(--ink-3)">Mahsulot ochmagan</td></tr>'}</tbody></table></div>
+      ${(d.searches||[]).length?`<h3 style="margin:16px 0 8px">Qidiruvlari</h3><div class="fa-path">${d.searches.map(x=>`<span>🔎 «${esc(x.q)}»${x.results===0?' — topilmadi':''}</span>`).join('')}</div>`:''}
+      <h3 style="margin:16px 0 8px">Oxirgi tashriflari: qadamma-qadam</h3>
+      ${(d.sessions||[]).map(se=>`<div style="font-size:13px;color:var(--ink-2)"><b>${faWhen(se.started)}</b> · ${faDur(se.ms)}</div>
+        <div class="fa-path">${se.steps.map(step).join('')||'<span>—</span>'}</div>`).join('')||'<p class="hint">Saytga hali kirmagan.</p>'}`;
+    faBars('#faUserCats',(d.categories||[]).map(c=>({lab:c.name||faCat(c.key),val:+c.ms,show:faDur(c.ms)})));
+  }catch(err){
+    box.innerHTML='<p style="color:var(--red)">⚠️ '+esc(err.message)+'</p>';
+  }
+};
+function faAvg(days,from,to){const rows=days.filter(x=>x.date>=from&&x.date<=to);const n=rows.length;
+  const avg=k=>n?rows.reduce((a,x)=>a+(+x[k]||0),0)/n:0;return {n,active:avg('active_users'),orders:avg('orders'),fresh:avg('new_users')};}
+function faShift(iso,days){const d=new Date(iso+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);}
+function faCmp(b,a){const f=v=>(Math.round(v*10)/10).toLocaleString('ru-RU');
+  if(!b)return `${f(b)} → <b>${f(a)}</b>`;const p=Math.round((a-b)/b*100);
+  const col=p>=10?'var(--green)':p<=-10?'var(--red)':'var(--ink-3)';
+  return `${f(b)} → <b>${f(a)}</b> <span style="color:${col};font-weight:700">${p>0?'+':''}${p}%</span>`;}
+function faRenderButtons(){
+  $$('#faBtnPeriod button').forEach(x=>x.classList.toggle('active',x.dataset.k===FA_BTN));
+  const rows=((FA_ACT&&FA_ACT.top_buttons&&FA_ACT.top_buttons[FA_BTN])||[]).slice(0,15);
+  faBars('#faButtons',rows.map(r=>({lab:FA_BTN_LABELS[r.action]||r.action,val:+r.taps,show:`${faN(r.taps)} · ${faN(r.users)} odam`})));
+}
+async function loadFaActivity(){
+  const d=FA_ACT=await api('/admin/api/activity');
+  const days=d.days||[],last=days[days.length-1]||{},T=d.totals||{};
+  $('#faActKpis').innerHTML=[
+    ['Bugun faol odam',faN(last.active_users)],['7 kunda faol',faN((T['7d']||{}).active_users)],
+    ['30 kunda faol',faN((T['30d']||{}).active_users)],['19.07 dan beri',faN((T.all||{}).active_users)],
+    ['Bugun buyurtma',faN(last.orders)+' ta'],['Bugun yangi odam',faN(last.new_users)],
+  ].map(([l,v])=>`<div class="kpi-card"><div class="lab">${l}</div><div class="val">${v}</div></div>`).join('');
+  const ev={};FA_EVENTS.forEach(([dt,txt])=>ev[dt]=txt);
+  faColumns('#faActDays','#faActAxis',days.map(x=>({val:+x.active_users,lab:faDay(x.date),cls:ev[x.date]?'ev':'',
+    tip:`${faDay(x.date)}: ${x.active_users} faol odam (botda ${x.bot_users}${x.site_users?', saytda '+x.site_users:''}), ${x.bot_taps} bosish, ${x.orders} buyurtma, ${x.new_users} yangi${ev[x.date]?' — '+ev[x.date]:''}`})));
+  const yesterday=faShift(d.today,-1);
+  $('#faEvents').innerHTML=FA_EVENTS.slice().reverse().map(([dt,txt])=>{
+    const b=faAvg(days,faShift(dt,-7),faShift(dt,-1)),a=faAvg(days,dt,[faShift(dt,6),yesterday].sort()[0]);
+    return `<tr><td class="tnum">${faDay(dt)}</td><td class="wrap">${esc(txt)}</td>
+      ${a.n?`<td class="tnum" style="text-align:right">${faCmp(b.active,a.active)}</td><td class="tnum" style="text-align:right">${faCmp(b.orders,a.orders)}</td>
+      <td class="tnum" style="text-align:right">${faCmp(b.fresh,a.fresh)}</td>`:'<td colspan="3" style="text-align:right;color:var(--ink-3)">hali erta</td>'}
+      <td class="tnum" style="text-align:right">${a.n} kun</td></tr>`;}).join('');
+  faRenderButtons();
+  const hrs=d.hours_30d||[];const topH=hrs.slice().sort((a,b)=>b.users-a.users).slice(0,4).map(h=>h.hour);
+  faColumns('#faHours',null,hrs.map(h=>({val:+h.users,cls:topH.includes(h.hour)?'top ev':'',tip:`${String(h.hour).padStart(2,'0')}:00 — ${h.users} odam, ${h.events} harakat`})));
+  $('#faHoursAxis').innerHTML=['0','6','12','18','23'].map(x=>`<span>${x}:00</span>`).join('');
+}
+async function loadFaollik(){
+  await Promise.all([
+    loadFaSite().catch(e=>toast('⚠️ Sayt: '+e.message)),
+    loadFaActivity().catch(e=>toast('⚠️ Faollik: '+e.message)),
+  ]);
+}
+async function loadFaStrip(){
+  try{
+    const [a,s]=await Promise.all([api('/admin/api/activity'),api('/admin/api/site-analytics?period=today')]);
+    FA_ACT=a;
+    const days=a.days||[],last=days[days.length-1]||{},sm=s.summary||{};
+    const ex=(s.screens||[]).slice().sort((x,y)=>y.exits-x.exits)[0];
+    $('#faStripKpis').innerHTML=[
+      ['Bugun faol odam (bot + sayt)',faN(last.active_users)],
+      ['7 kunda faol',faN(((a.totals||{})['7d']||{}).active_users)],
+      ['Bugun saytda',`${faN(sm.users)} odam · ${faDur(sm.ms)}`],
+      ['Bugun saytni eng ko\'p shu yerda yopishdi',ex&&ex.exits?esc(FA_SCREENS[ex.screen]||ex.screen)+' ('+ex.exits+')':'—'],
+    ].map(([l,v])=>`<div class="kpi-card"><div class="lab">${l}</div><div class="val" style="font-size:18px">${v}</div></div>`).join('');
+  }catch(e){$('#faStripKpis').innerHTML='<p class="hint">⚠️ '+esc(e.message)+'</p>';}
+}
+$$('#faSitePeriod button').forEach(b=>b.addEventListener('click',()=>{
+  $$('#faSitePeriod button').forEach(x=>x.classList.toggle('active',x===b));
+  FA_PERIOD=b.dataset.period;loadFaSite().catch(e=>toast('⚠️ '+e.message));
+}));
+$$('#faBtnPeriod button').forEach(b=>b.addEventListener('click',()=>{FA_BTN=b.dataset.k;faRenderButtons();}));
+$('#faStripBtn').addEventListener('click',()=>switchView('faollik'));
 
 /* ===== blogerlar =====
    Hamkor blogerlar: shaxsiy havola -> taklif qilingan mijozlar -> har bir

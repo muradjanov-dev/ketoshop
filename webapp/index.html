@@ -4275,6 +4275,147 @@ let ketoRate = 0;
 let searchTimeout = null;
 let favorites = JSON.parse(localStorage.getItem('ketoshop_fav') || '{}'); // { productId: { product data } }
 let homeProductsCache = {}; // { catKey: products[] }
+// ===== SITE ANALYTICS (owner, 2026-10-18) =====
+// "Saytni har bir qismi kuzatib borilishi kerak … qaysi qismida odamlar
+// ko'proq qolib ketishyapti": which screen the buyer is on and for how long
+// (only while the app is on screen), where each product was opened from,
+// how far down every screen was scrolled, which home rows came into view,
+// searches, cart adds, favourites, games and the checkout steps. Batched to
+// /api/track every 15 s and whenever the app is hidden. Fire-and-forget:
+// tracking never waits on the network and never breaks the shop.
+const Trk = (() => {
+  const SCROLLED = new Set(['home', 'catalog', 'product', 'set', 'recipe', 'fav', 'cart', 'checkout', 'orders', 'profile', 'games', 'game', 'promo']);
+  const MODAL_EL = { product: 'detail-modal', set: 'detail-modal', recipe: 'recipe-modal', promo: 'promo-modal' };
+  const newSid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  let sid = newSid();
+  const q = [];
+  let base = { s: 'home', r: null };
+  const stack = [];                       // open windows over the page, top last
+  let cur = null, since = 0, depth = 0, depthSent = false, hiddenAt = 0;
+  let lastTap = null, lastTapAt = 0, io = null, rowSeen = new Set();
+  const observed = new WeakSet();
+  const shown = () => !document.hidden;
+
+  function push(k, s, r, f, ms) {
+    const e = { k };
+    if (s != null) e.s = String(s);
+    if (r != null && r !== '') e.r = String(r).slice(0, 80);
+    if (f) e.f = String(f).slice(0, 48);
+    if (ms != null && isFinite(ms)) e.ms = Math.max(0, Math.round(ms));
+    q.push(e);
+    if (q.length >= 40) flush();
+  }
+  function book() {                       // the visible time on the current screen so far
+    if (!cur || !since) return;
+    const ms = performance.now() - since;
+    since = shown() ? performance.now() : 0;
+    if (ms >= 500) push('time', cur.s, cur.r, null, Math.min(ms, 300000));
+  }
+  function sendDepth() {
+    if (cur && SCROLLED.has(cur.s) && depth > 0 && !depthSent) push('scroll', cur.s, cur.r, null, depth);
+    depthSent = true;
+  }
+  function windowDepth() {
+    const el = document.scrollingElement || document.documentElement;
+    if (!el || el.scrollHeight <= 0) return 0;
+    return Math.round(Math.min(1, (window.scrollY + window.innerHeight) / el.scrollHeight) * 100);
+  }
+  function enter(scr, back) {
+    if (cur && cur.s === scr.s && String(cur.r) === String(scr.r)) return;
+    book(); sendDepth();
+    cur = scr; since = shown() ? performance.now() : 0; depthSent = false;
+    depth = stack.length ? 0 : windowDepth();
+    push('view', scr.s, scr.r, back ? 'back' : scr.f);
+  }
+  const top = () => stack[stack.length - 1] || base;
+  function isOpen(m) {
+    if (MODAL_EL[m.s]) { const el = document.getElementById(MODAL_EL[m.s]); return !!(el && el.classList.contains('show')); }
+    if (m.s === 'game') { const el = document.getElementById('page-games'); return base.s === 'games' && !!(el && el.classList.contains('playing')); }
+    return true;
+  }
+  function prune() {                      // drop windows that closed without telling us
+    for (let i = stack.length - 1; i >= 0; i--) if (!isOpen(stack[i])) stack.splice(i, 1);
+  }
+  function srcOf() {
+    const el = Date.now() - lastTapAt < 4000 ? lastTap : null;
+    if (el && el.closest) {
+      const row = el.closest('[data-row]');
+      if (row) return 'home:' + row.dataset.row;
+      if (el.closest('#recipe-modal')) { const r = stack.find(m => m.s === 'recipe'); return 'recipe' + (r && r.r ? ':' + r.r : ''); }
+      if (el.closest('#detail-modal')) return 'product';
+      if (el.closest('#page-catalog')) {
+        const qv = (document.getElementById('catalog-search') || {}).value || '';
+        return qv.trim().length >= 2 ? 'search' : 'catalog:' + (base.s === 'catalog' && base.r ? base.r : 'all');
+      }
+      const pg = el.closest('.page');
+      if (pg && pg.id) return pg.id.replace('page-', '');
+    }
+    const t = top();
+    return t.s + (t.r ? ':' + t.r : '');
+  }
+  function flush() {
+    if (!q.length) return;
+    const ev = q.splice(0, 60);
+    try {
+      fetch('/api/track', { method: 'POST', headers: apiHeaders(), keepalive: true,
+                            body: JSON.stringify({ sid, ev }) }).catch(() => {});
+    } catch (_) {}
+  }
+  document.addEventListener('pointerdown', e => { lastTap = e.target; lastTapAt = Date.now(); }, { capture: true, passive: true });
+  document.addEventListener('scroll', e => {
+    const t = e.target === document ? (document.scrollingElement || document.documentElement) : e.target;
+    if (!t || !(t.scrollHeight - t.clientHeight > 4)) return;          // sideways rows don't count
+    const pct = Math.round(Math.min(1, (t.scrollTop + t.clientHeight) / t.scrollHeight) * 100);
+    if (pct > depth) depth = pct;
+  }, { capture: true, passive: true });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { book(); sendDepth(); hiddenAt = Date.now(); flush(); return; }
+    if (hiddenAt && Date.now() - hiddenAt > 30 * 60 * 1000) {        // back after 30+ min: a new visit
+      sid = newSid(); rowSeen = new Set();
+      push('open', null, 'resume', tg.platform || '');
+      const s = cur; cur = null; if (s) enter(s);
+    }
+    since = performance.now();
+  });
+  window.addEventListener('pagehide', () => { book(); sendDepth(); flush(); });
+  setInterval(() => { if (shown()) { book(); flush(); } }, 15000);
+
+  return {
+    start(entry) { push('open', null, entry, tg.platform || ''); enter(top()); },
+    page(p, r) { prune(); base = { s: p, r: r == null ? null : r }; if (!stack.length) enter(base); },
+    cat(key) { if (base.s !== 'catalog') return; base = { s: 'catalog', r: key }; prune(); if (!stack.length) enter(base); },
+    open(s, r, f) {
+      prune();
+      const m = { s, r: r == null ? null : r, f: f || srcOf() };
+      const t = stack[stack.length - 1];
+      if (t && MODAL_EL[t.s] && MODAL_EL[t.s] === MODAL_EL[s]) stack.pop();   // same window, new content
+      stack.push(m); enter(m);
+    },
+    close(s) {
+      const hit = m => (s === 'detail' ? (m.s === 'product' || m.s === 'set') : m.s === s);
+      let i = stack.length - 1;
+      while (i >= 0 && !hit(stack[i])) i--;
+      if (i < 0) return;
+      stack.splice(i, 1); prune(); enter(top(), true);
+    },
+    from() { const m = stack.find(x => x.s === 'product' || x.s === 'set'); return m ? m.f : srcOf(); },
+    ev: push,
+    rows(root) {
+      if (!root || !window.IntersectionObserver) return;
+      io = io || new IntersectionObserver(es => es.forEach(e => {
+        if (!e.isIntersecting) return;
+        const k = e.target.dataset.row;
+        io.unobserve(e.target);
+        if (!rowSeen.has(k)) { rowSeen.add(k); push('row', 'home', k); }
+      }), { threshold: 0.4 });
+      const els = [...root.querySelectorAll('[data-row]')];
+      if (root.dataset && root.dataset.row) els.push(root);
+      els.forEach(el => { if (!observed.has(el)) { observed.add(el); io.observe(el); } });
+    },
+  };
+})();
+function trk(fn) { try { fn(); } catch (_) {} }
+
 let activePage = 'home';
 
 // ===== TAB NAVIGATION =====
@@ -4292,6 +4433,7 @@ function switchPage(page) {
   if (page === 'orders') loadOrdersPage();
   if (page === 'games') renderGamesPage();
 
+  trk(() => Trk.page(page, page === 'catalog' ? currentCat : null));
   updateBackButton();
 }
 
@@ -4442,6 +4584,7 @@ function renderGamesTeaser() {
 
 function renderGamesPage() {
   gameState = null;
+  trk(() => Trk.close('game'));
   const page = document.getElementById('page-games');
   page.classList.remove('playing');
   document.getElementById('games-title').textContent = gx("Bilim o'yinlari", 'Игры знаний');
@@ -4460,6 +4603,7 @@ function openGame(id) {
   if (activePage !== 'games') switchPage('games');
   document.getElementById('page-games').classList.add('playing');
   ({ keto: startKetoGame, duel: startDuelGame, quiz: startQuizGame, memory: startMemoryGame })[id]();
+  trk(() => Trk.open('game', id));
   window.scrollTo(0, 0);
 }
 
@@ -4762,6 +4906,7 @@ function flipMemory(k) {
 // ── Result screen ────────────────────────────────────────────────────
 function finishGame(id, value, total) {
   if (!gameState || gameState.id !== id) return;
+  trk(() => Trk.ev('game', 'game', id, null, value));
   gameState.finished = true;
   const record = saveGameBest(id, value);
   let big, msg, great;
@@ -4968,6 +5113,12 @@ async function checkStartGate(manual) {
     const access = await fetch('/api/bot-access', { headers: apiHeaders() }).then(r => r.json());
     if (access && access.ok === false) { showStartGate(access.bot); return; }
   } catch (_) { /* network trouble — carry on; the server still guards every call */ }
+  trk(() => {
+    const sp = (tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '';
+    const qs = new URLSearchParams(location.search);
+    Trk.start((qs.get('recipe') || sp.startsWith('recipe-')) ? 'recipe'
+      : qs.get('product') ? 'product' : qs.get('game') ? 'game' : sp ? 'link' : 'direct');
+  });
 
   // Reconcile the server-saved language preference in the background; only
   // re-render text if it actually differs from our local guess.
@@ -5156,6 +5307,7 @@ function renderPromoBanners() {
 
 function openPromoSheet() {
   if (!promo || !promo.active) return;
+  trk(() => Trk.open('promo', promo.name));
   document.getElementById('promo-sheet-title').textContent = '🎁 ' + promo.name;
 
   const img = document.getElementById('promo-sheet-img');
@@ -5194,6 +5346,7 @@ function openPromoSheet() {
 
 function closePromoSheet() {
   document.getElementById('promo-modal').classList.remove('show');
+  trk(() => Trk.close('promo'));
 }
 
 /** 🎁 pill for a product card — p.bonus is the server-rendered rule line. */
@@ -5275,6 +5428,7 @@ async function openRecipe(slug) {
   renderRecipe(r);
   try { tg.expand(); } catch (_) {}
   document.getElementById('recipe-modal').classList.add('show');
+  trk(() => Trk.open('recipe', r && r.slug));
   updateBackButton();
 }
 
@@ -5324,6 +5478,7 @@ async function recipeToCart(slug, btn) {
   if (btn) btn.disabled = true;
   try {
     const res = await api('/api/recipes/' + encodeURIComponent(slug) + '/cart', { method: 'POST' });
+    trk(() => Trk.ev('cart_add', 'recipe', slug, 'recipe', res.added.length));
     let msg = res.added.length ? L.added.replace('{n}', res.added.length) : L.already;
     if (res.missing.length) msg += ' · ' + L.missing.replace('{names}', res.missing.join(', '));
     showToast(msg, false, 3500);
@@ -5338,6 +5493,7 @@ async function recipeToCart(slug, btn) {
 
 function closeRecipe() {
   document.getElementById('recipe-modal').classList.remove('show');
+  trk(() => Trk.close('recipe'));
   updateBackButton();
 }
 
@@ -5372,12 +5528,16 @@ async function renderHomePage() {
     // All-products carousel — auto-rotating, above the banners: the first
     // thing on the page is the whole catalogue moving by.
     if (Array.isArray(allProducts) && allProducts.length) {
-      topSlot.appendChild(buildAutoCarousel(allProducts));
+      const auto = buildAutoCarousel(allProducts);
+      trk(() => { auto.dataset.row = 'carousel'; });
+      topSlot.appendChild(auto);
     }
 
     // Top-3 most-ordered products — podium just below the all-products carousel.
     if (Array.isArray(topProducts) && topProducts.length) {
-      container.appendChild(buildPodium(topProducts));
+      const podium = buildPodium(topProducts);
+      trk(() => { podium.dataset.row = 'top'; });
+      container.appendChild(podium);
     }
 
     results.forEach(({ cat, products, total }) => {
@@ -5386,6 +5546,7 @@ async function renderHomePage() {
 
       const section = document.createElement('div');
       section.className = 'home-section';
+      section.dataset.row = cat.key;
 
       // Section header
       const header = document.createElement('div');
@@ -5409,11 +5570,15 @@ async function renderHomePage() {
       container.appendChild(section);
     });
 
+    trk(() => { Trk.rows(topSlot); Trk.rows(container); });
+
     // Most-active-customers podium — marketing hook so buyers compete for a spot.
     // A little confetti burst the first time it scrolls into view.
     if (Array.isArray(topCustomers) && topCustomers.length) {
       const podiumSection = buildCustomerPodium(topCustomers);
       container.appendChild(podiumSection);
+      podiumSection.dataset.row = 'customers';
+      trk(() => Trk.rows(podiumSection));
       const io = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
@@ -5680,6 +5845,7 @@ function selectCategory(key) {
   const activeTab = document.querySelector('#categories .cat-tab.active');
   if (activeTab) activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
   document.getElementById('catalog-search').value = '';
+  trk(() => Trk.cat(key));
   loadProducts();
 }
 
@@ -5820,6 +5986,7 @@ document.getElementById('catalog-search').addEventListener('input', function(e) 
 
     try {
       const products = await api('/api/search?q=' + encodeURIComponent(q));
+      trk(() => { Trk.cat('search'); Trk.ev('search', 'catalog', q, null, products.length); });
       loading.style.display = 'none';
       if (products.length === 0) {
         empty.style.display = 'block';
@@ -5841,6 +6008,7 @@ document.getElementById('catalog-search').addEventListener('input', function(e) 
 
 // ===== PRODUCT DETAIL =====
 async function openDetail(productId, isSet = false) {
+  trk(() => Trk.open(isSet ? 'set' : 'product', productId));
   // The product opens over the whole window — make sure the Mini App
   // itself is expanded too, even if the buyer had collapsed it.
   try { tg.expand(); } catch (_) {}
@@ -6070,6 +6238,7 @@ async function deleteReview(reviewId, productId) {
 function closeDetail() {
   document.getElementById('detail-modal').classList.remove('show');
   currentProduct = null;
+  trk(() => Trk.close('detail'));
   updateBackButton();
 }
 
@@ -6130,6 +6299,7 @@ async function restockWait() {
 }
 
 function toggleFav(product) {
+  trk(() => Trk.ev('fav', 'product', product.id, favorites[product.id] ? 'remove' : 'add'));
   if (favorites[product.id]) {
     delete favorites[product.id];
   } else {
@@ -6182,6 +6352,7 @@ async function addToCart() {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+    trk(() => Trk.ev('cart_add', currentProduct.is_set ? 'set' : 'product', currentProduct.id, Trk.from()));
     closeDetail();
     await loadCart();
     if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
@@ -6349,6 +6520,7 @@ function renderCartPage() {
               quantity: parseFloat(btn.dataset.qty) || 1,
             }),
           });
+          trk(() => Trk.ev('cart_add', 'product', btn.dataset.add, 'cart_nudge'));
           await loadCart();
         } catch (err) {
           console.error(err);
@@ -6812,6 +6984,7 @@ function _addTileLayer(map, providerIdx) {
 }
 
 function openMapPicker() {
+  trk(() => Trk.ev('checkout', 'checkout', 'map'));
   if (!window.L || typeof window.L.map !== 'function') {
     // Leaflet itself didn't load. Show a clear in-app message rather than
     // a toast, since the user explicitly asked for this feature.
@@ -6959,6 +7132,7 @@ function ensureBotCanWrite() {
 }
 
 async function submitOrder() {
+  trk(() => Trk.ev('checkout', 'checkout', 'submit'));
   const phone = document.getElementById('inp-phone').value.trim();
   const lat = document.getElementById('inp-lat').value;
   const lng = document.getElementById('inp-lng').value;
@@ -6976,6 +7150,7 @@ async function submitOrder() {
     err.className = 'checkout-error';
     err.textContent = t.errorPhone;
     document.getElementById('inp-phone').after(err);
+    trk(() => Trk.ev('checkout', 'checkout', 'error:phone'));
     return;
   }
   if (modeState.locationRequired && (!lat || !lng)) {
@@ -6983,12 +7158,14 @@ async function submitOrder() {
     err.className = 'checkout-error';
     err.textContent = t.errorAddress;
     document.getElementById('btn-get-location').after(err);
+    trk(() => Trk.ev('checkout', 'checkout', 'error:address'));
     return;
   }
 
   const deliveryMethod = modeState.deliveryMethod || document.querySelector('.del-opt[data-method].active')?.dataset.method;
   if (!isPickup && !deliveryMethod) {
     showToast(t.errorDelivery, true);
+    trk(() => Trk.ev('checkout', 'checkout', 'error:delivery'));
     return;
   }
 
@@ -7044,8 +7221,10 @@ async function submitOrder() {
     }
 
     if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+    trk(() => Trk.ev('checkout', 'checkout', 'success', result.awaiting_cheque ? 'card' : 'cash'));
   } catch(e) {
     console.error('Checkout error:', e);
+    trk(() => Trk.ev('checkout', 'checkout', 'error:' + ((e && e.body && e.body.error) || (e && e.status) || 'network')));
     if (e && e.body && e.body.error === 'outside_uzbekistan') {
       const err = document.createElement('div');
       err.className = 'checkout-error';
