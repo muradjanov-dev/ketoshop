@@ -1838,6 +1838,11 @@ async def api_site_feedback(request: web.Request):
     if not site_feedback.allow(user_id):
         return _json({"ok": True, "duplicate": True})
     rating, comment = parsed
+    try:
+        import database
+        await database.save_site_feedback(user_id, rating, comment, request.get("user_lang", "uz"))
+    except Exception:
+        logger.exception("Site feedback could not be stored")
     text = site_feedback.admin_text(request.get("telegram_user"), user_id, rating, comment,
                                     request.get("user_lang", "uz"))
     await site_feedback.notify_admins(request.app["bot"], text)

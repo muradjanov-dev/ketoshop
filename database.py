@@ -250,6 +250,19 @@ async def init_db():
             )
         """)
 
+        # The Mini App's «sayt qulaymi?» sheet (site_feedback.py) — stored
+        # from 2026-10-18; before that it only reached the admins' Telegram.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS site_feedback (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                rating INTEGER CHECK (rating >= 1 AND rating <= 5),   -- NULL: comment only
+                comment TEXT,
+                lang TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # The Mini App's counterpart (2026-10-18): one row per thing a buyer
         # did in the shop — opened it, opened a product, added to cart,
         # ordered… (activity._SITE_ACTIONS). Before this the site left no
@@ -8207,6 +8220,56 @@ async def get_all_reviews() -> list[dict]:
             _customer_filter_ids(),
         )
         return [dict(r) for r in rows]
+
+
+async def save_site_feedback(user_id: int, rating: int, comment: str, lang: str) -> None:
+    """The Mini App's «sayt qulaymi?» stars + comment (site_feedback.py).
+    Until 2026-10-18 these only went to the admins' Telegram. Rating 0 means
+    "comment only, no stars" and is stored as NULL."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO site_feedback (user_id, rating, comment, lang) VALUES ($1, $2, $3, $4)",
+            user_id, rating or None, comment or None, lang,
+        )
+
+
+async def get_feedback_overview() -> dict:
+    """Every product review, site rating and NPS answer, newest first, with
+    who left it — for the admin «💬 Izohlar» tab. `internal` marks admin /
+    shop accounts; `asked_why` marks a low rating the bot already asked
+    about (review_followup.py)."""
+    internal = _customer_filter_ids()
+
+    def rows(rs):
+        return [{k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(r).items()} for r in rs]
+
+    async with pool.acquire() as conn:
+        reviews = await conn.fetch(
+            """SELECT r.id, r.rating, r.comment, r.created_at, r.user_id, r.order_id,
+                      p.id AS product_id, p.name AS product_name, p.category,
+                      u.full_name, u.username, u.phone,
+                      r.user_id = ANY($1::bigint[]) AS internal,
+                      (f.review_id IS NOT NULL) AS asked_why
+                 FROM reviews r
+                 LEFT JOIN products p ON p.id = r.product_id
+                 LEFT JOIN users u ON u.user_id = r.user_id
+                 LEFT JOIN review_followups f ON f.review_id = r.id
+                ORDER BY r.created_at DESC, r.id DESC""", internal)
+        site = await conn.fetch(
+            """SELECT s.id, s.rating, s.comment, s.lang, s.created_at, s.user_id,
+                      u.full_name, u.username, u.phone,
+                      s.user_id = ANY($1::bigint[]) AS internal
+                 FROM site_feedback s LEFT JOIN users u ON u.user_id = s.user_id
+                ORDER BY s.created_at DESC, s.id DESC""", internal)
+        nps = await conn.fetch(
+            """SELECT n.id, n.score, n.comment, n.created_at, n.user_id,
+                      u.full_name, u.username, u.phone,
+                      n.user_id = ANY($1::bigint[]) AS internal
+                 FROM nps_responses n LEFT JOIN users u ON u.user_id = n.user_id
+                ORDER BY n.created_at DESC, n.id DESC""", internal)
+        site_since = await conn.fetchval("SELECT MIN(created_at) FROM site_feedback")
+    return {"reviews": rows(reviews), "site": rows(site), "nps": rows(nps),
+            "site_since": site_since.isoformat() if site_since else None}
 
 
 async def get_low_reviews_to_follow_up(max_rating: int, lookback_days: int,
