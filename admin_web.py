@@ -1028,6 +1028,21 @@ async def api_activity(request: web.Request):
 
 
 @require_auth
+async def api_site_analytics(request: web.Request):
+    """GET /admin/api/site-analytics?period=today|7d|30d|90d — read-only:
+    how the Mini App is used (database.get_site_analytics)."""
+    return _json(await database.get_site_analytics(request.query.get("period", "7d")))
+
+
+@require_auth
+async def api_site_user(request: web.Request):
+    """GET /admin/api/site-analytics/user/{id}?period=… — one buyer's Mini App
+    profile (database.get_site_user)."""
+    return _json(await database.get_site_user(int(request.match_info["user_id"]),
+                                              request.query.get("period", "90d")))
+
+
+@require_auth
 async def api_dashboard(request: web.Request):
     """Aggregated snapshot for the visual dashboard tab (2026-08-12): KPIs for
     the selected period, a 6-month revenue/orders trend, best sellers, and a
@@ -1804,6 +1819,8 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/dashboard", api_dashboard)
     app.router.add_get("/admin/api/reviews", api_reviews)
     app.router.add_get("/admin/api/activity", api_activity)
+    app.router.add_get("/admin/api/site-analytics", api_site_analytics)
+    app.router.add_get("/admin/api/site-analytics/user/{user_id:\\d+}", api_site_user)
     app.router.add_get("/admin/api/promos", api_promos_list)
     app.router.add_post("/admin/api/promos", api_promos_create)
     app.router.add_post("/admin/api/promos/{id:\\d+}", api_promos_update)

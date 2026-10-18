@@ -235,6 +235,21 @@ async def init_db():
             )
         """)
 
+        # Mini App analytics (2026-10-18) — see insert_site_events.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS site_events (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                session_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                screen TEXT,
+                ref TEXT,
+                src TEXT,
+                ms INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # The Mini App's counterpart (2026-10-18): one row per thing a buyer
         # did in the shop — opened it, opened a product, added to cart,
         # ordered… (activity._SITE_ACTIONS). Before this the site left no
@@ -692,6 +707,9 @@ async def init_db():
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_bot_activity_time ON bot_activity(created_at)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_bot_activity_kind_time ON bot_activity(kind, created_at)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_site_activity_time ON site_activity(created_at)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_site_events_time ON site_events(created_at)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_site_events_user ON site_events(user_id, created_at)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_site_events_session ON site_events(session_id)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_nps_responses_user ON nps_responses(user_id)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_products_seller ON products(seller_id)")
@@ -4369,6 +4387,292 @@ async def log_site_activity(user_id: int, action: str) -> None:
         await conn.execute(
             "INSERT INTO site_activity (user_id, action) VALUES ($1, $2)", user_id, action,
         )
+
+
+# ─────────────── Mini App analytics (owner, 2026-10-18) ───────────────────────
+# One row per thing the Mini App reports through POST /api/track (the tracker
+# in webapp/index.html): kind = open | view | time | scroll | row | search |
+# cart_add | fav | checkout | game. screen = home, catalog, product, set,
+# recipe, cart, checkout, games, game, fav, profile, orders, promo…;
+# ref = the product / set / category / recipe / game / query; src = where a
+# product was opened from ('home:<row>', 'catalog:<cat>', 'search', 'recipe:…',
+# 'back' for a return to the page under a closed window); ms = visible time
+# on the screen (time), deepest scroll % (scroll) or the result count (search).
+
+async def insert_site_events(user_id: int, session_id: str, rows: list[tuple]) -> None:
+    async with pool.acquire() as conn:
+        await conn.executemany(
+            """INSERT INTO site_events (user_id, session_id, kind, screen, ref, src, ms)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+            [(user_id, session_id, *r) for r in rows],
+        )
+
+
+SITE_PERIODS = {"today": 0, "7d": 7, "30d": 30, "90d": 90}
+
+
+def _site_since(period: str):
+    """Naive-UTC start of the period: Tashkent midnight for 'today'."""
+    from datetime import datetime, timedelta
+    now_local = datetime.utcnow() + timedelta(hours=DISPLAY_TZ_OFFSET_HOURS)
+    days = SITE_PERIODS.get(period, 7)
+    if days == 0:
+        start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        start_local = now_local - timedelta(days=days)
+    return start_local - timedelta(hours=DISPLAY_TZ_OFFSET_HOURS)
+
+
+_SITE_E = """WITH e AS (SELECT * FROM site_events
+                         WHERE created_at >= $2 AND user_id <> ALL($1::bigint[]))"""
+
+
+async def get_site_analytics(period: str = "7d") -> dict:
+    """Everything the admin "Faollik" tab shows about the Mini App for the
+    period: totals, per day, per screen (visits, time, where sessions end),
+    the path to an order, scroll depth, home rows, products (opened from
+    where, time on the card, added to cart), categories, searches, checkout
+    steps, games and the people who spend the most time. Admin and shop
+    accounts are left out."""
+    ex = _activity_excluded_ids()
+    since = _site_since(period)
+    E = _SITE_E
+    async with pool.acquire() as conn:
+        summary = await conn.fetchrow(f"""{E},
+            s AS (SELECT session_id, MIN(user_id) AS user_id,
+                         COALESCE(SUM(ms) FILTER (WHERE kind = 'time'), 0) AS ms
+                    FROM e GROUP BY session_id)
+            SELECT COUNT(DISTINCT user_id) AS users, COUNT(*) AS sessions,
+                   COALESCE(SUM(ms), 0) AS ms,
+                   COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY ms), 0) AS median_ms
+              FROM s""", ex, since)
+        daily = await conn.fetch(f"""{E}
+            SELECT (created_at + make_interval(hours => $3))::date AS d,
+                   COUNT(DISTINCT user_id) AS users, COUNT(DISTINCT session_id) AS sessions,
+                   COALESCE(SUM(ms) FILTER (WHERE kind = 'time'), 0) AS ms
+              FROM e GROUP BY d ORDER BY d""", ex, since, DISPLAY_TZ_OFFSET_HOURS)
+        screens = await conn.fetch(f"""{E}
+            SELECT screen,
+                   COUNT(*) FILTER (WHERE kind = 'view' AND COALESCE(src, '') <> 'back') AS visits,
+                   COUNT(DISTINCT session_id) FILTER (WHERE kind = 'view') AS sessions,
+                   COUNT(DISTINCT user_id) FILTER (WHERE kind = 'view') AS users,
+                   COALESCE(SUM(ms) FILTER (WHERE kind = 'time'), 0) AS ms
+              FROM e WHERE screen IS NOT NULL AND kind IN ('view', 'time')
+             GROUP BY screen""", ex, since)
+        exits = await conn.fetch(f"""{E}
+            SELECT screen, ref, COUNT(*) AS exits FROM (
+                SELECT DISTINCT ON (session_id) session_id, screen, ref
+                  FROM e WHERE kind IN ('view', 'time') AND screen IS NOT NULL
+                 ORDER BY session_id, created_at DESC, id DESC) x
+             GROUP BY screen, ref ORDER BY exits DESC""", ex, since)
+        funnel = await conn.fetchrow(f"""{E}
+            SELECT COUNT(DISTINCT session_id) AS opened,
+                   COUNT(DISTINCT session_id) FILTER (WHERE kind = 'view' AND screen IN ('product', 'set')) AS product,
+                   COUNT(DISTINCT session_id) FILTER (WHERE kind = 'cart_add') AS cart_add,
+                   COUNT(DISTINCT session_id) FILTER (WHERE kind = 'view' AND screen = 'cart') AS cart,
+                   COUNT(DISTINCT session_id) FILTER (WHERE kind = 'view' AND screen = 'checkout') AS checkout,
+                   COUNT(DISTINCT session_id) FILTER (WHERE kind = 'checkout' AND ref = 'submit') AS submit,
+                   COUNT(DISTINCT session_id) FILTER (WHERE kind = 'checkout' AND ref = 'success') AS ordered
+              FROM e""", ex, since)
+        scroll = await conn.fetch(f"""{E}
+            SELECT screen, COUNT(*) AS n,
+                   COUNT(*) FILTER (WHERE ms >= 25) AS d25, COUNT(*) FILTER (WHERE ms >= 50) AS d50,
+                   COUNT(*) FILTER (WHERE ms >= 75) AS d75, COUNT(*) FILTER (WHERE ms >= 90) AS d90
+              FROM e WHERE kind = 'scroll' GROUP BY screen""", ex, since)
+        rows = await conn.fetch(f"""{E}
+            SELECT e.ref AS row, MAX(c.name_uz) AS name, COUNT(DISTINCT e.session_id) AS sessions
+              FROM e LEFT JOIN categories c ON c.key = e.ref
+             WHERE e.kind = 'row' GROUP BY e.ref""", ex, since)
+        sources = await conn.fetch(f"""{E}
+            SELECT COALESCE(src, '') AS src, COUNT(*) AS opens, COUNT(DISTINCT user_id) AS users
+              FROM e WHERE kind = 'view' AND screen IN ('product', 'set')
+             GROUP BY 1 ORDER BY opens DESC""", ex, since)
+        products = await conn.fetch(f"""{E}
+            SELECT e.screen, e.ref,
+                   COUNT(*) FILTER (WHERE e.kind = 'view' AND COALESCE(e.src, '') <> 'back') AS opens,
+                   COUNT(DISTINCT e.user_id) FILTER (WHERE e.kind = 'view') AS users,
+                   COALESCE(SUM(e.ms) FILTER (WHERE e.kind = 'time'), 0) AS ms,
+                   COUNT(*) FILTER (WHERE e.kind = 'cart_add') AS cart_adds,
+                   COALESCE(MAX(p.name), MAX(ps.name)) AS name, MAX(p.category) AS category
+              FROM e
+              LEFT JOIN products p ON e.screen = 'product' AND p.id::text = e.ref
+              LEFT JOIN product_sets ps ON e.screen = 'set' AND ps.id::text = e.ref
+             WHERE e.screen IN ('product', 'set') AND e.kind IN ('view', 'time', 'cart_add')
+             GROUP BY e.screen, e.ref ORDER BY opens DESC, ms DESC LIMIT 80""", ex, since)
+        product_src = await conn.fetch(f"""{E}
+            SELECT screen, ref, COALESCE(src, '') AS src, COUNT(*) AS n
+              FROM e WHERE kind = 'view' AND screen IN ('product', 'set') AND COALESCE(src, '') <> 'back'
+             GROUP BY 1, 2, 3""", ex, since)
+        categories = await conn.fetch(f"""{E},
+            t AS (SELECT CASE WHEN e.screen = 'catalog' THEN e.ref ELSE p.category END AS key,
+                         e.screen, e.kind, e.user_id, e.ms, e.src
+                    FROM e LEFT JOIN products p ON e.screen = 'product' AND p.id::text = e.ref
+                   WHERE e.screen IN ('catalog', 'product') AND e.kind IN ('view', 'time'))
+            SELECT t.key, MAX(c.name_uz) AS name,
+                   COUNT(*) FILTER (WHERE t.screen = 'catalog' AND t.kind = 'view' AND COALESCE(t.src, '') <> 'back') AS visits,
+                   COUNT(*) FILTER (WHERE t.screen = 'product' AND t.kind = 'view' AND COALESCE(t.src, '') <> 'back') AS product_opens,
+                   COUNT(DISTINCT t.user_id) AS users,
+                   COALESCE(SUM(t.ms) FILTER (WHERE t.kind = 'time'), 0) AS ms
+              FROM t LEFT JOIN categories c ON c.key = t.key
+             WHERE t.key IS NOT NULL GROUP BY t.key ORDER BY ms DESC""", ex, since)
+        searches = await conn.fetch(f"""{E}
+            SELECT lower(ref) AS q, COUNT(*) AS times, COUNT(DISTINCT user_id) AS users,
+                   COUNT(*) FILTER (WHERE ms = 0) AS empty
+              FROM e WHERE kind = 'search' AND ref IS NOT NULL
+             GROUP BY lower(ref) ORDER BY times DESC LIMIT 50""", ex, since)
+        steps = await conn.fetch(f"""{E}
+            SELECT ref AS step, COUNT(DISTINCT session_id) AS sessions, COUNT(*) AS times
+              FROM e WHERE kind = 'checkout' AND ref IS NOT NULL GROUP BY ref""", ex, since)
+        games = await conn.fetch(f"""{E}
+            SELECT ref AS game, COUNT(*) AS plays, COUNT(DISTINCT user_id) AS users
+              FROM e WHERE kind = 'game' GROUP BY ref""", ex, since)
+        entries = await conn.fetch(f"""{E}
+            SELECT COALESCE(ref, 'direct') AS entry, COUNT(*) AS opens, COUNT(DISTINCT user_id) AS users
+              FROM e WHERE kind = 'open' GROUP BY 1 ORDER BY opens DESC""", ex, since)
+        people = await conn.fetch(f"""{E},
+            u AS (SELECT user_id, COALESCE(SUM(ms) FILTER (WHERE kind = 'time'), 0) AS ms,
+                         COUNT(DISTINCT session_id) AS sessions, MAX(created_at) AS last_seen,
+                         COUNT(*) FILTER (WHERE kind = 'view' AND screen IN ('product', 'set')
+                                          AND COALESCE(src, '') <> 'back') AS product_views,
+                         COUNT(*) FILTER (WHERE kind = 'cart_add') AS cart_adds,
+                         COUNT(*) FILTER (WHERE kind = 'checkout' AND ref = 'success') AS orders
+                    FROM e GROUP BY user_id ORDER BY ms DESC LIMIT 150),
+            cat AS (SELECT DISTINCT ON (user_id) user_id, key FROM (
+                      SELECT e.user_id, CASE WHEN e.screen = 'catalog' THEN e.ref ELSE p.category END AS key,
+                             SUM(e.ms) AS ms
+                        FROM e LEFT JOIN products p ON e.screen = 'product' AND p.id::text = e.ref
+                       WHERE e.kind = 'time' AND e.screen IN ('catalog', 'product')
+                       GROUP BY 1, 2) x
+                     WHERE key IS NOT NULL AND key NOT IN ('all', 'search')
+                     ORDER BY user_id, ms DESC),
+            prod AS (SELECT DISTINCT ON (user_id) user_id, ref FROM (
+                       SELECT user_id, ref, SUM(ms) AS ms FROM e
+                        WHERE kind = 'time' AND screen = 'product' GROUP BY 1, 2) y
+                      ORDER BY user_id, ms DESC)
+            SELECT u.*, us.full_name, us.username, us.phone,
+                   cat.key AS top_category, c.name_uz AS top_category_name, p.name AS top_product
+              FROM u LEFT JOIN users us ON us.user_id = u.user_id
+              LEFT JOIN cat ON cat.user_id = u.user_id
+              LEFT JOIN categories c ON c.key = cat.key
+              LEFT JOIN prod ON prod.user_id = u.user_id
+              LEFT JOIN products p ON p.id::text = prod.ref
+             ORDER BY u.ms DESC""", ex, since)
+
+    def plain(rs):
+        out = []
+        for r in rs:
+            d = {}
+            for k, v in dict(r).items():
+                d[k] = v.isoformat() if hasattr(v, "isoformat") else (float(v) if hasattr(v, "as_integer_ratio") and not isinstance(v, int) else v)
+            out.append(d)
+        return out
+
+    srcs: dict = {}
+    for r in product_src:
+        srcs.setdefault((r["screen"], r["ref"]), []).append({"src": r["src"], "n": int(r["n"])})
+    product_rows = plain(products)
+    for p in product_rows:
+        p["sources"] = sorted(srcs.get((p["screen"], p["ref"]), []), key=lambda x: -x["n"])[:4]
+    exit_by_screen: dict = {}
+    for r in exits:
+        exit_by_screen[r["screen"]] = exit_by_screen.get(r["screen"], 0) + int(r["exits"])
+    screen_rows = plain(screens)
+    for s in screen_rows:
+        s["exits"] = exit_by_screen.get(s["screen"], 0)
+    return {
+        "period": period if period in SITE_PERIODS else "7d",
+        "since": since.isoformat(),
+        "summary": {k: (float(v) if k == "median_ms" else int(v or 0)) for k, v in dict(summary).items()},
+        "daily": plain(daily),
+        "screens": screen_rows,
+        "exits": plain(exits[:25]),
+        "funnel": {k: int(v or 0) for k, v in dict(funnel).items()},
+        "scroll": plain(scroll),
+        "rows": plain(rows),
+        "sources": plain(sources),
+        "products": product_rows,
+        "categories": plain(categories),
+        "searches": plain(searches),
+        "checkout_steps": plain(steps),
+        "games": plain(games),
+        "entries": plain(entries),
+        "people": plain(people),
+    }
+
+
+async def get_site_user(user_id: int, period: str = "90d") -> dict:
+    """One buyer's Mini App profile for the admin: totals, what they look at
+    most (categories, products, searches) and their last sessions step by
+    step, with names in place of ids."""
+    since = _site_since(period)
+    async with pool.acquire() as conn:
+        user = await conn.fetchrow(
+            "SELECT user_id, full_name, username, phone, language, created_at FROM users WHERE user_id = $1", user_id)
+        totals = await conn.fetchrow("""
+            SELECT COALESCE(SUM(ms) FILTER (WHERE kind = 'time'), 0) AS ms,
+                   COUNT(DISTINCT session_id) AS sessions, MIN(created_at) AS first_seen, MAX(created_at) AS last_seen,
+                   COUNT(*) FILTER (WHERE kind = 'view' AND screen IN ('product', 'set') AND COALESCE(src, '') <> 'back') AS product_views,
+                   COUNT(*) FILTER (WHERE kind = 'cart_add') AS cart_adds,
+                   COUNT(*) FILTER (WHERE kind = 'checkout' AND ref = 'success') AS orders
+              FROM site_events WHERE user_id = $1 AND created_at >= $2""", user_id, since)
+        bot_taps = await conn.fetchval(
+            "SELECT COUNT(*) FROM bot_activity WHERE user_id = $1 AND created_at >= $2", user_id, since)
+        cats = await conn.fetch("""
+            SELECT t.key, MAX(c.name_uz) AS name, COALESCE(SUM(t.ms), 0) AS ms FROM (
+                SELECT CASE WHEN e.screen = 'catalog' THEN e.ref ELSE p.category END AS key, e.ms
+                  FROM site_events e LEFT JOIN products p ON e.screen = 'product' AND p.id::text = e.ref
+                 WHERE e.user_id = $1 AND e.created_at >= $2 AND e.kind = 'time'
+                   AND e.screen IN ('catalog', 'product')) t
+              LEFT JOIN categories c ON c.key = t.key
+             WHERE t.key IS NOT NULL AND t.key NOT IN ('all', 'search')
+             GROUP BY t.key ORDER BY ms DESC LIMIT 10""", user_id, since)
+        prods = await conn.fetch("""
+            SELECT e.screen, e.ref, COALESCE(MAX(p.name), MAX(ps.name)) AS name,
+                   COUNT(*) FILTER (WHERE e.kind = 'view' AND COALESCE(e.src, '') <> 'back') AS opens,
+                   COALESCE(SUM(e.ms) FILTER (WHERE e.kind = 'time'), 0) AS ms,
+                   COUNT(*) FILTER (WHERE e.kind = 'cart_add') AS cart_adds
+              FROM site_events e
+              LEFT JOIN products p ON e.screen = 'product' AND p.id::text = e.ref
+              LEFT JOIN product_sets ps ON e.screen = 'set' AND ps.id::text = e.ref
+             WHERE e.user_id = $1 AND e.created_at >= $2 AND e.screen IN ('product', 'set')
+               AND e.kind IN ('view', 'time', 'cart_add')
+             GROUP BY e.screen, e.ref ORDER BY ms DESC, opens DESC LIMIT 20""", user_id, since)
+        searches = await conn.fetch("""
+            SELECT ref AS q, ms AS results, created_at FROM site_events
+             WHERE user_id = $1 AND created_at >= $2 AND kind = 'search'
+             ORDER BY created_at DESC LIMIT 20""", user_id, since)
+        sessions = await conn.fetch("""
+            SELECT session_id, MIN(created_at) AS started, MAX(created_at) AS ended,
+                   COALESCE(SUM(ms) FILTER (WHERE kind = 'time'), 0) AS ms
+              FROM site_events WHERE user_id = $1 AND created_at >= $2
+             GROUP BY session_id ORDER BY started DESC LIMIT 12""", user_id, since)
+        steps = await conn.fetch("""
+            SELECT e.session_id, e.created_at, e.kind, e.screen, e.ref, e.src, e.ms,
+                   COALESCE(p.name, ps.name, c.name_uz) AS name
+              FROM site_events e
+              LEFT JOIN products p ON e.screen = 'product' AND p.id::text = e.ref
+              LEFT JOIN product_sets ps ON e.screen = 'set' AND ps.id::text = e.ref
+              LEFT JOIN categories c ON e.screen = 'catalog' AND c.key = e.ref
+             WHERE e.user_id = $1 AND e.session_id = ANY($2::text[])
+               AND e.kind IN ('open', 'view', 'cart_add', 'search', 'checkout', 'fav', 'game')
+             ORDER BY e.created_at, e.id""", user_id, [s["session_id"] for s in sessions])
+
+    def iso(v):
+        return v.isoformat() if hasattr(v, "isoformat") else v
+
+    path: dict = {}
+    for r in steps:
+        path.setdefault(r["session_id"], []).append({k: iso(v) for k, v in dict(r).items() if k != "session_id"})
+    return {
+        "user": {k: iso(v) for k, v in dict(user).items()} if user else {"user_id": user_id},
+        "totals": {k: iso(v) if not isinstance(v, int) else v for k, v in dict(totals).items()},
+        "bot_taps": int(bot_taps or 0),
+        "categories": [{"key": r["key"], "name": r["name"], "ms": int(r["ms"])} for r in cats],
+        "products": [{k: iso(v) for k, v in dict(r).items()} for r in prods],
+        "searches": [{k: iso(v) for k, v in dict(r).items()} for r in searches],
+        "sessions": [{"started": iso(s["started"]), "ended": iso(s["ended"]), "ms": int(s["ms"]),
+                      "steps": path.get(s["session_id"], [])[:60]} for s in sessions],
+    }
 
 
 _ACTIVITY_DAY_KEYS = (
