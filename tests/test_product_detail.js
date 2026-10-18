@@ -6,7 +6,7 @@ const source = html.slice(html.indexOf('async function openDetail('), html.index
 async function check(outOfStock) {
  const nodes = new Map([...html.matchAll(/id="([^"]+)"/g)].map(m => [m[1], {style:{},classList:{add(v){this[v]=true},toggle(){}},parentElement:{classList:{toggle(){}}}}]));
  const errors=[];
- const context = {tg:{expand(){}}, api:async()=>({id:10,name:'Bodom uni 1000gr',price:170000,unit:'piece',out_of_stock:outOfStock,media:[]}), document:{getElementById:id=>nodes.get(id)||null},t:{perUnit:'{unit}',backBtn:'Orqaga',addToCart:'Savatga',soonTitle0:'Kutilmoqda',soonText0:'Tez orada'},priceHtml:()=> '170000',ketoBadgeHtml:()=>'',favorites:{},SOLD_OUT_NOTES:1,paintRestockBtn(){},updateBackButton(){},loadProductReviews(){},console:{error(...args){errors.push(args)}},showToast(){}};
+ const context = {tg:{expand(){}}, trk(){}, api:async()=>({id:10,name:'Bodom uni 1000gr',price:170000,unit:'piece',out_of_stock:outOfStock,media:[]}), document:{getElementById:id=>nodes.get(id)||null},t:{perUnit:'{unit}',backBtn:'Orqaga',addToCart:'Savatga',soonTitle0:'Kutilmoqda',soonText0:'Tez orada'},priceHtml:()=> '170000',ketoBadgeHtml:()=>'',favorites:{},SOLD_OUT_NOTES:1,paintRestockBtn(){},updateBackButton(){},loadProductReviews(){},console:{error(...args){errors.push(args)}},showToast(){}};
  vm.createContext(context); vm.runInContext(source, context); await context.openDetail(10);
  assert.equal(errors.length,0,errors.map(a=>a.map(String).join(' ')).join('\n'));
  assert.equal(nodes.get('detail-modal').classList.show,true,'product detail must open');
