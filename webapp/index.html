@@ -3806,7 +3806,7 @@ const L = {
     chequeUploadError: 'Chekni yuborib bo\'lmadi. Qayta urinib ko\'ring.',
     chequeFileTooLarge: 'Fayl juda katta (10MB chegarasi)',
     chequePayLater: 'Botga qaytib to\'layman',
-    errorPhone: 'Telefon raqamni kiriting (masalan: +998901234567)',
+    errorPhone: 'Telefon raqamini tekshiring (masalan: 90 123 45 67)',
     errorAddress: 'Joylashuvni yuboring',
     errorOutsideUzbekistan: 'Joylashuvingiz O\'zbekistondan tashqarida. Biz faqat O\'zbekiston bo\'ylab yetkazib beramiz. Iltimos, O\'zbekiston ichidagi joylashuvni kiriting.',
     errorStockGone: '🏃‍♀️ Voy, ulgurmay qoldik! Savatingizdagi bir mahsulotni boshqa keto-ixlosmand sizdan bir qadam oldin olib ketdi. Savatingizni yangiladik — bir ko\'z tashlab, qayta urinib ko\'ring 🛒',
@@ -4005,7 +4005,7 @@ const L = {
     chequeUploadError: 'Не удалось отправить чек. Попробуйте снова.',
     chequeFileTooLarge: 'Файл слишком большой (лимит 10 МБ)',
     chequePayLater: 'Оплачу через бот',
-    errorPhone: 'Введите номер телефона (например: +998901234567)',
+    errorPhone: 'Проверьте номер телефона (например: 90 123 45 67)',
     errorAddress: 'Отправьте местоположение',
     errorOutsideUzbekistan: 'Ваша локация за пределами Узбекистана. Мы доставляем только по Узбекистану. Пожалуйста, укажите локацию в пределах Узбекистана.',
     errorStockGone: '🏃‍♀️ Ой, не успели! Один товар из вашей корзины только что забрал другой любитель кето. Мы обновили корзину — загляните в неё и попробуйте ещё раз 🛒',
@@ -7131,9 +7131,39 @@ function ensureBotCanWrite() {
   });
 }
 
+// Uzbek phone as buyers type it: "90 123 45 67", "+998 (90) 123-45-67",
+// "8 90 1234567"… → "+998901234567", or null. Same rule as phone_utils.py on
+// the server (2026-10-21: the strict "+998…" check turned most real numbers
+// away and the buyer only saw a button that "didn't work").
+function normalizeUzPhone(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.length === 9) d = '998' + d;
+  else if (d.length === 10 && d[0] === '8') d = '998' + d.slice(1);
+  return /^998\d{9}$/.test(d) ? '+' + d : null;
+}
+
+// A checkout mistake is shown where the buyer is looking: the field it is
+// about comes into view (and the keyboard, for the phone), and a toast says
+// what to fix — the note under a field far up the page went unseen.
+function showCheckoutFieldError(fieldId, message, focus) {
+  const field = document.getElementById(fieldId);
+  const err = document.createElement('div');
+  err.className = 'checkout-error';
+  err.textContent = message;
+  if (field) {
+    field.after(err);
+    try { field.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { field.scrollIntoView(); }
+    if (focus) setTimeout(() => { try { field.focus({ preventScroll: true }); } catch (_) {} }, 350);
+  }
+  showToast(message, true, 4000);
+  try { tg.HapticFeedback.notificationOccurred('error'); } catch (_) {}
+}
+
 async function submitOrder() {
   trk(() => Trk.ev('checkout', 'checkout', 'submit'));
-  const phone = document.getElementById('inp-phone').value.trim();
+  const phoneInput = document.getElementById('inp-phone');
+  const phone = normalizeUzPhone(phoneInput.value);
   const lat = document.getElementById('inp-lat').value;
   const lng = document.getElementById('inp-lng').value;
   const modeState = window.ketoshopPickupState(pickupConfig.enabled, pickupMode, Boolean(lat && lng));
@@ -7144,20 +7174,14 @@ async function submitOrder() {
   document.querySelectorAll('.checkout-error').forEach(e => e.remove());
 
   // Validate
-  const phoneClean = phone.replace(/[\s-]/g, '');
-  if (!phoneClean.match(/^\+?998\d{9}$/)) {
-    const err = document.createElement('div');
-    err.className = 'checkout-error';
-    err.textContent = t.errorPhone;
-    document.getElementById('inp-phone').after(err);
+  if (!phone) {
+    showCheckoutFieldError('inp-phone', t.errorPhone, true);
     trk(() => Trk.ev('checkout', 'checkout', 'error:phone'));
     return;
   }
+  phoneInput.value = phone;                    // show the buyer the number we'll use
   if (modeState.locationRequired && (!lat || !lng)) {
-    const err = document.createElement('div');
-    err.className = 'checkout-error';
-    err.textContent = t.errorAddress;
-    document.getElementById('btn-get-location').after(err);
+    showCheckoutFieldError('btn-get-location', t.errorAddress, false);
     trk(() => Trk.ev('checkout', 'checkout', 'error:address'));
     return;
   }
