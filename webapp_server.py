@@ -819,7 +819,8 @@ async def api_checkout(request: web.Request):
     lang = request.get("user_lang", "uz")
     body = await request.json()
 
-    phone = (body.get("phone") or "").strip()
+    from phone_utils import normalize_uz_phone
+    phone = normalize_uz_phone(body.get("phone"))
     address = (body.get("address") or "").strip()
     latitude = body.get("latitude")
     longitude = body.get("longitude")
@@ -830,7 +831,7 @@ async def api_checkout(request: web.Request):
     # 📝 note alongside. Capped to 500 to match the bot's note flow.
     address_note = (body.get("address_note") or "").strip()[:500] or None
 
-    if not phone or not re.match(r'^\+?998\d{9}$', phone.replace(" ", "").replace("-", "")):
+    if not phone:
         return _json({"error": "invalid_phone"}, status=400)
     pickup_snapshot = {"pickup_map_url": None}
     from handlers.cart import verify_uzbekistan, get_location_address_text, delivery_fee_for, _is_tashkent
