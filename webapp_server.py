@@ -42,6 +42,7 @@ from config import BOT_TOKEN, ITEMS_PER_PAGE, SUPPORT_USERNAME, PAYMENT_CARD_NUM
 from database import (
     get_products_by_category, get_discounted_products, get_product, search_products,
     get_top_ordered_products, get_top_active_customers, get_all_products_paginated,
+    get_popular_products,
     get_cart, add_to_cart, remove_from_cart, clear_cart,
     get_cart_item, set_cart_quantity,
     get_delivery_zones, get_product_rating, get_product_media,
@@ -484,6 +485,28 @@ async def api_top(request: web.Request):
         products = await get_top_ordered_products(limit=3)
         _TOP_CACHE.clear()
         _TOP_CACHE[day] = products
+    return _json(await _serialize_products(products, lang, request.get("user_id")))
+
+
+# Ten minutes: the ranking barely moves within a day, but the row only shows
+# products in stock, so a sold-out one should leave it soon. Price, discount
+# and holds are applied per request by _serialize_products.
+_POPULAR_CACHE: dict[int, list] = {}
+POPULAR_CACHE_SECONDS = 600
+
+
+async def api_popular(request: web.Request):
+    """«🔥 Ko'p olinadi» — the home row with a one-tap «+ Savatga»
+    (database.get_popular_products): most site visitors never open a single
+    product, so the bestsellers can go into the cart from the home page."""
+    lang = request.get("user_lang", "uz")
+    import time
+    bucket = int(time.time() // POPULAR_CACHE_SECONDS)
+    products = _POPULAR_CACHE.get(bucket)
+    if products is None:
+        products = await get_popular_products(limit=10)
+        _POPULAR_CACHE.clear()
+        _POPULAR_CACHE[bucket] = products
     return _json(await _serialize_products(products, lang, request.get("user_id")))
 
 
@@ -1874,6 +1897,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/restock-wait", api_restock_wait)
     app.router.add_get("/api/top", api_top)
+    app.router.add_get("/api/popular", api_popular)
     app.router.add_get("/api/leaderboard", api_leaderboard)
     app.router.add_get("/api/product/{id}", api_product_detail)
     app.router.add_get("/api/set/{id}", api_set_detail)
