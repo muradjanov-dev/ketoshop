@@ -3740,8 +3740,9 @@ function initLeafMagnetPhysics(holder) {
 // wants every buyer to see.
 const Butterfly = (() => {
   const CALM_PAGES = ['home', 'catalog', 'fav', 'profile', 'games', 'orders'];
-  const FIRST_DELAY = [7000, 14000];
-  const NEXT_DELAY = [40000, 80000];
+  // Twice as often as first shipped (owner, 2026-10-22: "juda kam chiqyapti").
+  const FIRST_DELAY = [3500, 7000];
+  const NEXT_DELAY = [20000, 40000];
   const RETRY_DELAY = [8000, 15000];
   const SVG =
     '<svg viewBox="-50 -40 100 80">' +
