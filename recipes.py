@@ -45,8 +45,9 @@ LABELS = {
     "add_all_sub": {"uz": "Ketoshop mahsulotlari — har biridan 1 qadoq",
                     "ru": "Продукты Ketoshop — по 1 упаковке"},
     # The bar pinned to the bottom of the recipe (2026-10-22): the add-all
-    # button used to sit mid-page and was almost never pressed.
-    "bar_title": {"uz": "Shu retsept uchun hammasi", "ru": "Всё для этого рецепта"},
+    # button used to sit mid-page and was almost never pressed. Not "hammasi"
+    # (everything): eggs, water and the like come from home (owner).
+    "bar_title": {"uz": "Retseptdagi Ketoshop mahsulotlari", "ru": "Продукты Ketoshop из рецепта"},
     "bar_count": {"uz": "{n} ta mahsulot, har biridan 1 qadoq",
                   "ru": "Товаров: {n}, по 1 упаковке"},
     "bar_btn": {"uz": "🛒 Savatga", "ru": "🛒 В корзину"},
