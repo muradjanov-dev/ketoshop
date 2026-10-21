@@ -5078,6 +5078,66 @@ async def get_top_ordered_products(limit: int = 3, days: int = 30,
 LEADERBOARD_EXCLUDED_USER_IDS = {425609051, 6950127923}
 
 
+def popular_ranking(rows) -> list[int]:
+    """Product ids by how many retail orders carried them, most first.
+
+    «🔥 Ko'p olinadi» answers "what do people buy most often", so an order
+    counts once per product however much it held: the podium's quantity sum
+    let one bulk line or a flour sold by the kilo outrank what many buyers
+    take. B2B sales are wholesale, not storefront demand, and the shop's own
+    accounts place test orders. A manual order is a real phone customer (its
+    user_id is the admin who typed it in), so it counts. Ties go to the
+    larger quantity."""
+    orders: dict[int, int] = {}
+    qty: dict[int, float] = {}
+    for r in rows:
+        source = r["source"] or "bot"
+        if source == "b2b":
+            continue
+        if source != "manual" and r["user_id"] in LEADERBOARD_EXCLUDED_USER_IDS:
+            continue
+        raw = r["items"]
+        items = json.loads(raw) if isinstance(raw, str) else raw
+        seen: set[int] = set()
+        for it in (items or []):
+            pid = it.get("product_id")
+            if pid is None or pid in seen:
+                continue
+            seen.add(pid)
+            orders[pid] = orders.get(pid, 0) + 1
+            try:
+                qty[pid] = qty.get(pid, 0.0) + float(it.get("quantity", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+    return sorted(orders, key=lambda pid: (-orders[pid], -qty.get(pid, 0.0)))
+
+
+async def get_popular_products(limit: int = 10, days: int = 30) -> list[dict]:
+    """The Mini App's «🔥 Ko'p olinadi» row (2026-10-22): in-stock retail
+    products ranked by popular_ranking over the last `days`. The row has a
+    one-tap «+ Savatga», so sold-out and wholesale-only products stay out."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT items, user_id, source FROM orders
+                WHERE status <> 'cancelled'
+                  AND created_at >= CURRENT_TIMESTAMP - ($1 || ' days')::interval""",
+            str(int(days)),
+        )
+        ranked = popular_ranking(rows)
+        if not ranked:
+            return []
+        fetched = await conn.fetch(
+            """SELECT p.*, u.full_name as seller_name, u.username as seller_username
+               FROM products p JOIN users u ON p.seller_id = u.user_id
+               WHERE p.is_active = 1 AND p.quantity > 0
+                 AND NOT COALESCE(p.b2b_only, FALSE)
+                 AND p.id = ANY($1::int[])""",
+            ranked,
+        )
+        by_id = {p["id"]: dict(p) for p in fetched}
+        return [by_id[pid] for pid in ranked if pid in by_id][:limit]
+
+
 async def get_top_active_customers(days: int = 30, limit: int = 5) -> list[dict]:
     """Most-active real customers (by order count) in the last `days` days,
     for the storefront leaderboard. Excludes cancelled orders and internal

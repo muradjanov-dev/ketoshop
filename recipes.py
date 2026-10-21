@@ -44,6 +44,13 @@ LABELS = {
     "add_all": {"uz": "🛒 Barcha masalliqlarni savatga", "ru": "🛒 Все ингредиенты в корзину"},
     "add_all_sub": {"uz": "Ketoshop mahsulotlari — har biridan 1 qadoq",
                     "ru": "Продукты Ketoshop — по 1 упаковке"},
+    # The bar pinned to the bottom of the recipe (2026-10-22): the add-all
+    # button used to sit mid-page and was almost never pressed.
+    "bar_title": {"uz": "Shu retsept uchun hammasi", "ru": "Всё для этого рецепта"},
+    "bar_count": {"uz": "{n} ta mahsulot, har biridan 1 qadoq",
+                  "ru": "Товаров: {n}, по 1 упаковке"},
+    "bar_btn": {"uz": "🛒 Savatga", "ru": "🛒 В корзину"},
+    "go_cart": {"uz": "Savatni ochish →", "ru": "Открыть корзину →"},
     "steps": {"uz": "Tayyorlash", "ru": "Приготовление"},
     "tip": {"uz": "💡 Maslahat", "ru": "💡 Совет"},
     # Owner, 2026-10-13: "keyingi retsept shu sanasida e'lon qilinadi,

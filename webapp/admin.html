@@ -2878,6 +2878,8 @@ const FA_EVENTS=[
   ['2026-10-15',"10% chegirma tugadi"],
   ['2026-10-16',"Keto savol, «Kelganda xabar bering», Bugungi retsept"],
   ['2026-10-18',"Eritritol sovg'asi +30 kun; saytda faollik yozuvi"],
+  ['2026-10-21',"Telefon raqami tekshiruvi tuzatildi"],
+  ['2026-10-22',"Lokatsiya va animatsiyalar tuzatildi; «🔥 Ko'p olinadi», retsept savat paneli"],
 ];
 const faN=n=>(+n||0).toLocaleString('ru-RU');
 function faDur(ms){const s=Math.round((+ms||0)/1000);if(s<60)return s+' s';const m=Math.round(s/60);if(m<60)return m+' daq';return Math.floor(m/60)+' soat '+(m%60)+' daq';}
@@ -2898,7 +2900,7 @@ function faSrc(s){
   if(!s)return "Noma'lum";
   if(s==='back')return 'Orqaga qaytib';
   const i=s.indexOf(':'),a=i<0?s:s.slice(0,i),b=i<0?'':s.slice(i+1);
-  if(a==='home')return 'Bosh sahifa'+(b?' · '+({carousel:'karusel',top:'Top-3',customers:'faol mijozlar'}[b]||faCat(b)):'');
+  if(a==='home')return 'Bosh sahifa'+(b?' · '+({carousel:'karusel',popular:"Ko'p olinadi",top:'Top-3',customers:'faol mijozlar'}[b]||faCat(b)):'');
   if(a==='catalog')return 'Katalog · '+faCat(b||'all');
   if(a==='search')return 'Qidiruv';
   if(a==='recipe')return 'Retsept'+(b?' · '+b:'');

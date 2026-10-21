@@ -827,6 +827,22 @@
      smaller tiles and no description line so the strip stays a strip. */
   #home-top-carousel .carousel-card { width: 140px; }
   #home-top-carousel .card-desc { display: none; }
+  /* «🔥 Ko'p olinadi»: the card carries its own add button. */
+  .card-quick-add {
+    display: block;
+    width: calc(100% - 12px);
+    margin-top: 8px;
+    padding: 9px 8px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--btn-grad);
+    color: var(--btn-text);
+    font: 700 13px/1.1 var(--font-body);
+    cursor: pointer;
+    transition: transform .3s var(--ease-spring), background-color .2s;
+  }
+  .card-quick-add:active { transform: scale(.95); }
+  .card-quick-add.done { background: var(--surface-hi); color: var(--text); }
 
   /* ── Podiums ───────────────────────────────────────────────────────────
      Real pedestals under the tiles. The product podium only raises the
@@ -2961,22 +2977,36 @@
   .rm-prod-price { font-size: 13px; font-weight: 800; color: var(--link); }
   .rm-prod-out { font-size: 12px; font-weight: 700; color: var(--berry); }
   .rm-why { margin-top: 6px; font-size: 12px; line-height: 1.45; color: var(--hint); }
-  .rm-add {
-    width: 100%;
-    margin-top: 14px;
-    padding: 14px 16px;
+  /* Pinned to the bottom of the sheet while the recipe scrolls under it. */
+  .rm-cart-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--bg);
+    border-top: 1px solid var(--hairline);
+    box-shadow: 0 -10px 24px -16px rgba(0,0,0,.35);
+  }
+  .rm-cart-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; color: var(--text); }
+  .rm-cart-info b { font-size: 12.5px; font-weight: 700; }
+  .rm-cart-total { font: 800 17px/1.2 var(--font-display); letter-spacing: -.01em; }
+  .rm-cart-info small { font-size: 11px; color: var(--hint); }
+  .rm-cart-btn {
+    flex-shrink: 0;
+    padding: 12px 16px;
     border: 0;
-    border-radius: 22px 26px 20px 28px / 26px 20px 28px 22px;
+    border-radius: 18px 22px 16px 24px / 22px 16px 24px 18px;
     background: linear-gradient(135deg, #46C774, #1D8446);
     color: #fff;
-    font: 800 16px var(--font-body);
+    font: 800 14.5px var(--font-body);
     cursor: pointer;
-    box-shadow: 0 14px 26px -14px #1D8446;
     transition: transform .3s var(--ease-spring);
   }
-  .rm-add:active { transform: scale(.97); }
-  .rm-add small { display: block; margin-top: 3px; font-size: 11.5px; font-weight: 600; opacity: .9; }
-  .rm-add:disabled { opacity: .6; }
+  .rm-cart-btn:active { transform: scale(.96); }
+  .rm-cart-btn:disabled { opacity: .6; }
   .rm-steps { margin: 0; padding: 0; list-style: none; counter-reset: step; display: flex; flex-direction: column; gap: 12px; }
   .rm-steps li { position: relative; padding-left: 42px; font-size: 14px; line-height: 1.6; color: var(--text); }
   .rm-steps li::before {
@@ -3073,9 +3103,10 @@
   :root[data-site-theme="night"] .game-result::before { background: rgba(255,255,255,.04); }
 
   /* Recipe: same green, but matte. */
-  .recipe-hero .rh-cta, .rm-add { background: var(--leaf-deep); box-shadow: none; }
+  .recipe-hero .rh-cta, .rm-cart-btn { background: var(--leaf-deep); box-shadow: none; }
   :root[data-site-theme="night"] .recipe-hero .rh-cta,
-  :root[data-site-theme="night"] .rm-add { background: #5E8358; }
+  :root[data-site-theme="night"] .rm-cart-btn { background: #5E8358; }
+  .rm-cart-btn.go { background: var(--text); color: var(--bg); }
   .recipe-hero .rh-badge { background: var(--pop); box-shadow: none; }
 
   #app-toast { box-shadow: 0 8px 20px -12px rgba(0,0,0,.45); }
@@ -3721,6 +3752,9 @@ const L = {
     sectionBestsellers: 'Top mahsulotlar',
     sectionTopCustomers: 'Eng faol xaridorlar',
     sectionAllProducts: 'Barcha mahsulotlar',
+    sectionPopular: "🔥 Ko'p olinadi",
+    quickAdd: '+ Savatga',
+    quickAdded: '✓ Savatda',
     search: 'Mahsulot qidirish...',
     loading: 'Yuklanmoqda...',
     empty: 'Mahsulotlar topilmadi',
@@ -3924,6 +3958,9 @@ const L = {
     sectionBestsellers: 'Топ товаров',
     sectionTopCustomers: 'Самые активные покупатели',
     sectionAllProducts: 'Все товары',
+    sectionPopular: '🔥 Часто покупают',
+    quickAdd: '+ В корзину',
+    quickAdded: '✓ В корзине',
     search: 'Поиск товаров...',
     loading: 'Загрузка...',
     empty: 'Товары не найдены',
@@ -5485,6 +5522,25 @@ function renderRecipe(r) {
     if (i.why) html += '<div class="rm-why">' + escapeHtml(i.why) + '</div>';
     return html + '</li>';
   }).join('');
+  // One pack of each in-stock product — exactly what recipeToCart puts in.
+  // Pinned to the bottom of the sheet (2026-10-22): mid-page, under the
+  // ingredients, the add-all button was almost never pressed.
+  const seen = new Set();
+  const buy = [];
+  r.ingredients.forEach(i => {
+    const p = i.product;
+    if (p && !p.out_of_stock && !seen.has(p.id)) { seen.add(p.id); buy.push(p); }
+  });
+  const total = buy.reduce((s, p) => s + (Number(p.price) || 0), 0);
+  const cartBar = buy.length
+    ? '<div class="rm-cart-bar">' +
+        '<div class="rm-cart-info"><b>' + escapeHtml(L.bar_title) + '</b>' +
+          '<span class="rm-cart-total">' + formatPrice(total) + ' UZS</span>' +
+          '<small>' + escapeHtml(L.bar_count.replace('{n}', buy.length)) + '</small></div>' +
+        '<button class="rm-cart-btn" type="button" onclick="recipeToCart(\'' + r.slug + '\', this)">' +
+          escapeHtml(L.bar_btn) + '</button>' +
+      '</div>'
+    : '';
   document.getElementById('recipe-body').innerHTML =
     '<img class="rm-img" src="' + r.image_url + '" alt="">' +
     '<div class="rm-ai">' + escapeHtml(r.ai_note) + '</div>' +
@@ -5494,13 +5550,12 @@ function renderRecipe(r) {
       '<div class="rm-meta">' + recipeMetaHtml(r, L) + '</div>' +
       '<div class="rm-note">' + escapeHtml(L.per_serving) + '</div>' +
       '<h3>' + escapeHtml(L.ingredients) + '</h3><ul class="rm-ings">' + ings + '</ul>' +
-      '<button class="rm-add" type="button" onclick="recipeToCart(\'' + r.slug + '\', this)">' +
-        escapeHtml(L.add_all) + '<small>' + escapeHtml(L.add_all_sub) + '</small></button>' +
       '<h3>' + escapeHtml(L.steps) + '</h3><ol class="rm-steps">' +
         r.steps.map(s => '<li>' + escapeHtml(s) + '</li>').join('') + '</ol>' +
       (r.tip ? '<div class="rm-tip"><b>' + escapeHtml(L.tip) + '</b><br>' + escapeHtml(r.tip) + '</div>' : '') +
       '<div class="rm-next">' + escapeHtml(L.next.replace('{date}', recipesData.next_at)) + '</div>' +
-    '</div>';
+    '</div>' +
+    cartBar;
   document.querySelector('#recipe-modal .modal').scrollTop = 0;
 }
 
@@ -5515,6 +5570,12 @@ async function recipeToCart(slug, btn) {
     showToast(msg, false, 3500);
     try { tg.HapticFeedback.notificationOccurred('success'); } catch (_) {}
     await loadCart();
+    // The ingredients are in the cart now — the bar's next step is the cart.
+    if (btn && (res.added.length || res.already.length)) {
+      btn.textContent = L.go_cart;
+      btn.classList.add('go');
+      btn.onclick = () => { closeRecipe(); switchPage('cart'); };
+    }
   } catch (e) {
     showToast(t.errorLoad, true);
   } finally {
@@ -5545,12 +5606,13 @@ async function renderHomePage() {
         .then(data => ({ cat, products: data.products || [], total: data.total || 0 }))
         .catch(() => ({ cat, products: [], total: 0 }))
     );
-    const [topProducts, results, allProductsResp, topCustomers] = await Promise.all([
+    const [topProducts, results, allProductsResp, topCustomers, popular] = await Promise.all([
       api('/api/top').catch(() => []),
       Promise.all(promises),
       // Every product — the API caps a page at 200, well above the catalogue.
       api('/api/products?page=0&per_page=200').catch(() => ({ products: [] })),
       api('/api/leaderboard').catch(() => []),
+      api('/api/popular').catch(() => []),
     ]);
     const allProducts = allProductsResp.products || [];
 
@@ -5562,6 +5624,15 @@ async function renderHomePage() {
       const auto = buildAutoCarousel(allProducts);
       trk(() => { auto.dataset.row = 'carousel'; });
       topSlot.appendChild(auto);
+    }
+
+    // «🔥 Ko'p olinadi» right under it, still on the first screen: what
+    // people buy most, with «+ Savatga» on the card itself.
+    const popularInStock = Array.isArray(popular) ? popular.filter(p => !p.out_of_stock) : [];
+    if (popularInStock.length >= 3) {
+      const row = buildPopularRow(popularInStock);
+      trk(() => { row.dataset.row = 'popular'; });
+      topSlot.appendChild(row);
     }
 
     // Top-3 most-ordered products — podium just below the all-products carousel.
@@ -5846,6 +5917,70 @@ function buildAutoCarousel(products) {
   track.addEventListener('touchend', scheduleResume);
 
   return section;
+}
+
+// «🔥 Ko'p olinadi» (2026-10-22) — the products bought in the most orders
+// lately (database.get_popular_products), each card with its own
+// «+ Savatga»: most visitors never open a product page at all.
+function buildPopularRow(products) {
+  const section = document.createElement('div');
+  section.className = 'home-section popular-section';
+
+  const header = document.createElement('div');
+  header.className = 'section-header';
+  const title = document.createElement('div');
+  title.className = 'section-title';
+  title.textContent = t.sectionPopular;
+  header.appendChild(title);
+  section.appendChild(header);
+
+  const carousel = document.createElement('div');
+  carousel.className = 'carousel';
+  products.forEach(p => {
+    const card = createCarouselCard(p);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'card-quick-add';
+    btn.textContent = t.quickAdd;
+    btn.onclick = (e) => {
+      e.stopPropagation();  // the card itself opens the product
+      quickAddToCart(p, btn);
+    };
+    card.appendChild(btn);
+    carousel.appendChild(card);
+  });
+  section.appendChild(carousel);
+  return section;
+}
+
+// One piece straight from a card — the same rules and messages as the
+// product page's button (addToCart), without opening it.
+async function quickAddToCart(p, btn) {
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    const res = await api('/api/cart/add', {
+      method: 'POST',
+      body: JSON.stringify({ product_id: p.id, quantity: 1 })
+    });
+    trk(() => Trk.ev('cart_add', 'product', p.id, Trk.from()));
+    await loadCart();
+    try { tg.HapticFeedback.impactOccurred('light'); } catch (_) {}
+    showToast(res && res.partial ? t.addedPartly.replace('{n}', res.added) : t.addedToCart);
+    btn.textContent = t.quickAdded;
+    btn.classList.add('done');
+    setTimeout(() => {
+      btn.textContent = t.quickAdd;
+      btn.classList.remove('done');
+      btn.disabled = false;
+    }, 1800);
+  } catch (e) {
+    console.error('Quick add error:', e);
+    const reason = e && e.body && e.body.error;
+    const held = reason === 'held' && (e.body.waiting ? t.heldWaiting : t.heldLimit);
+    showToast(held || t.errorCart, true);
+    btn.disabled = false;
+  }
 }
 
 // ===== CATALOG PAGE =====
