@@ -138,7 +138,12 @@ class RecipeBarLabelsTest(unittest.TestCase):
             for key in ("bar_title", "bar_count", "bar_btn", "go_cart"):
                 self.assertTrue(labels[key], f"{lang}:{key}")
             self.assertIn("{n}", labels["bar_count"], lang)
-        self.assertEqual(recipes.labels("uz")["bar_title"], "Shu retsept uchun hammasi")
+        # Never "everything for this recipe": some ingredients come from home.
+        self.assertEqual(recipes.labels("uz")["bar_title"], "Retseptdagi Ketoshop mahsulotlari")
+        for lang in ("uz", "ru", "uz_cyr"):
+            title = recipes.labels(lang)["bar_title"].lower()
+            for word in ("hammasi", "всё", "ҳаммаси"):
+                self.assertNotIn(word, title, lang)
         self.assertIn("корзин", recipes.labels("ru")["bar_btn"])
         self.assertIn("Саватга", recipes.labels("uz_cyr")["bar_btn"])
 
