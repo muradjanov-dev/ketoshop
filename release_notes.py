@@ -27,9 +27,10 @@ logger = logging.getLogger(__name__)
 RELEASE_KEY = "2026-10-22-sayt-yangiliklari"
 TZ_OFFSET = timedelta(hours=5)
 SEND_WINDOW = (8, 22)          # never wake admins at night
-# True bypasses the daytime window (used once, 2026-09-25). Normal releases
-# keep it False so admins are never messaged at night.
-SEND_NOW = False
+# True bypasses the daytime window (used 2026-09-25, and 2026-10-22 at 03:00
+# when the owner said "hozir yubor"). Tied to this release's key, so the next
+# release is back to daytime without anyone remembering to switch it off.
+SEND_NOW = RELEASE_KEY == "2026-10-22-sayt-yangiliklari"
 CHECK_EVERY = 300
 
 NOTES = (
