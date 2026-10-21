@@ -290,6 +290,22 @@
   .organic-leaves .leaf:nth-child(4n+3) { background: var(--c-orange); }
   .organic-leaves .leaf:nth-child(4n)   { background: var(--c-berry); }
 
+  /* The monarch of Butterfly (JS): over the page, under the dock and every
+     window, never in the way of a tap. */
+  .butterfly {
+    position: fixed;
+    left: -29px;
+    top: -23px;
+    z-index: 9000;
+    width: 58px;
+    display: none;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .45s ease;
+    will-change: transform;
+  }
+  .butterfly svg { display: block; width: 100%; height: auto; overflow: visible; filter: drop-shadow(0 9px 5px rgba(40,20,0,.2)); }
+
   /* ── Page system ───────────────────────────────────────────────────── */
   .page { display: none; min-height: calc(100dvh - 120px); }
   .page.active { display: block; animation: pageIn .42s var(--ease); }
@@ -3714,6 +3730,162 @@ function initLeafMagnetPhysics(holder) {
   requestAnimationFrame(frame);
 }
 
+// ===== BUTTERFLY =====
+// A monarch that now and then flutters across the screen (owner, 2026-10-22:
+// "realistik kapalak ora-orada uchib turib yoqimli effekt"). One at a time,
+// it never takes a tap (pointer-events: none), and it keeps away from the
+// ordering screens and from any open window. Flight and wingbeat run in one
+// rAF loop, not CSS animations, on purpose: phones in battery-saver mode
+// report reduced motion, and this is a slow, occasional flourish the owner
+// wants every buyer to see.
+const Butterfly = (() => {
+  const CALM_PAGES = ['home', 'catalog', 'fav', 'profile', 'games', 'orders'];
+  const FIRST_DELAY = [7000, 14000];
+  const NEXT_DELAY = [40000, 80000];
+  const RETRY_DELAY = [8000, 15000];
+  const SVG =
+    '<svg viewBox="-50 -40 100 80">' +
+      '<defs>' +
+        '<linearGradient id="bf-fw-g" x1="0" y1="1" x2="1" y2="0">' +
+          '<stop offset="0" stop-color="#FFB24A"/><stop offset=".55" stop-color="#F07E19"/><stop offset="1" stop-color="#C9530B"/>' +
+        '</linearGradient>' +
+        '<radialGradient id="bf-hw-g" cx="0" cy="0" r="40" gradientUnits="userSpaceOnUse">' +
+          '<stop offset="0" stop-color="#C9530B"/><stop offset=".35" stop-color="#F28A22"/><stop offset="1" stop-color="#FFB24A"/>' +
+        '</radialGradient>' +
+        '<g id="bf-hw">' +
+          '<path d="M1.5,0 C14,-1 30,2 36,10 C40,16 37,25 29,28.5 C21,32 10,27 5,17 C3,11 2,5 1.5,0 Z" fill="url(#bf-hw-g)" stroke="#1C1410" stroke-width="2.6" stroke-linejoin="round"/>' +
+          '<path d="M2,1 C12,6 22,14 30,24 M2,1.5 C10,9 16,18 19,28 M2,.5 C16,2 28,6 35,12 M2,2 C6,12 9,20 10,25" fill="none" stroke="#1C1410" stroke-width="1"/>' +
+          '<g fill="#FFF8EC"><circle cx="34.6" cy="15" r="1"/><circle cx="35.4" cy="20" r="1"/><circle cx="32.6" cy="25" r="1"/>' +
+            '<circle cx="27" cy="28" r="1"/><circle cx="21" cy="29.4" r=".9"/><circle cx="14.6" cy="27.4" r=".9"/></g>' +
+        '</g>' +
+        '<g id="bf-fw">' +
+          '<path d="M1.5,-5 C8,-22 26,-35 44,-33 C49,-32 50,-26 47,-20 C42,-10 28,-3 1.5,-1.5 Z" fill="url(#bf-fw-g)" stroke="#1C1410" stroke-width="2.6" stroke-linejoin="round"/>' +
+          '<path d="M34,-33.5 C40,-34 48,-33 48.5,-27 C49,-23 47,-19.5 44,-17 C42,-24 38,-29 34,-33.5 Z" fill="#1C1410"/>' +
+          '<path d="M2,-4 C14,-14 26,-24 40,-31 M2,-3 C16,-9 30,-15 46,-21 M2,-2.5 C14,-5 26,-7 38,-10 M18,-14 C20,-10 21,-7 22,-5" fill="none" stroke="#1C1410" stroke-width="1"/>' +
+          '<circle cx="40.5" cy="-27" r="1.4" fill="#F7A23B"/><circle cx="43.8" cy="-24.6" r="1.2" fill="#F7A23B"/>' +
+          '<g fill="#FFF8EC"><circle cx="39" cy="-32.4" r="1"/><circle cx="42.4" cy="-30.6" r="1.1"/><circle cx="45.6" cy="-28" r="1"/>' +
+            '<circle cx="46.6" cy="-24" r=".9"/><circle cx="44.6" cy="-20.4" r=".9"/></g>' +
+        '</g>' +
+      '</defs>' +
+      '<g class="bf-hl"><use href="#bf-hw"/></g><g class="bf-hr"><use href="#bf-hw"/></g>' +
+      '<g class="bf-fl"><use href="#bf-fw"/></g><g class="bf-fr"><use href="#bf-fw"/></g>' +
+      '<g fill="#1C1410">' +
+        '<path d="M-.8,-12.5 C-3,-20 -6,-26 -8.5,-30 M.8,-12.5 C3,-20 6,-26 8.5,-30" fill="none" stroke="#1C1410" stroke-width="1" stroke-linecap="round"/>' +
+        '<circle cx="-8.6" cy="-30.2" r="1.5"/><circle cx="8.6" cy="-30.2" r="1.5"/>' +
+        '<ellipse cx="0" cy="9" rx="2.2" ry="11"/><ellipse cx="0" cy="-3" rx="3" ry="6"/><circle cx="0" cy="-10.5" r="2.8"/>' +
+      '</g>' +
+      '<g fill="#FFF8EC"><circle cx="-1" cy="-5" r=".7"/><circle cx="1.1" cy="-2" r=".6"/><circle cx="0" cy="-11" r=".6"/></g>' +
+    '</svg>';
+
+  let el = null, wing = null, timer = null, flying = false, started = false;
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  function build() {
+    el = document.createElement('div');
+    el.className = 'butterfly';
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = SVG;
+    document.body.appendChild(el);
+    wing = ['fl', 'fr', 'hl', 'hr'].reduce((o, k) => (o[k] = el.querySelector('.bf-' + k), o), {});
+  }
+
+  function blocked() {
+    return document.hidden || !CALM_PAGES.includes(activePage) ||
+      !!document.querySelector('.modal-overlay.show, .map-modal.show');
+  }
+
+  function schedule(range) {
+    clearTimeout(timer);
+    timer = setTimeout(() => (blocked() ? schedule(RETRY_DELAY) : fly()), rand(range[0], range[1]));
+  }
+
+  // Wings turn about the body: seen from above that is a squeeze in x.
+  function setWings(fore, hind) {
+    wing.fr.setAttribute('transform', 'scale(' + fore + ',1)');
+    wing.fl.setAttribute('transform', 'scale(' + (-fore) + ',1)');
+    wing.hr.setAttribute('transform', 'scale(' + hind + ',1)');
+    wing.hl.setAttribute('transform', 'scale(' + (-hind) + ',1)');
+  }
+
+  function place(x, y, angle, size) {
+    el.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0) rotate(' +
+      (angle * 180 / Math.PI + 90).toFixed(1) + 'deg) scale(' + size.toFixed(2) + ')';
+  }
+
+  function fly() {
+    if (flying || blocked()) return;
+    if (!el) build();
+    const W = window.innerWidth, H = window.innerHeight;
+    const fromLeft = Math.random() < 0.5;
+    const size = rand(0.8, 1.1);
+    const speed = rand(70, 100);                         // px/s
+    let x = fromLeft ? -40 : W + 40;
+    let y = rand(0.15, 0.7) * H;
+    const ex = fromLeft ? W + 60 : -60, ey = rand(0.1, 0.8) * H;
+    let shown = Math.atan2(ey - y, ex - x);
+    let wander = 0, phase = 0, glide = 0, nextGlide = rand(1.2, 2.5), t = 0, last = null;
+    flying = true;
+    setWings(1, 1);
+    place(x, y, shown, size);       // off-screen before it is shown, not at 0,0
+    el.style.display = 'block';
+    el.style.opacity = '1';
+
+    function frame(now) {
+      if (!flying) return;
+      if (last === null) last = now;
+      const dt = Math.min((now - last) / 1000, 0.05);
+      last = now;
+      t += dt;
+      const gone = fromLeft ? x > W + 50 : x < -50;
+      if (blocked() || gone || y < -90 || y > H + 90 || t > 16) { finish(); return; }
+
+      // Butterflies don't fly straight: a drifting random wander and a slow
+      // swoop around the line to the exit, short glides between wingbeats.
+      wander += (Math.random() - 0.5) * 3.2 * dt;
+      wander *= 1 - 0.6 * dt;
+      wander = Math.max(-1.1, Math.min(1.1, wander));
+      const heading = Math.atan2(ey - y, ex - x) + wander + 0.35 * Math.sin(t * 1.7);
+      let fore, hind, v;
+      if (glide > 0) {
+        glide -= dt;
+        v = speed * 0.85;
+        y += 14 * dt;                                    // a glide sinks a little
+        fore = 0.93 + 0.03 * Math.sin(t * 22);
+        hind = fore;
+      } else {
+        nextGlide -= dt;
+        if (nextGlide <= 0) { glide = rand(0.4, 0.9); nextGlide = rand(1.5, 3); }
+        v = speed;
+        phase += dt * 2 * Math.PI * 5.5;                 // ~5.5 beats a second
+        fore = 0.18 + 0.82 * (0.5 + 0.5 * Math.cos(phase));
+        hind = 0.24 + 0.76 * (0.5 + 0.5 * Math.cos(phase - 0.5));
+      }
+      x += Math.cos(heading) * v * dt;
+      y += Math.sin(heading) * v * dt;
+      let turn = heading - shown;
+      turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+      shown += turn * Math.min(1, dt * 4);
+      const bob = glide > 0 ? 0 : Math.sin(phase) * 2.5 * size;   // each beat lifts it
+      setWings(fore.toFixed(3), hind.toFixed(3));
+      place(x, y + bob, shown, size);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function finish() {
+    flying = false;
+    el.style.opacity = '0';
+    setTimeout(() => { if (!flying) el.style.display = 'none'; }, 450);
+    schedule(NEXT_DELAY);
+  }
+
+  return {
+    start() { if (started) return; started = true; schedule(FIRST_DELAY); },
+    fly,
+  };
+})();
+
 function applySiteTheme() {
   document.documentElement.setAttribute('data-site-theme', siteTheme);
   initOrganicLeaves();
@@ -5187,6 +5359,7 @@ async function checkStartGate(manual) {
     Trk.start((qs.get('recipe') || sp.startsWith('recipe-')) ? 'recipe'
       : qs.get('product') ? 'product' : qs.get('game') ? 'game' : sp ? 'link' : 'direct');
   });
+  Butterfly.start();
 
   // Reconcile the server-saved language preference in the background; only
   // re-render text if it actually differs from our local guess.
