@@ -1620,6 +1620,25 @@
     pointer-events: none;
     filter: drop-shadow(0 3px 4px rgba(0,0,0,.45));
   }
+  .map-locate-btn {
+    position: absolute;
+    right: 12px;
+    bottom: 14px;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 14px;
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--text);
+    font: 600 13px/1 var(--font-body);
+    box-shadow: 0 6px 16px -8px rgba(0,0,0,.45);
+    cursor: pointer;
+  }
+  .map-locate-btn svg { width: 18px; height: 18px; color: var(--link); }
+  .map-locate-btn.busy svg { animation: spin 1s linear infinite; }
   .map-modal-footer {
     flex-shrink: 0;
     padding: 12px 14px calc(12px + var(--safe-b));
@@ -2747,13 +2766,17 @@
     outline-offset: 2px;
   }
 
+  /* Phones in battery-saver or "remove animations" mode report reduced
+     motion too. The old catch-all (*, every animation .01ms) froze the whole
+     site there: the spinning KETOSHOP stamp, the blobs, even the loading
+     spinners (owner, 2026-10-22). Only movement across the screen stops
+     now — page and sheet entrances, pop-ins, the shake, confetti, falling
+     leaves. The slow decorative loops and the spinners keep going. */
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-      animation-duration: .01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: .01ms !important;
-      scroll-behavior: auto !important;
-    }
+    .page.active, .modal, #detail-modal .modal,
+    .food-card, .game-reveal, .game-result, .quiz-opt.wrong { animation: none !important; }
+    .confetti-piece { display: none; }
+    html { scroll-behavior: auto; }
     .organic-leaves { display: none; }
   }
 
@@ -3483,6 +3506,10 @@
   <div class="map-modal-body">
     <div id="map-canvas"></div>
     <div class="map-crosshair">📍</div>
+    <button class="map-locate-btn" id="map-locate-btn" onclick="_locateOnMap(true)" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span id="map-locate-text"></span>
+    </button>
     <div id="map-error" style="display:none"></div>
   </div>
   <div class="map-modal-footer">
@@ -3772,7 +3799,9 @@ const L = {
     mapPickerNoAddress: "Aniq manzil topilmadi — joylashuv koordinatasi yetkazib beruvchiga yuboriladi.",
     lblAddressEdit: "Yetkazib berish manzili — tekshiring, kerak bo'lsa to'g'rilang",
     addressEditPlaceholder: "Masalan: tuman, ko'cha, uy, kvartira, mo'ljal",
-    errorLocation: "Joylashuvni yuboring",
+    mapPickerHint: "Xaritani suring — 📍 belgisi uyingiz ustida tursin",
+    mapPickerMyLocation: "Mening joylashuvim",
+    errorLocation: "Joylashuvni aniqlab bo'lmadi — «Xaritada tanlash» orqali belgilang",
     lblPayment: "To'lov turi",
     payCash: "💵 Naqd to'lash",
     payOnline: "💳 Onlayn to'lash",
@@ -3971,7 +4000,9 @@ const L = {
     mapPickerNoAddress: 'Точный адрес не найден — координаты будут переданы курьеру.',
     lblAddressEdit: 'Адрес доставки — проверьте и при необходимости исправьте',
     addressEditPlaceholder: 'Например: район, улица, дом, квартира, ориентир',
-    errorLocation: 'Отправьте местоположение',
+    mapPickerHint: 'Передвиньте карту — 📍 должна стоять на вашем доме',
+    mapPickerMyLocation: 'Моё местоположение',
+    errorLocation: 'Не удалось определить местоположение — отметьте его через «Выбрать на карте»',
     lblPayment: 'Способ оплаты',
     payCash: '💵 Наличные',
     payOnline: '💳 Онлайн',
@@ -5758,7 +5789,7 @@ function buildAutoCarousel(products) {
 
   // Genuinely scrollable track (native touch/drag works) — the card list is
   // duplicated once so wrapping scrollLeft back by exactly half the width
-  // loops seamlessly. A rAF loop drifts scrollLeft at ~30px/s; user touch
+  // loops seamlessly. A rAF loop drifts scrollLeft at 60px/s; user touch
   // pauses the drift (native scrolling takes over) and it always resumes
   // shortly after — with a hard safety timeout so it can never get stuck.
   const track = document.createElement('div');
@@ -5766,18 +5797,31 @@ function buildAutoCarousel(products) {
   [...products, ...products].forEach(p => track.appendChild(createCarouselCard(p)));
   section.appendChild(track);
 
+  // Measured lazily. A language switch from the profile page re-renders home
+  // while it is hidden: the track is 0 wide then, and the old one-shot
+  // measure left the carousel frozen for good (2026-10-22).
   let halfWidth = 0;
-  requestAnimationFrame(() => { halfWidth = track.scrollWidth / 2; });
-
   let paused = false;
   let resumeTimer = null;
   let safetyTimer = null;
-  const SPEED = 0.5; // px/frame ≈ 30px/s at 60fps
+  // 60px/s is what Android showed with the old "+0.5px a frame", which
+  // Chrome rounds up to a whole pixel. The position is kept as a float:
+  // iOS WebKit truncates a fractional scrollLeft, so "+= 0.5" never moved.
+  const SPEED = 60;
+  let pos = 0;
+  let lastT = 0;
 
-  function step() {
-    if (!paused && halfWidth > 0) {
-      track.scrollLeft += SPEED;
-      if (track.scrollLeft >= halfWidth) track.scrollLeft -= halfWidth;
+  function step(now) {
+    if (!track.isConnected) return;  // home was re-rendered — end this loop
+    const dt = lastT ? Math.min((now - lastT) / 1000, 0.05) : 0;
+    lastT = now;
+    if (!paused && track.offsetWidth > 0) {
+      if (!halfWidth) halfWidth = track.scrollWidth / 2;
+      // The buyer scrolled by hand meanwhile — carry on from there.
+      if (Math.abs(track.scrollLeft - pos) > 2) pos = track.scrollLeft;
+      pos += SPEED * dt;
+      if (pos >= halfWidth) pos -= halfWidth;
+      track.scrollLeft = pos;
     }
     requestAnimationFrame(step);
   }
@@ -6861,31 +6905,81 @@ async function initKetoRedeemUI() {
   };
 }
 
-function getLocation() {
+// A fix less precise than this (cell tower / IP guess, often "the middle of
+// Tashkent") is only a starting point: the buyer finishes it on the map.
+const LOCATION_PRECISE_M = 300;
+
+// Where the buyer is now → {lat, lng, acc} or null. Telegram's own
+// LocationManager first (Bot API 8.0: Telegram asks for access itself and it
+// works where the WebView blocks navigator.geolocation), then the browser API.
+function getDeviceLocation(timeoutMs) {
+  return new Promise(resolve => {
+    let done = false;
+    let usedBrowser = false;
+    const finish = (pos) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      clearTimeout(lmTimer);
+      resolve(pos);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    let lmTimer = null;
+    const browser = () => {
+      if (done || usedBrowser) return;
+      usedBrowser = true;
+      if (!navigator.geolocation) { finish(null); return; }
+      navigator.geolocation.getCurrentPosition(
+        p => finish({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }),
+        err => { console.warn('Geolocation error:', err); finish(null); },
+        { enableHighAccuracy: true, timeout: timeoutMs }
+      );
+    };
+    const lm = tg.LocationManager;
+    if (!lm || typeof tg.isVersionAtLeast !== 'function' || !tg.isVersionAtLeast('8.0')) {
+      browser();
+      return;
+    }
+    const ask = () => {
+      clearTimeout(lmTimer);
+      if (done || usedBrowser) return;
+      if (!lm.isLocationAvailable) { browser(); return; }
+      try {
+        lm.getLocation(d => d
+          ? finish({ lat: d.latitude, lng: d.longitude, acc: d.horizontal_accuracy })
+          : browser());
+      } catch (_) { browser(); }
+    };
+    // An old client never answers init — don't wait on it forever.
+    lmTimer = setTimeout(browser, 4000);
+    try { if (lm.isInited) ask(); else lm.init(ask); } catch (_) { browser(); }
+  });
+}
+
+function _isPreciseFix(pos) {
+  return !(pos.acc > LOCATION_PRECISE_M);  // unknown accuracy counts as precise
+}
+
+async function getLocation() {
   const btn = document.getElementById('btn-get-location');
   const textEl = document.getElementById('location-text');
   btn.disabled = true;
   textEl.textContent = t.btnLocationLoading;
 
-  if (!navigator.geolocation) {
-    textEl.textContent = t.errorLocation;
-    btn.disabled = false;
+  const pos = await getDeviceLocation(20000);
+  btn.disabled = false;
+  if (!pos) {
+    textEl.textContent = document.getElementById('inp-lat').value ? t.btnLocationSet : t.btnGetLocation;
+    showToast(t.errorLocation, true, 4500);
     return;
   }
-
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      setSelectedLocation(pos.coords.latitude, pos.coords.longitude);
-      btn.disabled = false;
-    },
-    (err) => {
-      console.error('Geolocation error:', err);
-      textEl.textContent = t.btnGetLocation;
-      btn.disabled = false;
-      showToast(t.errorLocation, true);
-    },
-    { enableHighAccuracy: true, timeout: 10000 }
-  );
+  if (!_isPreciseFix(pos)) {
+    // Only a rough area — let the buyer put the pin on their house.
+    textEl.textContent = document.getElementById('inp-lat').value ? t.btnLocationSet : t.btnGetLocation;
+    openMapPicker(pos);
+    return;
+  }
+  setSelectedLocation(pos.lat, pos.lng);
 }
 
 // Centralized "this is the chosen delivery point" — used by both the
@@ -6927,6 +7021,12 @@ async function setSelectedLocation(lat, lng) {
 let _leafletMap = null;
 let _mapGeocodeTimer = null;
 const _TASHKENT_CENTER = [41.3111, 69.2797];
+// The map opens on the Tashkent centre when there is no saved point and no
+// GPS fix yet. That spot is a placeholder, not an answer: until the buyer
+// drags the map or a precise GPS fix lands, it can't be confirmed (real
+// orders landed on the city centre this way, 2026-10-21).
+let _mapPointChosen = false;
+let _mapGpsSeq = 0;
 
 // Yandex tile servers — only one provider here, intentionally. Yandex
 // renders tiles in EPSG:3395 (Elliptical Mercator, WGS84 ellipsoid). The
@@ -6983,7 +7083,9 @@ function _addTileLayer(map, providerIdx) {
   return layer;
 }
 
-function openMapPicker() {
+// `rough` — a low-accuracy fix from getLocation(): start there, but the
+// buyer still has to drag the pin onto their house.
+function openMapPicker(rough) {
   trk(() => Trk.ev('checkout', 'checkout', 'map'));
   if (!window.L || typeof window.L.map !== 'function') {
     // Leaflet itself didn't load. Show a clear in-app message rather than
@@ -6996,6 +7098,7 @@ function openMapPicker() {
   }
   document.getElementById('map-modal-title').textContent = t.mapPickerTitle;
   document.getElementById('map-confirm-btn').textContent = t.mapPickerConfirm;
+  document.getElementById('map-locate-text').textContent = t.mapPickerMyLocation;
   document.getElementById('map-address').textContent = t.mapPickerLoading;
   document.getElementById('map-modal').classList.add('show');
   updateBackButton();
@@ -7004,12 +7107,19 @@ function openMapPicker() {
   // Pick a sensible starting center: previously-saved coords > current GPS > Tashkent.
   const savedLat = parseFloat(document.getElementById('inp-lat').value);
   const savedLng = parseFloat(document.getElementById('inp-lng').value);
+  const hasSaved = !isNaN(savedLat) && !isNaN(savedLng);
   let startCenter = _TASHKENT_CENTER;
   let startZoom = 12;
-  if (!isNaN(savedLat) && !isNaN(savedLng)) {
+  if (rough) {
+    startCenter = [rough.lat, rough.lng];
+    startZoom = 15;
+  } else if (hasSaved) {
     startCenter = [savedLat, savedLng];
     startZoom = 16;
   }
+  _cancelMapLocate();  // a fix still pending from the last opening must not land here
+  _mapPointChosen = !rough && hasSaved;
+  _refreshMapConfirm();
 
   // Two rAFs to let the modal switch from display:none to display:flex,
   // run flex layout, and report a real height before we hand the container
@@ -7029,6 +7139,13 @@ function openMapPicker() {
         }).setView(startCenter, startZoom);
         _addTileLayer(_leafletMap, 0);
         _leafletMap.on('moveend', _onMapMoveEnd);
+        // A drag is the buyer choosing the spot: it unlocks the confirm
+        // button, and a GPS fix that arrives later must not yank the map.
+        _leafletMap.on('dragstart', () => {
+          _cancelMapLocate();
+          _mapPointChosen = true;
+          _refreshMapConfirm();
+        });
       } else {
         _leafletMap.setView(startCenter, startZoom);
       }
@@ -7040,17 +7157,9 @@ function openMapPicker() {
       setTimeout(() => _leafletMap && _leafletMap.invalidateSize(), 250);
       _onMapMoveEnd();
 
-      // If we have no saved point, recenter on the user's GPS as a default
-      // (better than landing them in the middle of Tashkent every time).
-      if (isNaN(savedLat) && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            if (_leafletMap) _leafletMap.setView([pos.coords.latitude, pos.coords.longitude], 16);
-          },
-          () => {},
-          { enableHighAccuracy: true, timeout: 8000 }
-        );
-      }
+      // No point yet — recenter on the buyer's GPS (better than leaving them
+      // in the middle of Tashkent). A rough fix already came from GPS.
+      if (!_mapPointChosen && !rough) _locateOnMap(false);
     } catch (e) {
       console.error('Map init failed:', e);
       _setMapError('Xarita ishga tushmadi: ' + (e && e.message ? e.message : e));
@@ -7063,10 +7172,50 @@ function closeMapPicker() {
   updateBackButton();
 }
 
+function _cancelMapLocate() {
+  _mapGpsSeq++;
+  const btn = document.getElementById('map-locate-btn');
+  if (btn) btn.classList.remove('busy');
+}
+
+function _refreshMapConfirm() {
+  const btn = document.getElementById('map-confirm-btn');
+  if (btn) btn.disabled = !_mapPointChosen;
+}
+
+// Centre the picker on the buyer's GPS fix. `manual` = they pressed
+// «Mening joylashuvim», so a failure gets a toast; the silent try on opening
+// stays quiet. A rough fix only moves the map — the buyer drags the rest.
+async function _locateOnMap(manual) {
+  const seq = ++_mapGpsSeq;
+  const btn = document.getElementById('map-locate-btn');
+  if (btn) btn.classList.add('busy');
+  const pos = await getDeviceLocation(20000);
+  if (seq !== _mapGpsSeq) return;  // dragged or reopened meanwhile
+  if (btn) btn.classList.remove('busy');
+  if (!_leafletMap || !_isModalOpen('map-modal')) return;
+  if (!pos) {
+    if (manual) showToast(t.errorLocation, true, 4500);
+    return;
+  }
+  const precise = _isPreciseFix(pos);
+  if (precise) _mapPointChosen = true;
+  _leafletMap.setView([pos.lat, pos.lng], precise ? 17 : 15);
+  _refreshMapConfirm();
+}
+
 function _onMapMoveEnd() {
   if (!_leafletMap) return;
-  const c = _leafletMap.getCenter();
   const addrEl = document.getElementById('map-address');
+  if (!_mapPointChosen) {
+    // Don't put a real-looking street under a pin nobody placed — that is
+    // what made buyers confirm the city centre.
+    clearTimeout(_mapGeocodeTimer);
+    addrEl.classList.remove('loading');
+    addrEl.textContent = t.mapPickerHint;
+    return;
+  }
+  const c = _leafletMap.getCenter();
   addrEl.classList.add('loading');
   addrEl.textContent = t.mapPickerLoading;
   // Debounce reverse-geocode while the buyer is panning.
@@ -7084,7 +7233,7 @@ function _onMapMoveEnd() {
 }
 
 function confirmMapPick() {
-  if (!_leafletMap) return;
+  if (!_leafletMap || !_mapPointChosen) return;
   const c = _leafletMap.getCenter();
   setSelectedLocation(c.lat, c.lng);
   closeMapPicker();
