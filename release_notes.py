@@ -24,7 +24,7 @@ from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
-RELEASE_KEY = "2026-10-17-oktyabr-3-yangiliklari"
+RELEASE_KEY = "2026-10-22-sayt-yangiliklari"
 TZ_OFFSET = timedelta(hours=5)
 SEND_WINDOW = (8, 22)          # never wake admins at night
 # True bypasses the daytime window (used once, 2026-09-25). Normal releases
@@ -33,38 +33,23 @@ SEND_NOW = False
 CHECK_EVERY = 300
 
 NOTES = (
-    "🆕 <b>13-oktabrdan beri botda nimalar o'zgardi</b>\n"
+    "🆕 <b>So'nggi 3 kunda (19–22 oktabr) nimalar o'zgardi</b>\n"
     '\n'
-    '🤖 <b>AI sotuvchi</b>\n'
-    "• Buyurtmani endi tugmali checkout kartasi tuzadi: jami, chegirma, Keto va yetkazish narxini kod hisoblaydi. AI summani o'zi yozmaydi, manzil va raqamni to'qimaydi. Mijoz «✅ Tasdiqlash» ni bosadi yoki «ha» deb yozadi.\n"
-    '• Qadamlar qisqardi: qanday olasiz → raqam va lokatsiya → uy/xonadon → karta (avval ~10 ta savol edi).\n'
-    "• Karta bilan to'lovda buyurtma chek kelgach tuziladi — sizga to'lanmagan buyurtma kelmaydi.\n"
-    '• Ruscha yozganga ruscha, kirillda yozganga kirillda javob beradi; ism bilan murojaat qilmaydi, «Sizga rahmat» deydi.\n'
-    "• Mavzudan tashqari savollarga (she'r, uy vazifasi, kod, siyosat, sport, ob-havo) javob bermaydi — muloyim rad etib, mahsulotga qaytaradi.\n"
-    '• Siz «↩️ Javob berish» bilan yozayotganingizda AI aralashmaydi. Chek har doim qabul qilinadi. /ai_hisobot — AI kim bilan va qaysi mavzularda gaplashgani.\n'
+    '🛠 <b>Tuzatildi</b>\n'
+    "• Saytda telefon raqami har qanday yozilishda qabul qilinadi (90 123 45 67, +998…, 8 90…). Avval ko'p raqam rad etilib, «Buyurtmani tasdiqlash» tugmasi ishlamayotgandek ko'rinardi.\n"
+    "• Xaritadan lokatsiya: GPS ishlamasa, xarita Toshkent markazida qolib, o'sha nuqta buyurtmaga ketib qolardi. Endi xaritani surmaguncha yoki aniq GPS kelmaguncha tasdiqlab bo'lmaydi, joylashuv Telegram orqali olinadi, xaritada «Mening joylashuvim» tugmasi bor.\n"
+    "⚠️ 22-oktabrgacha kelgan buyurtmada pin aynan Toshkent markazida tursa — mijozning izohiga qarang yoki qo'ng'iroq qiling.\n"
+    "• Quvvat tejash rejimidagi telefonlarda saytdagi animatsiyalar (KETOSHOP muhri, yuklanish belgilari) to'xtab qolardi — endi ishlaydi. Til almashtirilgandan keyin qotib qoladigan mahsulotlar karuseli ham tuzatildi.\n"
     '\n'
-    '🛒 <b>Savat va buyurtma</b>\n'
-    '• Savat broni: savatga solingan mahsulot 6 soat shu mijozniki — oxirgi donani ikki kishi talashmaydi. 3 soatda «HH:MM gacha band» ogohlantirishi, 6 soatda mahsulot sotuvga qaytadi.\n'
-    '• /bron — kimning savatida nima band; «⏱ Hozirgi bronlarni 1 soatga qisqartirish» tugmasi.\n'
-    "• Band yoki tugagan mahsulotni so'ragan mijozga u qaytishi bilan «Siz so'ragan mahsulot qaytdi» xabari boradi — mahsulotni siz qo'shsangiz ham.\n"
-    "• Har bir buyurtma holati xabarida va kuryer panelida to'liq mijoz bloki va Yandex havolasi.\n"
-    '• Kuryer tabida «🗺 Xarita» — barcha faol buyurtmalar bitta xaritada.\n'
+    '🛍 <b>Saytda yangi</b>\n'
+    "• Bosh sahifada «🔥 Ko'p olinadi»: oxirgi 30 kunda eng ko'p buyurtmalarda uchragan, omborda bor 10 ta mahsulot. Har kartada «+ Savatga» — mahsulotni ochmasdan savatga tushadi.\n"
+    "• Retseptda pastda doim turadigan panel: «Retseptdagi Ketoshop mahsulotlari» va narxi, «🛒 Savatga», keyin «Savatni ochish →».\n"
+    "• Ekranda vaqti-vaqti bilan monarx kapalagi uchib o'tadi. Hech narsani to'smaydi, buyurtma paytida va oyna ochiq bo'lsa chiqmaydi.\n"
+    "• Fonda ora-orada qushlar sayraydi — kunduzi, mijoz saytda birinchi marta bosgandan keyin. Mijoz 🐦 tugmasi bilan o'chirib qo'yishi mumkin.\n"
     '\n'
-    "🏪 <b>Sayt va do'kon</b>\n"
-    '• Sayt faqat botda START bosganlarga ochiladi — buyurtma holati va chek javoblari mijozga yetib boradi.\n'
-    "• Tugagan mahsulot do'konda qoladi: «Yo'lda 🚚», «⏳ Tez orada qaytadi» va «🔔 Kelganda xabar bering».\n"
-    "• Tillar aralashmaydi (aksiya, birlik, set nomlari kirill va ruscha). Mahsulot rasmi va to'liq tavsifi botda ham chiqadi.\n"
-    '• Saytda 1 daqiqadan keyin «Saytimiz sizga qulaymi?» — 5 yulduz va izoh sizga keladi.\n'
-    '• Admin saytida mahsulotning sotuv turi (oddiy / faqat B2B) tanlanadi va tahrirlanadi.\n'
-    '\n'
-    '🍳 <b>Retsept va kontent</b>\n'
-    "• Kun mahsuloti kartochkasi ichida to'liq «🍳 Bugungi retsept».\n"
-    "• Saytga 10 ta yangi retsept (05.11 gacha), har biri kanalda havola bilan e'lon qilinadi. 80 ta retsept va 50 ta postda miqdorlar va qadamlar to'ldirildi.\n"
-    "• Yangi mijozga video qo'llanmadan keyin bugungi retsept rasmi bilan boradi.\n"
-    "• Har 2 kunda 20:00 da «🧠 Keto savol» — sayt o'yinlaridan; o'yinlarda 50 ta savol.\n"
-    '\n'
-    '⭐ <b>Sharhlar</b>\n'
-    "• 1–2★ qo'yib izoh yozmagan mijozdan sababi muloyim so'raladi, javobi sizga keladi.\n"
+    '📊 <b>Admin saytida</b>\n'
+    "• «📈 Faollik»: saytning har bir ekrani, qancha vaqt o'tkazilgani, mahsulot qaysi bo'limdan ochilgani, buyurtma qayerda to'xtab qolgani; reliz belgilari bilan oldin/keyin taqqoslash.\n"
+    "• «💬 Izohlar»: mahsulot sharhlari, sayt bahosi va NPS bir joyda.\n"
     '\n'
     'Mijozlardan fikr eshitsangiz — yozing 🤝'
 )
