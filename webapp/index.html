@@ -4929,6 +4929,7 @@ function switchPage(page) {
   if (page === 'profile') renderProfilePage();
   if (page === 'orders') loadOrdersPage();
   if (page === 'games') renderGamesPage();
+  if (page === 'catalog') requestAnimationFrame(catalogLoadMore);   // fill a short grid
 
   trk(() => Trk.page(page, page === 'catalog' ? currentCat : null));
   updateBackButton();
@@ -6462,6 +6463,13 @@ function selectCategory(key) {
 }
 
 let isLoadingMore = false;
+// The catalog asks for 30 a page; the bot keeps its own 5 (ITEMS_PER_PAGE).
+// Five was far too few here: on a wide screen five tiles fit without any
+// scrolling, the scroll that loads the next page never came, and the catalog
+// stopped at five products (owner, 2026-10-22: "katalogda hamma
+// mahsulotlarni ko'rib bo'lmayapti").
+const CATALOG_PAGE_SIZE = 30;
+let catalogSeq = 0;      // a newer category, search or language wins
 
 async function loadProducts(append = false) {
   const grid = document.getElementById('product-grid');
@@ -6470,6 +6478,9 @@ async function loadProducts(append = false) {
   const scrollLoader = document.getElementById('scroll-loader');
 
   if (!append) {
+    // A fresh list always starts at page 0 — a language switch or a cleared
+    // search used to reload only the page the buyer had scrolled to.
+    currentPage = 0;
     grid.innerHTML = '';
     loading.style.display = 'block';
     loading.textContent = t.loading;
@@ -6477,12 +6488,14 @@ async function loadProducts(append = false) {
   }
   scrollLoader.style.display = 'none';
   isLoadingMore = true;
+  const seq = ++catalogSeq;
 
   try {
-    const url = currentCat === 'all'
+    const url = (currentCat === 'all'
       ? '/api/products?page=' + currentPage
-      : '/api/products?category=' + currentCat + '&page=' + currentPage;
+      : '/api/products?category=' + currentCat + '&page=' + currentPage) + '&per_page=' + CATALOG_PAGE_SIZE;
     const data = await api(url);
+    if (seq !== catalogSeq) return;
     const products = data.products || [];
     totalPages = data.pages || 1;
 
@@ -6500,7 +6513,9 @@ async function loadProducts(append = false) {
     });
 
     isLoadingMore = false;
+    requestAnimationFrame(catalogLoadMore);
   } catch(e) {
+    if (seq !== catalogSeq) return;
     loading.style.display = 'none';
     isLoadingMore = false;
     console.error('Load products error:', e);
@@ -6508,8 +6523,9 @@ async function loadProducts(append = false) {
   }
 }
 
-// Infinite scroll
-window.addEventListener('scroll', () => {
+// Infinite scroll: the next page when the buyer nears the end — or at once
+// when the grid doesn't even fill the screen, since then nothing scrolls.
+function catalogLoadMore() {
   if (activePage !== 'catalog' || isLoadingMore) return;
   if (currentPage + 1 >= totalPages) return;
 
@@ -6522,7 +6538,8 @@ window.addEventListener('scroll', () => {
     document.getElementById('scroll-loader').style.display = 'block';
     loadProducts(true);
   }
-});
+}
+window.addEventListener('scroll', catalogLoadMore);
 
 // Sold out stays in the shop (owner, 2026-10-14): a tilted "Yo'lda 🚚"
 // stamp on the photo (was "Tugab qoldi" until 2026-10-17), and "Tez orada qaytadi" takes the description's line.
@@ -6581,10 +6598,14 @@ document.getElementById('catalog-search').addEventListener('input', function(e) 
   clearTimeout(searchTimeout);
   const q = e.target.value.trim();
   if (q.length < 2) {
-    if (q.length === 0) loadProducts();
+    if (q.length === 0) selectCategory(currentCat);   // back to the tab, from page 0
     return;
   }
   searchTimeout = setTimeout(async () => {
+    // Search results are one list: no catalog page may land under them.
+    catalogSeq++;
+    totalPages = 0;
+    isLoadingMore = false;
     const grid = document.getElementById('product-grid');
     const loading = document.getElementById('catalog-loading');
     const empty = document.getElementById('catalog-empty');

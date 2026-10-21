@@ -290,12 +290,12 @@ async def api_products(request: web.Request):
 
     # Discounts pseudo-category: active-discount products across all categories.
     if category == "discounts":
-        products, total = await get_discounted_products(page=page, per_page=ITEMS_PER_PAGE)
+        products, total = await get_discounted_products(page=page, per_page=per_page)
         return _json({
             "products": await _serialize_products(products, lang, request.get("user_id")),
             "total": total,
             "page": page,
-            "pages": (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE,
+            "pages": (total + per_page - 1) // per_page,
         })
 
     # Sets category
