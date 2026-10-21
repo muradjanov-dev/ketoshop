@@ -305,6 +305,27 @@
     will-change: transform;
   }
   .butterfly svg { display: block; width: 100%; height: auto; overflow: visible; filter: drop-shadow(0 9px 5px rgba(40,20,0,.2)); }
+  /* Birdsong's on/off — appears once the birds have sung, above the dock. */
+  .birdsong-btn {
+    position: fixed;
+    right: 14px;
+    bottom: calc(var(--dock-h) + var(--dock-gap) * 2 + var(--safe-b) + 8px);
+    z-index: 9001;
+    width: 40px;
+    height: 40px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--hairline);
+    border-radius: 50%;
+    background: var(--surface);
+    font-size: 19px;
+    line-height: 1;
+    box-shadow: 0 8px 18px -10px rgba(0,0,0,.45);
+    cursor: pointer;
+  }
+  .birdsong-btn.off { opacity: .75; }
 
   /* ── Page system ───────────────────────────────────────────────────── */
   .page { display: none; min-height: calc(100dvh - 120px); }
@@ -3887,6 +3908,211 @@ const Butterfly = (() => {
   };
 })();
 
+// ===== BIRDSONG =====
+// Now and then a bird or two sings quietly in the background (owner,
+// 2026-10-22: "fonga qushlarni yoqimli nolasini ora-orada sayrab turadigan").
+// Every note is synthesised with Web Audio — no recordings, so nothing to
+// license or download. Phones only allow sound after the buyer's first tap,
+// so the first song comes a few seconds after it. A song never plays at
+// night (22:00–07:00 Tashkent), while the app is hidden, on the ordering
+// screens or over an open window, and the 🐦 button (shown once the birds
+// have sung) switches it off for good on that phone.
+const Birdsong = (() => {
+  const CALM_PAGES = ['home', 'catalog', 'fav', 'profile', 'games', 'orders'];
+  const KEY = 'ketoshop_birds';
+  const FIRST_DELAY = [4000, 8000];
+  const NEXT_DELAY = [20000, 45000];
+  let ctx = null, out = null, timer = null, started = false, heard = false, btn = null;
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+  function muted() {
+    try { return localStorage.getItem(KEY) === 'off'; } catch (_) { return false; }
+  }
+  function night() {
+    const h = (new Date().getUTCHours() + 5) % 24;
+    return h >= 22 || h < 7;
+  }
+  function calm() {
+    return !document.hidden && CALM_PAGES.includes(activePage) &&
+      !document.querySelector('.modal-overlay.show, .map-modal.show');
+  }
+
+  // Master chain: a soft high cut and a short garden echo.
+  function audio() {
+    if (ctx) return ctx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    out = ctx.createGain();
+    out.gain.value = 0.5;                // peaks near -24 dBFS: background, not a ringtone
+    const tone = ctx.createBiquadFilter();
+    tone.type = 'lowpass';
+    tone.frequency.value = 7000;
+    const echo = ctx.createDelay(1);
+    echo.delayTime.value = 0.13;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.22;
+    const wet = ctx.createGain();
+    wet.gain.value = 0.2;
+    out.connect(tone);
+    tone.connect(ctx.destination);
+    tone.connect(echo);
+    echo.connect(fb);
+    fb.connect(echo);
+    echo.connect(wet);
+    wet.connect(ctx.destination);
+    return ctx;
+  }
+
+  // One pure, gliding tone — birdsong is close to a whistled sine. `vib`
+  // adds the fast warble some notes have.
+  function note(dest, t0, dur, f0, f1, peak, vib) {
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t0);
+    o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+    if (vib) {
+      const lfo = ctx.createOscillator();
+      const depth = ctx.createGain();
+      lfo.frequency.value = vib[0];
+      depth.gain.value = vib[1];
+      lfo.connect(depth);
+      depth.connect(o.frequency);
+      lfo.start(t0);
+      lfo.stop(t0 + dur + 0.05);
+    }
+    const g = ctx.createGain();
+    const att = Math.min(0.012, dur / 4), rel = Math.min(0.04, dur / 3);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(peak, t0 + att);
+    g.gain.setValueAtTime(peak, t0 + dur - rel);
+    g.gain.linearRampToValueAtTime(0, t0 + dur);
+    o.connect(g);
+    g.connect(dest);
+    o.start(t0);
+    o.stop(t0 + dur + 0.05);
+  }
+
+  // Four kinds of bird; each returns when it has finished, in seconds.
+  const SONGS = {
+    chirp(d, t) {                       // sparrow: quick falling chirps
+      const n = 2 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        note(d, t, 0.07, rand(4300, 5000), rand(2600, 3000), 0.11, [70, 90]);
+        t += rand(0.12, 0.17);
+      }
+      return t;
+    },
+    trill(d, t) {                       // canary: a fast rolling trill
+      const base = rand(2900, 3600), n = 9 + Math.floor(Math.random() * 6);
+      for (let i = 0; i < n; i++) {
+        const up = i % 2 === 0;
+        note(d, t, 0.034, base * (up ? 0.94 : 1.08), base * (up ? 1.08 : 0.94), 0.085);
+        t += 0.05;
+      }
+      return t;
+    },
+    whistle(d, t) {                     // a clear little tune
+      const k = rand(0.92, 1.08);
+      note(d, t, 0.17, 2400 * k, 3200 * k, 0.1);
+      t += 0.23;
+      note(d, t, 0.13, 3300 * k, 2600 * k, 0.1);
+      t += 0.2;
+      note(d, t, 0.36, 2600 * k, 3500 * k, 0.1, [32, 110]);
+      return t + 0.36;
+    },
+    call(d, t) {                        // tit: "ti-chu, ti-chu"
+      const n = 2 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < n; i++) {
+        note(d, t, 0.09, 5300, 5050, 0.08);
+        note(d, t + 0.13, 0.12, 3700, 3400, 0.09);
+        t += 0.42;
+      }
+      return t;
+    },
+  };
+
+  function bird(t, kind) {
+    let dest = out;
+    if (ctx.createStereoPanner) {        // each bird sits somewhere in the garden
+      dest = ctx.createStereoPanner();
+      dest.pan.value = rand(-0.7, 0.7);
+      dest.connect(out);
+    }
+    return SONGS[kind](dest, t);
+  }
+
+  // A phrase: one bird, and sometimes a second one answering it.
+  function sing() {
+    if (!ctx || ctx.state !== 'running') return;
+    const kinds = Object.keys(SONGS);
+    const first = pick(kinds);
+    let end = bird(ctx.currentTime + 0.05, first);
+    if (Math.random() < 0.6) end = bird(end + rand(0.5, 1.4), pick(kinds));
+    if (Math.random() < 0.3) bird(end + rand(0.4, 1), first);
+    if (!heard) { heard = true; sync(); }
+  }
+
+  function schedule(range) {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (!muted() && !night() && calm()) sing();
+      schedule(NEXT_DELAY);
+    }, rand(range[0], range[1]));
+  }
+
+  // The first tap unlocks sound (browser rule); the birds start soon after.
+  function unlock() {
+    if (!audio()) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    if (!timer) schedule(FIRST_DELAY);
+  }
+
+  function sync() {
+    if (!btn) return;
+    const off = muted();
+    btn.textContent = off ? '🔇' : '🐦';
+    btn.classList.toggle('off', off);
+    btn.setAttribute('aria-label', off ? t.birdsOff : t.birdsOn);
+    btn.style.display = (heard || off) && CALM_PAGES.includes(activePage) ? 'flex' : 'none';
+  }
+
+  function toggle() {
+    const off = !muted();
+    try { localStorage.setItem(KEY, off ? 'off' : 'on'); } catch (_) {}
+    showToast(off ? t.birdsOff : t.birdsOn);
+    if (!off) { unlock(); sing(); }     // a little chirp says it is back on
+    sync();
+  }
+
+  function start() {
+    if (started) return;
+    started = true;
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'birdsong-btn';
+    btn.onclick = toggle;
+    document.body.appendChild(btn);
+    sync();
+    // touchend/click, not pointerdown: a touch only counts as the gesture
+    // that may start sound when it ends (Chrome and iOS alike).
+    const gestures = ['touchend', 'click'];
+    const first = () => {
+      unlock();
+      if (ctx && ctx.state === 'running') gestures.forEach(e => document.removeEventListener(e, first, true));
+    };
+    gestures.forEach(e => document.addEventListener(e, first, true));
+    document.addEventListener('visibilitychange', () => {
+      if (!ctx) return;
+      if (document.hidden) ctx.suspend().catch(() => {});
+      else ctx.resume().catch(() => {});
+    });
+  }
+
+  return { start, sync, sing };
+})();
+
 function applySiteTheme() {
   document.documentElement.setAttribute('data-site-theme', siteTheme);
   initOrganicLeaves();
@@ -3928,6 +4154,8 @@ const L = {
     sectionPopular: "🔥 Ko'p olinadi",
     quickAdd: '+ Savatga',
     quickAdded: '✓ Savatda',
+    birdsOn: '🐦 Qushlar sayrashi yoqildi',
+    birdsOff: "🔇 Qushlar sayrashi o'chirildi",
     search: 'Mahsulot qidirish...',
     loading: 'Yuklanmoqda...',
     empty: 'Mahsulotlar topilmadi',
@@ -4134,6 +4362,8 @@ const L = {
     sectionPopular: '🔥 Часто покупают',
     quickAdd: '+ В корзину',
     quickAdded: '✓ В корзине',
+    birdsOn: '🐦 Пение птиц включено',
+    birdsOff: '🔇 Пение птиц выключено',
     search: 'Поиск товаров...',
     loading: 'Загрузка...',
     empty: 'Товары не найдены',
@@ -4676,6 +4906,7 @@ function switchPage(page) {
 
   trk(() => Trk.page(page, page === 'catalog' ? currentCat : null));
   updateBackButton();
+  Birdsong.sync();
 }
 
 // ===== SYSTEM BACK BUTTON =====
@@ -5361,6 +5592,7 @@ async function checkStartGate(manual) {
       : qs.get('product') ? 'product' : qs.get('game') ? 'game' : sp ? 'link' : 'direct');
   });
   Butterfly.start();
+  Birdsong.start();
 
   // Reconcile the server-saved language preference in the background; only
   // re-render text if it actually differs from our local guess.
