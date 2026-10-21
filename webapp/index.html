@@ -634,7 +634,12 @@
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
-  .carousel, .auto-carousel-track { align-items: flex-start; }
+  /* A strip is as tall as its tallest tile, so with flex-start one tile with
+     a discount, an aksiya line and "Tez orada qaytadi" left a band of empty
+     page under all the others (owner's screenshot, 2026-10-22). Tiles now
+     stretch to one height with the price block on the bottom line, and the
+     lines that come and go are kept short — see "Strip tiles" below. */
+  .carousel, .auto-carousel-track { align-items: stretch; }
   .carousel { scroll-snap-type: x mandatory; scroll-padding: 0 14px; }
   .carousel::-webkit-scrollbar, .auto-carousel-track::-webkit-scrollbar { display: none; }
 
@@ -864,6 +869,24 @@
      smaller tiles and no description line so the strip stays a strip. */
   #home-top-carousel .carousel-card { width: 140px; }
   #home-top-carousel .card-desc { display: none; }
+
+  /* Strip tiles: one height per strip, price on the bottom line. A
+     discounted price takes two rows (old price + badge, then the new one)
+     instead of three; the aksiya and "Tez orada qaytadi" lines stay on one
+     row; the "you save" line is left to the product page. */
+  .carousel-card { display: flex; flex-direction: column; }
+  .carousel-card > .card-price { margin-top: auto; padding-top: 6px; }
+  .carousel-card .card-price { display: flex; flex-wrap: wrap; align-items: center; column-gap: 5px; }
+  .carousel-card .card-price .price-old { order: 1; margin-right: 0; }
+  .carousel-card .card-price .discount-badge { order: 2; margin-left: 0; }
+  .carousel-card .card-price .price-new { order: 3; flex-basis: 100%; }
+  .carousel-card .card-saving { display: none; }
+  .carousel-card .bonus-badge, .carousel-card .card-soon {
+    max-width: calc(100% - 12px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   /* «🔥 Ko'p olinadi»: the card carries its own add button. */
   .card-quick-add {
     display: block;
