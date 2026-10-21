@@ -3761,9 +3761,10 @@ function initLeafMagnetPhysics(holder) {
 // wants every buyer to see.
 const Butterfly = (() => {
   const CALM_PAGES = ['home', 'catalog', 'fav', 'profile', 'games', 'orders'];
-  // Twice as often as first shipped (owner, 2026-10-22: "juda kam chiqyapti").
-  const FIRST_DELAY = [3500, 7000];
-  const NEXT_DELAY = [20000, 40000];
+  // 2026-10-22: doubled ("juda kam chiqyapti"), then halved back the same
+  // night ("chiqishini .5 karra kamaytir").
+  const FIRST_DELAY = [7000, 14000];
+  const NEXT_DELAY = [40000, 80000];
   const RETRY_DELAY = [8000, 15000];
   const SVG =
     '<svg viewBox="-50 -40 100 80">' +
@@ -3923,6 +3924,7 @@ const Birdsong = (() => {
   const FIRST_DELAY = [4000, 8000];
   const NEXT_DELAY = [20000, 45000];
   let ctx = null, out = null, timer = null, started = false, heard = false, btn = null;
+  let isAdmin = false;                  // admins hear it at night too, to test it
   const rand = (a, b) => a + Math.random() * (b - a);
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
@@ -3930,6 +3932,7 @@ const Birdsong = (() => {
     try { return localStorage.getItem(KEY) === 'off'; } catch (_) { return false; }
   }
   function night() {
+    if (isAdmin) return false;
     const h = (new Date().getUTCHours() + 5) % 24;
     return h >= 22 || h < 7;
   }
@@ -4110,7 +4113,7 @@ const Birdsong = (() => {
     });
   }
 
-  return { start, sync, sing };
+  return { start, sync, sing, admin() { isAdmin = true; } };
 })();
 
 function applySiteTheme() {
@@ -5597,6 +5600,7 @@ async function checkStartGate(manual) {
   // Reconcile the server-saved language preference in the background; only
   // re-render text if it actually differs from our local guess.
   const langPromise = api('/api/lang').then(langData => {
+    if (langData.is_admin) Birdsong.admin();
     if (langData.lang && L[langData.lang] && langData.lang !== lang) {
       lang = langData.lang;
       t = buildActiveLocale();

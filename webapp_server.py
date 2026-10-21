@@ -1560,9 +1560,10 @@ async def api_geocode(request: web.Request):
 
 
 async def api_get_lang(request: web.Request):
-    """Return user's saved language preference."""
+    """Return user's saved language preference. `is_admin` lets the Mini App
+    skip the birdsong's night silence for admins, so they can test it."""
     lang = request.get("user_lang", "uz")
-    return _json({"lang": lang})
+    return _json({"lang": lang, "is_admin": request.get("user_id") in ADMIN_IDS})
 
 
 async def api_keto_status(request: web.Request):
