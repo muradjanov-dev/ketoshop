@@ -105,6 +105,22 @@ Amaldagi production deploy yo‘li: GitHub Actions → GHCR → netcup.
 
 MIT — use freely for your marketplace!
 
+## Kanal bestsellerlari
+
+2026-10-23 dan boshlab har 3 kunda Toshkent vaqti bilan 10:00 da kanalga
+oxirgi 30 kunning TOP-10 mahsuloti chiqadi. Post kirillchada, faqat nomlar
+va do'konni ochish tugmasi bilan: sotilgan va ombordagi sonlar ko'rsatilmaydi.
+Bekor qilingan va ichki test buyurtmalari, bepul bonus/sovg'alar hisoblanmaydi;
+haqiqiy qo'lda kiritilgan va B2B savdolar hisobga olinadi. Faqat faol,
+zaxirada bor, chakana sotuvga ochiq mahsulotlar chiqariladi. Oylik savdo
+bo'lmasa eski davr bilan to'ldirilmaydi va bo'sh post yuborilmaydi.
+
+Davr kalendarga bog'langan: 23, 26, 29-oktabr, 1-noyabr va hokazo. Bot
+o'sha kuni kechroq ishga tushsa, 22:00 gacha yuboradi; o'tgan kunlar
+to'planib yuborilmaydi. Mavjud bazadagi kunlik kalit restart/redeployda
+takrorni to'sadi. Telegram aniq rad etsa qayta uriniladi; javobi noma'lum
+bo'lgan tarmoq xatosida takror xavfi sabab avtomatik qayta yuborilmaydi.
+
 ## Olib ketish (pickup)
 
 Pickup is disabled on a fresh database. An authenticated admin can configure it

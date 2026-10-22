@@ -414,6 +414,10 @@ async def main():
     from channel_posts import scheduler_loop as channel_posts_loop
     channel_posts_task = asyncio.create_task(channel_posts_loop(bot))
 
+    # Every third day: the last 30 days' TOP-10, with no sales quantities.
+    from channel_bestsellers import scheduler_loop as channel_bestsellers_loop
+    channel_bestsellers_task = asyncio.create_task(channel_bestsellers_loop(bot))
+
     from release_notes import scheduler_loop as release_notes_loop
     release_notes_task = asyncio.create_task(release_notes_loop(bot))
 
@@ -454,6 +458,7 @@ async def main():
         review_followup_task.cancel()
         product_of_day_task.cancel()
         channel_posts_task.cancel()
+        channel_bestsellers_task.cancel()
         release_notes_task.cancel()
         ai_usage_report_task.cancel()
         meta_leads_task.cancel()
