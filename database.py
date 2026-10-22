@@ -4931,6 +4931,52 @@ async def get_top_products(period: str | dict = "all", limit: int = 5) -> list[d
     return top
 
 
+async def get_channel_bestsellers(limit: int = 10) -> list[dict]:
+    """Buyable products ranked by paid quantity in the last 30 days.
+
+    Include retail, manual and wholesale sales, excluding cancellations,
+    internal test purchases and free gifts/bonuses. No all-time fallback or
+    daily rotation: the channel explicitly promises a 30-day sales ranking.
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT items FROM orders
+                WHERE {SALE_SQL}
+                  AND created_at >= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                                      - ($1 || ' days')::interval
+                  AND created_at <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                  AND (source IN ('manual', 'b2b') OR user_id <> ALL($2::bigint[]))""",
+            "30", _activity_excluded_ids(),
+        )
+        quantities: dict[int, float] = {}
+        for row in rows:
+            raw = row["items"]
+            items = json.loads(raw) if isinstance(raw, str) else raw
+            for item in items or []:
+                if not isinstance(item, dict) or item.get("is_gift") or item.get("is_bonus"):
+                    continue
+                try:
+                    pid = int(item["product_id"])
+                    qty = float(item.get("quantity") or 0)
+                    price = float(item.get("price") or 0)
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if qty <= 0 or price <= 0 or not math.isfinite(qty) or not math.isfinite(price):
+                    continue
+                quantities[pid] = quantities.get(pid, 0.0) + qty
+        if not quantities:
+            return []
+        products = await conn.fetch(
+            """SELECT id, name FROM products
+                WHERE is_active = 1 AND quantity > 0
+                  AND b2b_only IS NOT TRUE AND id = ANY($1::int[])""",
+            list(quantities),
+        )
+    by_id = {p["id"]: dict(p) for p in products}
+    ranked = sorted(quantities, key=lambda pid: (-quantities[pid], pid))
+    return [by_id[pid] for pid in ranked if pid in by_id][:limit]
+
+
 async def get_abc_analysis(period: str | dict = "all") -> list[dict]:
     start_time, end_time = _period_range(period)
 

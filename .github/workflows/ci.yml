@@ -49,7 +49,7 @@ jobs:
               "meta_ads", "ads_impact", "meta_leads", "db_backup", "reports", "activity",
               "subscription_gate", "pg_storage", "state_guard", "translit",
               "mystery_gift", "news_announce", "recipe_channel", "restock_notify", "review_followup",
-              "translator", "nps_survey",
+              "translator", "nps_survey", "channel_bestsellers",
           ]
           for m in mods:
               importlib.import_module(m)
