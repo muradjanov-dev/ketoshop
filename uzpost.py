@@ -17,9 +17,11 @@ too; the Tashkent courier's FREE_DELIVERY_FROM doesn't apply here.
 Weight. Products carry no weight field, so it is read from what is there:
 the pack size in the name ("Bodom uni 1000gr", "GHEE 1000ml", "5 l") times
 the quantity, else the quantity itself for a product sold by the kilogram or
-litre, else DEFAULT_ITEM_KG a piece; sets weigh SET_KG. A box adds
-PACKAGING_KG. It is an estimate and every buyer-facing line says so (~); one
-kilogram off costs 3 000 so'm.
+litre, else DEFAULT_ITEM_KG a piece; sets weigh SET_KG. Anything in a glass
+jar, bottle or tin counts JAR_FACTOR times (is_jar — owner, 2026-10-24: the
+jar weighs about as much as what is in it). A box adds PACKAGING_KG. It is
+an estimate and every buyer-facing line says so (~); one kilogram off costs
+3 000 so'm.
 
 Post office. «Bir Qadam» runs only between the offices that offer it (220
 of UzPost's ~1 600). The full office list (index, coordinates, which
@@ -48,6 +50,17 @@ MAX_KG = 20
 PACKAGING_KG = 0.2
 DEFAULT_ITEM_KG = 0.5
 SET_KG = 1.5
+JAR_FACTOR = 2
+
+# Glass jars, bottles and tins (owner, 2026-10-24: "bonkali mahsulotlar bor
+# masalan losos yoki extra virgin, bularni og'irligini pochta uchun 2x
+# hisoblayver"). Everything sold by volume (ml / l) comes in one; these name
+# words catch the rest. Matched lower-cased, with every apostrophe as "'".
+_JAR_WORDS = ("tushonka", "тушонк", "losos", "lasos", "лосос", "virgin", "vergin",
+              "zaytun", "зайтун", "yog'i", "ёғи", "масло", "ghee", "гхи", "asal", "асал",
+              "мёд", "sirka", "сирка", "уксус", "pasta", "паста", "slivka", "сливк")
+_LIQUID_UNITS = {"ml", "мл", "l", "л", "litr", "литр"}
+_APOSTROPHES = str.maketrans({c: "'" for c in "ʻʼ‘’`´"})
 
 # regions.py keys priced at NEXT_KG_FAR, and the same regions as UzPost's
 # office records spell them (Cyrillic or Latin, lower-cased).
@@ -94,6 +107,15 @@ def pack_kg(name: str | None) -> float | None:
     return amount / 1000 if small else amount
 
 
+def is_jar(name: str | None) -> bool:
+    """Whether a product ships in a glass jar, bottle or tin."""
+    low = (name or "").lower().translate(_APOSTROPHES)
+    found = _WEIGHT_RE.findall(low)
+    if found and found[-1][1] in _LIQUID_UNITS:
+        return True
+    return any(word in low for word in _JAR_WORDS)
+
+
 def item_kg(item: dict) -> float:
     """Shipping weight of one order line, in kg."""
     try:
@@ -105,12 +127,11 @@ def item_kg(item: dict) -> float:
         return 0.0
     if item.get("is_set"):
         return SET_KG * qty
-    per = pack_kg(item.get("name"))
-    if per is not None:
-        return per * qty
-    if str(item.get("unit") or "").lower() in _KG_UNITS:
-        return qty
-    return DEFAULT_ITEM_KG * qty
+    name = item.get("name")
+    per = pack_kg(name)
+    if per is None:
+        per = 1.0 if str(item.get("unit") or "").lower() in _KG_UNITS else DEFAULT_ITEM_KG
+    return per * qty * (JAR_FACTOR if is_jar(name) else 1)
 
 
 def parcel_kg(items: list[dict]) -> float:
