@@ -60,6 +60,7 @@ from referral_stats import router as referral_stats_router
 from referral_program import router as referral_program_router
 from retention_stats import router as retention_stats_router
 from review_stats import router as review_stats_router
+from jar_stats import router as jar_stats_router
 
 from webapp_server import create_webapp
 
@@ -252,6 +253,7 @@ async def main():
     dp.include_router(referral_program_router)
     dp.include_router(retention_stats_router)
     dp.include_router(review_stats_router)
+    dp.include_router(jar_stats_router)
     dp.include_router(search_router)
     dp.include_router(catalog_router)
     dp.include_router(reviews_router)
@@ -427,6 +429,9 @@ async def main():
 
     from release_notes import scheduler_loop as release_notes_loop
     release_notes_task = asyncio.create_task(release_notes_loop(bot))
+    # 🫙 Banka mahsulotlari, 15 / 30 kun — once to every admin (jar_stats.py).
+    from jar_stats import scheduler_loop as jar_stats_loop
+    jar_stats_task = asyncio.create_task(jar_stats_loop(bot))
 
     # AI sotuvchi: har kuni 23:58 da adminlarga o'sha kungi token va $ sarfi.
     from ai_sales import usage_report_loop as ai_usage_report_loop
@@ -468,6 +473,7 @@ async def main():
         channel_posts_task.cancel()
         channel_bestsellers_task.cancel()
         release_notes_task.cancel()
+        jar_stats_task.cancel()
         ai_usage_report_task.cancel()
         meta_leads_task.cancel()
         meta_ads_task.cancel()
