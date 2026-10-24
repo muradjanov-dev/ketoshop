@@ -45,12 +45,15 @@ def setUpModule():
     _SAVED_MODULE["record_ai_order"] = ai_sales.record_ai_order
     ai_sales.record_ai_order = AsyncMock()
     ai_sales._settings.update(at=float("inf"), values={}, staff=set())
+    _SAVED_MODULE["TYPING_PAUSE"] = ai_sales.TYPING_PAUSE
+    ai_sales.TYPING_PAUSE = (0.0, 0.0)       # testlar "yozmoqda..." ni kutmasin
 
 
 def tearDownModule():
     ai_memory.remember = _SAVED_MODULE["remember"]
     ai_memory.build_profile = _SAVED_MODULE["build_profile"]
     ai_sales.record_ai_order = _SAVED_MODULE["record_ai_order"]
+    ai_sales.TYPING_PAUSE = _SAVED_MODULE["TYPING_PAUSE"]
     ai_sales._settings.update(at=float("-inf"), values={}, staff=set())
 
 
@@ -424,7 +427,7 @@ class AiSalesGateTest(_ProviderSwap):
         out = polish("Iltimos, pastdagi tugmani bosing.\n\n📍 Lokatsiyani yuborish\n📞 Raqamni yuborish")
         self.assertEqual(out, "Iltimos, pastdagi tugmani bosing.")
         # Mo'ljal aytilib havola unutilsa — havola qo'shiladi; bor bo'lsa ikkinchi marta emas.
-        out = polish("Do'konimiz: Toshkent shahri, Ko'kcha masjidi ro'parasi.")
+        out = polish("Do'konimiz: Toshkent shahri, Ko'kcha masjidi atrofida.")
         self.assertIn("https://t.me/ketoshop_uz/1071", out)
         self.assertEqual(polish(out).count("https://t.me/ketoshop_uz/1071"), 1)
         # Lotin javobga tegilmaydi.
@@ -1463,7 +1466,7 @@ class AiOrderCardTest(unittest.TestCase):
         ai_sales._reply.assert_not_awaited()
         self.assertEqual(self.state.data["payment_method"], "online")
         texts = [c.args[0] for c in message.answer.await_args_list]
-        self.assertIn("karta raqami chiqadi", texts[0])
+        self.assertIn("karta raqam", texts[0])                          # variantlardan biri
         self.assertEqual(texts[1], "KARTA")                             # yangilangan karta
         self.assertIn("karta", ai_sales._sessions[777]["note"])
         _run(ai_sales.on_text(_FakeMessage("yo'q, naqd beraman"), None, self.state))
@@ -1652,11 +1655,11 @@ class AiOffTopicTest(unittest.TestCase):
         _run(ai_sales.on_text(message, None, None))
         ai_sales._reply.assert_not_awaited()
         reply = message.answer.await_args.args[0]
-        self.assertIn("bu mavzuda yordam bera olmaymiz", reply)
+        self.assertIn(reply, {uz for uz, _ in ai_sales.OFF_TOPIC_REPLIES})
         self.assertNotIn("+998", reply)                                  # raqam berilmaydi
         message = _FakeMessage("напиши стих про любовь")
         _run(ai_sales.on_text(message, None, None))
-        self.assertIn("помочь не сможем", message.answer.await_args.args[0])
+        self.assertIn(message.answer.await_args.args[0], {ru for _, ru in ai_sales.OFF_TOPIC_REPLIES})
 
     def test_rules_keep_the_bot_and_the_group_on_topic(self):
         rules = ai_sales._sales_rules()
@@ -1664,6 +1667,51 @@ class AiOffTopicTest(unittest.TestCase):
         self.assertIn("MAZMUNAN JAVOB BERMA", rules)
         self.assertIn("raqamimizni BERMA", rules)
         self.assertIn("MAVZUDAN TASHQARI", ai_sales._group_rules())
+
+
+class AiNaturalToneTest(unittest.TestCase):
+    """Egasi, 2026-10-24: "odamlar sun'iy intellekt bilan gaplashayotganlarini
+    bilishmasin tabiiy va natural ohangda yozgin"."""
+
+    def test_machine_typography_becomes_what_people_type(self):
+        nat = ai_sales.naturalize
+        self.assertEqual(nat("Bodom uni 500gr — 89 000 so‘m"), "Bodom uni 500gr - 89 000 so'm")
+        self.assertEqual(nat("Bizda ikki xil:\n— Bodom uni\n— Kokos uni"),
+                         "Bizda ikki xil:\n- Bodom uni\n- Kokos uni")         # qatorlar qo'shilmaydi
+        self.assertEqual(nat("“zo‘r” chiqdi"), '"zo\'r" chiqdi')
+        self.assertEqual(nat("Мука — 89 000 сум"), "Мука - 89 000 сум")
+        self.assertEqual(nat("«✅ Tasdiqlash» ni bosing"), "«✅ Tasdiqlash» ni bosing")
+
+    def test_fixed_lines_come_in_several_natural_wordings(self):
+        for pool in (ai_sales.CARD_INTROS, ai_sales.OFF_TOPIC_REPLIES):
+            self.assertGreaterEqual(len(pool), 3)
+            for uz, ru in pool:
+                self.assertNotIn("—", uz + ru)                                # mashina tiresi yo'q
+        seen = {ai_sales._card_intro("uz") for _ in range(60)}
+        self.assertGreater(len(seen), 1)                                      # har safar bir xil emas
+        self.assertTrue(all("Tasdiqlash" in s for s in seen))
+
+    def test_model_replies_are_naturalized_before_sending(self):
+        import ai_stats
+        _patch(self, ai_stats, "record_turn", AsyncMock())
+        _patch(self, database, "get_user_language", AsyncMock(return_value="uz"))
+        _patch(self, ai_sales, "_respond", AsyncMock(return_value="Ha, bor — 68 000 so‘m 😊"))
+        ai_sales._sessions.clear()
+        message = _FakeMessage("eritritol bormi")
+        _run(ai_sales._answer(None, message, message.text))
+        self.assertEqual(message.answer.await_args.args[0], "Ha, bor - 68 000 so'm 😊")
+        ai_sales._sessions.clear()
+
+    def test_fixed_replies_wait_like_someone_typing(self):
+        sleeps = []
+
+        async def fake_sleep(seconds):
+            sleeps.append(seconds)
+        _patch(self, ai_sales, "TYPING_PAUSE", (1.2, 3.0))
+        _patch(self, ai_sales.asyncio, "sleep", fake_sleep)
+        _run(ai_sales._typing_pause(None, 1, "Mayli"))
+        _run(ai_sales._typing_pause(None, 1, "x" * 400))
+        self.assertEqual(sleeps, [1.2, 3.0])
 
 
 class AiCardCheckoutScreenTest(unittest.TestCase):
@@ -1947,7 +1995,8 @@ class AiUsagePromoKnowledgeTest(_ProviderSwap):
     def test_shop_address_link_and_landmark_reach_bot_and_group(self):
         for rules in (ai_sales._sales_rules(), ai_sales._group_rules()):
             self.assertIn("https://t.me/ketoshop_uz/1071", rules)
-            self.assertIn("Ko'kcha masjidi ro'parasi", rules)
+            self.assertIn("Ko'kcha masjidi atrofida", rules)
+            self.assertNotIn("ro'parasi", rules)     # egasi, 2026-10-24: "ro'parasi emas"
         for text in ("manzilingiz qayerda", "адрес магазина", "Do'kon lokatsiyasi"):
             self.assertTrue(ai_sales.looks_like_question(text), text)
 
@@ -1956,12 +2005,15 @@ class AiUsagePromoKnowledgeTest(_ProviderSwap):
         for expected in ("KETO VA PP BILIMLARI", "YETKAZISH VA TO'LOV", "800 000",
                          "MIJOZ XOTIRASI", "eslab_qol", "QISQA, lekin QURUQ EMAS", "BTS",
                          "MIJOZ TOMONIDAN O'YLA", "ENG MOSINI", "'Qaysi biri kerak?'",
-                         "Savatga qo'shamizmi? 🛒", "1-2 ta muloyim emoji", "MAKSIMAL ODOB",
+                         "Savatga qo'shamizmi? 🛒", "bitta muloyim emoji", "MAKSIMAL ODOB",
                          "DO'KON NOMIDAN 'BIZ' DEB GAPIR", "O'QISH OSON BO'LSIN",
-                         "inglizcha", "Hello! Welcome to Keto shop!"):
+                         "inglizcha", "'Hi!'", "TABIIY OHANG", "Ikki marta salomlashma"):
             self.assertIn(expected, rules)
-        for expected in ("MAKSIMAL ODOB", "muloyim emoji"):
+        for expected in ("MAKSIMAL ODOB", "muloyim emoji", "TABIIY OHANG"):
             self.assertIn(expected, ai_sales._group_rules())
+        # Eski ikki karra salom shabloni qaytib kelmasin.
+        self.assertNotIn("Vaalaykum assalom! Assalomu alaykum, Keto shopga", ai_sales._sales_rules())
+        self.assertNotIn("Vaalaykum assalom! Assalomu alaykum, Keto shopga", ai_sales._group_rules())
         self.assertIn("SKIP", ai_sales._group_rules())
 
     def test_catalog_has_no_exact_stock_so_the_prompt_cache_survives_orders(self):

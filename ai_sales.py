@@ -107,6 +107,7 @@ import contextlib
 import html
 import logging
 import os
+import random
 import re
 import time
 
@@ -154,7 +155,8 @@ MIRROR_TEXT_MAX = 1500
 # Do'kon manzili (egasi, 2026-10-13: "manzil so'ralganda shu linkni bergin
 # hammaga" + mo'ljal). Mijoz DO'KON qayerda deb so'raganda — botda ham, guruhda ham.
 SHOP_ADDRESS_URL = os.getenv("SHOP_ADDRESS_URL", "https://t.me/ketoshop_uz/1071").strip()
-SHOP_LANDMARK = os.getenv("SHOP_LANDMARK", "Toshkent shahri, Ko'kcha masjidi ro'parasi").strip()
+# Egasi, 2026-10-24: "Mo'ljal Ko'kcha masjidi atrofida ... masjidni ro'parasi emas".
+SHOP_LANDMARK = os.getenv("SHOP_LANDMARK", "Toshkent shahri, Ko'kcha masjidi atrofida").strip()
 
 # Mijoz tanlaydigan yetkazish -> bazadagi delivery_method. Tugmali checkout
 # bilan bir xil to'plam (keyboards.delivery_method_keyboard).
@@ -949,6 +951,22 @@ def _sales_rules() -> str:
         "bahslashma va o'zingni odam deb ham atama: 'Sizga Ketoshop yordamchisi javob "
         "beryapti, xodimimiz bilan bevosita ham gaplashsangiz bo'ladi' de va raqamni ber:\n"
         "  " + SUPPORT_PHONES + "\n\n"
+        "TABIIY OHANG (egasi, 2026-10-24: 'odamlar sun'iy intellekt bilan gaplashayotganlarini "
+        "bilishmasin, tabiiy va natural ohangda yoz')\n"
+        "- Telefonda yozayotgan do'kon sotuvchisidek yoz: qisqa, oddiy, samimiy. Maqola, ma'ruza "
+        "yoki rasmiy xat ohangi yo'q.\n"
+        "- Har javobni yangi so'zlar bilan boshla va tugat. Bir xil kirish ('Albatta, mamnuniyat "
+        "bilan'), bir xil yakun ('Agar xohlasangiz, ... ham aytib beramiz', 'Shunga qarab eng "
+        "mosini tavsiya qilamiz') va har xabarni bir xil emoji bilan tugatish — YO'Q.\n"
+        "- Har xabarni taklif yoki savol bilan tugatish shart emas. Kerak bo'lsa — bitta oddiy savol.\n"
+        "- Mijoz aytganini qaytarib takrorlama va har qadamni e'lon qilma ('raqamingiz qabul "
+        "qilindi', 'lokatsiya oldik', '... deb tushundik', 'Tushunarli'). Darrov keyingi gapga o't. "
+        "Manzil va raqamni faqat tasdiqlatish kerak bo'lganda ko'rsat. Mahsulot savatga tushganini "
+        "esa albatta qisqa ayt ('Qo'shdik 👍', 'Savatga soldik') — mijoz buni bilishi kerak.\n"
+        "- Har xabarda rahmat aytma: xarid, buyurtma yoki chin yordam uchun bir marta yetadi.\n"
+        "- Umumiy, ensiklopedik gaplar ('odatda', 'ko'pchilik uchun', 'bu individual') o'rniga "
+        "aniq, amaliy javob — o'z mahsuloting bilan.\n"
+        "- Tinish belgilari oddiy, odam yozgandek: uzun tire (—) o'rniga vergul yoki chiziqcha (-).\n\n"
         "GAPIRISH USLUBI\n"
         "- QISQA, lekin QURUQ EMAS: odatda 2-3 jumla, ortiqcha muqaddimasiz va takrorsiz. "
         "Bu Telegram chat, maqola emas. Ro'yxat kerak bo'lsa — 3 qatordan oshmasin.\n"
@@ -958,7 +976,8 @@ def _sales_rules() -> str:
         "egasi, 2026-10-14). Ism faqat buyurtma xulosasida ('Ism: …') ko'rinishi mumkin.\n"
         "- OHANG — MAKSIMAL ODOB: muloyim va g'amxo'r sotuvchi. Mijozga doim 'siz' deb "
         "murojaat qil; 'albatta', 'mamnuniyat bilan', 'marhamat', 'iltimos', 'rahmat' kabi "
-        "hurmatli so'zlar ishlat; savoli va xaridi uchun minnatdorchilik bildir. Bir so'zli "
+        "hurmatli so'zlar ishlat (lekin hammasini bir gapga yig'ma); xaridi uchun minnatdorchilik "
+        "bildir. Bir so'zli "
         "quruq javob ('Ha, bor.'), buyruq ohangi, to'mtoq yoki sovuq gap yo'q — mijoz "
         "norozi bo'lsa ham.\n"
         "- MIJOZ TOMONIDAN O'YLA: u nima uchun so'rayapti, unga nima eng qulay? Bir nechta "
@@ -987,7 +1006,8 @@ def _sales_rules() -> str:
         "kirillda yozsa — kirillda, o'zbekcha lotinda — lotinda, ruscha — ruscha, inglizcha — "
         "inglizcha javob ber. Mijoz xabarining tili bot sozlamasidagi tildan ustun. Mahsulot "
         "nomlari va narxlar ham o'sha yozuvda (kirillda — kirill harflari bilan).\n"
-        "- Iliq gapir va har javobda 1-2 ta muloyim emoji qo'y (😊 🌿 🤗 💚 ✨ 🛒) — ko'p emas. Shikoyat, muammo yoki uzr paytida emoji ishlatma.\n"
+        "- Iliq gapir. Ko'p javobda bitta muloyim emoji (😊 🤗 💚 🛒 🌿) — o'rni kelganda, har "
+        "xabarda emas va har safar boshqasi. Shikoyat, muammo yoki uzr paytida emoji ishlatma.\n"
         "- Bir vaqtda bitta narsa so'ra: hammasini birdan so'rab ro'yxat yozma.\n"
         "- Mijoz ketma-ket bir nechta xabar yozgan bo'lsa, ular birga keladi — hammasiga "
         "bitta javobda javob ber.\n"
@@ -1068,15 +1088,13 @@ def _sales_rules() -> str:
         "- Oddiy salom, rahmat, 'qalaysiz' kabi gaplarni yozma — faqat haqiqiy "
         "javobsiz savolni.\n\n"
         "SALOMLASHISH — BIRINCHI XABAR\n"
-        "- Mijoz salom bermay to'g'ridan-to'g'ri gap boshlasa, javobni shunday boshla:\n"
-        "  'Assalomu alaykum, Keto shopga xush kelibsiz!'\n"
-        "- Mijoz o'zi salom bersa (assalomu alaykum, salom, salomatmisiz):\n"
-        "  'Vaalaykum assalom! Assalomu alaykum, Keto shopga xush kelibsiz!'\n"
-        "- Ruscha yozgan mijozga shu salomning ruschasini ber: "
-        "'Ассалому алайкум, добро пожаловать в Keto shop!'\n"
-        "- Kirillda yozganga: 'Ассалому алайкум, Keto shopга хуш келибсиз!'; inglizcha "
-        "yozganga: 'Hello! Welcome to Keto shop!'\n"
-        "- Avval buyurtma bergan mijozni 'yana ko'rganimizdan xursandmiz' ohangida kutib ol "
+        "- Qisqa va oddiy, odamlar yozishganidek, keyin darrov javob:\n"
+        "  mijoz o'zi salom bersa — 'Va alaykum assalom!'; bermasa — 'Assalomu alaykum!'.\n"
+        "  Kirillda: 'Ва алайкум ассалом!' / 'Ассалому алайкум!'; ruscha: 'Здравствуйте!'; "
+        "inglizcha: 'Hi!'.\n"
+        "- Ikki marta salomlashma ('Vaalaykum assalom! Assalomu alaykum, ...' — yo'q).\n"
+        "- Yangi mijozga shu birinchi javobda bir marta 'Keto shopga xush kelibsiz' deyish "
+        "mumkin. Avval buyurtma bergan mijozni 'yana ko'rganimizdan xursandmiz' ohangida kutib ol "
         "(ismi bilan emas).\n"
         "- Salomdan keyin darrov ishga o't: mijozning savoliga javob ber yoki "
         "bitta qisqa savol bilan mavzuga burib yubor ('nima qidiryapsiz?').\n"
@@ -1159,10 +1177,10 @@ def _sales_rules() -> str:
         "gapga ham javob ber.\n"
         "- Boshqa HAR QANDAY savolga (umumiy bilim, uy vazifasi, matematika, kod, she'r, insho, "
         "tarjima, yangiliklar, ob-havo, sport, siyosat, din, boshqa do'konlar va ularning narxlari, "
-        "shaxsiy maslahat) MAZMUNAN JAVOB BERMA — hatto oson bo'lsa ham. Bitta muloyim jumla bilan "
-        "rad et va mavzuga qaytar: 'Kechirasiz, bu mavzuda yordam bera olmaymiz 😊 Keto va PP "
-        "mahsulotlari, retseptlar yoki buyurtma bo'yicha savolingiz bo'lsa — marhamat!'. Bunda "
-        "raqamimizni BERMA va javobsiz_savol ni chaqirMA — bu do'kon savoli emas.\n\n"
+        "shaxsiy maslahat) MAZMUNAN JAVOB BERMA — hatto oson bo'lsa ham. O'z so'zing bilan, bitta "
+        "muloyim jumlada rad et va mavzuga qaytar (masalan: 'Bunisida yordam bera olmaymiz 😊 "
+        "Mahsulot yoki buyurtma bo'yicha bo'lsa, bemalol so'rang'). Har safar bir xil so'zlar emas. "
+        "Bunda raqamimizni BERMA va javobsiz_savol ni chaqirMA — bu do'kon savoli emas.\n\n"
         "BOSHQA\n"
         "- Tibbiy maslahat berma (dori, davolash, diagnoz). Keto mahsulot sifatida "
         "gapir, shifokor o'rnini bosma. Kasallik haqida so'rashsa shifokorga "
@@ -1839,9 +1857,61 @@ def _card_fresh(user_id: int) -> bool:
     return time.time() - float(session.get("card_at") or 0) < CARD_FRESH
 
 
+# Kod yozadigan qat'iy jumlalar har safar bir xil chiqsa — robotligi sezilardi
+# (egasi, 2026-10-24: "odamlar sun'iy intellekt bilan gaplashayotganlarini
+# bilishmasin"). Har biri bir nechta tabiiy variantdan tanlanadi.
+CARD_INTROS = (
+    ("Buyurtmangiz shu 👇 Hammasi to'g'ri bo'lsa, «✅ Tasdiqlash» ni bosing",
+     "Вот ваш заказ 👇 Если всё верно, нажмите «✅ Подтвердить»"),
+    ("Tekshirib ko'ring 👇 to'g'ri bo'lsa «✅ Tasdiqlash» ni bosing yoki «ha» deb yozing",
+     "Проверьте, пожалуйста 👇 если всё так, нажмите «✅ Подтвердить» или напишите «да»"),
+    ("Mana, buyurtmani tayyorladik 😊 Ko'rib chiqing, hammasi joyida bo'lsa «✅ Tasdiqlash»",
+     "Заказ готов 😊 Посмотрите, и если всё в порядке, нажмите «✅ Подтвердить»"),
+)
+OFF_TOPIC_REPLIES = (
+    ("Bunisida yordam bera olmaymiz 😊 Mahsulot, retsept yoki buyurtma bo'yicha bo'lsa, bemalol so'rang",
+     "С этим, к сожалению, не поможем 😊 По продуктам, рецептам или заказу спрашивайте"),
+    ("Afsuski, bu bizning yo'nalishimiz emas 🙂 Keto va PP mahsulotlari bo'yicha savol bo'lsa, yozavering",
+     "Это, увы, не по нашей части 🙂 А по кето- и ПП-продуктам с радостью подскажем"),
+    ("Bu borada yordam bera olmaymiz. Keto mahsulotlari yoki buyurtma haqida so'rasangiz, mamnuniyat bilan 😊",
+     "Тут помочь не сможем. Если вопрос о кето-продуктах или заказе, пишите 😊"),
+)
+
+
+def _pick(variants, lang: str) -> str:
+    uz, ru = random.choice(variants)
+    return _t(uz, ru, lang)
+
+
 def _card_intro(lang: str) -> str:
-    return _t("Buyurtmangizni tekshiring 👇 Hammasi to'g'ri bo'lsa — «✅ Tasdiqlash» ni bosing 😊",
-              "Проверьте заказ 👇 Если всё верно — нажмите «✅ Подтвердить» 😊", lang)
+    return _pick(CARD_INTROS, lang)
+
+
+TYPING_PAUSE = (1.2, 3.0)   # soniya: qat'iy javob oldidan "yozmoqda..." — odam darhol yozmaydi
+
+
+async def _typing_pause(bot: Bot | None, chat_id: int, text: str) -> None:
+    """Kod yozadigan javob 0.05 soniyada chiqardi — odam bunday tez yozmaydi.
+    Matn uzunligiga qarab qisqa "yozmoqda..." pauzasi."""
+    low, high = TYPING_PAUSE
+    seconds = min(high, max(low, len(text or "") / 40))
+    if seconds <= 0:
+        return
+    async with _typing(bot, chat_id):
+        await asyncio.sleep(seconds)
+
+
+_CURLY_APOSTROPHE = re.compile(r"(?<=[A-Za-z])[‘’ʻʼ`´](?=[A-Za-z])")
+
+
+def naturalize(text: str) -> str:
+    """Model yozuvidagi "AI belgilari" odam yozganiga: uzun tire — chiziqcha,
+    lotin so'zdagi jingalak apostrof (o‘, g‘) — oddiy ' (Telegramda odamlar
+    shunday yozadi), jingalak qo'shtirnoq — oddiy."""
+    text = re.sub(r"(?m)^[ \t]*—[ \t]*", "- ", text or "")      # qator boshidagi tire
+    text = re.sub(r"[ \t]*—[ \t]*", " - ", text)                # qator ichidagi (qatorlar qo'shilmaydi)
+    text = _CURLY_APOSTROPHE.sub("'", text)
+    return text.replace("“", '"').replace("”", '"')
 
 
 # Mijoz kartani yozib tasdiqlasa — tugma bosilgandek (modelsiz).
@@ -1887,16 +1957,20 @@ async def _switch_card_payment(bot: Bot | None, message: Message, state: FSMCont
     data = await state.get_data()
     lang = data.get("lang") or await _lang(user.id)
     if data.get("online_only") and choice == "cash":
-        reply = _t("Bu yetkazish usulida to'lov faqat karta orqali oldindan 😊",
-                   "При этом способе доставки оплата только картой заранее 😊", lang)
+        reply = _t("Bu yetkazish usulida to'lov faqat karta orqali, oldindan bo'ladi",
+                   "При этом способе доставки оплата только картой, заранее", lang)
     else:
         await state.update_data(payment_method=choice)
-        reply = (_t("Mayli, karta orqali to'laysiz 😊 «✅ Tasdiqlash» dan keyin karta raqami chiqadi.",
-                    "Хорошо, оплата картой 😊 После «✅ Подтвердить» придут реквизиты карты.", lang)
+        reply = (_pick((("Mayli, karta orqali 😊 Tasdiqlaganingizdan keyin karta raqamini yuboramiz",
+                         "Хорошо, картой 😊 После подтверждения пришлём реквизиты"),
+                        ("Bo'pti, kartaga o'tkazdik. «✅ Tasdiqlash» dan keyin karta raqami chiqadi",
+                         "Готово, переключили на карту. После «✅ Подтвердить» придут реквизиты")), lang)
                  if choice == "online" else
-                 _t("Mayli, naqd to'laysiz 😊", "Хорошо, оплата наличными 😊", lang))
+                 _pick((("Mayli, naqd to'laysiz 😊", "Хорошо, оплата наличными 😊"),
+                        ("Bo'pti, naqdga o'zgartirdik", "Готово, поменяли на наличные")), lang))
         _session(user.id)["note"] = (f"[Mijoz kartada to'lovni {'karta' if choice == 'online' else 'naqd'}"
                                      "ga o'zgartirdi — karta yangilandi.]")
+    await _typing_pause(bot, message.chat.id, reply)
     await message.answer(reply)
     await _send_card(message, state)
     await log_conversation(bot, user, f"👤 {_esc(_short(message.text, 200))}\n🤖 {_esc(reply)}")
@@ -2109,9 +2183,9 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
     for attempt in range(MAX_TURNS):
         if turn.refused:
             logger.warning("AI sales refusal for user %s", user_id)
-            return _t("Kechirasiz, bu savolga bu yerda javob bera olmayman.\n"
+            return _t("Kechirasiz, bu savolga shu yerda javob bera olmaymiz.\n"
                       "Batafsil ma'lumot olish uchun: ",
-                      "Извините, на этот вопрос здесь ответить не могу.\n"
+                      "Извините, на этот вопрос здесь ответить не сможем.\n"
                       "Подробнее по телефону: ", lang) + SUPPORT_PHONES
         reply_text = turn.text or reply_text
         if not turn.calls:
@@ -2243,7 +2317,7 @@ async def _answer(bot: Bot, message: Message, user_text: str) -> None:
         reply = polish_reply(reply, lang, customer_text=user_text)
         names = customer_names(message.from_user, user_text, session.get("names", ()))
         session.setdefault("names", set()).update(names)
-        reply = thank_politely(strip_name_address(reply, names))
+        reply = naturalize(thank_politely(strip_name_address(reply, names)))
     if not reply:
         return
     session = _sessions.get(user_id)
@@ -3431,11 +3505,7 @@ def off_topic_request(text: str) -> bool:
 
 
 def off_topic_reply(lang: str) -> str:
-    return _t("Kechirasiz, bu mavzuda yordam bera olmaymiz 😊\n\n"
-              "Keto va PP mahsulotlari, retseptlar yoki buyurtma bo'yicha savolingiz bo'lsa — "
-              "marhamat, yozing 🌿",
-              "Извините, с этим помочь не сможем 😊\n\n"
-              "Если есть вопрос о кето- и ПП-продуктах, рецептах или заказе — пишите 🌿", lang)
+    return _pick(OFF_TOPIC_REPLIES, lang)
 
 
 async def _decline_off_topic(bot: Bot | None, message: Message) -> None:
@@ -3443,6 +3513,7 @@ async def _decline_off_topic(bot: Bot | None, message: Message) -> None:
     spoken = customer_language(message.text)
     lang = "ru" if spoken == "ru" else "uz_cyr" if spoken == "uz_cyr" else "uz" if spoken else await _lang(user.id)
     reply = off_topic_reply(lang)
+    await _typing_pause(bot, message.chat.id, reply)
     await message.answer(reply)
     await log_conversation(bot, user, f"👤 {_esc(_short(message.text, 300))}\n🤖 {_esc(reply)}\n"
                                       "<i>(mavzudan tashqari — modelsiz)</i>")
@@ -3667,8 +3738,8 @@ def _group_rules() -> str:
         "- Retsept so'ralsa — guruhda retsept yozma, muloyim botga yo'naltir: 'Retseptni "
         "@" + BOT_USERNAME + " da mamnuniyat bilan ulashamiz 😊'.\n\n"
         "SALOMLASHISH\n"
-        "- Kimdir salom bersa: 'Vaalaykum assalom! Assalomu alaykum, Keto shopga "
-        "xush kelibsiz!' deb boshla, keyin savoliga javob ber.\n"
+        "- Kimdir salom bersa: qisqa 'Va alaykum assalom!' (ikki marta salomlashmasdan), keyin "
+        "savoliga javob ber.\n"
         "- Salom bermay savol bersa, salomni qisqa qil yoki umuman tashlab ket — "
         "guruhda har javobda salomlashish g'ashga tegadi.\n\n"
         "SEN KIMSAN\n"
@@ -3694,7 +3765,10 @@ def _group_rules() -> str:
         "yo'naltirish — alohida qatorda, hammasi bitta bo'lakka yopishmasin.\n"
         "- Kim qaysi til va yozuvda yozsa, o'shanda javob ber: o'zbekcha kirill — kirillda, "
         "lotin — lotinda, ruscha — ruscha, inglizcha — inglizcha.\n"
-        "- Har javobda 1-2 ta muloyim emoji (😊 🌿 🤗 💚) — ko'p emas; shikoyatda yo'q.\n"
+        "- Ko'pi bilan bitta muloyim emoji (😊 🤗 💚 🌿), har javobda emas; shikoyatda yo'q.\n"
+        "- TABIIY OHANG: guruhdagi oddiy do'kon xodimidek yoz — har javob boshqa so'zlar bilan, "
+        "bir xil kirish va yakunsiz, savolni qaytarib takrorlamasdan, ensiklopedik gapsiz. Uzun "
+        "tire (—) o'rniga vergul yoki chiziqcha (-).\n"
         "- Suhbatni davom ettir: oldingi xabarlarni hisobga ol, savol berilsa "
         "javob ber, hazilga hazil bilan javob berishing mumkin.\n\n"
         "AKSIYA\n"
@@ -3713,8 +3787,9 @@ def _group_rules() -> str:
         "- Siyosat, din va shaxsiy mavzulardan chetlan.\n"
         "- MAVZUDAN TASHQARI savol (umumiy bilim, uy vazifasi, kod, she'r, insho, sport, "
         "yangiliklar, ob-havo va h.k.) — mazmuniga JAVOB BERMA. Senga murojaat qilinmagan bo'lsa — "
-        "SKIP. Murojaat qilingan bo'lsa (@ yoki reply) — bitta muloyim jumla: 'Bu mavzuda yordam "
-        "bera olmaymiz 😊 Keto mahsulotlari yoki buyurtma bo'yicha savolingiz bo'lsa — marhamat!'\n"
+        "SKIP. Murojaat qilingan bo'lsa (@ yoki reply) — o'z so'zing bilan bitta muloyim jumla "
+        "(masalan: 'Bunisida yordam bera olmaymiz 😊 Mahsulot yoki buyurtma bo'yicha bo'lsa, "
+        "bemalol yozing'), har safar bir xil emas.\n"
     )
     return rules
 
@@ -3835,7 +3910,8 @@ async def _group_answer(bot: Bot, message: Message, text: str) -> None:
         return
     if not reply:
         return
-    reply = thank_politely(strip_name_address(polish_reply(reply), customer_names(message.from_user, text)))
+    reply = naturalize(thank_politely(strip_name_address(polish_reply(reply),
+                                                         customer_names(message.from_user, text))))
     await message.reply(reply)
     user_id = message.from_user.id
     await ai_stats.record_turn(user_id, "group", text)   # guruhda adminlarga javob yo'q
