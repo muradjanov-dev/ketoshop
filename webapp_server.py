@@ -1847,6 +1847,35 @@ async def api_track(request: web.Request):
     return _json({"ok": True})
 
 
+async def api_site_feedback_due(request: web.Request):
+    """GET /api/site-feedback/due — may the Mini App show the «sayt qulaymi?»
+    sheet to this buyer now (site_feedback.ask_due). Any trouble answers no:
+    not asking is always the safe side."""
+    import database
+    import site_feedback
+    user_id = request["user_id"]
+    try:
+        state = await database.get_site_feedback_ask(user_id)
+    except Exception:
+        logger.exception("Site feedback ask state unavailable")
+        return _json({"due": False})
+    internal = user_id in ADMIN_IDS or user_id in LEADERBOARD_EXCLUDED_USER_IDS
+    due = site_feedback.ask_due(state["asks"], state["last_asked_at"], state["answered"],
+                                internal, _dt.datetime.utcnow())
+    return _json({"due": due})
+
+
+async def api_site_feedback_shown(request: web.Request):
+    """POST /api/site-feedback/shown — the sheet is on screen: that is an ask,
+    whether the buyer answers, closes it or just leaves the app."""
+    import database
+    try:
+        await database.mark_site_feedback_asked(request["user_id"])
+    except Exception:
+        logger.exception("Site feedback ask not recorded")
+    return _json({"ok": True})
+
+
 async def api_site_feedback(request: web.Request):
     """Stars + comment about how convenient the site is, from the Mini App's
     feedback sheet (owner, 2026-10-13), relayed to every admin. A second
@@ -1916,6 +1945,8 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_post("/api/cart/clear", api_cart_clear)
     app.router.add_post("/api/checkout", api_checkout)
     app.router.add_post("/api/site-feedback", api_site_feedback)
+    app.router.add_get("/api/site-feedback/due", api_site_feedback_due)
+    app.router.add_post("/api/site-feedback/shown", api_site_feedback_shown)
     app.router.add_post("/api/track", api_track)
     app.router.add_post("/api/checkout/cheque", api_checkout_cheque)
     app.router.add_post("/api/checkout/pay-in-chat", api_checkout_pay_in_chat)

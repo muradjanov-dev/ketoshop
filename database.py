@@ -263,6 +263,16 @@ async def init_db():
             )
         """)
 
+        # When the «sayt qulaymi?» sheet was last shown to whom (2026-10-24) —
+        # site_feedback.ask_due decides from it; before, only the phone knew.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS site_feedback_asks (
+                user_id BIGINT PRIMARY KEY,
+                asks INTEGER NOT NULL DEFAULT 0,
+                last_asked_at TIMESTAMP
+            )
+        """)
+
         # The Mini App's counterpart (2026-10-18): one row per thing a buyer
         # did in the shop — opened it, opened a product, added to cart,
         # ordered… (activity._SITE_ACTIONS). Before this the site left no
@@ -8326,6 +8336,28 @@ async def get_all_reviews() -> list[dict]:
             _customer_filter_ids(),
         )
         return [dict(r) for r in rows]
+
+
+async def get_site_feedback_ask(user_id: int) -> dict:
+    """How often the «sayt qulaymi?» sheet was shown to this buyer, when last,
+    and whether they ever answered it."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT a.asks, a.last_asked_at,
+                      EXISTS (SELECT 1 FROM site_feedback f WHERE f.user_id = $1) AS answered
+                 FROM (SELECT 1) one
+                 LEFT JOIN site_feedback_asks a ON a.user_id = $1""", user_id)
+    return {"asks": int(row["asks"] or 0), "last_asked_at": row["last_asked_at"],
+            "answered": bool(row["answered"])}
+
+
+async def mark_site_feedback_asked(user_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO site_feedback_asks (user_id, asks, last_asked_at)
+               VALUES ($1, 1, CURRENT_TIMESTAMP)
+               ON CONFLICT (user_id) DO UPDATE
+                  SET asks = site_feedback_asks.asks + 1, last_asked_at = CURRENT_TIMESTAMP""", user_id)
 
 
 async def save_site_feedback(user_id: int, rating: int, comment: str, lang: str) -> None:

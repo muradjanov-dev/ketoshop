@@ -10,10 +10,18 @@ Public API:
   allow(user_id, now=None)                 -> False within COOLDOWN of the last one
   admin_text(user, user_id, rating, comment, lang) -> HTML message for admins
   notify_admins(bot, text)                 -> number of admins reached
+  ask_due(asks, last_asked, answered, internal, now) -> whether to show the sheet
+
+Who is asked (owner, 2026-10-24: "nega hadeb so'rayveryapti?"): the server
+keeps one row per buyer (site_feedback_asks). A buyer who answered is never
+asked again; one who didn't is asked at most MAX_ASKS times, ASK_AGAIN_DAYS
+apart. Showing the sheet counts as asking, however the buyer leaves it.
+Admin and shop accounts are not asked at all.
 """
 import html
 import logging
 import time
+from datetime import datetime, timedelta
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
@@ -25,6 +33,8 @@ logger = logging.getLogger(__name__)
 MAX_COMMENT = 1000
 COOLDOWN = 600          # one feedback per buyer per 10 minutes — a double tap
                         # or a scripted loop must not flood the admins' chat
+ASK_AGAIN_DAYS = 30
+MAX_ASKS = 2
 _LANG_NAMES = {"uz": "o'zbek (lotin)", "uz_cyr": "o'zbek (kirill)", "ru": "rus"}
 _last_sent: dict[int, float] = {}
 
@@ -45,6 +55,13 @@ def parse(data) -> tuple[int, str] | None:
     if rating == 0 and not comment:
         return None
     return rating, comment
+
+
+def ask_due(asks: int, last_asked: datetime | None, answered: bool, internal: bool,
+            now: datetime) -> bool:
+    if internal or answered or asks >= MAX_ASKS:
+        return False
+    return last_asked is None or now - last_asked >= timedelta(days=ASK_AGAIN_DAYS)
 
 
 def allow(user_id: int, now: float | None = None) -> bool:
