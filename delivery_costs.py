@@ -40,6 +40,10 @@ COURIER_COST = {
     "self": 25_000,     # Tashkent — Ketoshop's own courier
     "bts":  5_000,      # regional parcel handed to the post office
     "emu":  5_000,
+    # UzPost «Bir Qadam» (2026-10-24): the same trip to the post office, plus
+    # the UzPost tariff itself — which, unlike BTS/EMU, the BUYER paid to us
+    # inside the order total, so it leaves the till too. See uzpost_cost().
+    "uzpost": 5_000,
 }
 
 # Human label per method, for the Chiqimlar row.
@@ -47,7 +51,29 @@ _LABEL = {
     "self": "Toshkent kuryeri",
     "bts":  "BTS pochtaga eltish",
     "emu":  "EMU pochtaga eltish",
+    "uzpost": "UzPost tarifi + pochtaga eltish",
 }
+
+
+def uzpost_cost(order: dict) -> int:
+    """What a delivered UzPost order cost the shop: the tariff paid at the
+    post office + the trip there. The tariff is what the buyer was charged
+    less uzpost.SURCHARGE; an order that carried no fee (keyed by an admin)
+    is priced from its lines instead."""
+    import json
+    import uzpost
+    from handlers.cart import charged_delivery_fee
+    items = order.get("items")
+    try:
+        items = json.loads(items) if isinstance(items, str) else (items or [])
+    except Exception:
+        items = []
+    charged = charged_delivery_fee(order.get("total"), order.get("keto_redeemed"), items)
+    if charged > uzpost.SURCHARGE:
+        tariff = charged - uzpost.SURCHARGE
+    else:
+        tariff = uzpost.tariff(uzpost.parcel_kg(items), uzpost.is_far(order.get("post_office")))
+    return tariff + COURIER_COST["uzpost"]
 
 # Only orders delivered from here on are booked. An expenses row is stamped
 # with the time it is written, not the time of the order, so sweeping the
@@ -90,7 +116,7 @@ async def book_delivered_courier_costs() -> tuple[int, float]:
     booked, total = 0, 0.0
     for o in orders:
         method = o.get("delivery_method")
-        amount = fee_for(method)
+        amount = uzpost_cost(o) if method == "uzpost" else fee_for(method)
         if amount <= 0:                       # method dropped from the table
             continue
         name = f"🚚 Kuryer: {_LABEL.get(method, method)} — buyurtma #{o['id']}"

@@ -1436,6 +1436,16 @@ async def view_seller_order(callback: CallbackQuery):
         # AI-created order carries no fee in its total either.
         if delivery_fee or subtotal >= FREE_DELIVERY_FROM:
             delivery_fee_block = delivery_fee_text("self", delivery_fee, lang)
+    elif order.get("delivery_method") == "uzpost":
+        # UzPost's fee depends on the parcel — read back what was charged,
+        # plus the «Bir Qadam» office the box is addressed to (uzpost.py).
+        import uzpost
+        from handlers.cart import charged_delivery_fee
+        delivery_fee = charged_delivery_fee(order.get("total"), order.get("keto_redeemed"), items)
+        delivery_fee_block = delivery_fee_text("uzpost", delivery_fee, lang) + get_text(
+            "uzpost_admin_line", lang, kg=uzpost.fmt_kg(uzpost.parcel_kg(items)),
+            office=html.escape(order.get("post_office") or get_text("uzpost_office_admin_picks", lang),
+                               quote=False))
     from handlers.cart import order_history_block
     text = get_text("new_order_notification", lang,
         order_id=order["id"],

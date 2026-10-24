@@ -86,7 +86,7 @@ class BookingTest(unittest.TestCase):
              patch.object(delivery_costs.database, "book_delivery_expense", AsyncMock()):
             run(delivery_costs.book_delivered_courier_costs())
         methods = fetch.await_args_list[0].args[0]
-        self.assertEqual(sorted(methods), ["bts", "emu", "self"])
+        self.assertEqual(sorted(methods), ["bts", "emu", "self", "uzpost"])
 
     def test_archive_is_not_swept(self):
         # Orders delivered before the feature went live must be left alone,
