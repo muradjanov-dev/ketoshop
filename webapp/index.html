@@ -5446,13 +5446,16 @@ function finishGame(id, value, total) {
 // ===== SAYT HAQIDA FIKR (site feedback) =====
 // Owner, 2026-10-13: ask buyers who have spent over a minute on the site how
 // convenient it is — five stars and a comment — and send it to the admins
-// (POST /api/site-feedback → site_feedback.py). Asked once per phone: after a
-// send it never comes back; ✕ (or back / a tap outside) postpones it for a
-// week. It waits for a quiet moment — never over checkout, payment, an open
-// sheet or a running game. Only visible time counts towards the minute.
+// (POST /api/site-feedback → site_feedback.py). It waits for a quiet moment —
+// never over checkout, payment, an open sheet or a running game — and only
+// visible time counts towards the minute. Whether to ask at all is the
+// server's call (2026-10-24, "nega hadeb so'rayveryapti?"): never again after
+// an answer, at most twice, 30 days apart, never admins — showing the sheet
+// counts as asking. The phone keeps its own note too, so it doesn't even
+// call the server for 30 days after an ask.
 const SITE_FB_KEY = 'ketoshop_site_fb';
 const SITE_FB_AFTER_MS = 60000;
-const SITE_FB_SNOOZE_MS = 7 * 864e5;
+const SITE_FB_SNOOZE_MS = 30 * 864e5;
 const SITE_FB_FACES = ['😊', '😔', '😕', '🙂', '😊', '😍'];
 let siteFbRating = 0;
 let siteFbOpenedOnce = false;
@@ -5484,6 +5487,7 @@ function _siteFbPaint() {
 
 function openSiteFeedback() {
   siteFbOpenedOnce = true;
+  if (!_siteFbState().sent) _siteFbSave({ snoozed: Date.now() });   // shown = asked, however it is left
   siteFbRating = 0;
   document.getElementById('site-fb-title').textContent = gx('Saytimiz sizga qulaymi?', 'Удобен ли вам наш сайт?');
   document.getElementById('site-fb-sub').textContent = gx(
@@ -5545,7 +5549,11 @@ document.getElementById('site-fb-modal').addEventListener('click', function (e) 
     if (document.visibilityState === 'visible') visibleMs += TICK;
     if (visibleMs >= SITE_FB_AFTER_MS && !siteFbOpenedOnce && _siteFbQuietMoment()) {
       clearInterval(timer);
-      openSiteFeedback();
+      api('/api/site-feedback/due').then(r => {
+        if (!r || !r.due || siteFbOpenedOnce || !_siteFbQuietMoment()) return;
+        openSiteFeedback();
+        api('/api/site-feedback/shown', { method: 'POST', body: '{}' }).catch(() => {});
+      }).catch(() => {});
     }
   }, TICK);
 })();
