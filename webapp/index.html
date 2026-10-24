@@ -3939,8 +3939,9 @@ const Butterfly = (() => {
 // license or download. Phones only allow sound after the buyer's first tap,
 // so the first song comes a few seconds after it. A song never plays at
 // night (22:00–07:00 Tashkent), while the app is hidden, on the ordering
-// screens or over an open window, and the 🐦 button (shown once the birds
-// have sung) switches it off for good on that phone.
+// screens or over an open window, and the 🎶 button (shown once the music or
+// the birds have started) switches the birds and the music off on that phone.
+// Classical music plays under the birds — see "Classical music" below.
 const Birdsong = (() => {
   const CALM_PAGES = ['home', 'catalog', 'fav', 'profile', 'games', 'orders'];
   const KEY = 'ketoshop_birds';
@@ -3988,6 +3989,21 @@ const Birdsong = (() => {
     fb.connect(echo);
     echo.connect(wet);
     wet.connect(ctx.destination);
+    // The music's own chain: a gentler high cut and a small hall.
+    mus = ctx.createGain();
+    mus.gain.value = 0;
+    const soft = ctx.createBiquadFilter();
+    soft.type = 'lowpass';
+    soft.frequency.value = 3200;
+    const hall = ctx.createConvolver();
+    hall.buffer = hallImpulse(ctx);
+    const hallWet = ctx.createGain();
+    hallWet.gain.value = 0.32;
+    mus.connect(soft);
+    soft.connect(ctx.destination);
+    soft.connect(hall);
+    hall.connect(hallWet);
+    hallWet.connect(ctx.destination);
     return ctx;
   }
 
@@ -4088,17 +4104,211 @@ const Birdsong = (() => {
     }, rand(range[0], range[1]));
   }
 
-  // The first tap unlocks sound (browser rule); the birds start soon after.
+  // ── Classical music under the birds (owner, 2026-10-24: "sayt foniga
+  // qushlar bilan birga klassik yoqimli musiqa ham qo'ygin, har bosib
+  // o'chirganda boshqa musiqaga o'tsin"). Four famous public-domain pieces,
+  // note by note on a soft synthesised piano — no recordings, nothing to
+  // license or download. One piece follows another; switching the 🎶 button
+  // off and on again starts the next one. The music keeps playing while
+  // products and recipes are open, rests on the ordering screens and while
+  // the app is hidden, and keeps the birds' night rule.
+  const MUSIC_KEY = 'ketoshop_music_piece';
+  const MUSIC_LEVEL = 0.5;
+  const MUSIC_REST_PAGES = ['checkout', 'cheque', 'order-success'];
+  const PIECES = [bachPrelude(), canonInD(), furElise(), odeToJoy()]
+    .map(p => { p.ev.sort((a, b) => a[0] - b[0]); return p; });   // the scheduler reads them in time order
+  let mus = null, musicTimer = null, piece = -1, evi = 0, t0 = 0, playing = false;
+
+  // Each piece: name [uz, ru], tempo, events [beat, midi note, beats, loudness 0–1], length in beats.
+  // J. S. Bach, Prelude in C major BWV 846, bars 1–19 and the closing chord.
+  function bachPrelude() {
+    const bars = [
+      [60, 64, 67, 72, 76], [60, 62, 69, 74, 77], [59, 62, 67, 74, 77], [60, 64, 67, 72, 76],
+      [60, 64, 69, 76, 81], [60, 62, 66, 69, 74], [59, 62, 67, 74, 79], [59, 60, 64, 67, 72],
+      [57, 60, 64, 67, 72], [50, 57, 62, 66, 72], [55, 59, 62, 67, 71], [55, 58, 64, 67, 73],
+      [53, 57, 62, 69, 74], [53, 56, 62, 65, 71], [52, 55, 60, 67, 72], [52, 53, 57, 60, 65],
+      [50, 53, 57, 60, 65], [43, 50, 55, 59, 65], [48, 52, 55, 60, 64],
+    ];
+    const ev = [];
+    bars.forEach((n, bar) => {
+      for (let half = 0; half < 2; half++) {
+        const s = bar * 4 + half * 2;
+        ev.push([s, n[0], 2, 0.75], [s + 0.25, n[1], 1.75, 0.65]);
+        [2, 3, 4, 2, 3, 4].forEach((k, i) => ev.push([s + 0.5 + i * 0.25, n[k], 0.25, 0.6]));
+      }
+    });
+    const end = bars.length * 4;
+    [48, 55, 60, 64, 72].forEach((m, i) => ev.push([end + i * 0.15, m, 4, 0.6]));
+    return { name: ['J. S. Bax — Do-major prelyudiyasi', 'И. С. Бах — Прелюдия до мажор'], bpm: 66, ev, len: end + 4 };
+  }
+
+  // J. Pachelbel, Canon in D: the eight-chord ground, then the two violin
+  // lines that answer each other over it.
+  function canonInD() {
+    const ground = [[50, [62, 66, 69]], [45, [57, 61, 64]], [47, [59, 62, 66]], [42, [54, 57, 61]],
+                    [43, [55, 59, 62]], [50, [62, 66, 69]], [43, [55, 59, 62]], [45, [57, 61, 64]]];
+    const upper = [78, 76, 74, 73, 71, 69, 71, 73], lower = [74, 73, 71, 69, 67, 66, 67, 64];
+    const ev = [];
+    for (let cycle = 0; cycle < 4; cycle++) {
+      ground.forEach(([bass, chord], i) => {
+        const s = cycle * 16 + i * 2;
+        ev.push([s, bass, 2, 0.6]);
+        [chord[0], chord[1], chord[2], chord[1]].forEach((m, k) => ev.push([s + k * 0.5, m, 0.5, 0.4]));
+        if (cycle === 1 || cycle === 3) ev.push([s, upper[i], 2, 0.7]);
+        if (cycle >= 2) ev.push([s, lower[i], 2, 0.62]);
+      });
+    }
+    [38, 50, 62, 66, 69, 74].forEach((m, i) => ev.push([64 + i * 0.12, m, 4, 0.55]));
+    return { name: ['Pachelbel — Kanon', 'Пахельбель — Канон'], bpm: 60, ev, len: 68 };
+  }
+
+  // L. van Beethoven, Für Elise, the opening theme twice (beats are sixteenths).
+  function furElise() {
+    const ev = [];
+    const am = [45, 52, 57], e7 = [40, 52, 56];
+    const turn = s => [76, 75, 76, 71, 74, 72].forEach((m, i) => ev.push([s + i, m, 1, 0.66]));
+    const left = (s, chord) => chord.forEach((m, i) => ev.push([s + i, m, 3 - i, 0.45]));
+    const theme = s => {                     // s: the first sixteenth of bar 1
+      turn(s);
+      ev.push([s + 6, 69, 2, 0.66]); left(s + 6, am); [60, 64, 69].forEach((m, i) => ev.push([s + 9 + i, m, 1, 0.6]));
+      ev.push([s + 12, 71, 2, 0.66]); left(s + 12, e7); [64, 68, 71].forEach((m, i) => ev.push([s + 15 + i, m, 1, 0.6]));
+      ev.push([s + 18, 72, 2, 0.66]); left(s + 18, am); [64, 76, 75].forEach((m, i) => ev.push([s + 21 + i, m, 1, 0.6]));
+      turn(s + 24);
+      ev.push([s + 30, 69, 2, 0.66]); left(s + 30, am); [60, 64, 69].forEach((m, i) => ev.push([s + 33 + i, m, 1, 0.6]));
+      ev.push([s + 36, 71, 2, 0.66]); left(s + 36, e7); [64, 72, 71].forEach((m, i) => ev.push([s + 39 + i, m, 1, 0.6]));
+      ev.push([s + 42, 69, 4, 0.66]); left(s + 42, am);
+    };
+    ev.push([0, 76, 1, 0.6], [1, 75, 1, 0.6]);
+    theme(2);
+    ev.push([48, 76, 1, 0.6], [49, 75, 1, 0.6]);   // the last two sixteenths of bar 8
+    theme(50);
+    return { name: ['Betxoven — «Elizaga»', 'Бетховен — «К Элизе»'], bpm: 300, ev, len: 100 };
+  }
+
+  // L. van Beethoven, «Ode to Joy» from the Ninth Symphony, slow, with a soft left hand.
+  function odeToJoy() {
+    const A = [[76, 1], [76, 1], [77, 1], [79, 1], [79, 1], [77, 1], [76, 1], [74, 1], [72, 1], [72, 1], [74, 1], [76, 1]];
+    const tune = [
+      ...A, [76, 1.5], [74, 0.5], [74, 2],
+      ...A, [74, 1.5], [72, 0.5], [72, 2],
+      [74, 1], [74, 1], [76, 1], [72, 1], [74, 1], [76, 0.5], [77, 0.5], [76, 1], [72, 1],
+      [74, 1], [76, 0.5], [77, 0.5], [76, 1], [74, 1], [72, 1], [74, 1], [67, 2],
+      ...A, [74, 1.5], [72, 0.5], [72, 2],
+    ];
+    const C = [48, [55, 60, 64]], G = [43, [55, 59, 62]];
+    const halves = [C, C, G, G, C, C, G, G, C, C, G, G, C, C, G, C,
+                    G, C, G, C, G, G, C, G, C, C, G, G, C, C, G, C];
+    const ev = [];
+    let s = 0;
+    tune.forEach(([m, d]) => { ev.push([s, m, d, 0.68]); s += d; });
+    halves.forEach(([bass, chord], i) => {
+      ev.push([i * 2, bass, 2, 0.5]);
+      chord.forEach(m => ev.push([i * 2 + 1, m, 1, 0.32]));
+    });
+    ev.sort((a, b) => a[0] - b[0]);
+    [48, 55, 60, 64, 72].forEach((m, i) => ev.push([64 + i * 0.12, m, 3, 0.55]));
+    return { name: ['Betxoven — «Shodlik qasidasi»', 'Бетховен — «Ода к радости»'], bpm: 80, ev, len: 68 };
+  }
+
+  // A soft piano tone: a triangle wave with a quiet octave above, struck and
+  // left to ring; low notes ring longer.
+  function pianoNote(t, midi, durSec, vel) {
+    const f = 440 * Math.pow(2, (midi - 69) / 12);
+    const peak = 0.11 * vel;
+    const ring = Math.min(Math.max(durSec + 0.5, 0.9), 1.4 + Math.max(0, 76 - midi) * 0.045);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(peak * 0.4, t + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + ring);
+    const a = ctx.createOscillator();
+    a.type = 'triangle';
+    a.frequency.value = f;
+    const b = ctx.createOscillator();
+    b.type = 'sine';
+    b.frequency.value = f * 2;
+    const bg = ctx.createGain();
+    bg.gain.value = 0.15;
+    a.connect(g);
+    b.connect(bg);
+    bg.connect(g);
+    g.connect(mus);
+    a.start(t);
+    b.start(t);
+    a.stop(t + ring + 0.05);
+    b.stop(t + ring + 0.05);
+  }
+
+  // A small hall: two seconds of fading noise as the reverb's impulse.
+  function hallImpulse(c) {
+    const len = Math.floor(c.sampleRate * 2.2), buf = c.createBuffer(2, len, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+    }
+    return buf;
+  }
+
+  function savedPiece() {
+    try { return parseInt(localStorage.getItem(MUSIC_KEY), 10) || 0; } catch (_) { return 0; }
+  }
+  function pieceName() {
+    const n = PIECES[piece < 0 ? savedPiece() % PIECES.length : piece].name;
+    return gx(n[0], n[1]);
+  }
+  function fade(to, sec) {
+    const now = ctx.currentTime;
+    mus.gain.cancelScheduledValues(now);
+    mus.gain.setValueAtTime(mus.gain.value, now);
+    mus.gain.linearRampToValueAtTime(to, now + sec);
+  }
+  function startPiece(i) {
+    piece = ((i % PIECES.length) + PIECES.length) % PIECES.length;
+    try { localStorage.setItem(MUSIC_KEY, String(piece)); } catch (_) {}
+    evi = 0;
+    t0 = ctx.currentTime + 0.5;
+    playing = true;
+    fade(MUSIC_LEVEL, 0.3);
+    if (!heard) { heard = true; sync(); }
+  }
+  function musicOk() {
+    return !muted() && !night() && !document.hidden && !MUSIC_REST_PAGES.includes(activePage) &&
+      ctx.state === 'running';
+  }
+  // Every 150 ms: put the next half second of notes on the clock.
+  function musicTick() {
+    if (!ctx || !mus) return;
+    if (!musicOk()) {
+      if (playing) { playing = false; fade(0, 0.4); }
+      return;
+    }
+    if (piece < 0) startPiece(savedPiece());
+    const p = PIECES[piece], spb = 60 / p.bpm;
+    if (!playing) {                       // back from a rest: carry on where it stopped
+      playing = true;
+      if (evi < p.ev.length) t0 = ctx.currentTime + 0.4 - p.ev[evi][0] * spb;
+      fade(MUSIC_LEVEL, 0.6);
+    }
+    const until = ctx.currentTime + 0.5;
+    while (evi < p.ev.length && t0 + p.ev[evi][0] * spb <= until) {
+      const [beat, midi, beats, vel] = p.ev[evi++];
+      pianoNote(Math.max(ctx.currentTime, t0 + beat * spb), midi, beats * spb, vel);
+    }
+    if (evi >= p.ev.length && ctx.currentTime > t0 + p.len * spb + 3) startPiece(piece + 1);
+  }
+
+  // The first tap unlocks sound (browser rule); the music and the birds start then.
   function unlock() {
     if (!audio()) return;
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     if (!timer) schedule(FIRST_DELAY);
+    if (!musicTimer) musicTimer = setInterval(musicTick, 150);
   }
 
   function sync() {
     if (!btn) return;
     const off = muted();
-    btn.textContent = off ? '🔇' : '🐦';
+    btn.textContent = off ? '🔇' : '🎶';
     btn.classList.toggle('off', off);
     btn.setAttribute('aria-label', off ? t.birdsOff : t.birdsOn);
     btn.style.display = (heard || off) && CALM_PAGES.includes(activePage) ? 'flex' : 'none';
@@ -4107,8 +4317,15 @@ const Birdsong = (() => {
   function toggle() {
     const off = !muted();
     try { localStorage.setItem(KEY, off ? 'off' : 'on'); } catch (_) {}
-    showToast(off ? t.birdsOff : t.birdsOn);
-    if (!off) { unlock(); sing(); }     // a little chirp says it is back on
+    if (off) {
+      if (mus) { playing = false; fade(0, 0.3); }
+      showToast(t.birdsOff);
+    } else {
+      unlock();
+      if (ctx && mus) startPiece(piece < 0 ? savedPiece() + 1 : piece + 1);   // back on: the next piece
+      sing();                           // and a little chirp
+      showToast(t.birdsOn + ' · ' + pieceName(), false, 3500);
+    }
     sync();
   }
 
@@ -4180,8 +4397,8 @@ const L = {
     sectionPopular: "🔥 Ko'p olinadi",
     quickAdd: '+ Savatga',
     quickAdded: '✓ Savatda',
-    birdsOn: '🐦 Qushlar sayrashi yoqildi',
-    birdsOff: "🔇 Qushlar sayrashi o'chirildi",
+    birdsOn: '🎶 Musiqa va qushlar yoqildi',
+    birdsOff: "🔇 Musiqa va qushlar o'chirildi",
     search: 'Mahsulot qidirish...',
     loading: 'Yuklanmoqda...',
     empty: 'Mahsulotlar topilmadi',
@@ -4388,8 +4605,8 @@ const L = {
     sectionPopular: '🔥 Часто покупают',
     quickAdd: '+ В корзину',
     quickAdded: '✓ В корзине',
-    birdsOn: '🐦 Пение птиц включено',
-    birdsOff: '🔇 Пение птиц выключено',
+    birdsOn: '🎶 Музыка и птицы включены',
+    birdsOff: '🔇 Музыка и птицы выключены',
     search: 'Поиск товаров...',
     loading: 'Загрузка...',
     empty: 'Товары не найдены',
