@@ -209,6 +209,23 @@
   .b2b-items{color:var(--ink-2);font-size:12.5px;line-height:1.55}
   .b2b-warn{color:var(--amber);cursor:help}
   .b2b-note{margin-top:12px;font-size:12.5px;color:var(--ink-3)}
+  /* KPI ▲/▼ against the window just before, daily chart, product sales (2026-10-24) */
+  .kpi-card .delta{font-size:11.5px;font-weight:800;margin-top:5px}
+  .kpi-card .delta.up{color:var(--green)}
+  .kpi-card .delta.down{color:var(--red)}
+  .kpi-card .delta.flat{color:var(--ink-3)}
+  .kpi-card .delta span{font-weight:500;color:var(--ink-3)}
+  .fa-days .d.today i{background:var(--green);opacity:1}
+  .ps-note{font-size:12.5px;color:var(--ink-3);margin:6px 0 0}
+  .ps-search{border:1px solid var(--line);background:var(--input-bg);color:var(--ink);border-radius:9px;padding:6px 10px;min-width:180px;font:inherit;font-size:13px}
+  .ps-table{font-size:13px}
+  .ps-table th{white-space:nowrap;cursor:pointer;user-select:none}
+  .ps-table th.num,.ps-table td.num{text-align:right;white-space:nowrap}
+  .ps-table th.on{color:var(--accent)}
+  .ps-table .ps-sub{font-size:11.5px;color:var(--ink-3);margin-top:2px}
+  .ps-table .low{color:var(--red);font-weight:800}
+  .ps-table .soon{color:var(--amber);font-weight:800}
+  .ps-table tfoot td{font-weight:800;border-top:2px solid var(--line)}
   @media (max-width:900px){.dash-grid{grid-template-columns:1fr}}
 
   .trend-wrap{display:flex;align-items:flex-end;gap:10px;height:140px;padding:0 2px}
@@ -670,6 +687,26 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
     </div>
 
     <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="dash-card" style="margin-bottom:16px">
+      <h3>📅 Kunlar bo'yicha buyurtmalar <span id="dailySummary" class="b2b-sum"></span></h3>
+      <div class="fa-days" id="dailyChart"></div>
+      <div class="fa-axis" id="dailyAxis"></div>
+    </div>
+
+    <div class="dash-card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h3 style="margin:0">📦 Mahsulot savdosi <span id="psSummary" class="b2b-sum"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="search" id="psSearch" class="ps-search" placeholder="Mahsulotni qidirish…">
+          <a class="btn btn-o btn-sm" id="psExcel" href="/admin/api/product-sales.xlsx" download>⬇️ Excel</a>
+        </div>
+      </div>
+      <p class="ps-note">Tanlangan davrdagi bekor qilinmagan buyurtmalar — «Buyurtma qiymati» bilan bir xil.
+        Sovg'a va aksiya bonuslari sotuvga kirmaydi, alohida ko'rsatiladi. «Necha kunga yetadi» — hozirgi qoldiq shu davrdagi sotuv tezligida.
+        Ustun nomini bosib saralang.</p>
+      <div style="overflow-x:auto;margin-top:12px"><table class="data-table ps-table" id="psTable"></table></div>
+    </div>
 
     <div class="dash-card" style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -1676,23 +1713,27 @@ function bindTips(sel){
   });
 }
 
+/* "period=…" for the dashboard's current choice — the KPIs, the product
+   table and its Excel link all read the same window. */
+function dashQuery(){
+  const activeBtn=$('#dashPeriod button.active');
+  if(activeBtn&&activeBtn.dataset.period)return 'period='+activeBtn.dataset.period;
+  const sd=$('#dashStartDate').value, ed=$('#dashEndDate').value;
+  return (sd&&ed)?'period=custom&start='+sd+'&end='+ed:'period=30d';
+}
+
+/* What the ▲/▼ compares against, in words. */
+function prevLabel(){
+  const p=(dashQuery().match(/period=([a-z0-9]+)/)||[])[1];
+  return {today:'kecha shu vaqtgacha','7d':'oldingi 7 kun','30d':'oldingi 30 kun',custom:'oldingi shuncha kun'}[p]||'';
+}
+
 async function loadDashboard(){
-  let url = '/admin/api/dashboard';
-  let activeBtn = $('#dashPeriod button.active');
-  if(activeBtn && activeBtn.dataset.period) {
-    url += '?period=' + activeBtn.dataset.period;
-  } else {
-    // Custom date case
-    let sd = $('#dashStartDate').value;
-    let ed = $('#dashEndDate').value;
-    if(sd && ed) {
-      url += '?period=custom&start=' + sd + '&end=' + ed;
-    } else {
-      url += '?period=30d'; // fallback
-    }
-  }
-  const d=await api(url);
-  renderKpis(d.stats);
+  const q=dashQuery();
+  loadProductSales(q);
+  const d=await api('/admin/api/dashboard?'+q);
+  renderKpis(d.stats, d.prev_stats);
+  renderDaily(d.daily||[]);
   renderTrend(d.monthly);
   renderStatusChart(d.stats);
   renderTopProducts(d.top_products);
@@ -1741,38 +1782,65 @@ function renderB2bSales(list){
     : '');
 }
 
-function renderDashKpiCard(lab,val,sub){
-  return `<div class="kpi-card"><div class="lab">${esc(lab)}</div><div class="val tnum">${esc(val)}</div><div class="sub">${esc(sub)}</div></div>`;
+function renderDashKpiCard(lab,val,sub,delta=''){
+  return `<div class="kpi-card"><div class="lab">${esc(lab)}</div><div class="val tnum">${esc(val)}</div>${delta}<div class="sub">${esc(sub)}</div></div>`;
+}
+
+/* ▲ 12% against the window just before. `bad` flips the colours for a
+   figure where up is worse (expenses). Nothing when there is no earlier
+   window (all-time) or both are zero. */
+function kpiDelta(cur,prev,{bad=false,money=true}={}){
+  if(prev===null||prev===undefined)return '';
+  cur=+cur||0;prev=+prev||0;
+  const was=money?fmt(prev):String(prev);
+  const tail=` <span>· ${esc(prevLabel())}: ${esc(was)}</span>`;
+  if(!prev&&!cur)return '';
+  if(!prev)return `<div class="delta ${bad?'down':'up'}">▲ yangi${tail}</div>`;
+  const pct=Math.round((cur-prev)/Math.abs(prev)*100);
+  if(pct===0)return `<div class="delta flat">= 0%${tail}</div>`;
+  const up=pct>0, good=bad?!up:up;
+  return `<div class="delta ${good?'up':'down'}">${up?'▲':'▼'} ${Math.abs(pct)}%${tail}</div>`;
 }
 
 /* " · 23.4%" after a sum — empty when there is no delivered revenue to divide by. */
 function pctTail(p){return (p===null||p===undefined)?'':' · '+String(p).replace('.',',')+'%';}
 
-function renderKpis(st){
+function renderKpis(st,pv){
+  const P=k=>pv?pv[k]:null;
   const cards=[
     renderDashKpiCard('Buyurtma qiymati', fmt(st.booked_value),
-      `${st.orders_sold} ta bekor qilinmagan buyurtma · yaratilgan davr bo'yicha`),
+      `${st.orders_sold} ta bekor qilinmagan buyurtma · yaratilgan davr bo'yicha`,
+      kpiDelta(st.booked_value,P('booked_value'))),
+    renderDashKpiCard('Buyurtmalar soni', st.orders_sold+' ta',
+      'Bekor qilinmaganlari · yaratilgan davr bo\'yicha',
+      kpiDelta(st.orders_sold,P('orders_sold'),{money:false})),
     renderDashKpiCard('Yetkazilgan tushum', fmt(st.delivered_revenue),
-      `${st.orders_delivered} ta buyurtma · yetkazilgan sana bo'yicha`),
+      `${st.orders_delivered} ta buyurtma · yetkazilgan sana bo'yicha`,
+      kpiDelta(st.delivered_revenue,P('delivered_revenue'))),
     renderDashKpiCard('B2B yetkazilgan tushum', fmt(st.b2b_revenue),
       st.b2b_orders+" ta buyurtma · yetkazilgan sana bo'yicha · jami yetkazilgan tushum ichida"),
     renderDashKpiCard('Yetkazilgan mahsulot tannarxi', fmt(st.product_cost), 'Yetkazilgan sana bo\'yicha'),
-    renderDashKpiCard('Davr xarajatlari', fmt(st.expenses), 'Tanlangan davrda yozilgan xarajatlar'),
+    renderDashKpiCard('Davr xarajatlari', fmt(st.expenses), 'Tanlangan davrda yozilgan xarajatlar',
+      kpiDelta(st.expenses,P('expenses'),{bad:true})),
     // Keto chegirmasi tushumdan allaqachon ayrilgan, shuning uchun Chiqimlarga
     // kirmaydi — bo'lmasa bir xil pul ikki marta ayrilgan bo'lardi.
     renderDashKpiCard('Keto chegirmasi', fmt(st.keto_discount || 0), 'Tushumdan ayrilgan'),
     // Marja (2026-10-01): so'mda va yetkazilgan tushumga nisbatan foizda.
     renderDashKpiCard('Yalpi marja', fmt(st.gross_profit ?? (st.delivered_revenue - st.product_cost)) + pctTail(st.gross_margin_pct),
-      'Yetkazilgan tushum − mahsulot tannarxi · xarajatlar hali ayrilmagan'),
+      'Yetkazilgan tushum − mahsulot tannarxi · xarajatlar hali ayrilmagan',
+      kpiDelta(st.gross_profit,P('gross_profit'))),
     renderDashKpiCard('Sof foyda', fmt(st.profit) + pctTail(st.net_margin_pct),
-      'Yetkazilgan tushum − tannarx − davr xarajatlari · xarajatlar ayrilgan'),
+      'Yetkazilgan tushum − tannarx − davr xarajatlari · xarajatlar ayrilgan',
+      kpiDelta(st.profit,P('profit'))),
     renderDashKpiCard('Tannarxi topilmagan mahsulotlar',
       `${(st.missing_cost_products||[]).length} ta`,
       (st.missing_cost_products||[]).slice(0,3).join(', ')
         + ((st.missing_cost_products||[]).length>3?' …':'')
         || 'Muammo yo\'q'),
-    renderDashKpiCard('O\'rtacha buyurtma qiymati', fmt(st.aov), 'Bekor qilinmagan buyurtmalar bo\'yicha'),
-    renderDashKpiCard('Yangi mijozlar',st.users_new+' ta','Jami ro\'yxatdan o\'tganlar: '+st.users_total),
+    renderDashKpiCard('O\'rtacha buyurtma qiymati', fmt(st.aov), 'Bekor qilinmagan buyurtmalar bo\'yicha',
+      kpiDelta(st.aov,P('aov'))),
+    renderDashKpiCard('Yangi mijozlar',st.users_new+' ta','Jami ro\'yxatdan o\'tganlar: '+st.users_total,
+      kpiDelta(st.users_new,P('users_new'),{money:false})),
     renderDashKpiCard('Jami Buyurtmalar',st.orders_total+' ta','Yangi: '+st.orders_pending+' / Tasdiqlangan: '+st.orders_confirmed),
   ].join('');
   $('#kpiGrid').innerHTML=cards;
@@ -1825,6 +1893,104 @@ function renderTopProducts(list){
   }).join('');
   bindTips('#topProductsChart .hbar-row');
 }
+
+const WEEKDAY_UZ=['Yak','Du','Se','Chor','Pay','Ju','Shan'];
+function dayLabel(iso){const [y,m,d]=iso.split('-');return `${d}.${m}`;}
+
+/* One bar per Tashkent day; empty days stay in as gaps. Today is green. */
+function renderDaily(days){
+  const box=$('#dailyChart'), axis=$('#dailyAxis');
+  if(!days.length){box.innerHTML='<div class="empty" style="padding:20px">Ma\'lumot yo\'q</div>';axis.innerHTML='';$('#dailySummary').textContent='';return;}
+  const max=Math.max(1,...days.map(d=>d.value));
+  const today=new Date(Date.now()+5*3600e3).toISOString().slice(0,10);
+  box.innerHTML=days.map(d=>{
+    const h=d.value?Math.max(2,Math.round(d.value/max*100)):0;
+    const wd=WEEKDAY_UZ[new Date(d.date+'T00:00:00Z').getUTCDay()];
+    const tip=`${dayLabel(d.date)} (${wd}): ${fmtSom(d.value)} · ${d.orders} ta buyurtma`;
+    return `<div class="d${d.date===today?' today':''}" data-tip="${esc(tip)}"><i style="height:${h}%"></i></div>`;
+  }).join('');
+  const mid=days[Math.floor(days.length/2)];
+  axis.innerHTML=[days[0],mid,days[days.length-1]].map(d=>`<span>${dayLabel(d.date)}</span>`).join('');
+  const total=days.reduce((a,d)=>a+d.value,0), orders=days.reduce((a,d)=>a+d.orders,0);
+  const best=days.reduce((a,d)=>d.value>a.value?d:a,days[0]);
+  $('#dailySummary').textContent=`${days.length} kun · ${orders} ta buyurtma · kuniga o'rtacha ${fmt(total/days.length)}`
+    +(best.value?` · eng yaxshi kun ${dayLabel(best.date)}: ${fmt(best.value)}`:'');
+  bindTips('#dailyChart .d');
+}
+
+/* «📦 Mahsulot savdosi» — every product sold in the window, sortable,
+   searchable, with the same window's Excel file one click away. */
+const PS={rows:[],totals:null,sort:'revenue',dir:-1,q:''};
+const PS_COLS=[
+  {k:'name',t:'Mahsulot'},
+  {k:'qty',t:'Sotildi',num:1},
+  {k:'revenue',t:'Tushum',num:1},
+  {k:'profit',t:'Foyda',num:1},
+  {k:'margin_pct',t:'Marja',num:1},
+  {k:'orders',t:'Buyurtma',num:1},
+  {k:'stock',t:'Qoldiq',num:1},
+  {k:'days_left',t:'Necha kunga yetadi',num:1},
+];
+function psQty(n){n=+n||0;return Number.isInteger(n)?String(n):String(parseFloat(n.toFixed(3))).replace('.',',');}
+
+async function loadProductSales(q){
+  $('#psExcel').href='/admin/api/product-sales.xlsx?'+q;
+  $('#psTable').innerHTML='<tbody><tr><td class="empty" style="padding:20px">Yuklanmoqda…</td></tr></tbody>';
+  try{
+    const d=await api('/admin/api/product-sales?'+q);
+    PS.rows=d.rows||[];PS.totals=d.totals||null;
+  }catch(err){PS.rows=[];PS.totals=null;$('#psTable').innerHTML=`<tbody><tr><td class="empty">${esc(err.message)}</td></tr></tbody>`;return;}
+  renderProductSales();
+}
+
+function renderProductSales(){
+  const t=PS.totals;
+  $('#psSummary').textContent=t?`${t.products} ta mahsulot · ${fmt(t.revenue)} · foyda ${fmt(t.profit)}${t.margin_pct!==null?' ('+String(t.margin_pct).replace('.',',')+'%)':''}`:'';
+  const q=PS.q.trim().toLowerCase();
+  let rows=PS.rows.filter(r=>!q||String(r.name).toLowerCase().includes(q));
+  const k=PS.sort, dir=PS.dir;
+  rows=[...rows].sort((a,b)=>{
+    const x=a[k], y=b[k];
+    if(k==='name')return dir*String(x).localeCompare(String(y),'uz');
+    const nx=(x===null||x===undefined)?-Infinity:+x, ny=(y===null||y===undefined)?-Infinity:+y;
+    return dir*(nx-ny);
+  });
+  if(!PS.rows.length){$('#psTable').innerHTML='<tbody><tr><td class="empty" style="padding:24px">Bu davrda sotuv yo\'q</td></tr></tbody>';return;}
+  const head='<thead><tr>'+PS_COLS.map(c=>`<th data-k="${c.k}" class="${c.num?'num':''}${c.k===k?' on':''}">${esc(c.t)}${c.k===k?(dir<0?' ↓':' ↑'):''}</th>`).join('')+'</tr></thead>';
+  const body=rows.map(r=>{
+    const subs=[];
+    if(r.kind==='set')subs.push("to'plam");
+    if(r.b2b_qty)subs.push(`B2B: ${psQty(r.b2b_qty)} · ${fmt(r.b2b_revenue)}`);
+    if(r.gift_qty)subs.push(`sovg'a/bonus: ${psQty(r.gift_qty)}`);
+    if(!r.cost_known)subs.push('⚠️ tannarx kiritilmagan — foyda yuqori ko\'rinadi');
+    const dl=r.days_left, out=r.kind==='product'&&r.stock!==null&&r.stock!==undefined&&+r.stock<=0;
+    const dlCls=out?'low':dl===null||dl===undefined?'':dl<7?'low':dl<14?'soon':'';
+    const dlTxt=out?"qoldiq yo'q":dl===null||dl===undefined?'—':(dl<1?'1 kundan kam':Math.round(dl)+' kun');
+    return `<tr>
+      <td><b>${esc(r.name)}</b>${subs.length?`<div class="ps-sub">${esc(subs.join(' · '))}</div>`:''}</td>
+      <td class="num tnum">${psQty(r.qty)} ${esc(r.unit||'')}</td>
+      <td class="num tnum">${fmt(r.revenue)}</td>
+      <td class="num tnum">${fmt(r.profit)}</td>
+      <td class="num tnum">${r.margin_pct===null||r.margin_pct===undefined?'—':String(r.margin_pct).replace('.',',')+'%'}</td>
+      <td class="num tnum">${r.orders}</td>
+      <td class="num tnum">${r.stock===null||r.stock===undefined?'—':psQty(r.stock)}</td>
+      <td class="num tnum ${dlCls}">${dlTxt}</td>
+    </tr>`;
+  }).join('');
+  const foot=t?`<tfoot><tr><td>Jami (${rows.length} ta)</td><td></td>
+    <td class="num tnum">${fmt(rows.reduce((a,r)=>a+r.revenue,0))}</td>
+    <td class="num tnum">${fmt(rows.reduce((a,r)=>a+r.profit,0))}</td>
+    <td></td><td class="num tnum">${t.orders} ta</td><td></td><td></td></tr></tfoot>`:'';
+  $('#psTable').innerHTML=head+'<tbody>'+body+'</tbody>'+foot;
+}
+
+$('#psTable').addEventListener('click',e=>{
+  const th=e.target.closest('th[data-k]');if(!th)return;
+  const k=th.dataset.k;
+  if(PS.sort===k)PS.dir=-PS.dir;else{PS.sort=k;PS.dir=k==='name'?1:-1;}
+  renderProductSales();
+});
+$('#psSearch').addEventListener('input',e=>{PS.q=e.target.value;renderProductSales();});
 
 function renderKetoStats(k){
   const cards=[
