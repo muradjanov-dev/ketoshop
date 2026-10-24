@@ -45,7 +45,7 @@ class WeightTest(unittest.TestCase):
     def test_line_weight(self):
         self.assertEqual(uzpost.item_kg({"name": "Bodom uni 1000gr", "quantity": 2, "unit": "kg"}), 2.0)
         self.assertEqual(uzpost.item_kg({"name": "Kepakli bug'doy uni", "quantity": 3, "unit": "kg"}), 3)
-        self.assertEqual(uzpost.item_kg({"name": "Kokos yog'i", "quantity": 2, "unit": "piece"}),
+        self.assertEqual(uzpost.item_kg({"name": "Omega 3 kapsula", "quantity": 2, "unit": "piece"}),
                          2 * uzpost.DEFAULT_ITEM_KG)
         self.assertEqual(uzpost.item_kg({"name": "Keto set", "quantity": 1, "is_set": True}), uzpost.SET_KG)
         # An aksiya bonus's quantity is its DISPLAY amount ("100" for 100 gr):
@@ -67,6 +67,26 @@ class WeightTest(unittest.TestCase):
         self.assertEqual(uzpost.tariff(3.0), 21_000)                     # exactly 3 kg stays 3
         self.assertEqual(uzpost.fmt_kg(2.4), "2,4")
         self.assertEqual(uzpost.fmt_kg(3.0), "3")
+
+    def test_jars_count_double(self):
+        # Owner, 2026-10-24: "bonkali mahsulotlar ... og'irligini pochta uchun 2x".
+        jars = ["Lasos baliq tushonkasi 700ml", "Kokos yog'i Extra Virgin 450ml",
+                "Зайтун ёғи совуқ сиқим- Extra vergin", "Zaytun yog‘i Ispaniya (5 l, qovurish uchun)",
+                "Tabiiy GHEE 1000ml", "Kokos slivka 400ml", "Olma sirkasi (Toshkent) 250gr",
+                "Zomin tog‘ asali 700 gr", "Xandonpista pastasi 200gr", "Yeryong'oq pasta 200gr",
+                "Консервированный лосось"]
+        for name in jars:
+            self.assertTrue(uzpost.is_jar(name), name)
+        for name in ("Bodom uni 1000gr", "Stevia 1000g", "Basmati guruch Premium Besta 900gr",
+                     "Qizil guruch (Devzira) (bo'yalmagan, yog'lanmagan) 1000gr", "Kokos uni 500gr",
+                     "Kepakli bug'doy uni", None, ""):
+            self.assertFalse(uzpost.is_jar(name), name)
+        self.assertAlmostEqual(uzpost.item_kg({"name": "Lasos baliq tushonkasi 700ml", "quantity": 2}), 2.8)
+        self.assertEqual(uzpost.item_kg({"name": "Зайтун ёғи совуқ сиқим- Extra vergin", "quantity": 1,
+                                         "unit": "piece"}), uzpost.DEFAULT_ITEM_KG * uzpost.JAR_FACTOR)
+        # 2 jars of salmon (2 × 0.7 × 2 = 2.8) + box 0.2 = 3.0 kg → 21 000 + 3 000.
+        self.assertEqual(uzpost.buyer_fee([{"name": "Lasos baliq tushonkasi 700ml", "quantity": 2}]),
+                         15_000 + 2 * 3_000 + 3_000)
 
     def test_far_regions(self):
         for r in ("karakalpakstan", "khorezm", "surkhandarya", "Қорақалпоғистон Республикаси",
