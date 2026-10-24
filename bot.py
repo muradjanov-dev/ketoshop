@@ -29,6 +29,7 @@ from handlers.cart import router as cart_router
 from handlers.seller import router as seller_router
 from handlers.search import router as search_router
 from handlers.reviews import router as reviews_router
+from review_blast import router as review_blast_router
 from handlers.nps import router as nps_router
 from handlers.delivery import router as delivery_router
 from handlers.admin import router as admin_router
@@ -254,6 +255,7 @@ async def main():
     dp.include_router(search_router)
     dp.include_router(catalog_router)
     dp.include_router(reviews_router)
+    dp.include_router(review_blast_router)
     dp.include_router(nps_router)
     dp.include_router(cart_router)
     dp.include_router(delivery_router)
@@ -404,6 +406,11 @@ async def main():
     # (review_followup.py). REVIEW_FOLLOWUP=0 switches it off.
     from review_followup import scheduler_loop as review_followup_loop
     review_followup_task = asyncio.create_task(review_followup_loop(bot))
+    # Fikr so'rovi (owner, 2026-10-24): every buyer asked once about what
+    # they bought, 09:00–21:00 until LAST_DAY (review_blast.py).
+    # REVIEW_BLAST=0 switches it off.
+    from review_blast import scheduler_loop as review_blast_loop
+    review_blast_task = asyncio.create_task(review_blast_loop(bot))
 
     # "Nima yangi" — this release's notes to every admin, once, in daytime.
     # Daily "Kun mahsuloti": one product to every buyer and to the channel.
@@ -456,6 +463,7 @@ async def main():
         recipe_channel_task.cancel()
         restock_notify_task.cancel()
         review_followup_task.cancel()
+        review_blast_task.cancel()
         product_of_day_task.cancel()
         channel_posts_task.cancel()
         channel_bestsellers_task.cancel()

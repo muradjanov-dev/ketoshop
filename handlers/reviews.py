@@ -119,6 +119,11 @@ async def process_comment(message: Message, state: FSMContext):
     """Process review comment and save"""
     data = await state.get_data()
     lang = data.get("lang", "uz")
+    # A voice note or a photo has no .text — ask for words instead of crashing
+    # (the survey in review_blast.py sends this prompt to every buyer).
+    if not message.text:
+        await message.answer(get_text("review_enter_comment", lang), parse_mode="HTML")
+        return
     comment = message.text.strip()
 
     if comment.lower() in ("/skip", "skip"):
@@ -133,8 +138,14 @@ async def process_comment(message: Message, state: FSMContext):
 
     await state.clear()
 
+    text = get_text("review_saved", lang)
+    if data.get("src") == "blast":
+        import review_blast
+        await review_blast.notify_review(message.bot, message.from_user, data["product_id"],
+                                         data["rating"], comment)
+        text += "\n\n" + review_blast.say("more", lang)
     await message.answer(
-        get_text("review_saved", lang),
+        text,
         reply_markup=back_to_menu_keyboard(lang),
         parse_mode="HTML"
     )
