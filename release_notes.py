@@ -24,7 +24,7 @@ from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
-RELEASE_KEY = "2026-10-22-sayt-yangiliklari"
+RELEASE_KEY = "2026-10-24-uzpost-fikr-dashboard"
 TZ_OFFSET = timedelta(hours=5)
 SEND_WINDOW = (8, 22)          # never wake admins at night
 # True bypasses the daytime window (used 2026-09-25, and 2026-10-22 at 03:00
@@ -34,23 +34,23 @@ SEND_NOW = RELEASE_KEY == "2026-10-22-sayt-yangiliklari"
 CHECK_EVERY = 300
 
 NOTES = (
-    "🆕 <b>So'nggi 3 kunda (19–22 oktabr) nimalar o'zgardi</b>\n"
+    "🆕 <b>Bugun (24 oktabr) nimalar qo'shildi</b>\n"
     '\n'
-    '🛠 <b>Tuzatildi</b>\n'
-    "• Saytda telefon raqami har qanday yozilishda qabul qilinadi (90 123 45 67, +998…, 8 90…). Avval ko'p raqam rad etilib, «Buyurtmani tasdiqlash» tugmasi ishlamayotgandek ko'rinardi.\n"
-    "• Xaritadan lokatsiya: GPS ishlamasa, xarita Toshkent markazida qolib, o'sha nuqta buyurtmaga ketib qolardi. Endi xaritani surmaguncha yoki aniq GPS kelmaguncha tasdiqlab bo'lmaydi, joylashuv Telegram orqali olinadi, xaritada «Mening joylashuvim» tugmasi bor.\n"
-    "⚠️ 22-oktabrgacha kelgan buyurtmada pin aynan Toshkent markazida tursa — mijozning izohiga qarang yoki qo'ng'iroq qiling.\n"
-    "• Quvvat tejash rejimidagi telefonlarda saytdagi animatsiyalar (KETOSHOP muhri, yuklanish belgilari) to'xtab qolardi — endi ishlaydi. Til almashtirilgandan keyin qotib qoladigan mahsulotlar karuseli ham tuzatildi.\n"
+    "1. <b>📮 Viloyatlarga UzPost «Bir Qadam»</b> — viloyatdagi mijoz botda va saytda birinchi bo'lib «📮 UzPost — 1 kunda, ~21 000 so'm» ni ko'radi. Narx og'irlik bo'yicha o'zi hisoblanadi va jami summaga qo'shiladi: birinchi kg 18 000 so'm, har keyingi kg +3 000 (Qoraqalpog'iston, Xorazm, Surxondaryo: +7 000). BTS va EMU ham avvalgidek qoladi.\n"
     '\n'
-    '🛍 <b>Saytda yangi</b>\n'
-    "• Bosh sahifada «🔥 Ko'p olinadi»: oxirgi 30 kunda eng ko'p buyurtmalarda uchragan, omborda bor 10 ta mahsulot. Har kartada «+ Savatga» — mahsulotni ochmasdan savatga tushadi.\n"
-    "• Retseptda pastda doim turadigan panel: «Retseptdagi Ketoshop mahsulotlari» va narxi, «🛒 Savatga», keyin «Savatni ochish →».\n"
-    "• Ekranda vaqti-vaqti bilan monarx kapalagi uchib o'tadi. Hech narsani to'smaydi, buyurtma paytida va oyna ochiq bo'lsa chiqmaydi.\n"
-    "• Fonda ora-orada qushlar sayraydi — kunduzi, mijoz saytda birinchi marta bosgandan keyin. Mijoz 🐦 tugmasi bilan o'chirib qo'yishi mumkin.\n"
+    "2. <b>📮 Eng yaqin pochta bo'limi</b> — UzPost tanlanganda bot mijozning lokatsiyasiga eng yaqin «Bir Qadam» bo'limini topadi va mijozga indeks, manzil, ish vaqti, xaritani ko'rsatadi. Buyurtma kartochkasida «📮 UzPost «Bir Qadam» → indeks — bo'lim, manzil» va taxminiy og'irlik turadi — posilkaga shu indeksni yozing. «bo'limni admin aniqlaydi» deb chiqsa, mijozga yozib aniqlang.\n"
     '\n'
-    '📊 <b>Admin saytida</b>\n'
-    "• «📈 Faollik»: saytning har bir ekrani, qancha vaqt o'tkazilgani, mahsulot qaysi bo'limdan ochilgani, buyurtma qayerda to'xtab qolgani; reliz belgilari bilan oldin/keyin taqqoslash.\n"
-    "• «💬 Izohlar»: mahsulot sharhlari, sayt bahosi va NPS bir joyda.\n"
+    "3. <b>💬 Fikr so'rovi</b> — buyurtmasi yetkazilgan har bir xaridorga «Mahsulotlarimiz sizga ma'qul keldimi?» xabari ketdi. Yozilgan har bir sharh sizga shu yerga keladi. Umumiy fikrlar «Xabarlar»ga «💬 Fikr so'roviga javob» belgisi bilan tushadi — iltimos, javob bering. Bu xaridorlar uchun AI sotuvchi 48 soat jim turadi.\n"
+    '\n'
+    "4. <b>📦 Dashboard: Mahsulot savdosi</b> — admin saytida har bir mahsulot bo'yicha soni, tushum, foyda, marja, qoldiq va «necha kunga yetadi» (qizil — 7 kundan kam). «⬇️ Excel» tugmasi tanlangan davr ro'yxatini yuklab beradi.\n"
+    '\n'
+    "5. <b>📈 Dashboard: o'tgan davrga solishtirish</b> — har bir asosiy ko'rsatkich yonida ▲/▼ foiz (oldingi shuncha kunga nisbatan) va kunlar bo'yicha buyurtmalar grafigi.\n"
+    '\n'
+    "6. <b>📋 Uzun ro'yxatlar qisqa</b> — ABC, mahsulot savdosi, viloyatlar va B2B ro'yxatlari qisqa ko'rinadi, «▼ Yana N ta ko'rsatish» bilan ochiladi.\n"
+    '\n'
+    "7. <b>🎶 Saytda klassik musiqa</b> — qushlar ostida mashhur klassik asarlar (Bax, Paxelbel, Betxoven) yengil chalinadi. 🎶 tugmasi o'chiradi, qayta yoqilganda keyingi asar boshlanadi. Buyurtma rasmiylashtirilayotganda musiqa to'xtaydi.\n"
+    '\n'
+    "8. <b>🙂 «Saytimiz sizga qulaymi?» endi qayta-qayta so'ramaydi</b> — javob bergan mijozdan boshqa so'ralmaydi, ko'pi bilan 2 marta va 30 kun oralig'ida; adminlardan umuman so'ralmaydi.\n"
     '\n'
     'Mijozlardan fikr eshitsangiz — yozing 🤝'
 )
