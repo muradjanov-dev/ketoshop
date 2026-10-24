@@ -941,6 +941,46 @@ TEXTS = {
     "btn_delivery_yandex_market": {"uz": "📦 Yandex Market", "ru": "📦 Yandex Market"},
     "btn_delivery_bts": {"uz": "📦 BTS", "ru": "📦 BTS"},
     "btn_delivery_emu": {"uz": "📦 EMU", "ru": "📦 EMU"},
+    # 📮 UzPost «Bir Qadam» (uzpost.py, 2026-10-24)
+    "btn_delivery_uzpost": {"uz": "📮 UzPost (1 kunda)", "ru": "📮 UzPost (за 1 день)"},
+    "btn_delivery_uzpost_fee": {"uz": "📮 UzPost — 1 kunda, ~{fee} so'm",
+                                "ru": "📮 UzPost — за 1 день, ~{fee} сум"},
+    "uzpost_office_block": {
+        "uz": ("📮 <b>Posilkangiz shu pochta bo'limiga boradi:</b>\n"
+               "<b>{index}</b> — {name}\n"
+               "📍 {address}\n"
+               "🕘 {hours}\n"
+               "🗺 <a href=\"{map_url}\">Xaritada ko'rish</a>\n"
+               "⚖️ Taxminiy og'irligi: ~{kg} kg · odatda 1 ish kunida yetib boradi.\n"
+               "Posilkani pasport yoki ID karta bilan borib olasiz."),
+        "ru": ("📮 <b>Посылка придёт в это почтовое отделение:</b>\n"
+               "<b>{index}</b> — {name}\n"
+               "📍 {address}\n"
+               "🕘 {hours}\n"
+               "🗺 <a href=\"{map_url}\">Открыть на карте</a>\n"
+               "⚖️ Примерный вес: ~{kg} кг · обычно доходит за 1 рабочий день.\n"
+               "Забрать можно с паспортом или ID-картой."),
+    },
+    "uzpost_office_unknown": {
+        "uz": "📮 Eng yaqin pochta bo'limini admin aniqlab, sizga yozadi.",
+        "ru": "📮 Ближайшее почтовое отделение уточнит администратор и напишет вам.",
+    },
+    "uzpost_office_admin_picks": {"uz": "bo'limni admin aniqlaydi",
+                                  "ru": "отделение уточнит администратор"},
+    "uzpost_summary_line": {
+        "uz": "📮 Pochta bo'limi: {office}\n⚖️ Taxminiy og'irligi: ~{kg} kg\n",
+        "ru": "📮 Почтовое отделение: {office}\n⚖️ Примерный вес: ~{kg} кг\n",
+    },
+    "uzpost_admin_line": {
+        "uz": "📮 UzPost «Bir Qadam» → {office}\n⚖️ ~{kg} kg (taxmin)\n",
+        "ru": "📮 UzPost «Bir Qadam» → {office}\n⚖️ ~{kg} кг (оценка)\n",
+    },
+    "order_thanks_uzpost": {
+        "uz": ("📮 Posilkangiz UzPost «Bir Qadam» orqali jo'natiladi va odatda 1 ish kunida "
+               "pochta bo'limiga yetib boradi. Olishda pasport yoki ID karta kerak bo'ladi."),
+        "ru": ("📮 Посылка уйдёт через UzPost «Bir Qadam» и обычно за 1 рабочий день приходит "
+               "в почтовое отделение. Для получения понадобится паспорт или ID-карта."),
+    },
     "location_outside_uzbekistan": {
         "uz": "❌ <b>Sizning joylashuvingiz O'zbekistondan tashqarida.</b>\n\nBiz faqat O'zbekiston hududida yetkazib beramiz. Iltimos, O'zbekiston ichidagi joylashuvni yuboring:",
         "ru": "❌ <b>Ваша локация за пределами Узбекистана.</b>\n\nМы доставляем только по территории Узбекистана. Пожалуйста, отправьте локацию в пределах Узбекистана:",
@@ -1741,6 +1781,9 @@ TEXTS = {
             " • 🚖 Yandex Taxi — zudlik bilan kerak bo'lganda;\n"
             "   yetkazish puli mijoz tomonidan to'lanadi\n\n"
             "<b>Viloyatlar (Toshkentdan tashqari):</b>\n"
+            " • 📮 UzPost «Bir Qadam» (1 ish kuni) — birinchi kg <b>18 000 so'm</b>, har keyingi kg "
+            "+3 000 so'm (Qoraqalpog'iston, Xorazm, Surxondaryo: +7 000); aniq narx buyurtmada "
+            "ko'rinadi, posilkani eng yaqin pochta bo'limidan olasiz\n"
             " • 📦 Yandex Market — <b>35 000 so'm</b>, 12 kg gacha (2–4 ish kuni)\n"
             "   ❗️ Faqat hududingizda Yandex Market ofisi bo'lsa\n"
             " • 📦 BTS Express (1–2 ish kuni) — narxi masofa va yuk og'irligiga qarab belgilanadi ❗️\n"
@@ -1766,6 +1809,9 @@ TEXTS = {
             " • 🚖 Yandex Taxi — если нужно срочно;\n"
             "   стоимость доставки оплачивает покупатель\n\n"
             "<b>Регионы (вне Ташкента):</b>\n"
+            " • 📮 UzPost «Bir Qadam» (1 рабочий день) — первый кг <b>18 000 сум</b>, каждый следующий "
+            "+3 000 сум (Каракалпакстан, Хорезм, Сурхандарья: +7 000); точная цена видна при заказе, "
+            "посылку забираете в ближайшем почтовом отделении\n"
             " • 📦 Yandex Market — <b>35 000 сум</b>, до 12 кг (2–4 рабочих дня)\n"
             "   ❗️ Только если в вашем регионе есть офис Yandex Market\n"
             " • 📦 BTS Express (1–2 рабочих дня) — стоимость зависит от расстояния и веса заказа ❗️\n"

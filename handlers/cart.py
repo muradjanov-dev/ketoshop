@@ -35,6 +35,8 @@ from config import (PAYMENT_PROVIDER_TOKEN, ADMIN_IDS, PAYMENT_CARD_NUMBER,
                     PAYMENT_RECIPIENT_NAME, FREE_DELIVERY_FROM)
 import mystery_gift
 import gift_campaign
+import regions
+import uzpost
 
 router = Router()
 
@@ -98,12 +100,48 @@ def goods_subtotal(items: list[dict]) -> float:
     return sum(float(it.get("price") or 0) * float(it.get("quantity") or 0) for it in items)
 
 
-def delivery_fee_for(method: str | None, subtotal: float) -> int:
-    """What the buyer pays for delivery through the bot. Only Ketoshop's own
-    courier is charged by us; the other services are paid to the courier."""
+def delivery_fee_for(method: str | None, subtotal: float,
+                     items: list[dict] | None = None, far: bool = False) -> int:
+    """What the buyer pays for delivery through the bot. Ketoshop's own
+    courier and UzPost «Bir Qadam» are charged by us — UzPost by the parcel's
+    weight (`items`) and region (`far`), with no free threshold (uzpost.py);
+    the other services are paid to the courier."""
+    if method == uzpost.METHOD:
+        return uzpost.buyer_fee(items or [], far)
     if method != "self":
         return 0
     return 0 if subtotal >= FREE_DELIVERY_FROM else SELF_DELIVERY_FEE
+
+
+def charged_delivery_fee(total, keto_redeemed, items: list[dict]) -> int:
+    """The delivery fee an order actually paid, read back from its total
+    (products + fee − Keto) — for UzPost, whose fee depends on the parcel."""
+    try:
+        fee = float(total or 0) + float(keto_redeemed or 0) - goods_subtotal(items)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, int(round(fee)))
+
+
+def uzpost_far_for(lat, lng, address: str | None) -> bool:
+    """Karakalpakstan / Khorezm / Surkhandarya from the buyer's pin or text,
+    for the price shown before an office is picked."""
+    return uzpost.is_far(regions.region_from_pin(lat, lng) or regions.region_from_text(address))
+
+
+def uzpost_office_text(office: dict | None, kg: float | None, lang: str) -> str:
+    """The office block shown to the buyer once UzPost is chosen."""
+    import html as _html
+    if not office:
+        return get_text("uzpost_office_unknown", lang)
+    office = uzpost.localize(office, lang)
+    return get_text("uzpost_office_block", lang,
+                    index=_html.escape(office["index"]),
+                    name=_html.escape(office["name"]),
+                    address=_html.escape(office.get("address") or "—"),
+                    hours=_html.escape(office.get("hours") or "—"),
+                    map_url=_html.escape(uzpost.map_url(office), quote=True),
+                    kg=uzpost.fmt_kg(kg or 0))
 
 
 def delivery_fee_text(method: str | None, fee: int, lang: str) -> str:
@@ -130,6 +168,8 @@ def order_thanks_text(order_id: int, delivery_method: str | None, lang: str) -> 
         text += "\n\n" + get_text("order_thanks_yandex", lang,
                                   support_username=SUPPORT_USERNAME,
                                   support_phone=SUPPORT_PHONES)
+    elif delivery_method == uzpost.METHOD:
+        text += "\n\n" + get_text("order_thanks_uzpost", lang)
     return text
 
 
@@ -1330,13 +1370,29 @@ async def _address_note_accepted(message: Message, state: FSMContext,
     data = await state.get_data()
     await state.update_data(address_note=note)
     in_tashkent = data.get("in_tashkent", False)
+    uzpost_fee = None if in_tashkent else await _uzpost_quote(message.chat.id, data)
 
     await state.set_state(CheckoutStates.waiting_delivery_method)
     await message.answer(
         _step(lang, 4) + get_text("choose_delivery", lang),
-        reply_markup=delivery_method_keyboard(lang, in_tashkent=in_tashkent),
+        reply_markup=delivery_method_keyboard(lang, in_tashkent=in_tashkent, uzpost_fee=uzpost_fee),
         parse_mode="HTML",
     )
+
+
+async def _uzpost_quote(user_id: int, data: dict) -> int | None:
+    """≈ what UzPost costs for the cart as it stands — for the button. The
+    confirmation screen prices the final lines (gift included) again."""
+    try:
+        lines = [{"name": it.get("name"), "quantity": it.get("cart_quantity"),
+                  "unit": it.get("unit"), "is_set": it.get("is_set")}
+                 for it in await get_cart(user_id)]
+        far = uzpost_far_for(data.get("latitude"), data.get("longitude"), data.get("address"))
+        return uzpost.buyer_fee(lines, far) if lines else None
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("UzPost quote failed for %s", user_id)
+        return None
 
 
 @router.callback_query(F.data == "skip_step:note", CheckoutStates.waiting_address_note)
@@ -1362,13 +1418,31 @@ async def process_delivery_method(callback: CallbackQuery, state: FSMContext):
     lang = data.get("lang", "uz")
 
     await state.update_data(delivery_method=method)
+    office_block = ""
+    if method == uzpost.METHOD:
+        # The nearest «Bir Qadam» office to the buyer's pin — it goes on the
+        # order, so whoever packs the box writes this index on it.
+        await callback.answer()
+        office = await uzpost.nearest_office(data.get("latitude"), data.get("longitude"))
+        far = uzpost.is_far(office["region"]) if office else \
+            uzpost_far_for(data.get("latitude"), data.get("longitude"), data.get("address"))
+        await state.update_data(post_office=office, post_office_line=uzpost.office_line(office) or None,
+                                uzpost_far=far)
+        lines = [{"name": it.get("name"), "quantity": it.get("cart_quantity"),
+                  "unit": it.get("unit"), "is_set": it.get("is_set")}
+                 for it in await get_cart(callback.from_user.id)]
+        office_block = uzpost_office_text(office, uzpost.parcel_kg(lines), lang) + "\n\n"
+    else:
+        await state.update_data(post_office=None, post_office_line=None, uzpost_far=False)
     await state.set_state(CheckoutStates.waiting_secondary_phone)
     await callback.message.edit_text(
-        _step(lang, 5) + get_text("enter_secondary_phone", lang),
+        office_block + _step(lang, 5) + get_text("enter_secondary_phone", lang),
         reply_markup=skip_step_keyboard(lang, "skip_step:phone2"),
         parse_mode="HTML",
+        disable_web_page_preview=True,
     )
-    await callback.answer()
+    if method != uzpost.METHOD:
+        await callback.answer()
 
 
 @router.message(CheckoutStates.waiting_secondary_phone, F.text)
@@ -1741,7 +1815,8 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     # Free across Tashkent from FREE_DELIVERY_FROM of products — measured on
     # the goods before any Keto is applied below, and before the 10% bot
     # discount (owner, 2026-10-08: the discount must not cost free delivery).
-    delivery_fee = delivery_fee_for(delivery_method, items_subtotal + bot_saved)
+    delivery_fee = delivery_fee_for(delivery_method, items_subtotal + bot_saved,
+                                    items_data, bool(data.get("uzpost_far")))
     total += delivery_fee
 
     # Keto-as-discount (opt-in, off by default — see gamification.is_redemption_enabled).
@@ -1798,6 +1873,10 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     payment_label = get_text("btn_pay_cash", lang) if payment_method == "cash" else get_text("btn_pay_online", lang)
     delivery_label = get_delivery_method_name(delivery_method, lang)
     delivery_fee_block = delivery_fee_text(delivery_method, delivery_fee, lang)
+    if delivery_method == uzpost.METHOD:
+        delivery_fee_block += get_text(
+            "uzpost_summary_line", lang, kg=uzpost.fmt_kg(uzpost.parcel_kg(items_data)),
+            office=_escape_html(data.get("post_office_line") or get_text("uzpost_office_admin_picks", lang)))
     keto_block = get_text("keto_redeemed_line", lang, amount=f"{keto_redeem:,}".replace(",", " ")) if keto_redeem else ""
     address_note = data.get("address_note")
     note_block = f"\n📝 {_escape_html(address_note)}" if address_note else ""
@@ -2061,6 +2140,7 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
                 secondary_phone=secondary_phone,
                 keto_redeem=keto_redeem,
                 pickup_map_url=data.get("pickup_map_url"),
+                post_office=data.get("post_office_line"),
             )
         except InsufficientStockError as exc:
             await state.clear()
@@ -2134,6 +2214,7 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
             pending_summary_text=text,
             pending_keto_redeem=keto_redeem,
             pending_pickup_map_url=data.get("pickup_map_url"),
+            pending_post_office=data.get("post_office_line"),
         )
 
         cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -2261,6 +2342,7 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
             secondary_phone=data.get("pending_secondary_phone"),
             keto_redeem=keto_redeem,
             pickup_map_url=data.get("pending_pickup_map_url"),
+            post_office=data.get("pending_post_office"),
         )
     except InsufficientStockError as exc:
         await _paid_but_short(bot, message, state, data, exc, cheque_file_id, cheque_kind, total, lang)
@@ -2289,6 +2371,7 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
                 secondary_phone=data.get("pending_secondary_phone"),
                 keto_redeem=0,
                 pickup_map_url=data.get("pending_pickup_map_url"),
+                post_office=data.get("pending_post_office"),
             )
         except InsufficientStockError as exc:
             await _paid_but_short(bot, message, state, data, exc, cheque_file_id, cheque_kind, total, lang)
@@ -2549,8 +2632,17 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
         address_html = order_admin_feed.address_html(saved_order or data, admin_lang) or "—"
         sec = data.get("secondary_phone")
         secondary_block = f"\n📞 {_escape_html(sec)}" if sec else ""
-        delivery_fee = delivery_fee_for(data.get("delivery_method"), goods_subtotal(items))
-        delivery_fee_block = delivery_fee_text(data.get("delivery_method"), delivery_fee, admin_lang)
+        if data.get("delivery_method") == uzpost.METHOD:
+            # What the buyer actually paid for the parcel, and where it goes.
+            delivery_fee = charged_delivery_fee(data.get("total"), keto_used, items)
+            delivery_fee_block = delivery_fee_text(uzpost.METHOD, delivery_fee, admin_lang)
+            office = (saved_order or {}).get("post_office") or data.get("post_office_line")
+            delivery_fee_block += get_text("uzpost_admin_line", admin_lang,
+                                           kg=uzpost.fmt_kg(uzpost.parcel_kg(items)),
+                                           office=_escape_html(office or get_text("uzpost_office_admin_picks", admin_lang)))
+        else:
+            delivery_fee = delivery_fee_for(data.get("delivery_method"), goods_subtotal(items))
+            delivery_fee_block = delivery_fee_text(data.get("delivery_method"), delivery_fee, admin_lang)
         try:
             text = get_text("new_order_notification", admin_lang,
                 order_id=order_id,

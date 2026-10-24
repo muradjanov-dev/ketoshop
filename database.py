@@ -101,6 +101,8 @@ async def init_db():
         """)
         await conn.execute("INSERT INTO pickup_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
         await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_map_url TEXT")
+        # 📮 UzPost «Bir Qadam» office the parcel goes to (uzpost.office_line).
+        await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS post_office TEXT")
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS order_line_cost_audit (
                 id BIGSERIAL PRIMARY KEY,
@@ -2464,7 +2466,8 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
                        address_note: str | None = None,
                        secondary_phone: str | None = None,
                        keto_redeem: int = 0,
-                       pickup_map_url: str | None = None) -> tuple[int, list[dict]]:
+                       pickup_map_url: str | None = None,
+                       post_office: str | None = None) -> tuple[int, list[dict]]:
     if not items:
         raise ValueError("Cannot create order with empty items")
     seller_id = items[0].get("seller_id")
@@ -2522,11 +2525,11 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
 
             import json
             order_id = await conn.fetchval(
-                """INSERT INTO orders (user_id, seller_id, customer_name, phone, address, items, total, payment_method, latitude, longitude, delivery_method, address_note, secondary_phone, keto_redeemed, pickup_map_url)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id""",
+                """INSERT INTO orders (user_id, seller_id, customer_name, phone, address, items, total, payment_method, latitude, longitude, delivery_method, address_note, secondary_phone, keto_redeemed, pickup_map_url, post_office)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id""",
                 user_id, seller_id, customer_name, phone, address, json.dumps(items, ensure_ascii=False), total, payment_method,
                 latitude, longitude, delivery_method, address_note, secondary_phone, keto_redeem,
-                pickup_map_url
+                pickup_map_url, post_office
             )
 
             if keto_redeem > 0:
@@ -4341,7 +4344,8 @@ async def get_unbooked_delivery_orders(methods: list[str], since, limit: int = 2
     """
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT o.id, o.delivery_method, o.delivered_at
+            """SELECT o.id, o.delivery_method, o.delivered_at,
+                      o.total, o.keto_redeemed, o.items, o.post_office
                  FROM orders o
                 WHERE o.status = 'delivered'
                   AND o.delivery_method = ANY($1::text[])

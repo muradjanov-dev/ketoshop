@@ -835,6 +835,31 @@ async def api_cart_clear(request: web.Request):
     return _json({"ok": True})
 
 
+async def api_uzpost_quote(request: web.Request):
+    """📮 What UzPost «Bir Qadam» costs for this buyer's cart, and the post
+    office nearest to their pin (uzpost.py) — the Mini App shows both before
+    the order is placed; /api/checkout prices it again from the final lines."""
+    import uzpost
+    from handlers.cart import uzpost_far_for
+    try:
+        lat, lng = float(request.query.get("lat")), float(request.query.get("lng"))
+    except (TypeError, ValueError):
+        return _json({"error": "invalid_location"}, status=400)
+    lines = [{"name": it.get("name"), "quantity": it.get("cart_quantity"),
+              "unit": it.get("unit"), "is_set": it.get("is_set")}
+             for it in await get_cart(request["user_id"])]
+    office = await uzpost.nearest_office(lat, lng)
+    far = uzpost.is_far(office["region"]) if office else uzpost_far_for(lat, lng, None)
+    kg = uzpost.parcel_kg(lines)
+    return _json({
+        "fee": uzpost.buyer_fee(lines, far),
+        "kg": kg,
+        "kg_text": uzpost.fmt_kg(kg),
+        "office": dict(uzpost.localize(office, request.get("user_lang", "uz")),
+                       map_url=uzpost.map_url(office)) if office else None,
+    })
+
+
 async def api_checkout(request: web.Request):
     """Process checkout from the webapp."""
     import re
@@ -923,7 +948,17 @@ async def api_checkout(request: web.Request):
     subtotal = total  # product-only, before delivery fee — what Keto earns off of
     # Ketoshop courier: 25 000, free from FREE_DELIVERY_FROM of products —
     # measured before the 10% bot discount (owner, 2026-10-08).
-    if delivery_method != "pickup":
+    if delivery_method == "uzpost":
+        # 📮 Priced from the final lines (gift included) and the office the
+        # parcel goes to — the region of that office decides the far rate.
+        import uzpost
+        from handlers.cart import uzpost_far_for
+        office = await uzpost.nearest_office(latitude, longitude)
+        far = uzpost.is_far(office["region"]) if office else \
+            uzpost_far_for(latitude, longitude, address)
+        pickup_snapshot["post_office"] = uzpost.office_line(office) or None
+        total += delivery_fee_for(delivery_method, subtotal + bot_saved, items_data, far)
+    elif delivery_method != "pickup":
         total += delivery_fee_for(delivery_method, subtotal + bot_saved)
 
     # Preview of the Keto reward this order will earn once delivered (see
@@ -997,6 +1032,7 @@ async def api_checkout(request: web.Request):
                 pending_longitude=float(longitude) if longitude is not None else None,
                 pending_keto_redeem=keto_redeem,
                 pending_pickup_map_url=pickup_snapshot["pickup_map_url"],
+                pending_post_office=pickup_snapshot.get("post_office"),
             )
         except Exception:
             logger.exception("Failed to stash pending checkout for user %s", user_id)
@@ -1350,6 +1386,7 @@ async def api_checkout_cheque(request: web.Request):
             secondary_phone=data.get("pending_secondary_phone"),
             keto_redeem=keto_redeem,
             pickup_map_url=data.get("pending_pickup_map_url"),
+            post_office=data.get("pending_post_office"),
         )
     except InsufficientStockError as exc:
         await _alert_paid_but_short(bot, user_id, data, exc, total, file_bytes, filename, is_image)
@@ -1376,6 +1413,7 @@ async def api_checkout_cheque(request: web.Request):
                 secondary_phone=data.get("pending_secondary_phone"),
                 keto_redeem=0,
                 pickup_map_url=data.get("pending_pickup_map_url"),
+                post_office=data.get("pending_post_office"),
             )
         except InsufficientStockError as exc:
             await _alert_paid_but_short(bot, user_id, data, exc, total, file_bytes, filename, is_image)
@@ -1944,6 +1982,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_post("/api/cart/update", api_cart_update)
     app.router.add_post("/api/cart/clear", api_cart_clear)
     app.router.add_post("/api/checkout", api_checkout)
+    app.router.add_get("/api/uzpost/quote", api_uzpost_quote)
     app.router.add_post("/api/site-feedback", api_site_feedback)
     app.router.add_get("/api/site-feedback/due", api_site_feedback_due)
     app.router.add_post("/api/site-feedback/shown", api_site_feedback_shown)

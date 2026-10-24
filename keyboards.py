@@ -343,9 +343,12 @@ def payment_method_keyboard(lang: str, online_only: bool = False) -> InlineKeybo
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def delivery_method_keyboard(lang: str, in_tashkent: bool) -> InlineKeyboardMarkup:
+def delivery_method_keyboard(lang: str, in_tashkent: bool,
+                             uzpost_fee: int | None = None) -> InlineKeyboardMarkup:
     """In Tashkent: Ketoshop's own courier (cash/online, flat fee) or Yandex Taxi
-    (online only). Outside: courier services (BTS, EMU).
+    (online only). Outside: UzPost «Bir Qadam» first — the one with a price
+    we can name up front, shown on the button (uzpost.py, 2026-10-24) — then
+    the courier services (BTS, EMU).
 
     Yandex Market was dropped from the offer on 2026-09-18. Its label stays in
     locales so the orders already placed with it still read correctly in the
@@ -354,11 +357,17 @@ def delivery_method_keyboard(lang: str, in_tashkent: bool) -> InlineKeyboardMark
         options = [("self", "btn_delivery_self"), ("yandex_taxi", "btn_delivery_yandex_taxi")]
     else:
         options = [
+            ("uzpost", "btn_delivery_uzpost"),
             ("bts", "btn_delivery_bts"),
             ("emu", "btn_delivery_emu"),
         ]
-    buttons = [[InlineKeyboardButton(text=get_text(label_key, lang), callback_data=f"delivery:{code}")]
-               for code, label_key in options]
+    buttons = []
+    for code, label_key in options:
+        label = get_text(label_key, lang)
+        if code == "uzpost" and uzpost_fee:
+            label = get_text("btn_delivery_uzpost_fee", lang,
+                             fee=f"{int(uzpost_fee):,}".replace(",", " "))
+        buttons.append([InlineKeyboardButton(text=label, callback_data=f"delivery:{code}")])
     buttons.append([InlineKeyboardButton(text=get_text("btn_cancel", lang), callback_data="main_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 

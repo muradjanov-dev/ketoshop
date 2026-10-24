@@ -1506,6 +1506,18 @@
   .payment-options { display: flex; gap: 10px; }
   .delivery-options-list { display: flex; flex-wrap: wrap; gap: 10px; }
   .delivery-options-list .del-opt { flex: 1 1 calc(50% - 5px); min-width: 0; }
+  /* 📮 UzPost «Bir Qadam»: the office the parcel goes to (uzpost.py) */
+  .uzpost-office {
+    margin-top: 10px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid var(--hairline);
+    background: var(--surface-hi);
+    color: var(--text);
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+  .uzpost-office a { color: var(--link); }
   .pay-opt, .del-opt {
     position: relative;
     flex: 1;
@@ -3390,6 +3402,7 @@
       <div class="form-group" id="delivery-group" style="display:none">
         <label id="lbl-delivery"></label>
         <div class="delivery-options-list" id="delivery-options"></div>
+        <div class="uzpost-office" id="uzpost-office" style="display:none"></div>
       </div>
       <div class="form-group">
         <label id="lbl-payment"></label>
@@ -4489,6 +4502,13 @@ const L = {
     delYandexMarket: "📦 Yandex Market",
     delBts: "📦 BTS",
     delEmu: "📦 EMU",
+    delUzpost: "📮 UzPost (1 kunda)",
+    uzpostOfficeTitle: "Posilka shu pochta bo'limiga boradi",
+    uzpostWeight: "Taxminiy og'irligi",
+    uzpostNote: "odatda 1 ish kunida yetib boradi, pasport yoki ID karta bilan olasiz.",
+    uzpostLoading: "Eng yaqin pochta bo'limi qidirilmoqda…",
+    uzpostNoOffice: "Eng yaqin pochta bo'limini admin aniqlab, sizga yozadi.",
+    uzpostNoQuote: "UzPost narxi buyurtma tasdiqlanganda hisoblanadi.",
     errorDelivery: "Yetkazib berish usulini tanlang",
     submitOrder: 'Buyurtmani tasdiqlash',
     backToCart: '◀️ Savatga qaytish',
@@ -4540,6 +4560,7 @@ const L = {
     delYandexMarketLabel: 'Yandex Market',
     delBtsLabel: 'BTS',
     delEmuLabel: 'EMU',
+    delUzpostLabel: 'UzPost',
     btnCancelOrder: '❌ Bekor qilish',
     confirmCancelOrder: 'Buyurtma #{id} ni bekor qilishni tasdiqlaysizmi?',
     orderCancelled: 'Buyurtma bekor qilindi',
@@ -4695,6 +4716,13 @@ const L = {
     delYandexMarket: '📦 Yandex Market',
     delBts: '📦 BTS',
     delEmu: '📦 EMU',
+    delUzpost: '📮 UzPost (за 1 день)',
+    uzpostOfficeTitle: 'Посылка придёт в это почтовое отделение',
+    uzpostWeight: 'Примерный вес',
+    uzpostNote: 'обычно доходит за 1 рабочий день, забрать можно с паспортом или ID-картой.',
+    uzpostLoading: 'Ищем ближайшее почтовое отделение…',
+    uzpostNoOffice: 'Ближайшее почтовое отделение уточнит администратор и напишет вам.',
+    uzpostNoQuote: 'Стоимость UzPost рассчитается при подтверждении заказа.',
     errorDelivery: 'Выберите способ доставки',
     submitOrder: 'Подтвердить заказ',
     backToCart: '◀️ Назад в корзину',
@@ -4746,6 +4774,7 @@ const L = {
     delYandexMarketLabel: 'Yandex Market',
     delBtsLabel: 'BTS',
     delEmuLabel: 'EMU',
+    delUzpostLabel: 'UzPost',
     btnCancelOrder: '❌ Отменить',
     confirmCancelOrder: 'Отменить заказ #{id}?',
     orderCancelled: 'Заказ отменён',
@@ -8499,6 +8528,7 @@ function deliveryLabel(method) {
     yandex_market: t.delYandexMarketLabel,
     bts: t.delBtsLabel,
     emu: t.delEmuLabel,
+    uzpost: t.delUzpostLabel,
   };
   return method && map[method] ? map[method] : '—';
 }
@@ -8703,6 +8733,7 @@ const SELF_DELIVERY_FEE = 25000;
 const FREE_DELIVERY_FROM = 800000;
 function deliveryFee(method) {
   if (method === 'pickup') return 0;
+  if (method === 'uzpost') return uzpostQuote ? uzpostQuote.fee : 0;
   if (method !== 'self') return 0;
   return cartData.total >= FREE_DELIVERY_FROM ? 0 : SELF_DELIVERY_FEE;
 }
@@ -8711,10 +8742,54 @@ function deliveryFee(method) {
 // Tashkent: Ketoshop's own courier (cash/online, flat fee) or Yandex Taxi (online only).
 // Outside: courier services (BTS, EMU). Yandex Market was dropped on
 // 2026-09-18; its label stays in the dictionary so past orders still render.
+// 📮 UzPost «Bir Qadam» (uzpost.py): the price for this cart and the post
+// office nearest to the pin, from /api/uzpost/quote. The server prices the
+// order again from its final lines, so this is what the buyer sees, not
+// what they are charged by.
+let uzpostQuote = null, uzpostQuoteKey = '', uzpostQuoteFailed = false;
+async function loadUzpostQuote() {
+  const lat = document.getElementById('inp-lat').value;
+  const lng = document.getElementById('inp-lng').value;
+  if (!lat || !lng) { uzpostQuote = null; renderUzpostOffice(); return; }
+  const key = lat + ',' + lng + ',' + cartData.total;
+  if (key === uzpostQuoteKey && (uzpostQuote || uzpostQuoteFailed)) { renderUzpostOffice(); return; }
+  uzpostQuoteKey = key;
+  uzpostQuote = null;
+  uzpostQuoteFailed = false;
+  renderUzpostOffice();
+  try {
+    uzpostQuote = await api('/api/uzpost/quote?lat=' + encodeURIComponent(lat) + '&lng=' + encodeURIComponent(lng));
+  } catch (_) {
+    uzpostQuoteFailed = true;
+  }
+  renderUzpostOffice();
+  refreshCheckoutTotal();
+}
+
+function renderUzpostOffice() {
+  const box = document.getElementById('uzpost-office');
+  if (!box) return;
+  const method = pickupMode ? 'pickup' : document.querySelector('.del-opt[data-method].active')?.dataset.method;
+  if (method !== 'uzpost') { box.style.display = 'none'; return; }
+  box.style.display = '';
+  if (uzpostQuoteFailed) { box.textContent = '📮 ' + t.uzpostNoQuote; return; }
+  const q = uzpostQuote;
+  if (!q) { box.textContent = '📮 ' + t.uzpostLoading; return; }
+  const o = q.office;
+  let html = o
+    ? '📮 <b>' + escapeHtml(t.uzpostOfficeTitle) + ':</b><br><b>' + escapeHtml(o.index) + '</b> — ' +
+      escapeHtml(o.name) + '<br>📍 ' + escapeHtml(o.address || '—') +
+      (o.hours ? '<br>🕘 ' + escapeHtml(o.hours) : '') +
+      '<br><a href="' + escapeHtml(o.map_url) + '" target="_blank" rel="noopener">' + escapeHtml(t.openOnMap) + '</a>'
+    : '📮 ' + escapeHtml(t.uzpostNoOffice);
+  html += '<br>⚖️ ' + escapeHtml(t.uzpostWeight) + ': ~' + escapeHtml(q.kg_text) + ' kg — ' + escapeHtml(t.uzpostNote);
+  box.innerHTML = html;
+}
+
 function renderDeliveryOptions(inTashkent) {
   const opts = inTashkent
     ? [['self', 'delSelf'], ['yandex_taxi', 'delYandexTaxi']]
-    : [['bts', 'delBts'], ['emu', 'delEmu']];
+    : [['uzpost', 'delUzpost'], ['bts', 'delBts'], ['emu', 'delEmu']];
   const container = document.getElementById('delivery-options');
   container.innerHTML = opts.map(([code, key], i) =>
     '<button type="button" class="del-opt' + (i === 0 ? ' active' : '') +
@@ -8728,11 +8803,14 @@ function renderDeliveryOptions(inTashkent) {
       container.querySelectorAll('.del-opt').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       applyPaymentRestrictions();
+      renderUzpostOffice();
       refreshCheckoutTotal();
     };
   });
   applyPaymentRestrictions();
+  renderUzpostOffice();
   refreshCheckoutTotal();
+  if (!inTashkent) loadUzpostQuote();
 }
 
 async function loadPickupConfig() {
@@ -8786,7 +8864,7 @@ function refreshCheckoutTotal() {
   if (fee > 0) {
     html += '<div class="ct-line"><span>' + t.deliveryFeeLabel + '</span><span>' + formatPrice(fee) + ' UZS</span></div>';
     const left = FREE_DELIVERY_FROM - cartData.total;
-    if (left <= 300000) {
+    if (method === 'self' && left <= 300000) {
       html += '<div class="ct-line"><span>' + t.freeDeliveryHint.replace('{left}', formatPrice(left)) + '</span></div>';
     }
   } else if (method === 'self') {
