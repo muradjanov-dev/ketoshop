@@ -1049,22 +1049,61 @@ async def api_site_user(request: web.Request):
                                               request.query.get("period", "90d")))
 
 
+def _dashboard_period(request: web.Request) -> str | dict:
+    """The dashboard's period switch: today / 7d / 30d / all, or two dates."""
+    period = request.query.get("period", "30d")
+    if period == "custom":
+        return {"start": request.query.get("start"), "end": request.query.get("end")}
+    return period if period in ("today", "7d", "30d", "all") else "30d"
+
+
+def _period_label(period: str | dict) -> str:
+    if isinstance(period, dict):
+        def _d(v):
+            parts = str(v or "").split("-")
+            return ".".join(reversed(parts)) if len(parts) == 3 else str(v or "")
+        return f"{_d(period.get('start'))} – {_d(period.get('end'))}"
+    return {"today": "Bugun", "7d": "Oxirgi 7 kun", "30d": "Oxirgi 30 kun",
+            "all": "Butun davr"}.get(period, period)
+
+
+@require_auth
+async def api_product_sales(request: web.Request):
+    """«📦 Mahsulot savdosi» — every product and set sold in the dashboard's
+    window: quantity, money, profit, stock pace (database.get_product_sales)."""
+    return _json(await database.get_product_sales(_dashboard_period(request)))
+
+
+@require_auth
+async def api_product_sales_xlsx(request: web.Request):
+    """The same table as an Excel file."""
+    import reports
+    period = _dashboard_period(request)
+    data = await database.get_product_sales(period)
+    buf, filename = reports.product_sales_excel(data, _period_label(period))
+    return web.Response(
+        body=buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @require_auth
 async def api_dashboard(request: web.Request):
     """Aggregated snapshot for the visual dashboard tab (2026-08-12): KPIs for
     the selected period, a 6-month revenue/orders trend, best sellers, and a
-    Keto-program snapshot. One call so the tab renders without a waterfall."""
-    period = request.query.get("period", "30d")
-    if period == "custom":
-        start_date = request.query.get("start")
-        end_date = request.query.get("end")
-        period_arg = {"start": start_date, "end": end_date}
-    else:
-        if period not in ("today", "7d", "30d", "all"):
-            period = "30d"
-        period_arg = period
-        
-    stats, monthly, top_products, keto, abc_analysis, b2b, regions_rows = await asyncio.gather(
+    Keto-program snapshot. One call so the tab renders without a waterfall.
+
+    `prev_stats` is the same snapshot for the window just before (2026-10-24)
+    so every KPI can say ▲/▼ against it; `daily` is the per-day chart."""
+    period_arg = _dashboard_period(request)
+    prev = database.previous_period(period_arg)
+
+    async def _prev_stats():
+        return await database.get_admin_stats(prev) if prev else None
+
+    (stats, monthly, top_products, keto, abc_analysis, b2b, regions_rows,
+     prev_stats, daily) = await asyncio.gather(
         database.get_admin_stats(period_arg),
         database.get_monthly_breakdown(5),
         database.get_top_products(period_arg, limit=5),
@@ -1072,9 +1111,13 @@ async def api_dashboard(request: web.Request):
         database.get_abc_analysis(period_arg),
         database.get_b2b_orders(period_arg),
         database.get_orders_by_region(period_arg),
+        _prev_stats(),
+        database.get_daily_sales(period_arg),
     )
     return _json({
         "stats": stats,
+        "prev_stats": prev_stats,
+        "daily": daily,
         "monthly": monthly,
         "top_products": top_products,
         # Where the orders come from, and what each place actually buys —
@@ -1824,6 +1867,8 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/orders/{id:\\d+}/costs", api_order_line_costs)
     app.router.add_post("/admin/api/orders/{id:\\d+}/lines/{line:\\d+}/cost", api_order_line_cost_update)
     app.router.add_get("/admin/api/dashboard", api_dashboard)
+    app.router.add_get("/admin/api/product-sales", api_product_sales)
+    app.router.add_get("/admin/api/product-sales.xlsx", api_product_sales_xlsx)
     app.router.add_get("/admin/api/reviews", api_reviews)
     app.router.add_get("/admin/api/activity", api_activity)
     app.router.add_get("/admin/api/site-analytics", api_site_analytics)

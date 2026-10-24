@@ -115,10 +115,15 @@ class FinanceDashboardPayloadTest(unittest.TestCase):
              patch.object(admin_web.database, "get_keto_program_stats", AsyncMock(return_value={})), \
              patch.object(admin_web.database, "get_abc_analysis", AsyncMock(return_value=[])), \
              patch.object(admin_web.database, "get_b2b_orders", AsyncMock(return_value=[])), \
-             patch.object(admin_web.database, "get_orders_by_region", AsyncMock(return_value=[])):
+             patch.object(admin_web.database, "get_orders_by_region", AsyncMock(return_value=[])), \
+             patch.object(admin_web.database, "get_daily_sales",
+                          AsyncMock(return_value=[{"date": "2026-10-24", "orders": 4, "value": 900}])):
             response = asyncio.run(admin_web.api_dashboard(request))
 
         payload = json.loads(response.text)
+        # ▲/▼ compares with the 30 days before (the same snapshot, mocked here).
+        self.assertEqual(payload["prev_stats"]["booked_value"], 900)
+        self.assertEqual(payload["daily"][0]["value"], 900)
         self.assertEqual(payload["stats"]["booked_value"], 900)
         self.assertEqual(payload["stats"]["orders_sold"], 4)
         self.assertEqual(payload["stats"]["delivered_revenue"], 420)

@@ -3317,6 +3317,9 @@ def _period_start(period: str):
 
 def _period_range(period: str | dict):
     from datetime import datetime, timedelta, timezone
+    if isinstance(period, dict) and "start_utc" in period:
+        # An exact naive-UTC window (previous_period's comparison windows).
+        return period["start_utc"], period.get("end_utc")
     if isinstance(period, dict):
         try:
             start = datetime.fromisoformat(period["start"])
@@ -3328,6 +3331,203 @@ def _period_range(period: str | dict):
         except Exception:
             pass
     return _period_start(period), None
+
+
+def previous_period(period: str | dict, now_utc=None) -> dict | None:
+    """The window just before `period`, of the same length — what the
+    dashboard's ▲/▼ compares against (2026-10-24). "today" is compared with
+    yesterday up to the same hour, not with all of yesterday, or every
+    morning would read as a collapse. All-time has nothing before it."""
+    from datetime import datetime, timedelta, timezone
+    now = now_utc or datetime.now(timezone.utc).replace(tzinfo=None)
+    if period == "today":
+        start = _period_start("today")
+        if now_utc is not None:
+            local = now + timedelta(hours=DISPLAY_TZ_OFFSET_HOURS)
+            start = local.replace(hour=0, minute=0, second=0, microsecond=0) \
+                - timedelta(hours=DISPLAY_TZ_OFFSET_HOURS)
+        return {"start_utc": start - timedelta(days=1), "end_utc": now - timedelta(days=1)}
+    if period in ("7d", "30d"):
+        days = 7 if period == "7d" else 30
+        return {"start_utc": now - timedelta(days=2 * days), "end_utc": now - timedelta(days=days)}
+    if isinstance(period, dict) and "start" in period:
+        start, end = _period_range(period)
+        if start is None or end is None or end <= start:
+            return None
+        length = end - start + timedelta(microseconds=1)
+        return {"start_utc": start - length, "end_utc": start - timedelta(microseconds=1)}
+    return None
+
+
+def _window_days(start, end, now_utc=None) -> float:
+    """How many days a window covers, for per-day rates; never below one."""
+    from datetime import datetime, timezone
+    now = now_utc or datetime.now(timezone.utc).replace(tzinfo=None)
+    return max(1.0, ((end or now) - start).total_seconds() / 86400) if start else 1.0
+
+
+async def get_product_sales(period: str | dict = "30d") -> dict:
+    """Every product and set sold in the window — the full table behind the
+    dashboard's «📦 Mahsulot savdosi» card and its Excel file (owner,
+    2026-10-24: "oxirgi 15 kun ichida sotilgan barcha mahsulotlar soni va
+    narxi kerak ro'yxat").
+
+    The same orders as «Buyurtma qiymati» and the ABC card: SALE_SQL on
+    created_at, so the table and the KPI above it describe one set of
+    orders. Wholesale is in the totals and shown in its own columns. Gift and
+    aksiya bonus lines were never sold: their quantity is counted apart (so
+    stock movement still adds up) and they carry no money. Cost follows
+    line_cost, the one costing rule every profit figure uses; a product with
+    no cost_price is flagged, because its profit is then overstated.
+
+    `per_day` / `days_left` say how fast a product leaves the shelf and how
+    long the current stock lasts at that pace — sets have no stock of their
+    own, so they get neither.
+    """
+    start_time, end_time = _period_range(period)
+    conds, args = [SALE_SQL], []
+    if start_time:
+        args.append(start_time)
+        conds.append(f"created_at >= ${len(args)}")
+    if end_time:
+        args.append(end_time)
+        conds.append(f"created_at <= ${len(args)}")
+
+    async with pool.acquire() as conn:
+        orders = await conn.fetch(
+            f"SELECT id, source, created_at, items FROM orders WHERE {' AND '.join(conds)}", *args)
+        products = {r["id"]: dict(r) for r in await conn.fetch(
+            "SELECT id, name, unit, quantity, cost_price, category, is_active FROM products")}
+        sets = {r["id"]: dict(r) for r in await conn.fetch("SELECT id, name FROM product_sets")}
+    set_costs = await get_set_costs()
+    cost_map = {pid: p.get("cost_price") or 0 for pid, p in products.items()}
+
+    rows: dict[tuple, dict] = {}
+    first_at = None
+    for o in orders:
+        first_at = o["created_at"] if first_at is None or o["created_at"] < first_at else first_at
+        raw = o["items"]
+        try:
+            items = json.loads(raw) if isinstance(raw, str) else (raw or [])
+        except Exception:
+            continue
+        b2b = o["source"] == "b2b"
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            if it.get("is_set"):
+                key_id = _line_set_id(it)
+                key = ("set", key_id)
+                name = (sets.get(key_id) or {}).get("name") or it.get("name") or "—"
+                unit, stock, category = it.get("unit") or "", None, "set"
+            else:
+                key_id = _line_product_id(it)
+                if key_id is None:
+                    continue
+                key = ("product", key_id)
+                p = products.get(key_id) or {}
+                name = p.get("name") or it.get("name") or "—"
+                unit = p.get("unit") or it.get("unit") or ""
+                stock = p.get("quantity")
+                category = p.get("category") or ""
+            row = rows.setdefault(key, {
+                "kind": key[0], "id": key_id, "name": name, "unit": unit,
+                "category": category, "stock": stock,
+                "qty": 0.0, "gift_qty": 0.0, "revenue": 0.0, "cost": 0.0,
+                "b2b_qty": 0.0, "b2b_revenue": 0.0, "orders": set(), "cost_known": True,
+            })
+            try:
+                qty = float(it.get("quantity") or 0)
+                price = float(it.get("price") or 0)
+            except (TypeError, ValueError):
+                continue
+            row["orders"].add(o["id"])
+            if it.get("is_gift") or it.get("is_bonus"):
+                row["gift_qty"] += float(it.get("stock_quantity") or qty) if it.get("is_bonus") else qty
+                row["cost"] += line_cost(it, cost_map, set_costs)[0]
+                continue
+            revenue = qty * price
+            cost, known = line_cost(it, cost_map, set_costs)
+            row["qty"] += qty
+            row["revenue"] += revenue
+            row["cost"] += cost
+            if not known and revenue > 0:
+                row["cost_known"] = False
+            if b2b:
+                row["b2b_qty"] += qty
+                row["b2b_revenue"] += revenue
+
+    days = _window_days(start_time or first_at, end_time)
+    out = []
+    for row in rows.values():
+        row["orders"] = len(row["orders"])
+        row["profit"] = row["revenue"] - row["cost"]
+        row["margin_pct"] = round(row["profit"] * 100.0 / row["revenue"], 1) if row["revenue"] else None
+        moved = row["qty"] + row["gift_qty"]
+        if row["kind"] == "product" and moved > 0:
+            row["per_day"] = round(moved / days, 2)
+            stock = float(row["stock"] or 0)
+            row["days_left"] = round(stock / row["per_day"], 1) if row["per_day"] else None
+        else:
+            row["per_day"] = None
+            row["days_left"] = None
+        for k in ("qty", "gift_qty", "b2b_qty"):
+            row[k] = round(row[k], 3)
+        for k in ("revenue", "cost", "profit", "b2b_revenue"):
+            row[k] = int(round(row[k]))
+        out.append(row)
+    out.sort(key=lambda r: (-r["revenue"], -r["qty"], r["name"]))
+    totals = {
+        "revenue": sum(r["revenue"] for r in out),
+        "cost": sum(r["cost"] for r in out),
+        "profit": sum(r["profit"] for r in out),
+        "b2b_revenue": sum(r["b2b_revenue"] for r in out),
+        "orders": len(orders),
+        "products": len(out),
+        "days": round(days, 1),
+    }
+    totals["margin_pct"] = round(totals["profit"] * 100.0 / totals["revenue"], 1) if totals["revenue"] else None
+    return {"rows": out, "totals": totals}
+
+
+async def get_daily_sales(period: str | dict = "30d", max_days: int = 90) -> list[dict]:
+    """Orders and their value per Tashkent day — the dashboard's daily chart.
+
+    Same orders as «Buyurtma qiymati» (SALE_SQL on created_at), so the bars
+    add up to the KPI above them. A window shorter than a week ("today")
+    shows the last 7 days for context, and all-time shows the last
+    `max_days`. Days without a sale are there with zeros, or the chart would
+    close up the gaps and hide them.
+    """
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    shift = timedelta(hours=DISPLAY_TZ_OFFSET_HOURS)
+    start_time, end_time = _period_range(period)
+    end = end_time or now
+    if start_time is None or (end - start_time).days > max_days:
+        start_time = end - timedelta(days=max_days)
+    if (end - start_time).days < 7:
+        start_time = end - timedelta(days=7)
+    first_day = (start_time + shift).date()
+    last_day = (end + shift).date()
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT (created_at + make_interval(hours => $3))::date AS day,
+                       COUNT(*) AS orders, COALESCE(SUM(total), 0) AS value
+                  FROM orders
+                 WHERE {SALE_SQL} AND created_at >= $1 AND created_at <= $2
+                 GROUP BY 1""",
+            start_time, end, DISPLAY_TZ_OFFSET_HOURS)
+    by_day = {r["day"]: r for r in rows}
+    out, day = [], first_day
+    while day <= last_day:
+        r = by_day.get(day)
+        out.append({"date": day.isoformat(), "orders": int(r["orders"]) if r else 0,
+                    "value": int(r["value"] or 0) if r else 0})
+        day += timedelta(days=1)
+    return out
+
 
 async def get_orders_by_region(period: str | dict = "all", top_products: int = 3) -> list[dict]:
     """Orders broken down by Uzbek region, busiest first.

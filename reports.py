@@ -390,3 +390,53 @@ async def generate_orders_excel(period: str = "all", lang: str = "uz") -> tuple[
     today = datetime.now().strftime("%Y-%m-%d")
     filename = f"safran_orders_{period}_{today}.xlsx"
     return buf, filename
+
+
+# ----- Product sales (dashboard «📦 Mahsulot savdosi», 2026-10-24) -----
+
+_PRODUCT_SALES_HEADERS = [
+    "Mahsulot", "Birlik", "Sotildi", "Tushum, so'm", "Tannarx, so'm", "Foyda, so'm",
+    "Marja, %", "Buyurtmalar", "Shundan B2B (soni)", "Shundan B2B, so'm",
+    "Sovg'a / bonus (soni)", "Qoldiq", "Kuniga", "Necha kunga yetadi",
+]
+
+
+def product_sales_excel(data: dict, period_label: str) -> tuple[BytesIO, str]:
+    """The dashboard's product table as an .xlsx — same rows, same order,
+    with a totals line. `data` is database.get_product_sales()."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Mahsulot savdosi"
+    _write_header(ws, _PRODUCT_SALES_HEADERS)
+    money = '#,##0'
+    for r_idx, row in enumerate(data.get("rows") or [], start=2):
+        name = row["name"] + (" (to'plam)" if row.get("kind") == "set" else "")
+        if not row.get("cost_known", True):
+            name += " ⚠️ tannarx yo'q"
+        values = [
+            name, row.get("unit") or "", row["qty"], row["revenue"], row["cost"], row["profit"],
+            row.get("margin_pct"), row["orders"], row["b2b_qty"] or None, row["b2b_revenue"] or None,
+            row["gift_qty"] or None, row.get("stock"), row.get("per_day"), row.get("days_left"),
+        ]
+        for c_idx, value in enumerate(values, start=1):
+            cell = ws.cell(row=r_idx, column=c_idx, value=value)
+            cell.border = _BORDER
+            if c_idx in (4, 5, 6, 10):
+                cell.number_format = money
+    totals = data.get("totals") or {}
+    t_row = ws.max_row + 1
+    for c_idx, value in {1: f"JAMI — {period_label}", 4: totals.get("revenue"),
+                         5: totals.get("cost"), 6: totals.get("profit"),
+                         7: totals.get("margin_pct"), 8: totals.get("orders"),
+                         10: totals.get("b2b_revenue") or None}.items():
+        cell = ws.cell(row=t_row, column=c_idx, value=value)
+        cell.fill = _TOTAL_FILL
+        cell.font = _TOTAL_FONT
+        if c_idx in (4, 5, 6, 10):
+            cell.number_format = money
+    _autosize(ws, [34])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    today = datetime.now().strftime("%Y-%m-%d")
+    return buf, f"ketoshop_mahsulot_savdosi_{today}.xlsx"
