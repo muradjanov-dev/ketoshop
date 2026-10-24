@@ -341,6 +341,13 @@ async def relay_text(message: Message, bot: Bot, text: str) -> None:
         context = await review_followup.reply_context(buyer_id)
     except Exception:
         logger.exception("Could not look up review follow-up for %s", buyer_id)
+    # Same for a general opinion sent back to the survey (review_blast.py).
+    if not context:
+        try:
+            import review_blast
+            context = await review_blast.reply_context(buyer_id)
+        except Exception:
+            logger.exception("Could not look up review survey for %s", buyer_id)
 
     for admin_id in ADMIN_IDS:
         admin_lang = await get_user_language(admin_id)
