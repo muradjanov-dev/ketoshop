@@ -226,6 +226,9 @@
   .ps-table .low{color:var(--red);font-weight:800}
   .ps-table .soon{color:var(--amber);font-weight:800}
   .ps-table tfoot td{font-weight:800;border-top:2px solid var(--line)}
+  /* «Yana N ta ko'rsatish» under a long dashboard list (2026-10-24) */
+  .more-btn{display:block;margin:12px auto 0;border:1.5px solid var(--line);background:var(--panel);color:var(--ink-2);font:inherit;font-weight:700;font-size:12.5px;padding:7px 16px;border-radius:9px;cursor:pointer}
+  .more-btn:hover{color:var(--accent);border-color:var(--accent)}
   @media (max-width:900px){.dash-grid{grid-template-columns:1fr}}
 
   .trend-wrap{display:flex;align-items:flex-end;gap:10px;height:140px;padding:0 2px}
@@ -706,6 +709,7 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
         Sovg'a va aksiya bonuslari sotuvga kirmaydi, alohida ko'rsatiladi. «Necha kunga yetadi» — hozirgi qoldiq shu davrdagi sotuv tezligida.
         Ustun nomini bosib saralang.</p>
       <div style="overflow-x:auto;margin-top:12px"><table class="data-table ps-table" id="psTable"></table></div>
+      <div id="psMore"></div>
     </div>
 
     <div class="dash-card" style="margin-bottom:16px">
@@ -747,6 +751,7 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
           <thead><tr><th style="text-align:left">Mahsulot</th><th style="text-align:center">Toifa</th><th style="text-align:right">Ulish</th></tr></thead>
           <tbody id="abcTbody"></tbody>
         </table>
+        <div id="abcMore"></div>
       </div>
       <div class="dash-card" style="grid-column:1/-1">
         <h3>🗺 Viloyatlar kesimi — kim ko'p buyurtma qilyapti va nima olyapti</h3>
@@ -1746,6 +1751,7 @@ async function loadDashboard(){
 /* B2B buyurtmalar — kim, qachon, nima olgani. The detail endpoint is grouped
    by order creation date, so this table shows booked B2B order value. */
 function renderB2bSales(list){
+  LIST_RENDER.b2b=()=>renderB2bSales(list);
   const box=$('#b2bSales'), sum=$('#b2bSummary');
   if(!list||!list.length){
     sum.textContent='';
@@ -1758,7 +1764,7 @@ function renderB2bSales(list){
   sum.textContent=`${list.length} ta buyurtma · ${fmt(revenue)} buyurtma qiymati · foyda ${fmt(profit)}`;
 
   const qty=n=>Number.isInteger(n)?n:parseFloat(n.toFixed(3));
-  const rows=list.map(o=>{
+  const rows=clipList('b2b',list,5).map(o=>{
     const items=o.items.map(it=>`${esc(it.name)} — ${qty(it.quantity)} ${esc(it.unit)}`).join('<br>');
     const warn=o.cost_known?'':' <span class="b2b-warn" title="Tannarxi kiritilmagan — foyda haqiqiydan yuqori">⚠️</span>';
     return `<tr>
@@ -1777,10 +1783,32 @@ function renderB2bSales(list){
       <th style="text-align:right">Buyurtma qiymati</th><th style="text-align:right">Yalpi foyda</th>
     </tr></thead>
     <tbody>${rows}</tbody>
-  </table>` + (unpriced
+  </table>` + moreBtn('b2b',list.length,5) + (unpriced
     ? `<div class="b2b-note">⚠️ — tannarxi kiritilmagan (${unpriced} ta): foyda haqiqiydan yuqori ko'rsatilgan.</div>`
     : '');
 }
+
+/* Long dashboard lists show their first `limit` rows; «Yana N ta
+   ko'rsatish» opens the rest and «Qisqartirish» folds them back (owner,
+   2026-10-24). A list only one or two rows longer than the limit is shown
+   whole — a button to reveal one row is just noise. The choice is kept
+   while the page is open, so switching the period doesn't fold a list the
+   owner just opened. */
+const LIST_OPEN={}, LIST_RENDER={};
+function clipList(key,list,limit){
+  return (LIST_OPEN[key]||list.length<=limit+2)?list:list.slice(0,limit);
+}
+function moreBtn(key,total,limit){
+  if(total<=limit+2)return '';
+  return `<button type="button" class="more-btn" data-list="${key}">${LIST_OPEN[key]?'▲ Qisqartirish':`▼ Yana ${total-limit} ta ko'rsatish`}</button>`;
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest('.more-btn[data-list]');
+  if(!b)return;
+  const k=b.dataset.list;
+  LIST_OPEN[k]=!LIST_OPEN[k];
+  if(LIST_RENDER[k])LIST_RENDER[k]();
+});
 
 function renderDashKpiCard(lab,val,sub,delta=''){
   return `<div class="kpi-card"><div class="lab">${esc(lab)}</div><div class="val tnum">${esc(val)}</div>${delta}<div class="sub">${esc(sub)}</div></div>`;
@@ -1955,9 +1983,10 @@ function renderProductSales(){
     const nx=(x===null||x===undefined)?-Infinity:+x, ny=(y===null||y===undefined)?-Infinity:+y;
     return dir*(nx-ny);
   });
-  if(!PS.rows.length){$('#psTable').innerHTML='<tbody><tr><td class="empty" style="padding:24px">Bu davrda sotuv yo\'q</td></tr></tbody>';return;}
+  if(!PS.rows.length){$('#psTable').innerHTML='<tbody><tr><td class="empty" style="padding:24px">Bu davrda sotuv yo\'q</td></tr></tbody>';$('#psMore').innerHTML='';return;}
+  const visible=q?rows:clipList('ps',rows,15);
   const head='<thead><tr>'+PS_COLS.map(c=>`<th data-k="${c.k}" class="${c.num?'num':''}${c.k===k?' on':''}">${esc(c.t)}${c.k===k?(dir<0?' ↓':' ↑'):''}</th>`).join('')+'</tr></thead>';
-  const body=rows.map(r=>{
+  const body=visible.map(r=>{
     const subs=[];
     if(r.kind==='set')subs.push("to'plam");
     if(r.b2b_qty)subs.push(`B2B: ${psQty(r.b2b_qty)} · ${fmt(r.b2b_revenue)}`);
@@ -1982,7 +2011,9 @@ function renderProductSales(){
     <td class="num tnum">${fmt(rows.reduce((a,r)=>a+r.profit,0))}</td>
     <td></td><td class="num tnum">${t.orders} ta</td><td></td><td></td></tr></tfoot>`:'';
   $('#psTable').innerHTML=head+'<tbody>'+body+'</tbody>'+foot;
+  $('#psMore').innerHTML=q?'':moreBtn('ps',rows.length,15);
 }
+LIST_RENDER.ps=()=>renderProductSales();
 
 $('#psTable').addEventListener('click',e=>{
   const th=e.target.closest('th[data-k]');if(!th)return;
@@ -2616,11 +2647,14 @@ window.announcePromo=async id=>{
 };
 
 function renderAbcAnalysis(list){
+  LIST_RENDER.abc=()=>renderAbcAnalysis(list);
   if(!list||!list.length){
     $('#abcTbody').innerHTML='<tr><td colspan="3" style="text-align:center;color:var(--ink-3);padding:20px">Ma\'lumot yo\'q</td></tr>';
+    $('#abcMore').innerHTML='';
     return;
   }
-  $('#abcTbody').innerHTML=list.map(r=>{
+  $('#abcMore').innerHTML=moreBtn('abc',list.length,10);
+  $('#abcTbody').innerHTML=clipList('abc',list,10).map(r=>{
     let col = r.category === 'A' ? 'var(--green)' : (r.category === 'B' ? 'var(--amber)' : 'var(--red)');
     let bg = r.category === 'A' ? 'var(--green-wash)' : (r.category === 'B' ? 'var(--amber-wash)' : 'var(--red-wash)');
     return `<tr>
@@ -3553,6 +3587,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModals();});
    bestsellers — the "what do they buy" half of the question is a list of
    product names, which is why this is a list and not a bar chart. */
 function renderRegions(list){
+  LIST_RENDER.reg=()=>renderRegions(list);
   const box=$('#regionList');
   if(!box)return;
   if(!list||!list.length){
@@ -3561,7 +3596,7 @@ function renderRegions(list){
   }
   const max=Math.max(...list.map(r=>r.orders))||1;
   const medals=['🥇','🥈','🥉'];
-  box.innerHTML=list.map((r,i)=>{
+  box.innerHTML=clipList('reg',list,6).map((r,i)=>{
     const pct=Math.round(r.orders/max*100);
     const prods=(r.top_products||[]).length
       ? r.top_products.map((p,j)=>`<div class="reg-prod">
@@ -3588,7 +3623,7 @@ function renderRegions(list){
         ${prods}
       </div>
     </div>`;
-  }).join('');
+  }).join('')+moreBtn('reg',list.length,6);
 }
 
 /* Quantities are floats (0.5 kg is a real order line), but "2.0 dona" reads
