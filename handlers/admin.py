@@ -12,7 +12,8 @@ from aiogram.fsm.state import State, StatesGroup
 
 from config import ADMIN_IDS
 from database import (
-    get_user_language, get_admin_stats, get_monthly_breakdown, get_month_stats, get_top_products, get_top_viewed_products,
+    get_user_language, get_admin_stats, get_monthly_breakdown, get_month_stats, get_monthly_product_sales,
+    get_top_products, get_top_viewed_products,
     get_daily_active_users, get_top_actions, get_top_active_users,
     get_all_users, get_all_orders, get_order_counts_by_status,
     get_all_products, get_delivery_zones, get_delivery_zone, update_delivery_zone,
@@ -324,6 +325,31 @@ def _month_block_text(lang: str, m: dict) -> str:
     return line
 
 
+def _month_products_block_text(lang: str, products: list[dict]) -> str:
+    if lang == "ru":
+        lines = ["\n\n📦 <b>Товары</b>"]
+        if not products:
+            lines.append("\nНет продаж товаров за этот период.")
+        else:
+            for product in products:
+                lines.append(
+                    f"\n• {html.escape(str(product['name']))} — {product['qty']} шт. · "
+                    f"{_fmt_num(product['revenue'])} сум"
+                )
+        return "".join(lines)
+
+    lines = ["\n\n📦 <b>Mahsulotlar</b>"]
+    if not products:
+        lines.append("\nBu davrda mahsulot savdosi yo'q.")
+    else:
+        for product in products:
+            lines.append(
+                f"\n• {html.escape(str(product['name']))} — {product['qty']} ta · "
+                f"{_fmt_num(product['revenue'])} so'm"
+            )
+    return "".join(lines)
+
+
 @router.callback_query(F.data == "admin:monthly_stats")
 async def show_monthly_stats(callback: CallbackQuery):
     """Current calendar month up front (button label always shows the live
@@ -338,7 +364,9 @@ async def show_monthly_stats(callback: CallbackQuery):
     current, others = months[0], [m for m in months[1:]
                                    if m["orders"] > 0 or m["delivered_orders"] > 0]
 
-    text = "📅 <b>Oylik hisobot</b>\n\n" + _month_block_text(lang, current)
+    products = await get_monthly_product_sales(current["year"], current["month"])
+    text = ("📅 <b>Oylik hisobot</b>\n\n" + _month_block_text(lang, current)
+            + _month_products_block_text(lang, products))
 
     rows = []
     for i in range(0, len(others), 3):
@@ -371,9 +399,14 @@ async def show_specific_month_stats(callback: CallbackQuery):
     except ValueError:
         await callback.answer("❌")
         return
+    if not 2 <= year <= 9998 or not 1 <= month <= 12:
+        await callback.answer("❌")
+        return
 
     m = await get_month_stats(year, month)
-    text = "📅 <b>Oylik hisobot</b>\n\n" + _month_block_text(lang, m)
+    products = await get_monthly_product_sales(year, month)
+    text = ("📅 <b>Oylik hisobot</b>\n\n" + _month_block_text(lang, m)
+            + _month_products_block_text(lang, products))
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="admin:monthly_stats")],
     ])
