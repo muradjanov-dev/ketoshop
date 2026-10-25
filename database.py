@@ -3424,10 +3424,13 @@ async def get_product_sales(period: str | dict = "30d") -> dict:
                 and isinstance(items, list) and items
                 and all(isinstance(it, dict) for it in items)):
             try:
+                if not all(math.isfinite(float(it["price"]))
+                           and math.isfinite(float(it["quantity"])) for it in items):
+                    raise ValueError("Cannot establish the order's goods subtotal")
                 fee = max(0, int(round(float(o.get("total") or 0)
                                       + float(o.get("keto_redeemed") or 0)
                                       - order_goods_total(items))))
-            except (TypeError, ValueError, OverflowError):
+            except (KeyError, TypeError, ValueError, OverflowError):
                 fee = 0
             if fee:
                 postage_orders.append({"id": o["id"], "created_at": o["created_at"],

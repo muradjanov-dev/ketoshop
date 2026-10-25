@@ -73,6 +73,30 @@ class _SalesConn:
 
 
 class ProductSalesTest(unittest.TestCase):
+    def test_incomplete_postal_order_items_cannot_establish_a_postage_charge(self):
+        bad_lines = [{}, {"quantity": 1}, {"price": 60_000},
+                     {"price": None, "quantity": 1}, {"price": 60_000, "quantity": None},
+                     {"price": "NaN", "quantity": 1}, {"price": 1, "quantity": "Infinity"}]
+        for line in bad_lines:
+            with self.subTest(line=line), patch(__name__ + ".ORDERS", [
+                {"id": 1, "source": "bot", "created_at": datetime(2026, 10, 24, 12, 0),
+                 "delivery_method": "uzpost", "total": 115_000, "keto_redeemed": 0,
+                 "items": [line]},
+            ]):
+                data, _ = self._run("all")
+                self.assertEqual(data["postage_orders"], [])
+
+    def test_explicit_zero_price_gifts_allow_recorded_postage(self):
+        with patch(__name__ + ".ORDERS", [
+            {"id": 1, "source": "bot", "created_at": datetime(2026, 10, 24, 12, 0),
+             "delivery_method": "uzpost", "total": 75_000, "keto_redeemed": 0,
+             "items": [{"product_id": 10, "quantity": 1, "price": 60_000},
+                       {"product_id": 10, "quantity": 1, "price": 0, "is_gift": True}]},
+        ]):
+            data, _ = self._run("all")
+        self.assertEqual(data["totals"]["revenue"], 60_000)
+        self.assertEqual(data["postage_orders"][0]["fee"], 15_000)
+
     def test_postage_uses_saved_order_charge_without_repricing_old_sales(self):
         base = {"source": "bot", "created_at": datetime(2026, 10, 24, 12, 0),
                 "status": "delivered", "keto_redeemed": 0}
