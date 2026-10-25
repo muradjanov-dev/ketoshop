@@ -1,6 +1,7 @@
 """
 📦 All products and sets sold over the last 15 and 30 Tashkent days:
-quantity, average price, revenue and the estimated UzPost fee for one unit.
+quantity, average price and goods revenue. Recorded postal charges are
+shown separately by order; current tariff estimates never appear here.
 
 Built live from the orders through database.get_product_sales — the
 dashboard's «📦 Mahsulot savdosi» table, so the two always agree.
@@ -20,7 +21,6 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
 import database
-import uzpost
 from config import ADMIN_IDS
 from tg_safety import strip_markup
 
@@ -55,13 +55,23 @@ def window(days: int, today=None) -> dict:
     return {"start": (today - timedelta(days=days - 1)).isoformat(), "end": today.isoformat()}
 
 
-def post_fee(row: dict) -> int:
-    """What posting one of these costs the buyer with UzPost, box included."""
-    return uzpost.buyer_fee([{"name": row.get("name"), "quantity": 1,
-                              "unit": row.get("unit"), "is_set": row.get("kind") == "set"}])
+def _postage_blocks(postage_orders: list[dict] | None) -> list[str]:
+    if not postage_orders:
+        return []
+    methods = {"uzpost": "UzPost", "bts": "BTS", "emu": "EMU"}
+    lines = ["📮 <b>Buyurtmalarga hisoblangan pochta</b>"]
+    for order in postage_orders:
+        when = database.format_local_dt(order["created_at"])
+        method = methods.get(order["method"], "Pochta")
+        lines.append(f"#{order['id']} · {when} · {method}: <b>{_som(order['fee'])}</b> so'm")
+    total = sum(order["fee"] for order in postage_orders)
+    lines.append(f"<b>Pochta jami: {len(postage_orders)} ta buyurtma · {_som(total)} so'm</b>\n"
+                 "<i>Buyurtmalarda saqlangan summa; yuqoridagi mahsulotlar jamiga qo'shilmagan.</i>")
+    return lines
 
 
-def _report_blocks(days: int, period: dict, rows: list[dict]) -> list[str]:
+def _report_blocks(days: int, period: dict, rows: list[dict],
+                   postage_orders: list[dict] | None = None) -> list[str]:
     """One period's full report: every product and set sold, most money first."""
     sold = sorted((r for r in rows if r.get("kind") in ("product", "set") and r.get("qty", 0) > 0),
                   key=lambda r: (-r["revenue"], r["name"]))
@@ -69,7 +79,7 @@ def _report_blocks(days: int, period: dict, rows: list[dict]) -> list[str]:
     end = datetime.fromisoformat(period["end"]).strftime("%d.%m")
     head = f"📦 <b>Barcha mahsulotlar — oxirgi {days} kun ({start}–{end})</b>"
     if not sold:
-        return [head, "Bu davrda mahsulotlar sotilmagan."]
+        return [head, "Bu davrda mahsulotlar sotilmagan.", *_postage_blocks(postage_orders)]
     lines = []
     for i, r in enumerate(sold, 1):
         b2b = f" (shundan B2B {_qty(r['b2b_qty'])})" if r.get("b2b_qty") else ""
@@ -77,19 +87,17 @@ def _report_blocks(days: int, period: dict, rows: list[dict]) -> list[str]:
         lines.append(
             f"{i}. <b>{html.escape(r['name'], quote=False)}</b>{kind}\n"
             f"   Soni: {_qty(r['qty'])}{b2b} × ~{_som(r['revenue'] / r['qty'])} = "
-            f"<b>{_som(r['revenue'])}</b> so'm · pochta 1 dona: {_som(post_fee(r))}")
+            f"<b>{_som(r['revenue'])}</b> so'm")
     total = sum(r["revenue"] for r in sold)
     tail = (f"<b>Jami: {len(sold)} xil · {_som(total)} so'm</b>\n"
             "<i>Buyurtma yaratilgan sana bo'yicha, bekor qilinganlar va sovg'alar kirmaydi. "
-            "Narx — o'rtacha (summa ÷ soni, B2B ham ichida). "
-            "«Pochta 1 dona» — UzPost «Bir Qadam» bilan taxminiy narx; "
-            "bankali mahsulot og'irligi 2 baravar hisoblanadi. "
-            "Qoraqalpog'iston, Xorazm va Surxondaryo uchun tarif farq qiladi.</i>")
-    return [head, *lines, tail]
+            "Narx — o'rtacha (summa ÷ soni, B2B ham ichida).</i>")
+    return [head, *lines, tail, *_postage_blocks(postage_orders)]
 
 
-def report_text(days: int, period: dict, rows: list[dict]) -> str:
-    return "\n\n".join(_report_blocks(days, period, rows))
+def report_text(days: int, period: dict, rows: list[dict],
+                postage_orders: list[dict] | None = None) -> str:
+    return "\n\n".join(_report_blocks(days, period, rows, postage_orders))
 
 
 def _text_len(text: str) -> int:
@@ -97,9 +105,10 @@ def _text_len(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2
 
 
-def report_messages(days: int, period: dict, rows: list[dict]) -> list[str]:
+def report_messages(days: int, period: dict, rows: list[dict],
+                    postage_orders: list[dict] | None = None) -> list[str]:
     """Split at product boundaries; keep every row, the total and valid HTML."""
-    head, *body = _report_blocks(days, period, rows)
+    head, *body = _report_blocks(days, period, rows, postage_orders)
     prefix = head + "\n\n"
     budget = MAX_CHARS - _text_len(prefix)
     blocks = []
@@ -135,7 +144,7 @@ async def build_reports() -> list[str]:
     for days in PERIODS:
         period = window(days, today)
         data = await database.get_product_sales(period)
-        out.extend(report_messages(days, period, data.get("rows") or []))
+        out.extend(report_messages(days, period, data.get("rows") or [], data.get("postage_orders")))
     return out
 
 

@@ -3398,7 +3398,8 @@ async def get_product_sales(period: str | dict = "30d") -> dict:
 
     async with pool.acquire() as conn:
         orders = await conn.fetch(
-            f"SELECT id, source, created_at, items FROM orders WHERE {' AND '.join(conds)}", *args)
+            f"SELECT id, source, created_at, items, total, keto_redeemed, delivery_method "
+            f"FROM orders WHERE {' AND '.join(conds)}", *args)
         products = {r["id"]: dict(r) for r in await conn.fetch(
             "SELECT id, name, unit, quantity, cost_price, category, is_active FROM products")}
         sets = {r["id"]: dict(r) for r in await conn.fetch("SELECT id, name FROM product_sets")}
@@ -3406,6 +3407,7 @@ async def get_product_sales(period: str | dict = "30d") -> dict:
     cost_map = {pid: p.get("cost_price") or 0 for pid, p in products.items()}
 
     rows: dict[tuple, dict] = {}
+    postage_orders = []
     first_at = None
     for o in orders:
         first_at = o["created_at"] if first_at is None or o["created_at"] < first_at else first_at
@@ -3414,6 +3416,22 @@ async def get_product_sales(period: str | dict = "30d") -> dict:
             items = json.loads(raw) if isinstance(raw, str) else (raw or [])
         except Exception:
             continue
+        # Read the charge frozen in the order, never today's postal tariff.
+        # One parcel may contain several products, so keep its charge once,
+        # separately from goods revenue. Missing/broken items cannot establish
+        # how much of an order total was postage.
+        if (o.get("delivery_method") in ("uzpost", "bts", "emu")
+                and isinstance(items, list) and items
+                and all(isinstance(it, dict) for it in items)):
+            try:
+                fee = max(0, int(round(float(o.get("total") or 0)
+                                      + float(o.get("keto_redeemed") or 0)
+                                      - order_goods_total(items))))
+            except (TypeError, ValueError, OverflowError):
+                fee = 0
+            if fee:
+                postage_orders.append({"id": o["id"], "created_at": o["created_at"],
+                                       "method": o["delivery_method"], "fee": fee})
         b2b = o["source"] == "b2b"
         for it in items or []:
             if not isinstance(it, dict):
@@ -3490,7 +3508,8 @@ async def get_product_sales(period: str | dict = "30d") -> dict:
         "days": round(days, 1),
     }
     totals["margin_pct"] = round(totals["profit"] * 100.0 / totals["revenue"], 1) if totals["revenue"] else None
-    return {"rows": out, "totals": totals}
+    postage_orders.sort(key=lambda o: (o["created_at"], o["id"]))
+    return {"rows": out, "totals": totals, "postage_orders": postage_orders}
 
 
 async def get_daily_sales(period: str | dict = "30d", max_days: int = 90) -> list[dict]:

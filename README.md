@@ -90,7 +90,11 @@ to'plamlarning oxirgi 15 va 30 kunlik hisoboti olinadi. Eski `/banka`
 buyrug'i ham shu to'liq hisobotni ochadi. Davr Toshkent sanasi bo'yicha,
 bugungi kun bilan birga hisoblanadi. Miqdor, o'rtacha narx, summa va B2B
 ulushi admin Dashboard'dagi «Mahsulot savdosi» bilan bir xil asosda olinadi;
-bekor qilingan buyurtmalar va sovg'alar sotuvga kirmaydi. Uzun ro'yxat
+bekor qilingan buyurtmalar va sovg'alar sotuvga kirmaydi. Mahsulotlar yonida
+taxminiy pochta narxi chiqmaydi. Buyurtmada pochta haqi hisoblangan bo'lsa,
+saqlangan summa buyurtma raqami va sanasi bilan alohida ko'rsatiladi;
+u mahsulotlar jamiga qo'shilmaydi va bugungi tarif bilan qayta hisoblanmaydi.
+Pochta summasi qayd etilmagan bo'lsa, bu bo'lim chiqmaydi. Uzun ro'yxat
 mahsulotlarni tashlab ketmasdan bir nechta xabarga bo'linadi. Yangilanishdan
 keyin shu hisobot har bir adminga bir marta, 09:00–21:00 oralig'ida yuboriladi.
 

@@ -73,6 +73,33 @@ class _SalesConn:
 
 
 class ProductSalesTest(unittest.TestCase):
+    def test_postage_uses_saved_order_charge_without_repricing_old_sales(self):
+        base = {"source": "bot", "created_at": datetime(2026, 10, 24, 12, 0),
+                "status": "delivered", "keto_redeemed": 0}
+        goods = [{"product_id": 10, "name": "Eritritol 500 gr", "quantity": 1, "price": 60_000},
+                 {"product_id": 20, "name": "Kokos uni", "quantity": 1, "price": 40_000}]
+        orders = [
+            dict(base, id=1, delivery_method="uzpost", total=113_000, keto_redeemed=2_000,
+                 items=json.dumps(goods)),  # 100 000 goods + 15 000 post - 2 000 Keto
+            dict(base, id=2, delivery_method="uzpost", total=115_000, keto_redeemed=3_000,
+                 created_at=datetime(2026, 10, 24, 14, 0), items=goods),  # saved 18 000 post
+            dict(base, id=3, delivery_method="bts", total=100_000, items=goods),
+            dict(base, id=4, delivery_method="self", total=125_000, items=goods),
+            dict(base, id=5, delivery_method="uzpost", total=18_000, items="not json"),
+            dict(base, id=6, delivery_method="uzpost", total=18_000, items=[]),
+            dict(base, id=7, delivery_method="uzpost", total=90_000, items=goods),
+        ]
+        with patch(__name__ + ".ORDERS", orders):
+            data, conn = self._run({"start": "2026-10-10", "end": "2026-10-24"})
+        self.assertEqual(data.get("postage_orders", []), [
+            {"id": 1, "created_at": datetime(2026, 10, 24, 12, 0), "method": "uzpost", "fee": 15_000},
+            {"id": 2, "created_at": datetime(2026, 10, 24, 14, 0), "method": "uzpost", "fee": 18_000},
+        ])
+        self.assertEqual(data["totals"]["revenue"], 500_000)
+        self.assertIn(database.SALE_SQL, conn.queries[0][0])
+        self.assertIn("created_at >=", conn.queries[0][0])
+        self.assertIn("created_at <=", conn.queries[0][0])
+
     def _run(self, period):
         conn = _SalesConn()
         with patch.object(database, "pool", _FakePool(conn)), \
