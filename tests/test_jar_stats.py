@@ -40,14 +40,39 @@ class ReportTest(unittest.TestCase):
         self.assertLess(text.index("GHEE"), text.index("Xandonpista"))
         self.assertIn("Keto &lt;set&gt;</b> (to'plam)", text)
         self.assertNotIn("Zaytun", text)
-        self.assertIn("Soni: 21 × ~81 786 = <b>1 717 500</b> so'm · pochta 1 dona: 21 000", text)
+        self.assertIn("Soni: 21 × ~81 786 = <b>1 717 500</b> so'm", text)
         self.assertIn("Soni: 12 (shundan B2B 4)", text)
         self.assertIn("<b>Jami: 5 xil · 12 587 000 so'm</b>", text)
         self.assertIn("bekor qilinganlar va sovg'alar kirmaydi", text)
 
-    def test_set_postage_uses_set_weight(self):
-        # A set has its own estimated weight; its name must not turn it into a jar.
-        self.assertEqual(js.post_fee(row("GHEE 1000ml to'plami", 1, 100_000, kind="set")), 21_000)
+    def test_historical_sales_show_goods_revenue_without_postal_quotes(self):
+        sales = [row("Qora sedana 200gr", 0.6, 10_260),
+                 row("GHEE 1000ml to'plami", 1, 100_000, kind="set")]
+        for days in (15, 30):
+            with self.subTest(days=days):
+                text = "\n".join(js.report_messages(days, PERIOD, sales))
+                self.assertIn("Soni: 0,6 × ~17 100 = <b>10 260</b> so'm", text)
+                self.assertIn("<b>Jami: 2 xil · 110 260 so'm</b>", text)
+                self.assertNotIn("pochta", text.lower())
+                self.assertNotIn("UzPost", text)
+                self.assertNotIn("18 000", text)
+
+    def test_actual_postage_is_shown_once_per_order_separate_from_goods(self):
+        sales = [row("Qora sedana 200gr", 0.6, 10_260), row("Zig'ir uni 300gr", 1, 16_000)]
+        postage = [
+            {"id": 1, "created_at": datetime(2026, 10, 24, 12, 0), "method": "uzpost", "fee": 15_000},
+            {"id": 2, "created_at": datetime(2026, 10, 24, 14, 0), "method": "uzpost", "fee": 18_000},
+        ]
+        with patch.object(js.database, "get_product_sales", AsyncMock(return_value={"rows": sales, "postage_orders": postage})):
+            texts = run(js.build_reports())
+        text = "\n".join(t for t in texts if "oxirgi 30 kun" in t)
+        self.assertIn("Jami: 2 xil · 26 260 so'm", text)
+        self.assertIn("#1 · 24.10.2026 17:00 · UzPost: <b>15 000</b> so'm", text)
+        self.assertIn("#2 · 24.10.2026 19:00 · UzPost: <b>18 000</b> so'm", text)
+        self.assertEqual(text.count("#1 ·"), 1)
+        self.assertEqual(text.count("#2 ·"), 1)
+        self.assertIn("Pochta jami: 2 ta buyurtma · 33 000 so'm", text)
+        self.assertNotIn("pochta 1 dona", text)
 
     def test_escaping_and_empty(self):
         text = js.report_text(30, PERIOD, [row("Asal <Zomin> & co 700 gr", 1, 100_000)])
