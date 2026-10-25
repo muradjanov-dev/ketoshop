@@ -84,6 +84,16 @@ marketplace_bot/
 
 ## 🔧 Deployment Tips
 
+Admin botida `/mahsulot_savdosi` yoki `/admin` → **Statistika va Hisobot** →
+**Mahsulot savdosi — 15/30 kun** orqali barcha sotilgan mahsulotlar va
+to'plamlarning oxirgi 15 va 30 kunlik hisoboti olinadi. Eski `/banka`
+buyrug'i ham shu to'liq hisobotni ochadi. Davr Toshkent sanasi bo'yicha,
+bugungi kun bilan birga hisoblanadi. Miqdor, o'rtacha narx, summa va B2B
+ulushi admin Dashboard'dagi «Mahsulot savdosi» bilan bir xil asosda olinadi;
+bekor qilingan buyurtmalar va sovg'alar sotuvga kirmaydi. Uzun ro'yxat
+mahsulotlarni tashlab ketmasdan bir nechta xabarga bo'linadi. Yangilanishdan
+keyin shu hisobot har bir adminga bir marta, 09:00–21:00 oralig'ida yuboriladi.
+
 Amaldagi production deploy yo‘li: GitHub Actions → GHCR → netcup.
 
 1. `master` ga push qilinganda [CI](.github/workflows/ci.yml) ishga tushadi.

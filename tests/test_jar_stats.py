@@ -1,5 +1,4 @@
-"""🫙 Banka mahsulotlari 15 / 30 kun — to every admin once, /banka any time
-(owner, 2026-10-24). No Telegram and no database."""
+"""All-product 15 / 30 day bot reports. No Telegram and no database."""
 import asyncio
 import os
 import unittest
@@ -10,6 +9,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql://test/test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 
 import jar_stats as js
+import keyboards
 
 
 def run(coro):
@@ -21,40 +21,81 @@ def row(name, qty, revenue, kind="product", b2b=0, unit="piece"):
 
 
 ROWS = [
-    row("Bodom uni 1000gr", 51, 8_190_000),                      # not a jar
+    row("Bodom uni 1000gr", 51, 8_190_000),
     row("Tabiiy GHEE 1000ml", 11, 1_281_000),
     row("Lasos baliq tushonkasi 700ml", 21, 1_717_500),
     row("Xandonpista pastasi 200gr", 12, 1_148_500, b2b=4),
-    row("Keto <set>", 1, 250_000, kind="set"),                   # sets aren't jars
+    row("Keto <set>", 1, 250_000, kind="set"),
     row("Zaytun yog'i 1000ml", 0, 0),                            # nothing sold
 ]
 PERIOD = {"start": "2026-10-10", "end": "2026-10-24"}
 
 
 class ReportTest(unittest.TestCase):
-    def test_jars_only_most_money_first(self):
+    def test_all_sold_products_and_sets_most_money_first(self):
         text = js.report_text(15, PERIOD, ROWS)
-        self.assertTrue(text.startswith("🫙 <b>Banka mahsulotlari — oxirgi 15 kun (10.10–24.10)</b>"))
+        self.assertTrue(text.startswith("📦 <b>Barcha mahsulotlar — oxirgi 15 kun (10.10–24.10)</b>"))
+        self.assertLess(text.index("Bodom"), text.index("Lasos"))
         self.assertLess(text.index("Lasos"), text.index("GHEE"))
         self.assertLess(text.index("GHEE"), text.index("Xandonpista"))
-        self.assertNotIn("Bodom", text)
-        self.assertNotIn("Keto", text)
+        self.assertIn("Keto &lt;set&gt;</b> (to'plam)", text)
         self.assertNotIn("Zaytun", text)
-        self.assertIn("21 ta × ~81 786 = <b>1 717 500</b> so'm · pochta 1 dona: 21 000", text)
-        self.assertIn("12 ta (shundan B2B 4)", text)
-        self.assertIn("<b>Jami: 44 ta · 4 147 000 so'm</b>", text)
+        self.assertIn("Soni: 21 × ~81 786 = <b>1 717 500</b> so'm · pochta 1 dona: 21 000", text)
+        self.assertIn("Soni: 12 (shundan B2B 4)", text)
+        self.assertIn("<b>Jami: 5 xil · 12 587 000 so'm</b>", text)
+        self.assertIn("bekor qilinganlar va sovg'alar kirmaydi", text)
+
+    def test_set_postage_uses_set_weight(self):
+        # A set has its own estimated weight; its name must not turn it into a jar.
+        self.assertEqual(js.post_fee(row("GHEE 1000ml to'plami", 1, 100_000, kind="set")), 21_000)
 
     def test_escaping_and_empty(self):
         text = js.report_text(30, PERIOD, [row("Asal <Zomin> & co 700 gr", 1, 100_000)])
         self.assertIn("Asal &lt;Zomin&gt; &amp; co 700 gr", text)
-        self.assertIn("sotilmagan", js.report_text(30, PERIOD, ROWS[:1]))
+        self.assertIn("sotilmagan", js.report_text(30, PERIOD, ROWS[-1:]))
+        self.assertNotIn("sotilmagan", js.report_text(30, PERIOD, ROWS[:1]))
 
-    def test_fits_one_telegram_message(self):
+    def test_long_report_keeps_every_product_in_valid_sized_messages(self):
         many = [row(f"Zaytun yog'i navi {i} — juda uzun nom bilan 1000ml", 3, 900_000 - i) for i in range(80)]
-        text = js.report_text(30, PERIOD, many)
-        self.assertLessEqual(len(text), 4096)
-        self.assertIn("… va yana", text)
-        self.assertIn("Jami: 240 ta", text)          # the total still counts every row
+        messages = js.report_messages(30, PERIOD, many)
+        self.assertGreater(len(messages), 1)
+        text = "\n".join(messages)
+        for message in messages:
+            self.assertLessEqual(js._text_len(message), 4000)
+            self.assertEqual(message.count("<b>"), message.count("</b>"))
+            self.assertEqual(message.count("<i>"), message.count("</i>"))
+            self.assertTrue(message.startswith("📦 <b>Barcha mahsulotlar — oxirgi 30 kun"))
+        for product in many:
+            self.assertEqual(text.count(f"<b>{product['name']}</b>"), 1)
+        self.assertNotIn("… va yana", text)
+        self.assertEqual(text.count("<b>Jami:"), 1)
+        self.assertIn("Jami: 80 xil · 71 996 840 so'm", messages[-1])
+
+    def test_oversized_name_with_html_and_emoji_is_split_safely(self):
+        from html.parser import HTMLParser
+        name = "🌰<&>" * 1500
+        messages = js.report_messages(15, PERIOD, [row(name, 1, 100_000)])
+        plain = []
+        class TextParser(HTMLParser):
+            def handle_data(self, data):
+                plain.append(data)
+        for message in messages:
+            self.assertLessEqual(js._text_len(message), 4000)
+            TextParser().feed(message.split("\n\n", 1)[1])
+        self.assertIn(name, "".join(plain))
+        self.assertIn("Jami: 1 xil", messages[-1])
+
+    def test_gift_only_rows_are_not_sales(self):
+        gift = dict(row("Sovg'a", 0, 0), gift_qty=5)
+        messages = js.report_messages(15, PERIOD, [gift])
+        self.assertEqual(len(messages), 1)
+        self.assertIn("Bu davrda mahsulotlar sotilmagan.", messages[0])
+
+    def test_product_with_blank_lines_keeps_its_html_together(self):
+        name = "Bodom\n\nuni & <tabiiy>"
+        messages = js.report_messages(15, PERIOD, [row(name, 2, 100_000)])
+        self.assertEqual(len(messages), 1)
+        self.assertIn("<b>Bodom\n\nuni &amp; &lt;tabiiy&gt;</b>", messages[0])
 
     def test_window(self):
         self.assertEqual(js.window(15, date(2026, 10, 24)), {"start": "2026-10-10", "end": "2026-10-24"})
@@ -120,6 +161,47 @@ class CommandTest(unittest.TestCase):
             admin = self._message(7)
             run(js.cmd_banka(admin))
         self.assertEqual(admin.answer.await_count, 2)
+        self.assertIn("Bodom", admin.answer.await_args_list[0].args[0])
+
+    def test_admin_menu_exposes_command_and_button(self):
+        self.assertIn("mahsulot_savdosi", [c.command for c in keyboards.ADMIN_COMMANDS])
+        buttons = [button for row in keyboards.admin_stats_menu_keyboard("uz").inline_keyboard for button in row]
+        self.assertIn("admin:product_sales", [b.callback_data for b in buttons])
+
+    def test_callback_is_admin_only_and_answers_with_both_periods(self):
+        with patch.object(js, "ADMIN_IDS", [7]), \
+                patch.object(js.database, "get_product_sales", AsyncMock(return_value={"rows": ROWS})):
+            callback = MagicMock()
+            callback.answer = AsyncMock()
+            callback.message = self._message(99)
+            callback.from_user.id = 99
+            run(js.show_product_sales(callback))
+            callback.message.answer.assert_not_awaited()
+            callback.from_user.id = 7
+            run(js.show_product_sales(callback))
+            self.assertEqual(callback.message.answer.await_count, 2)
+
+    def test_build_error_returns_retry_message(self):
+        with patch.object(js, "ADMIN_IDS", [7]), \
+                patch.object(js, "build_reports", AsyncMock(side_effect=RuntimeError)), \
+                self.assertLogs(js.logger, level="ERROR"):
+            message = self._message(7)
+            run(js.cmd_banka(message))
+        self.assertIn("qayta urinib", message.answer.await_args.args[0])
+
+    def test_command_sends_all_chunks_of_both_periods(self):
+        many = [row(f"Bodom uni navi {i}", 1, 100_000) for i in range(100)]
+        with patch.object(js, "ADMIN_IDS", [7]), \
+                patch.object(js.database, "get_product_sales", AsyncMock(return_value={"rows": many})):
+            message = self._message(7)
+            run(js.cmd_banka(message))
+        texts = [call.args[0] for call in message.answer.await_args_list]
+        self.assertGreater(len(texts), 2)
+        for days in (15, 30):
+            period_messages = [text for text in texts if f"oxirgi {days} kun" in text]
+            self.assertEqual("\n".join(period_messages).count("Jami: 100 xil"), 1)
+            for product in many:
+                self.assertEqual("\n".join(period_messages).count(f"<b>{product['name']}</b>"), 1)
 
 
 if __name__ == "__main__":
