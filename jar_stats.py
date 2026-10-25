@@ -1,35 +1,34 @@
 """
-🫙 Banka mahsulotlari — what sold in a glass jar, bottle or tin over the last
-15 and 30 days: how many, the average price, the money, and what posting one
-with UzPost costs (owner, 2026-10-24: "15 kunlik va 30 kunlik statistikani
-adminlarga botdan yubor").
+📦 All products and sets sold over the last 15 and 30 Tashkent days:
+quantity, average price, revenue and the estimated UzPost fee for one unit.
 
 Built live from the orders through database.get_product_sales — the
-dashboard's «📦 Mahsulot savdosi» table, so the two always agree — and
-uzpost.is_jar decides what is a jar (the same rule that doubles their weight
-for the post). Pushed once to every admin after the deploy that carries
+dashboard's «📦 Mahsulot savdosi» table, so the two always agree.
+Pushed once to every admin after the deploy that carries
 PUSH_KEY, during daytime, claimed in release_notes_sent so a restart never
-repeats it; /banka shows it again any time.
+repeats it; /mahsulot_savdosi (and the old /banka alias) shows it any time.
+Long reports are split into messages without dropping products.
 """
 import asyncio
 import html
 import logging
 from datetime import datetime, timedelta
 
-from aiogram import Bot, Router
+from aiogram import Bot, F, Router
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 
 import database
 import uzpost
 from config import ADMIN_IDS
+from tg_safety import strip_markup
 
 logger = logging.getLogger(__name__)
 router = Router(name="jar_stats")
 
 PERIODS = (15, 30)
-PUSH_KEY = "2026-10-24-banka-statistika"
+PUSH_KEY = "2026-10-25-barcha-mahsulotlar-statistika"
 SEND_WINDOW = (9, 21)          # Tashkent hours
 CHECK_EVERY = 300
 TZ_OFFSET = timedelta(hours=5)
@@ -58,47 +57,85 @@ def window(days: int, today=None) -> dict:
 
 def post_fee(row: dict) -> int:
     """What posting one of these costs the buyer with UzPost, box included."""
-    return uzpost.buyer_fee([{"name": row.get("name"), "quantity": 1, "unit": row.get("unit")}])
+    return uzpost.buyer_fee([{"name": row.get("name"), "quantity": 1,
+                              "unit": row.get("unit"), "is_set": row.get("kind") == "set"}])
 
 
-def report_text(days: int, period: dict, rows: list[dict]) -> str:
-    """One period's message: every jar product sold, most money first."""
-    jars = sorted((r for r in rows if r.get("kind") == "product" and r.get("qty")
-                   and uzpost.is_jar(r.get("name"))),
+def _report_blocks(days: int, period: dict, rows: list[dict]) -> list[str]:
+    """One period's full report: every product and set sold, most money first."""
+    sold = sorted((r for r in rows if r.get("kind") in ("product", "set") and r.get("qty", 0) > 0),
                   key=lambda r: (-r["revenue"], r["name"]))
     start = datetime.fromisoformat(period["start"]).strftime("%d.%m")
     end = datetime.fromisoformat(period["end"]).strftime("%d.%m")
-    head = f"🫙 <b>Banka mahsulotlari — oxirgi {days} kun ({start}–{end})</b>\n\n"
-    if not jars:
-        return head + "Bu davrda banka mahsulotlari sotilmagan."
+    head = f"📦 <b>Barcha mahsulotlar — oxirgi {days} kun ({start}–{end})</b>"
+    if not sold:
+        return [head, "Bu davrda mahsulotlar sotilmagan."]
     lines = []
-    for i, r in enumerate(jars, 1):
+    for i, r in enumerate(sold, 1):
         b2b = f" (shundan B2B {_qty(r['b2b_qty'])})" if r.get("b2b_qty") else ""
+        kind = " (to'plam)" if r.get("kind") == "set" else ""
         lines.append(
-            f"{i}. <b>{html.escape(r['name'], quote=False)}</b>\n"
-            f"   {_qty(r['qty'])} ta{b2b} × ~{_som(r['revenue'] / r['qty'])} = "
+            f"{i}. <b>{html.escape(r['name'], quote=False)}</b>{kind}\n"
+            f"   Soni: {_qty(r['qty'])}{b2b} × ~{_som(r['revenue'] / r['qty'])} = "
             f"<b>{_som(r['revenue'])}</b> so'm · pochta 1 dona: {_som(post_fee(r))}")
-    total_qty = sum(r["qty"] for r in jars)
-    total = sum(r["revenue"] for r in jars)
-    tail = (f"\n\n<b>Jami: {_qty(total_qty)} ta · {_som(total)} so'm</b>\n"
-            "<i>Narx — o'rtacha (summa ÷ soni, B2B ham ichida). «Pochta 1 dona» — shu mahsulotdan "
-            "bittasini UzPost «Bir Qadam» bilan viloyatga jo'natish narxi; bankali mahsulot "
-            "og'irligi 2 baravar hisoblanadi.</i>")
-    # Telegram stops at 4096 characters — the smallest sellers give way.
-    hidden = 0
-    while len(head) + len("\n".join(lines)) + len(tail) + 40 > MAX_CHARS and len(lines) > 1:
-        lines.pop()
-        hidden += 1
-    more = f"\n… va yana {hidden} ta (to'liq ro'yxat — admin panel, Dashboard)" if hidden else ""
-    return head + "\n".join(lines) + more + tail
+    total = sum(r["revenue"] for r in sold)
+    tail = (f"<b>Jami: {len(sold)} xil · {_som(total)} so'm</b>\n"
+            "<i>Buyurtma yaratilgan sana bo'yicha, bekor qilinganlar va sovg'alar kirmaydi. "
+            "Narx — o'rtacha (summa ÷ soni, B2B ham ichida). "
+            "«Pochta 1 dona» — UzPost «Bir Qadam» bilan taxminiy narx; "
+            "bankali mahsulot og'irligi 2 baravar hisoblanadi. "
+            "Qoraqalpog'iston, Xorazm va Surxondaryo uchun tarif farq qiladi.</i>")
+    return [head, *lines, tail]
+
+
+def report_text(days: int, period: dict, rows: list[dict]) -> str:
+    return "\n\n".join(_report_blocks(days, period, rows))
+
+
+def _text_len(text: str) -> int:
+    # Count UTF-16 units conservatively, including HTML markup.
+    return len(text.encode("utf-16-le")) // 2
+
+
+def report_messages(days: int, period: dict, rows: list[dict]) -> list[str]:
+    """Split at product boundaries; keep every row, the total and valid HTML."""
+    head, *body = _report_blocks(days, period, rows)
+    prefix = head + "\n\n"
+    budget = MAX_CHARS - _text_len(prefix)
+    blocks = []
+    for block in body:
+        if _text_len(block) <= budget:
+            blocks.append(block)
+            continue
+        # An unusually long product name must not break the entire report.
+        # Drop only its formatting, splitting escaped characters safely.
+        part = ""
+        for char in strip_markup(block):
+            escaped = html.escape(char, quote=False)
+            if _text_len(part + escaped) > budget:
+                blocks.append(part)
+                part = ""
+            part += escaped
+        if part:
+            blocks.append(part)
+    out, current = [], prefix
+    for block in blocks:
+        separator = "\n\n" if current != prefix else ""
+        if _text_len(current + separator + block) > MAX_CHARS:
+            out.append(current)
+            current, separator = prefix, ""
+        current += separator + block
+    out.append(current)
+    return out
 
 
 async def build_reports() -> list[str]:
     out = []
+    today = _now_tk().date()
     for days in PERIODS:
-        period = window(days)
+        period = window(days, today)
         data = await database.get_product_sales(period)
-        out.append(report_text(days, period, data.get("rows") or []))
+        out.extend(report_messages(days, period, data.get("rows") or []))
     return out
 
 
@@ -126,9 +163,9 @@ async def push_once(bot: Bot) -> bool:
             sent += 1
         except Exception as exc:
             failed += 1
-            logger.warning("Jar stats to admin %s failed: %s", admin_id, exc)
+            logger.warning("Product sales report to admin %s failed: %s", admin_id, exc)
         await asyncio.sleep(0.05)
-    logger.info("Jar stats %s: %d sent, %d failed", PUSH_KEY, sent, failed)
+    logger.info("Product sales report %s: %d sent, %d failed", PUSH_KEY, sent, failed)
     return True
 
 
@@ -138,19 +175,31 @@ async def scheduler_loop(bot: Bot) -> None:
             if await push_once(bot):
                 return
         except Exception:
-            logger.exception("Jar stats push failed")
+            logger.exception("Product sales report push failed")
         await asyncio.sleep(CHECK_EVERY)
 
 
-@router.message(Command("banka"))
+@router.message(Command("mahsulot_savdosi", "banka"))
 async def cmd_banka(message: Message):
-    """/banka — the same 15 / 30 day report, for an admin, any time."""
+    """Both command names show all products, for admins only."""
     if message.from_user.id not in ADMIN_IDS:
         return
+    await _answer_reports(message)
+
+
+@router.callback_query(F.data == "admin:product_sales")
+async def show_product_sales(callback: CallbackQuery):
+    await callback.answer()
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    await _answer_reports(callback.message)
+
+
+async def _answer_reports(message: Message):
     try:
         texts = await build_reports()
     except Exception:
-        logger.exception("Jar stats for /banka failed")
+        logger.exception("Product sales report failed")
         await message.answer("⚠️ Statistikani hisoblab bo'lmadi, birozdan keyin qayta urinib ko'ring.")
         return
     for text in texts:

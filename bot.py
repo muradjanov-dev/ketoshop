@@ -429,7 +429,7 @@ async def main():
 
     from release_notes import scheduler_loop as release_notes_loop
     release_notes_task = asyncio.create_task(release_notes_loop(bot))
-    # 🫙 Banka mahsulotlari, 15 / 30 kun — once to every admin (jar_stats.py).
+    # 📦 All products and sets, 15 / 30 days — once to every admin.
     from jar_stats import scheduler_loop as jar_stats_loop
     jar_stats_task = asyncio.create_task(jar_stats_loop(bot))
 

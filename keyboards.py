@@ -30,6 +30,7 @@ BUYER_COMMANDS = [
 
 ADMIN_COMMANDS = [
     BotCommand(command="admin", description="🛠 Admin panel"),
+    BotCommand(command="mahsulot_savdosi", description="📦 Barcha mahsulotlar savdosi — 15/30 kun"),
     BotCommand(command="blogerlar", description="📢 Blogerlar (hamkorlar)"),
     BotCommand(command="referallar", description="📊 Referal statistikasi"),
     BotCommand(command="qayta_sotuv", description="🔁 Qayta sotuv statistikasi"),
@@ -645,6 +646,7 @@ def admin_panel_keyboard(lang: str) -> InlineKeyboardMarkup:
 def admin_stats_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=get_text("btn_admin_website", lang), url=f"{WEBAPP_URL}/admin")],
+        [InlineKeyboardButton(text="📦 Mahsulot savdosi — 15/30 kun", callback_data="admin:product_sales")],
         [
             InlineKeyboardButton(text=get_text("btn_admin_stats", lang), callback_data="admin:stats"),
             InlineKeyboardButton(text=_current_month_label(lang), callback_data="admin:monthly_stats")
