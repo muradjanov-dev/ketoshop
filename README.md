@@ -84,6 +84,12 @@ marketplace_bot/
 
 ## 🔧 Deployment Tips
 
+Admin panelining **Chiqimlar** bo'limida qo'lda kiritilgan chiqimlarni qo'shish,
+ko'rish, **Tahrirlash** va tasdiqlab **O'chirish** mumkin. Summani kiritganda
+formatlangan qiymat ko'rinadi (masalan, `125 000 so'm`). Tahrirlash chiqimning
+asl sanasini saqlaydi. Buyurtmadan avtomatik yozilgan sovg'a, aksiya va kuryer
+chiqimlari buyurtma raqami bilan belgilanadi va shu ro'yxatdan o'zgartirilmaydi.
+
 Admin botida `/mahsulot_savdosi` yoki `/admin` → **Statistika va Hisobot** →
 **Mahsulot savdosi — 15/30 kun** orqali barcha sotilgan mahsulotlar va
 to'plamlarning oxirgi 15 va 30 kunlik hisoboti olinadi. Eski `/banka`

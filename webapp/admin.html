@@ -628,6 +628,18 @@ body.kuryer-mode #logoutBtn,
 body.kuryer-mode .view:not(#view-courier){display:none!important}
 .kuryer-denied{min-height:100dvh;display:grid;place-items:center;padding:24px;text-align:center;
   font-size:16px;line-height:1.5;color:var(--ink-2)}
+  #view-expenses .exp-name{overflow-wrap:anywhere}
+  #view-expenses .exp-actions .hint{font-size:12px;color:var(--ink-2);white-space:nowrap}
+  @media(max-width:600px){
+    #view-expenses table{width:100%;min-width:0}
+    #view-expenses thead{display:none}
+    #view-expenses tr{display:grid;grid-template-columns:minmax(0,1fr) auto;padding:12px;border-bottom:1px solid var(--line);gap:8px}
+    #view-expenses td{padding:0;border:0;min-width:0}
+    #view-expenses .exp-date{grid-column:1/-1;font-size:12px;color:var(--ink-2)}
+    #view-expenses .exp-amount{white-space:nowrap}
+    #view-expenses .exp-actions{grid-column:1/-1}
+    #view-expenses .row-actions{flex-wrap:wrap}
+  }
 </style>
 </head>
 <body>
@@ -1386,7 +1398,7 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
     <div class="tbl-wrap">
       <table>
         <thead><tr>
-          <th>Vaqt</th><th>Chiqim nomi</th><th style="text-align:right">Miqdor (so'm)</th>
+          <th>Vaqt</th><th>Chiqim nomi</th><th style="text-align:right">Miqdor (so'm)</th><th style="text-align:right">Amallar</th>
         </tr></thead>
         <tbody id="expRows"></tbody>
       </table>
@@ -1411,8 +1423,9 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
   <form class="modal" id="expForm">
     <h2 id="expModalTitle">Yangi chiqim kiritish</h2>
     <div class="form-grid">
-      <div class="full"><label>Chiqim nomi *</label><input name="name" required maxlength="200" placeholder="Masalan: Yandex yetkazib berish"></div>
-      <div class="full"><label>Miqdor (so'm) *</label><input name="amount" type="number" min="0" step="any" required></div>
+      <div class="full"><label for="expName">Chiqim nomi *</label><input id="expName" name="name" required maxlength="200" placeholder="Masalan: Yandex yetkazib berish"></div>
+      <div class="full"><label for="expAmount">Miqdor (so'm) *</label><input id="expAmount" name="amount" type="number" min="0" step="any" required></div>
+      <div class="full hint tnum" id="expAmountPreview" aria-live="polite"></div>
     </div>
     <div class="modal-actions">
       <button type="button" class="btn btn-o" data-close>Bekor qilish</button>
@@ -3001,6 +3014,7 @@ $('#retRefreshBtn').addEventListener('click',loadRetention);
 
 /* ===== expenses ===== */
 let EXPENSES=[];
+let editingExpenseId=null;
 async function loadExpenses(){
   const d=await api('/admin/api/expenses');
   EXPENSES=d.expenses||[];
@@ -3013,30 +3027,71 @@ function renderExpenses(){
     let dt = new Date(e.created_at);
     let dstr = isNaN(dt.getTime()) ? e.created_at : dt.toLocaleString('uz-UZ');
     return `<tr>
-      <td>${esc(dstr)}</td>
-      <td>${esc(e.name)}</td>
-      <td class="tnum" style="text-align:right;font-weight:700">${fmt(e.amount)}</td>
+      <td class="exp-date">${esc(dstr)}</td>
+      <td class="exp-name">${esc(e.name)}</td>
+      <td class="tnum exp-amount" style="text-align:right;font-weight:700">${fmt(e.amount)}</td>
+      <td class="exp-actions">${e.editable?`<div class="row-actions">
+        <button type="button" class="btn btn-o btn-sm" onclick="openExpenseModal(${e.id})">Tahrirlash</button>
+        <button type="button" class="btn btn-danger btn-sm" onclick="deleteExpense(${e.id},this)">O'chirish</button>
+      </div>`:`<span class="hint">Avtomatik · #${e.delivery_order_id||e.gift_order_id||e.bonus_order_id}</span>`}</td>
     </tr>`;
   }).join('');
 }
 
-$('#newExpBtn').addEventListener('click', () => {
-  $('#expForm').reset();
+function previewExpenseAmount(){
+  const raw=$('#expForm').elements.namedItem('amount').value;
+  const amount=Number(raw);
+  $('#expAmountPreview').textContent=raw!==''&&Number.isFinite(amount)&&amount>0?fmt(amount):'';
+}
+window.openExpenseModal=function(id=null){
+  const expense=id==null?null:EXPENSES.find(e=>e.id===id);
+  if(id!=null&&(!expense||!expense.editable))return;
+  editingExpenseId=id;
+  const form=$('#expForm');
+  form.reset();
+  $('#expModalTitle').textContent=expense?'Chiqimni tahrirlash':'Yangi chiqim kiritish';
+  if(expense){
+    form.elements.namedItem('name').value=expense.name;
+    form.elements.namedItem('amount').value=expense.amount;
+  }
+  previewExpenseAmount();
   $('#expModal').classList.add('open');
-});
+};
+$('#newExpBtn').addEventListener('click',()=>openExpenseModal());
+$('#expForm').elements.namedItem('amount').addEventListener('input',previewExpenseAmount);
+
+window.deleteExpense=async function(id,button){
+  const expense=EXPENSES.find(e=>e.id===id);
+  if(!expense||!expense.editable||button?.disabled)return;
+  if(!window.confirm(`«${expense.name}» — ${fmt(expense.amount)} chiqim o'chirilsinmi?`))return;
+  if(button)button.disabled=true;
+  try{
+    await api(`/admin/api/expenses/${id}/delete`,{method:'POST'});
+    await loadExpenses();
+    toast("✅ Chiqim o'chirildi");
+  }catch(err){toast('⚠️ '+err.message);}
+  finally{if(button)button.disabled=false;}
+};
 
 $('#expForm').addEventListener('submit', async e => {
   e.preventDefault();
   const f=e.target, btn=$('#expSaveBtn');
-  btn.disabled=true;
+  if(btn.disabled)return;
+  const expenseId=editingExpenseId;
   const body = {
-    name: f.name.value,
-    amount: +f.amount.value
+    name: f.elements.namedItem('name').value.trim(),
+    amount: Number(f.elements.namedItem('amount').value)
   };
+  if(!body.name||!Number.isFinite(body.amount)||body.amount<=0){
+    toast("⚠️ Chiqim nomi va noldan katta summani kiriting");return;
+  }
+  btn.disabled=true;
   try {
-    await api('/admin/api/expenses', {method:'POST', body:JSON.stringify(body)});
+    const path=expenseId==null?'/admin/api/expenses':`/admin/api/expenses/${expenseId}`;
+    await api(path, {method:'POST', body:JSON.stringify(body)});
     closeModals();
-    toast('✅ Chiqim qo\'shildi');
+    editingExpenseId=null;
+    toast(expenseId==null?"✅ Chiqim qo'shildi":"✅ Chiqim yangilandi");
     await loadExpenses();
     if(localStorage.getItem('ketoshop_admin_view') === 'dashboard') {
         loadDashboard();
