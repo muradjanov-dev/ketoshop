@@ -4011,6 +4011,37 @@ async def add_expense(name: str, amount: float) -> int:
             name, amount
         )
 
+
+_MANUAL_EXPENSE = "bonus_order_id IS NULL AND gift_order_id IS NULL AND delivery_order_id IS NULL"
+
+
+async def update_expense(expense_id: int, name: str, amount: float) -> bool:
+    """Edit only a manual expense, preserving its original booking date."""
+    async with pool.acquire() as conn:
+        changed = await conn.fetchval(
+            f"UPDATE expenses SET name=$2, amount=$3 WHERE id=$1 AND {_MANUAL_EXPENSE} RETURNING id",
+            expense_id, name, amount,
+        )
+        if changed is not None:
+            return True
+        if await conn.fetchval("SELECT id FROM expenses WHERE id=$1", expense_id) is not None:
+            raise ValueError("Avtomatik chiqim buyurtmaga bog'langan; uni bu yerdan tahrirlab bo'lmaydi")
+        return False
+
+
+async def delete_expense(expense_id: int) -> bool:
+    """Order-linked expenses are reconciled by their owning order workflows."""
+    async with pool.acquire() as conn:
+        changed = await conn.fetchval(
+            f"DELETE FROM expenses WHERE id=$1 AND {_MANUAL_EXPENSE} RETURNING id", expense_id,
+        )
+        if changed is not None:
+            return True
+        if await conn.fetchval("SELECT id FROM expenses WHERE id=$1", expense_id) is not None:
+            raise ValueError("Avtomatik chiqim buyurtmaga bog'langan; uni bu yerdan o'chirib bo'lmaydi")
+        return False
+
+
 async def get_gift_campaign(key: str) -> dict | None:
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM gift_campaigns WHERE key = $1", key)
@@ -4544,8 +4575,11 @@ async def get_cart_reminder_stats(days: int) -> dict:
 
 async def get_expenses(limit: int = 50) -> list[dict]:
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT id, name, amount, created_at FROM expenses ORDER BY created_at DESC LIMIT $1", limit)
-        return [dict(r) for r in rows]
+        rows = await conn.fetch(
+            "SELECT id, name, amount, created_at, bonus_order_id, gift_order_id, delivery_order_id "
+            "FROM expenses ORDER BY created_at DESC, id DESC LIMIT $1", limit)
+        return [dict(r, editable=all(r[key] is None for key in
+                    ("bonus_order_id", "gift_order_id", "delivery_order_id"))) for r in rows]
 
 
 def _month_window_utc(year: int, month: int, cap_at_now: bool = False):

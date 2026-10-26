@@ -13,3 +13,4 @@ for (const file of ['webapp/index.html', 'webapp/admin.html']) {
 
 require('./test_promo_admin.js');
 require('./test_admin_product_sale_type.js');
+require('./test_expense_crud.js');

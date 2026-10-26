@@ -906,6 +906,19 @@ async def api_promos_announce(request: web.Request):
 
 # ───────────────────────────── expenses ──────────────────────────────────────
 
+def _expense_fields(body) -> tuple[str, float]:
+    if not isinstance(body, dict) or not isinstance(body.get("name"), str):
+        raise ValueError
+    name = body["name"].strip()
+    raw_amount = body.get("amount")
+    if isinstance(raw_amount, bool):
+        raise ValueError
+    amount = float(raw_amount)
+    if not name or len(name) > 200 or not math.isfinite(amount) or amount <= 0:
+        raise ValueError
+    return name, amount
+
+
 @require_auth
 async def api_expenses_list(request: web.Request):
     expenses = await database.get_expenses(100)
@@ -914,16 +927,42 @@ async def api_expenses_list(request: web.Request):
 @require_auth
 async def api_expenses_add(request: web.Request):
     try:
-        b = await request.json()
-        name = (b.get("name") or "").strip()
-        amount = float(b.get("amount") or 0)
-        if not name or amount <= 0:
-            raise ValueError
-    except Exception:
-        return _json({"error": "invalid name or amount"}, status=400)
-    
+        name, amount = _expense_fields(await request.json())
+    except (TypeError, ValueError, OverflowError):
+        return _json({"error": "Chiqim nomi va noldan katta, to'g'ri summani kiriting"}, status=400)
     eid = await database.add_expense(name, amount)
     return _json({"ok": True, "id": eid})
+
+
+@require_auth
+async def api_expenses_update(request: web.Request):
+    try:
+        expense_id = int(request.match_info["id"])
+        name, amount = _expense_fields(await request.json())
+    except (TypeError, ValueError, OverflowError):
+        return _json({"error": "Chiqim nomi va noldan katta, to'g'ri summani kiriting"}, status=400)
+    try:
+        changed = await database.update_expense(expense_id, name, amount)
+    except ValueError as exc:
+        return _json({"error": str(exc)}, status=409)
+    if not changed:
+        return _json({"error": "Chiqim topilmadi"}, status=404)
+    return _json({"ok": True})
+
+
+@require_auth
+async def api_expenses_delete(request: web.Request):
+    try:
+        expense_id = int(request.match_info["id"])
+    except (TypeError, ValueError, OverflowError):
+        return _json({"error": "Chiqim raqami noto'g'ri"}, status=400)
+    try:
+        changed = await database.delete_expense(expense_id)
+    except ValueError as exc:
+        return _json({"error": str(exc)}, status=409)
+    if not changed:
+        return _json({"error": "Chiqim topilmadi"}, status=404)
+    return _json({"ok": True})
 
 
 @require_auth
@@ -1864,6 +1903,8 @@ def setup_admin_routes(app: web.Application):
     app.router.add_post("/admin/api/reco/backfill", api_reco_backfill)
     app.router.add_get("/admin/api/expenses", api_expenses_list)
     app.router.add_post("/admin/api/expenses", api_expenses_add)
+    app.router.add_post("/admin/api/expenses/{id:\\d+}", api_expenses_update)
+    app.router.add_post("/admin/api/expenses/{id:\\d+}/delete", api_expenses_delete)
     app.router.add_get("/admin/api/orders/{id:\\d+}/costs", api_order_line_costs)
     app.router.add_post("/admin/api/orders/{id:\\d+}/lines/{line:\\d+}/cost", api_order_line_cost_update)
     app.router.add_get("/admin/api/dashboard", api_dashboard)
