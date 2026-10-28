@@ -38,7 +38,7 @@ from datetime import datetime, timedelta
 import database
 import mystery_gift
 import payment_state
-from locales import get_text
+from locales import get_text, line_unit
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +147,7 @@ def _parse_items(raw) -> list[dict]:
         out.append({
             "name": it.get("name") or "—",
             "quantity": it.get("quantity") or 0,
-            "unit": it.get("unit") or "",
+            "unit": line_unit(it, "uz"),
             "price": float(it.get("price") or 0),
             "is_gift": bool(it.get("is_gift") or it.get("is_bonus")),
         })

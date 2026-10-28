@@ -2365,6 +2365,34 @@ def get_item_unit(item: dict, lang: str) -> str:
     return get_display_unit(unit, lang)
 
 
+# Units a retail pack is weighed or poured in: «Pista mag'zi 500gr» is kept
+# with unit "kg", «Lasos tushonkasi 700ml» with "liter", yet both are sold by
+# the piece. Owner, 2026-10-28, about an order card that read «Pista mag'zi
+# 500gr × 1 kg» for one 500 g pack: "nega bazi mahsulotlar kg da berilyapti".
+_PACK_UNITS = ("kg", "g", "liter", "l", "ml")
+
+
+def line_unit(item: dict, lang: str) -> str:
+    """The unit to print after an order line's quantity, or "" when the
+    quantity is simply a count of packs («Pista mag'zi 500gr × 1»).
+
+    A real weight keeps its unit: a wholesale line (`bulk`) and any
+    fractional quantity — «Zig'ir uni × 0.5 kg» is half a kilo, not half a
+    pack. Units that are not a weight or volume (bog'lam, banka) are named."""
+    unit = str(item.get("unit") or "")
+    if not unit or unit in ("dona", "piece"):
+        return ""
+    try:
+        whole = float(item.get("quantity") or 0).is_integer()
+    except (TypeError, ValueError):
+        whole = True
+    if item.get("bulk") or not whole:
+        return get_unit_name(unit, lang) if unit in UNITS or unit == "g" else unit
+    if unit in _PACK_UNITS:
+        return ""
+    return get_unit_name(unit, lang) if unit in UNITS else unit
+
+
 def get_order_status(status: str, lang: str) -> str:
     """Get localized order status"""
     return get_text(f"order_status_{status}", lang)

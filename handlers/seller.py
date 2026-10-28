@@ -1403,7 +1403,9 @@ async def view_seller_order(callback: CallbackQuery):
             saved_total += (op - item["price"]) * item["quantity"]
         else:
             price_part = new_p
-        items_text += f"• {item['name']} — {item['quantity']} {item.get('unit', '')} × {price_part}\n"
+        from locales import line_unit
+        unit = line_unit(item, lang)
+        items_text += f"• {item['name']} — {item['quantity']}{' ' + unit if unit else ''} × {price_part}\n"
     saved_block = ""
     if saved_total > 0:
         saved_block = get_text("new_order_discount_total", lang,

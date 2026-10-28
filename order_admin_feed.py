@@ -47,7 +47,7 @@ from aiogram.enums import ParseMode
 
 import database
 from config import ADMIN_IDS
-from locales import get_order_status
+from locales import get_order_status, line_unit
 
 logger = logging.getLogger(__name__)
 
@@ -244,9 +244,9 @@ def build_card(order: dict, lang: str, *, title: str, by: str,
         lines.append(_t("items", lang))
         for it in items[:ITEMS_SHOWN]:
             name = esc(str(it.get("name") or "—"))
-            unit = esc(str(it.get("unit") or ""))
+            unit = esc(line_unit(it, lang))
             row = f"• {name} × {_qty(it.get('quantity'))}"
-            if unit and unit not in ("dona", "piece"):
+            if unit:
                 row += f" {unit}"
             if it.get("is_bonus"):
                 row += f" — {_t('bonus', lang)}"
