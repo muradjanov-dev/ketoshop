@@ -229,6 +229,9 @@ async def main():
     # Group link guard first — a non-admin's link in a group is deleted
     # before any other handler can react to it (see link_guard.py).
     dp.include_router(link_guard_router)
+    # ⚖️ Yurist-agent: every message in its group topic is a question (yurist.py).
+    from yurist import router as yurist_router
+    dp.include_router(yurist_router)
     dp.include_router(webapp_data_router)
     dp.include_router(start_router)
     dp.include_router(onboarding_video_router)
