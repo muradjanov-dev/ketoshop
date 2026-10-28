@@ -24,7 +24,7 @@ from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
-RELEASE_KEY = "2026-10-24-uzpost-fikr-dashboard"
+RELEASE_KEY = "2026-10-28-mahsulot-tarkibi"
 TZ_OFFSET = timedelta(hours=5)
 SEND_WINDOW = (8, 22)          # never wake admins at night
 # True bypasses the daytime window (used 2026-09-25, and 2026-10-22 at 03:00
@@ -34,25 +34,27 @@ SEND_NOW = RELEASE_KEY == "2026-10-22-sayt-yangiliklari"
 CHECK_EVERY = 300
 
 NOTES = (
-    "🆕 <b>Bugun (24 oktabr) nimalar qo'shildi</b>\n"
+    '🆕 <b>Yangi: har bir mahsulotda «🧾 Tarkibi»</b>\n'
     '\n'
-    "1. <b>📮 Viloyatlarga UzPost «Bir Qadam»</b> — viloyatdagi mijoz botda va saytda birinchi bo'lib «📮 UzPost — 1 kunda, ~21 000 so'm» ni ko'radi. Narx og'irlik bo'yicha o'zi hisoblanadi va jami summaga qo'shiladi: birinchi kg 18 000 so'm, har keyingi kg +3 000 (Qoraqalpog'iston, Xorazm, Surxondaryo: +7 000). BTS va EMU ham avvalgidek qoladi.\n"
+    "1. Botdagi mahsulot kartochkasida va saytdagi mahsulot oynasida tavsif ostida endi <b>«🧾 Tarkibi»</b> chiqadi — mijozning o'z tilida (lotin, kirill, rus).\n"
     '\n'
-    "2. <b>📮 Eng yaqin pochta bo'limi</b> — UzPost tanlanganda bot mijozning lokatsiyasiga eng yaqin «Bir Qadam» bo'limini topadi va mijozga indeks, manzil, ish vaqti, xaritani ko'rsatadi. Buyurtma kartochkasida «📮 UzPost «Bir Qadam» → indeks — bo'lim, manzil» va taxminiy og'irlik turadi — posilkaga shu indeksni yozing. «bo'limni admin aniqlaydi» deb chiqsa, mijozga yozib aniqlang.\n"
+    "2. <b>111 ta mahsulotning tarkibi avtomatik yozildi</b> — bitta xomashyodan iborat mahsulotlar: unlar, urug'lar, eritritol, alluloza, toza steviya, himolay tuzi, Extra Virgin yog'lar, GHEE, asal va h.k. (masalan, «Maydalangan bodom mag'zi — 100%»). Shunday yangi mahsulot qo'shilsa, unga ham bir soat ichida o'zi yoziladi.\n"
     '\n'
-    "3. <b>💬 Fikr so'rovi</b> — buyurtmasi yetkazilgan har bir xaridorga «Mahsulotlarimiz sizga ma'qul keldimi?» xabari ketdi. Yozilgan har bir sharh sizga shu yerga keladi. Umumiy fikrlar «Xabarlar»ga «💬 Fikr so'roviga javob» belgisi bilan tushadi — iltimos, javob bering. Bu xaridorlar uchun AI sotuvchi 48 soat jim turadi.\n"
+    "3. ✍️ <b>Sizdan iltimos — quyidagilarning tarkibini qadoqdagi yorliqdan ko'chirib kiriting.</b> Ular ataylab bo'sh qoldirilgan: tarkibni taxmin qilsak, allergen yashirinib qolishi mumkin.\n"
+    '• Победа shokoladlari, qora shokolad granula\n'
+    '• Losos tushonkasi, kokos slivka, kokos chipsi\n'
+    '• Stevia 200g, 500g va 1000g\n'
+    '• Makaronlar: Barilla, kepakli, grechkali, ismaloqli\n'
+    "• Xandonpista va yeryong'oq pastalari\n"
+    "• Zakvaska, oq solod, qovurish uchun zaytun yog'i, Keto set\n"
     '\n'
-    "4. <b>📦 Dashboard: Mahsulot savdosi</b> — admin saytida har bir mahsulot bo'yicha soni, tushum, foyda, marja, qoldiq va «necha kunga yetadi» (qizil — 7 kundan kam). «⬇️ Excel» tugmasi tanlangan davr ro'yxatini yuklab beradi.\n"
+    "4. <b>Qanday kiritiladi:</b> botda mahsulot → ✏️ Tahrirlash → «🧾 Tarkib» → tarkibni yozing. Ruschasi avtomatik tarjima bo'ladi, kerak bo'lsa «🇷🇺 Tarkib (rus)» bilan tuzatasiz. «-» yuborsangiz, tarkib o'chadi. Admin saytida — mahsulot formasidagi «Tarkibi (UZ/RU)» maydonlari.\n"
     '\n'
-    "5. <b>📈 Dashboard: o'tgan davrga solishtirish</b> — har bir asosiy ko'rsatkich yonida ▲/▼ foiz (oldingi shuncha kunga nisbatan) va kunlar bo'yicha buyurtmalar grafigi.\n"
+    "5. Saqlangan zahoti do'kon va katalogda ko'rinadi. Avtomatik yozilganlardan qadoqdagidan farq qiladiganini ko'rsangiz (masalan, tuzlangan pista) — o'sha tugma bilan tuzating.\n"
     '\n'
-    "6. <b>📋 Uzun ro'yxatlar qisqa</b> — ABC, mahsulot savdosi, viloyatlar va B2B ro'yxatlari qisqa ko'rinadi, «▼ Yana N ta ko'rsatish» bilan ochiladi.\n"
+    '6. AI sotuvchi ham endi tarkibni biladi; tarkibi kiritilmagan mahsulot haqida taxmin qilmaydi.\n'
     '\n'
-    "7. <b>🎶 Saytda klassik musiqa</b> — qushlar ostida mashhur klassik asarlar (Bax, Paxelbel, Betxoven) yengil chalinadi. 🎶 tugmasi o'chiradi, qayta yoqilganda keyingi asar boshlanadi. Buyurtma rasmiylashtirilayotganda musiqa to'xtaydi.\n"
-    '\n'
-    "8. <b>🙂 «Saytimiz sizga qulaymi?» endi qayta-qayta so'ramaydi</b> — javob bergan mijozdan boshqa so'ralmaydi, ko'pi bilan 2 marta va 30 kun oralig'ida; adminlardan umuman so'ralmaydi.\n"
-    '\n'
-    'Mijozlardan fikr eshitsangiz — yozing 🤝'
+    'Rahmat 🤝'
 )
 
 
