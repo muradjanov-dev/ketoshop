@@ -111,9 +111,10 @@ class TopicTest(unittest.TestCase):
             self.assertEqual(set_setting.await_count, 2)           # a member can't move it
 
 
-def _response(rid, text="", calls=(), tokens=(1000, 0, 500)):
+def _response(rid, text="", calls=(), tokens=(1000, 0, 500), searches=0):
     output = [SimpleNamespace(type="function_call", name=n, arguments=json.dumps(a), call_id=c)
               for n, a, c in calls]
+    output += [SimpleNamespace(type="web_search_call") for _ in range(searches)]
     usage = SimpleNamespace(input_tokens=tokens[0], output_tokens=tokens[2],
                             input_tokens_details=SimpleNamespace(cached_tokens=tokens[1]))
     return SimpleNamespace(id=rid, output=output, output_text=text, usage=usage)
@@ -130,13 +131,16 @@ class AskTest(unittest.TestCase):
         client = MagicMock()
         client.responses.create = AsyncMock(side_effect=[
             _response("r1", calls=[("make_document", doc_args, "c1")]),
-            _response("r2", text="KP tayyor, faylni ko'ring."),
+            _response("r2", text="KP tayyor, faylni ko'ring.", searches=1),
         ])
         bot = MagicMock()
         bot.send_document = AsyncMock()
         with patch.object(yurist, "_client_and_model", return_value=(client, "gpt-5.4-mini")):
-            out = run(yurist.ask(bot, (GROUP, TOPIC), [{"type": "input_text", "text": "KP tayyorla"}]))
+            out, spent = run(yurist.ask(bot, (GROUP, TOPIC), [{"type": "input_text", "text": "KP tayyorla"}]))
         self.assertEqual(out, "KP tayyor, faylni ko'ring.")
+        # 2 calls × (1000 in + 500 out at gpt-5.4-mini) + one web search
+        self.assertAlmostEqual(spent["usd"], 2 * (1000 * 0.75 + 500 * 4.5) / 1e6 + yurist.SEARCH_USD)
+        self.assertEqual(spent["searches"], 1)
         first, second = [c.kwargs for c in client.responses.create.await_args_list]
         self.assertEqual(first["tools"][0], {"type": "web_search"})
         self.assertEqual(first["tools"][1]["name"], "make_document")
@@ -157,12 +161,14 @@ class AskTest(unittest.TestCase):
             _response("r1", text="Javob"),
         ])
         with patch.object(yurist, "_client_and_model", return_value=(client, "gpt-5.4-mini")):
-            self.assertEqual(run(yurist.ask(MagicMock(), (GROUP, TOPIC), [])), "Javob")
+            self.assertEqual(run(yurist.ask(MagicMock(), (GROUP, TOPIC), []))[0], "Javob")
         self.assertEqual(client.responses.create.await_args.kwargs["tools"][0], {"type": "web_search_preview"})
 
     def test_no_key(self):
         with patch.object(yurist, "_client_and_model", return_value=(None, "gpt-5.4-mini")):
-            self.assertIn("/ai_kalit", run(yurist.ask(MagicMock(), (GROUP, TOPIC), [])))
+            text, spent = run(yurist.ask(MagicMock(), (GROUP, TOPIC), []))
+            self.assertIn("/ai_kalit", text)
+            self.assertEqual(spent["usd"], 0.0)
 
     def test_model_follows_the_ai_seller(self):
         import ai_sales
@@ -184,11 +190,17 @@ class HandlerTest(unittest.TestCase):
         bot.send_message = AsyncMock()
         bot.send_chat_action = AsyncMock()
         m = message()
-        with patch.object(yurist, "ask", AsyncMock(return_value="QQS har oy 20-sanagacha …")) as ask:
+        yurist._spend.update(day=yurist._today(), usd=0.4)
+        with patch.object(yurist, "ask", AsyncMock(return_value=("QQS har oy 20-sanagacha …",
+                                                                  {"usd": 0.0123, "searches": 2}))) as ask, \
+                patch("targets.current_usd_rate", AsyncMock(return_value=(12650.0, "28.10.2026"))):
             run(yurist.on_question(m, bot))
         self.assertEqual(ask.await_args.args[2][0]["text"], "Nodir: QQS qachon to'lanadi?")
         sent = bot.send_message.await_args
-        self.assertEqual(sent.args[:2], (GROUP, "QQS har oy 20-sanagacha …"))
+        self.assertEqual(sent.args[0], GROUP)
+        self.assertEqual(sent.args[1], "QQS har oy 20-sanagacha …\n\n"
+                                       "💰 Bu so'rov: $0.0123 (≈ 156 so'm) · 2 ta internet qidiruv\n"
+                                       "📊 Bugun jami: $0.40 / $5.00")
         self.assertEqual(sent.kwargs["message_thread_id"], TOPIC)
         self.assertEqual(sent.kwargs["reply_to_message_id"], 100)
         self.assertIsNone(sent.kwargs["parse_mode"])

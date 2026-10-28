@@ -26,6 +26,10 @@ How it works
     shartnomani tekshir".
   * YURIST_DAILY_USD (default 5) caps a day's model spend; /yurist_holat
     shows where it is bound, the model and today's spend.
+  * Every answer ends with what that question cost — tokens at the model's
+    price (ai_provider.PRICES) plus YURIST_SEARCH_USD per web search — in
+    dollars and in so'm at the cbu.uz rate, and the day's total (owner,
+    2026-10-28: "xar bir so'rovi nechpul bo'layotgani bilan birga javob ber").
 
 It is an assistant, not a licensed lawyer, and says so where it matters:
 registering a company, a court case, a large contract — it recommends a
@@ -56,6 +60,9 @@ CHAT_SETTING = "yurist_chat"
 THREAD_SETTING = "yurist_thread"
 EFFORT = os.getenv("YURIST_EFFORT", "medium").strip() or "medium"
 DAILY_USD = float(os.getenv("YURIST_DAILY_USD", "5") or 5)
+# OpenAI's web search tool is billed per call on top of the tokens; its
+# results already count as input tokens. $10 per 1 000 calls by default.
+SEARCH_USD = float(os.getenv("YURIST_SEARCH_USD", "0.01") or 0.01)
 CHAIN_LIMIT = 40
 MAX_ROUNDS = 4                 # model ↔ make_document rounds per question
 MAX_OUTPUT_TOKENS = 6000
@@ -67,7 +74,8 @@ _chains: dict[tuple[int, int], dict] = {}
 _locks: dict[tuple[int, int], asyncio.Lock] = {}
 _spend = {"day": "", "usd": 0.0}
 
-SYSTEM = """Sen — Ketoshop jamoasining yurist va soliq maslahatchisisan («Yurist Agent»). \
+SYSTEM = """Sen — Ketoshop jamoasining yurist, buxgalter va soliq maslahatchisisan \
+(«Yurist Agent»). \
 Jamoa Telegram guruhining alohida mavzusida ishlaysan: savolni do'kon egasi, adminlar va \
 hamkorlar beradi.
 
@@ -94,6 +102,12 @@ reklama, shaxsga doir ma'lumotlar, savdo belgilari (Intellektual mulk agentligi)
 oziq-ovqat xavfsizligi, sertifikatlash va sanitariya talablari, bojxona (import), \
 tadbirkorlik subyektlarini ro'yxatdan o'tkazish (MChJ, YaTT, my.gov.uz, «yagona darcha»), \
 litsenziya va ruxsatnomalar, bank va valyuta qoidalari.
+- Buxgalteriya: BHMS (milliy buxgalteriya hisobi standartlari), hisob siyosati, \
+schyotlar rejasi va provodkalar, birlamchi hujjatlar (yuk xati, dalolatnoma, hisob-faktura, \
+ishonchnoma), kassa va bank operatsiyalari, tovar-moddiy zaxiralar va inventarizatsiya, \
+tannarx va foyda hisobi, ish haqi va undan ushlanmalar (JShDS, INPS, ijtimoiy soliq), \
+moliyaviy hisobot shakllari (1-son buxgalteriya balansi, 2-son moliyaviy natijalar), \
+soliq hisobotlari va to'lov muddatlari, 1C va soliq.uz kabineti bilan ishlash.
 - Hujjatlar: tijorat taklifi (KP), shartnomalar (oldi-sotdi, yetkazib berish, diler, \
 franshiza, ijara, xizmat, NDA, mehnat), ishonchnoma, ariza, buyruq, dalolatnoma, \
 pretenziya, hisob-faktura talablari.
@@ -223,15 +237,39 @@ def _spent() -> float:
     return _spend["usd"]
 
 
-def _add_spend(model: str, usage) -> None:
-    if usage is None:
-        return
-    details = getattr(usage, "input_tokens_details", None)
-    cost = ai_provider.estimate_cost(
-        model, int(getattr(usage, "input_tokens", 0) or 0),
-        int(getattr(details, "cached_tokens", 0) or 0), int(getattr(usage, "output_tokens", 0) or 0))
+def _add_spend(model: str, usage, searches: int = 0) -> float:
+    """Book one model call — its tokens and its web searches — into today's
+    total, and return what it cost in dollars."""
+    cost = searches * SEARCH_USD
+    if usage is not None:
+        details = getattr(usage, "input_tokens_details", None)
+        cost += ai_provider.estimate_cost(
+            model, int(getattr(usage, "input_tokens", 0) or 0),
+            int(getattr(details, "cached_tokens", 0) or 0), int(getattr(usage, "output_tokens", 0) or 0))
     _spent()
     _spend["usd"] += cost
+    return cost
+
+
+def _searches(response) -> int:
+    return sum(1 for o in (getattr(response, "output", None) or [])
+               if str(getattr(o, "type", "")).startswith("web_search"))
+
+
+async def cost_line(usd: float, searches: int) -> str:
+    """«💰 Bu so'rov: $0.0123 (≈ 156 so'm) · 2 ta internet qidiruv» and the
+    day's total. The so'm part is left out if cbu.uz can't be reached."""
+    som = ""
+    try:
+        import targets
+        rate, _day = await targets.current_usd_rate()
+        if rate:
+            som = f" (≈ {int(round(usd * rate)):,} so'm)".replace(",", " ")
+    except Exception:
+        logger.warning("Yurist: USD rate unavailable for the cost line", exc_info=True)
+    web = f" · {searches} ta internet qidiruv" if searches else ""
+    return (f"💰 Bu so'rov: ${usd:.4f}{som}{web}\n"
+            f"📊 Bugun jami: ${_spent():.2f} / ${DAILY_USD:.2f}")
 
 
 # ─────────────────────────────── the model ──────────────────────────────────
@@ -268,11 +306,13 @@ async def _send_document(bot: Bot, place: tuple[int, int], args: dict) -> str:
     return "Hujjat guruhga Word fayl bo'lib yuborildi."
 
 
-async def ask(bot: Bot, place: tuple[int, int], content: list[dict]) -> str:
-    """One question → the agent's final text; documents are posted on the way."""
+async def ask(bot: Bot, place: tuple[int, int], content: list[dict]) -> tuple[str, dict]:
+    """One question → (the agent's final text, {"usd", "searches"} it cost);
+    documents are posted on the way."""
     client, model = _client_and_model()
     if client is None:
-        return "⚠️ OpenAI kaliti yo'q — /ai_kalit bilan bering, keyin qayta yozing."
+        return "⚠️ OpenAI kaliti yo'q — /ai_kalit bilan bering, keyin qayta yozing.", {"usd": 0.0, "searches": 0}
+    spent = {"usd": 0.0, "searches": 0}
     chain = _chains.setdefault(place, {})
     if chain.get("turns", 0) >= CHAIN_LIMIT:
         chain.clear()
@@ -290,10 +330,12 @@ async def ask(bot: Bot, place: tuple[int, int], content: list[dict]) -> str:
             raise
         chain["prev_id"] = response.id
         chain["turns"] = chain.get("turns", 0) + 1
-        _add_spend(model, getattr(response, "usage", None))
+        searches = _searches(response)
+        spent["searches"] += searches
+        spent["usd"] += _add_spend(model, getattr(response, "usage", None), searches)
         calls = [o for o in (response.output or []) if getattr(o, "type", "") == "function_call"]
         if not calls:
-            return (response.output_text or "").strip()
+            return (response.output_text or "").strip(), spent
         items = []
         for call in calls:
             try:
@@ -304,7 +346,7 @@ async def ask(bot: Bot, place: tuple[int, int], content: list[dict]) -> str:
                 logger.exception("Yurist: tool %s failed", call.name)
                 output = f"Xato: {exc}"
             items.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
-    return "Hujjat tayyorlandi." if items else ""
+    return ("Hujjat tayyorlandi." if items else ""), spent
 
 
 # ─────────────────────────────── Telegram ───────────────────────────────────
@@ -377,7 +419,9 @@ async def on_question(message: Message, bot: Bot):
             text = message.text or message.caption or ""
             content = [{"type": "input_text", "text": f"{who}: {text}".strip()}]
             content += await _attachment(bot, message)
-            answer = await ask(bot, place, content)
+            answer, spent = await ask(bot, place, content)
+            if spent["usd"] > 0:
+                answer = (answer or "…").rstrip() + "\n\n" + await cost_line(spent["usd"], spent["searches"])
         except Exception:
             logger.exception("Yurist agent failed")
             answer = "⚠️ Hozir javob bera olmadim (AI xizmatida xato). Birozdan keyin qayta yozing."
@@ -417,8 +461,8 @@ async def cmd_bind(message: Message, bot: Bot):
     await bot.send_message(
         chat_id,
         "⚖️ Yurist-agent shu mavzuga ulandi.\n\n"
-        "Savolingizni oddiy yozing: soliq, shartnoma, franshiza, kompaniya ochish, litsenziya, "
-        "mehnat masalalari… Hujjat kerak bo'lsa — «KP tayyorla», «diler shartnomasi yoz» deng, "
+        "Savolingizni oddiy yozing: soliq, buxgalteriya, shartnoma, franshiza, kompaniya ochish, "
+        "litsenziya, mehnat masalalari… Hujjat kerak bo'lsa — «KP tayyorla», «diler shartnomasi yoz» deng, "
         "Word fayl bo'lib keladi. Shartnomani tekshirish uchun .docx yoki .pdf ni shu yerga "
         "tashlang.\n\n"
         "Stavka va moddalarni lex.uz, soliq.uz dan tekshirib, manbasini yozadi. Muhim "
