@@ -2983,7 +2983,12 @@ async def search_products(query: str, page: int = 0, per_page: int = 5) -> tuple
     misspelled query still returns the nearest-named products. Results are
     ordered exact-substring-first, then by closeness. Falls back to plain
     substring search if pg_trgm is unavailable.
+
+    The query may be in the 2026 alphabet ("şokolad"); the names are stored
+    in the old Latin, so it is read back into that first (translit).
     """
+    from translit import to_old_latin
+    query = to_old_latin(query or "")
     async with pool.acquire() as conn:
         search_term = f"%{query}%"
         try:
@@ -5801,7 +5806,8 @@ async def admin_search_products(query: str, limit: int = 20) -> list[dict]:
     for exactly the one that was hidden from the catalogue. Plain ILIKE, no
     similarity ranking: the admin knows what the product is called, and an
     exact list beats a fuzzy one when the next tap edits a price."""
-    like = f"%{(query or '').strip()}%"
+    from translit import to_old_latin
+    like = f"%{to_old_latin((query or '').strip())}%"
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """SELECT id, name, name_ru, price, quantity, unit, is_active
