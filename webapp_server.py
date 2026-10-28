@@ -365,6 +365,10 @@ async def api_product_detail(request: web.Request):
     data["description"] = localize_product_text(
         p.get("description"), p.get("description_ru"), lang
     )
+    # 🧾 Tarkibi (product_composition.py) — "" when nobody has written it.
+    data["composition"] = localize_product_text(
+        p.get("composition"), p.get("composition_ru"), lang
+    ) or ""
     # Seller identity is internal — admins only (owner request 2026-07-30),
     # never shown to regular buyers.
     data["seller_name"] = p.get("seller_name", "") if request.get("user_id") in ADMIN_IDS else ""

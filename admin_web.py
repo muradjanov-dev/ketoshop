@@ -477,7 +477,21 @@ async def api_products_create(request: web.Request):
         discount_percent=int(b.get("discount_percent") or 0),
         image_url=_clean_str(b.get("image_url"), 300),
     )
+    composition = _composition_fields(b)
+    if composition:
+        await database.update_product(pid, **composition)
     return _json({"ok": True, "id": pid})
+
+
+def _composition_fields(b: dict) -> dict:
+    """🧾 Tarkibi from the product form. An emptied field goes back to NULL,
+    so product_composition may fill a suggestion again; to keep it blank on
+    purpose, use the bot («-»)."""
+    out = {}
+    for key in ("composition", "composition_ru"):
+        if key in b:
+            out[key] = _clean_str(b.get(key), 1500) or None
+    return out
 
 
 @require_auth
@@ -509,6 +523,7 @@ async def api_products_update(request: web.Request):
     if "discount_percent" in b: fields["discount_percent"] = int(b["discount_percent"] or 0)
     if "image_url" in b:        fields["image_url"] = _clean_str(b["image_url"], 300)
     if "is_active" in b:        fields["is_active"] = 1 if b["is_active"] else 0
+    fields.update(_composition_fields(b))
     if "category" in b:
         if b["category"] not in CATEGORIES:
             return _json({"error": "bad category"}, status=400)

@@ -417,6 +417,10 @@ async def main():
     # (review_followup.py). REVIEW_FOLLOWUP=0 switches it off.
     from review_followup import scheduler_loop as review_followup_loop
     review_followup_task = asyncio.create_task(review_followup_loop(bot))
+    # 🧾 Tarkibi: products nobody has written one for get the library's, at
+    # startup and every hour after (product_composition.py).
+    from product_composition import scheduler_loop as composition_loop
+    composition_task = asyncio.create_task(composition_loop())
     # Fikr so'rovi (owner, 2026-10-24): every buyer asked once about what
     # they bought, 09:00–21:00 until LAST_DAY (review_blast.py).
     # REVIEW_BLAST=0 switches it off.
@@ -477,6 +481,7 @@ async def main():
         recipe_channel_task.cancel()
         restock_notify_task.cancel()
         review_followup_task.cancel()
+        composition_task.cancel()
         review_blast_task.cancel()
         product_of_day_task.cancel()
         channel_posts_task.cancel()

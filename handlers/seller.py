@@ -773,6 +773,11 @@ async def start_edit_product(callback: CallbackQuery, state: FSMContext):
             InlineKeyboardButton(text=get_text("btn_edit_name_ru", lang), callback_data=f"editf:name_ru:{product_id}"),
             InlineKeyboardButton(text=get_text("btn_edit_desc_ru", lang), callback_data=f"editf:description_ru:{product_id}"),
         ],
+        # 🧾 Tarkibi — shown on the bot card and the site (2026-10-28).
+        [
+            InlineKeyboardButton(text=get_text("btn_edit_composition", lang), callback_data=f"editf:composition:{product_id}"),
+            InlineKeyboardButton(text=get_text("btn_edit_composition_ru", lang), callback_data=f"editf:composition_ru:{product_id}"),
+        ],
         [
             InlineKeyboardButton(text=get_text("btn_edit_photo", lang), callback_data=f"editf:photo_id:{product_id}"),
             InlineKeyboardButton(text=get_text("btn_edit_media", lang), callback_data=f"edit_media:{product_id}"),
@@ -862,6 +867,22 @@ async def select_edit_field(callback: CallbackQuery, state: FSMContext):
         "cost_price": "enter_cost_price",
         "b2b_price": "enter_b2b_price",
     }
+    if field in ("composition", "composition_ru"):
+        # The current text goes into the prompt, so it can be copied and fixed.
+        import html as _html
+        product = await get_product(product_id)
+        current = ((product or {}).get(field) or "").strip()
+        await state.set_state(EditProductStates.waiting_value)
+        await state.update_data(edit_field=field, edit_product_id=product_id, lang=lang)
+        await _safe_edit_or_resend(
+            callback.message,
+            get_text(f"enter_product_{field}", lang,
+                     current=(f"<code>{_html.escape(current, quote=False)}</code>" if current
+                              else get_text("composition_not_set", lang))),
+        )
+        await callback.answer()
+        return
+
     if field not in prompts:
         await callback.answer("❌")
         return
@@ -1044,6 +1065,28 @@ async def process_edit_value(message: Message, state: FSMContext):
         await send_my_products_after_edit(
             message, message.from_user.id, lang,
             prefix=("✅ Mahsulot yangilandi" if lang == "uz" else "✅ Товар обновлён"),
+            page=data.get("edit_page", 0),
+        )
+        return
+
+    elif field in ("composition", "composition_ru"):
+        # «-» clears it ("" — not NULL, so the library never writes it back).
+        text = "" if value in ("-", "—") else value[:1500]
+        updates = {field: text}
+        if field == "composition":
+            ru = ""
+            if text:
+                try:
+                    from translator import translate
+                    ru = await translate(text, "uz", "ru")
+                except Exception:
+                    ru = ""
+            updates["composition_ru"] = ru
+        await update_product(product_id, **updates)
+        await state.clear()
+        await send_my_products_after_edit(
+            message, message.from_user.id, lang,
+            prefix=get_text("composition_saved", lang),
             page=data.get("edit_page", 0),
         )
         return

@@ -1299,6 +1299,35 @@ TEXTS = {
     "btn_edit_cost_price": {"uz": "💼 Asl narx (tannarx)", "ru": "💼 Себестоимость"},
     "btn_edit_name_ru": {"uz": "🇷🇺 Nomi (rus)", "ru": "🇷🇺 Название (рус)"},
     "btn_edit_desc_ru": {"uz": "🇷🇺 Tavsif (rus)", "ru": "🇷🇺 Описание (рус)"},
+    # 🧾 Tarkibi (product_composition.py, 2026-10-28)
+    "product_composition": {"uz": "Tarkibi", "ru": "Состав"},
+    "btn_edit_composition": {"uz": "🧾 Tarkib", "ru": "🧾 Состав"},
+    "btn_edit_composition_ru": {"uz": "🇷🇺 Tarkib (rus)", "ru": "🇷🇺 Состав (рус)"},
+    "enter_product_composition": {
+        "uz": ("🧾 <b>Mahsulot tarkibi</b>\n\n"
+               "Tarkibni qadoqdagi yorliqdan ko'chirib yozing, masalan: «Bodom uni — 100%» yoki "
+               "«Kakao massasi, eritritol, kakao yog'i, fundiq».\n"
+               "Ruschasi avtomatik tarjima qilinadi (keyin «🇷🇺 Tarkib (rus)» bilan tuzatsa bo'ladi).\n\n"
+               "Hozirgi tarkib: {current}\n\n"
+               "<i>O'chirish uchun «-» yuboring.</i>"),
+        "ru": ("🧾 <b>Состав товара</b>\n\n"
+               "Перепишите состав с этикетки, например: «Миндальная мука — 100%» или "
+               "«Какао тёртое, эритритол, какао-масло, фундук».\n"
+               "Русский вариант переведётся автоматически (потом можно поправить кнопкой «🇷🇺 Состав (рус)»).\n\n"
+               "Сейчас: {current}\n\n"
+               "<i>Чтобы удалить, отправьте «-».</i>"),
+    },
+    "enter_product_composition_ru": {
+        "uz": ("🇷🇺 <b>Ruscha tarkib</b>\n\nRus tilidagi mijozlar shuni ko'radi.\n\n"
+               "Hozirgi: {current}\n\n<i>Yangi matnni yozing yoki o'chirish uchun «-» yuboring.</i>"),
+        "ru": ("🇷🇺 <b>Состав на русском</b>\n\nЕго видят покупатели на русском.\n\n"
+               "Сейчас: {current}\n\n<i>Напишите новый текст или «-», чтобы удалить.</i>"),
+    },
+    "composition_saved": {
+        "uz": "✅ Tarkib saqlandi — do'konda va katalogda darhol ko'rinadi.",
+        "ru": "✅ Состав сохранён — уже виден в магазине и каталоге.",
+    },
+    "composition_not_set": {"uz": "kiritilmagan", "ru": "не указан"},
     "btn_edit_unit": {"uz": "📐 O'lchov birligi", "ru": "📐 Единица измерения"},
     "btn_edit_b2b_price": {"uz": "🏢 Optom narx", "ru": "🏢 Оптовая цена"},
     "btn_edit_b2b_only": {"uz": "🔒 Sotuv turi (B2B/Do'kon)", "ru": "🔒 Тип продажи (B2B/Магазин)"},

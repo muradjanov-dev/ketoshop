@@ -90,9 +90,15 @@ async def build_caption(product: dict, lang: str, rate: float | None,
         discount = bot_discount.shown_percent(product["price"], bot_price)
         final_price, discount_until = bot_price, None
 
+    # «🧾 Tarkibi» right under the description (owner, 2026-10-28) — read
+    # from the row on every card, so an admin's edit shows at once.
+    composition = localize_product_text(product.get("composition"), product.get("composition_ru"), lang)
+    composition_block = (f"\n\n🧾 <b>{get_text('product_composition', lang)}:</b> "
+                         f"{html.escape(composition, quote=False)}" if composition else "")
+
     text = get_text("product_card", lang,
         name=html.escape(name or "", quote=False),
-        description=html.escape(desc, quote=False),
+        description=html.escape(desc, quote=False) + composition_block,
         price=f"{int(final_price):,}".replace(",", " "),
         unit=get_display_unit(product["unit"], lang),
         available=product["quantity"],
