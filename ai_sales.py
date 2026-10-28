@@ -1375,10 +1375,13 @@ async def _tool_info(user_id: int, args: dict) -> str:
     stock = float(product.get("quantity") or 0)
     unit = product.get("unit") or "dona"
     await _remember_quiet(user_id, "interest", product["name"], product_id)
+    composition = (product.get("composition") or "").strip()
     return (f"{product['name']} — {_fmt(price)} so'm / {unit}"
             + (f" (chegirma -{discount}%)" if discount else "")
             + (f", qoldiq {stock:g}" if stock > 0 else ", HOZIR TUGAGAN")
-            + "\n" + (_strip_html(description) or "Tavsif yo'q — katalogdagi ma'lumotga tayan."))
+            + "\n" + (_strip_html(description) or "Tavsif yo'q — katalogdagi ma'lumotga tayan.")
+            + "\nTarkibi: " + (composition or "kiritilmagan — tarkibni taxmin qilma, "
+                                                 "kerak bo'lsa adminlardan so'rashni taklif qil."))
 
 
 RECIPE_EVERY_HOURS = 24

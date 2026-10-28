@@ -473,6 +473,10 @@ async def init_db():
             await conn.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS b2b_only BOOLEAN DEFAULT FALSE")
         except Exception:
             pass
+        # «🧾 Tarkibi» (product_composition.py, 2026-10-28). NULL = never set
+        # (the library may fill it); "" = an admin cleared it on purpose.
+        await conn.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS composition TEXT")
+        await conn.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS composition_ru TEXT")
 
         # Add payment_method column to users
         try:
@@ -1643,7 +1647,7 @@ async def bulk_set_category_discount(category: str, discount_percent: int,
 
 
 async def update_product(product_id: int, **kwargs):
-    allowed_columns = {"name", "description", "price", "unit", "quantity", "category", "photo_id", "is_active", "name_ru", "description_ru", "discount_percent", "discount_until", "low_stock_threshold", "cost_price", "b2b_price", "image_url", "b2b_only"}
+    allowed_columns = {"name", "description", "price", "unit", "quantity", "category", "photo_id", "is_active", "name_ru", "description_ru", "discount_percent", "discount_until", "low_stock_threshold", "cost_price", "b2b_price", "image_url", "b2b_only", "composition", "composition_ru"}
     async with pool.acquire() as conn:
         for key, value in kwargs.items():
             if key not in allowed_columns:

@@ -3563,6 +3563,7 @@
       <div class="detail-rating" id="detail-rating"></div>
       <div class="detail-seller" id="detail-seller"></div>
       <div class="detail-desc" id="detail-desc"></div>
+      <div class="detail-desc detail-composition" id="detail-composition" style="display:none"></div>
       <div class="detail-reviews" id="detail-reviews">
         <div class="reviews-heading" id="reviews-heading"></div>
         <div id="reviews-list"></div>
@@ -4501,6 +4502,7 @@ const L = {
     delYandexTaxi: "🚖 Yandex Taxi",
     delYandexMarket: "📦 Yandex Market",
     delBts: "📦 BTS",
+    compositionTitle: "Tarkibi",
     delEmu: "📦 EMU",
     delUzpost: "📮 UzPost (1 kunda)",
     uzpostOfficeTitle: "Posilka shu pochta bo'limiga boradi",
@@ -4715,6 +4717,7 @@ const L = {
     delYandexTaxi: '🚖 Yandex Taxi',
     delYandexMarket: '📦 Yandex Market',
     delBts: '📦 BTS',
+    compositionTitle: 'Состав',
     delEmu: '📦 EMU',
     delUzpost: '📮 UzPost (за 1 день)',
     uzpostOfficeTitle: 'Посылка придёт в это почтовое отделение',
@@ -7068,6 +7071,16 @@ async function openDetail(productId, isSet = false) {
       descEl.innerHTML = escapeHtml(p.description).replace(/\n/g, '<br>');
     } else {
       descEl.textContent = '';
+    }
+    // 🧾 Tarkibi — written by admins in the bot or the panel (2026-10-28).
+    const compEl = document.getElementById('detail-composition');
+    if (p.composition) {
+      compEl.innerHTML = '🧾 <b>' + escapeHtml(t.compositionTitle) + ':</b> ' +
+        escapeHtml(p.composition).replace(/\n/g, '<br>');
+      compEl.style.display = '';
+    } else {
+      compEl.innerHTML = '';
+      compEl.style.display = 'none';
     }
     document.getElementById('qty-value').textContent = qty;
     const addBtn = document.getElementById('add-to-cart-btn');
