@@ -4844,6 +4844,8 @@ const _UZ_SINGLES = {
   n:'н',o:'о',p:'п',q:'қ',r:'р',s:'с',t:'т',u:'у',v:'в',x:'х',y:'й',z:'з',"'":'ъ','ʻ':'ъ',
   A:'А',B:'Б',D:'Д',E:'Е',F:'Ф',G:'Г',H:'Ҳ',I:'И',J:'Ж',K:'К',L:'Л',M:'М',
   N:'Н',O:'О',P:'П',Q:'Қ',R:'Р',S:'С',T:'Т',U:'У',V:'В',X:'Х',Y:'Й',Z:'З',
+  // 2026 alphabet letters (alphabet.py): ö ğ ş ç are ў ғ ш ч.
+  '\u00F6':'ў','\u011F':'ғ','\u015F':'ш','\u00E7':'ч','\u00D6':'Ў','\u011E':'Ғ','\u015E':'Ш','\u00C7':'Ч',
 };
 // Loanword "ts" → "ц" and word-initial e → э, same rules as translit.py
 // (2026-10-13: "Ретсептни очиш" for "Рецептни очиш"). Native Uzbek "ts"
@@ -4894,6 +4896,123 @@ function latToCyr(text) {
   text = text.replace(/(\d+)/g, (_, i) => store[Number(i)]);
   return text;
 }
+
+/* ===== Yangi alifbo (Ö Ğ Ş Ç) — 2026 Uzbek Latin on screen (alphabet.py) =====
+   Owner, 2026-10-28: "loyihani yangi alifboga o'tkaz". The page's strings and
+   the shop's data stay in the old Latin; what is SHOWN to a Latin-Uzbek
+   reader is converted, while the server switch (/alifbo) is on. Same rules
+   as translit.to_new_latin: oʻ gʻ sh ch → ö ğ ş ç; tags, {tokens}, links,
+   @handles, /commands and our brand untouched; 'quoted' words keep their
+   quotes; s'h (Is'hoq) becomes plain sh. No lookbehind and no \p{…}: older
+   iOS WebViews reject them and the whole script would fail. */
+const NEW_ALPHABET = "{{NEW_ALPHABET}}" === "1";
+const _NL_LETTER = "A-Za-z0-9\u00C0-\u024F\u0400-\u04FF";
+const _NL_KEEP = /<[^>]+>|\{[^{}]*\}|@[A-Za-z0-9_]{3,}|(?:https?:\/\/|t\.me\/|www\.)\S+|keto\s?shop|charged/gi;
+const _NL_CMD = /(^|[^A-Za-z0-9])(\/[a-zA-Z][a-zA-Z0-9_]*)/g;
+const _NL_QUOTED = new RegExp("(^|[^" + _NL_LETTER + "])(['\u2018])([^'\u2018\u2019\\n]{1,60})(['\u2019])(?![" + _NL_LETTER + "])", "g");
+const _NL_OG = {o: '\u00F6', O: '\u00D6', g: '\u011F', G: '\u011E'};
+function toNewLatin(text) {
+  if (!text || typeof text !== 'string' || !/[oOgGsScC]/.test(text)) return text;
+  const store = [];
+  const hold = (s) => { store.push(s); return '\uE020' + (store.length - 1) + '\uE021'; };
+  text = text.replace(_NL_KEEP, hold);
+  text = text.replace(_NL_CMD, (m, pre, cmd) => pre + hold(cmd));
+  const quotes = [];
+  text = text.replace(_NL_QUOTED, (m, pre, open, body, close) => {
+    quotes.push([open, close]);
+    return pre + '\uE022' + body + '\uE023';
+  });
+  text = text.replace(/([sScC])['\u02BB\u2018\u2019`\u02BC]([hH])/g, '$1\uE024$2');
+  text = text.replace(/([oOgG])['\u02BB\u2018\u2019`\u02BC]/g, (m, l) => _NL_OG[l]);
+  text = text.replace(/([sScC])([hH])/g, (m, a) => {
+    const l = (a === 's' || a === 'S') ? '\u015F' : '\u00E7';
+    return a === a.toUpperCase() ? l.toUpperCase() : l;
+  });
+  text = text.replace(/\uE024/g, '\u200C');   // s and h stay apart for good
+  for (const [open, close] of quotes) text = text.replace('\uE022', open).replace('\uE023', close);
+  return text.replace(/\uE020(\d+)\uE021/g, (m, i) => store[Number(i)]);
+}
+function _nlActive() {
+  return NEW_ALPHABET && (typeof lang === 'undefined' || lang === 'uz');
+}
+const _NL_SKIP = {SCRIPT: 1, STYLE: 1, TEXTAREA: 1, NOSCRIPT: 1, CODE: 1, PRE: 1};
+const _NL_ATTRS = ['placeholder', 'title', 'aria-label'];
+function _nlAttrs(el) {
+  for (const a of _NL_ATTRS) {
+    const v = el.getAttribute(a);
+    if (v) { const n = toNewLatin(v); if (n !== v) el.setAttribute(a, n); }
+  }
+}
+function _nlTree(node) {
+  if (!node) return;
+  if (node.nodeType === 3) {
+    const p = node.parentNode;
+    if (!p || _NL_SKIP[p.nodeName] || (p.closest && p.closest('[contenteditable="true"],[data-old-alifbo]'))) return;
+    const n = toNewLatin(node.data);
+    if (n !== node.data) node.data = n;
+    return;
+  }
+  if (node.nodeType !== 1 || _NL_SKIP[node.nodeName] || node.hasAttribute('data-old-alifbo')) return;
+  _nlAttrs(node);
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (n.nodeType === 1 && (_NL_SKIP[n.nodeName] || n.hasAttribute('data-old-alifbo')))
+      ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  });
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (n.nodeType === 1) { _nlAttrs(n); continue; }
+    const p = n.parentNode;
+    if (p && p.closest && p.closest('[contenteditable="true"]')) continue;
+    const v = toNewLatin(n.data);
+    if (v !== n.data) n.data = v;
+  }
+}
+function _nlWrapPopups() {
+  const w = window.Telegram && window.Telegram.WebApp;
+  const conv = (s) => (_nlActive() && typeof s === 'string') ? toNewLatin(s) : s;
+  if (w) {
+    for (const k of ['showAlert', 'showConfirm']) {
+      const f = w[k];
+      if (typeof f === 'function') w[k] = function (msg, ...rest) { return f.call(w, conv(msg), ...rest); };
+    }
+    const sp = w.showPopup;
+    if (typeof sp === 'function') {
+      w.showPopup = function (p, cb) {
+        if (p && _nlActive()) {
+          p = Object.assign({}, p, {
+            title: conv(p.title), message: conv(p.message),
+            buttons: (p.buttons || []).map((b) => Object.assign({}, b, b.text ? {text: conv(b.text)} : {})),
+          });
+        }
+        return sp.call(w, p, cb);
+      };
+    }
+    const mb = w.MainButton;
+    if (mb && typeof mb.setText === 'function') {
+      const st = mb.setText;
+      mb.setText = function (txt) { return st.call(mb, conv(txt)); };
+    }
+  }
+  for (const k of ['alert', 'confirm']) {
+    const f = window[k];
+    if (typeof f === 'function') window[k] = (msg) => f.call(window, conv(msg));
+  }
+}
+function _nlStart() {
+  if (!NEW_ALPHABET || typeof MutationObserver === 'undefined') return;
+  _nlWrapPopups();
+  if (_nlActive()) { _nlTree(document.body); document.title = toNewLatin(document.title); }
+  new MutationObserver((muts) => {
+    if (!_nlActive()) return;
+    for (const m of muts) {
+      if (m.type === 'childList') m.addedNodes.forEach(_nlTree);
+      else if (m.type === 'characterData') _nlTree(m.target);
+      else if (m.type === 'attributes' && m.target.nodeType === 1) _nlAttrs(m.target);
+    }
+  }).observe(document.documentElement, {childList: true, subtree: true, characterData: true,
+    attributes: true, attributeFilter: _NL_ATTRS});
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _nlStart);
+else _nlStart();
 
 // Build the active locale dict. "uz_cyr" auto-derives from L.uz so the
 // Mini App doesn't need a third hand-written string table.

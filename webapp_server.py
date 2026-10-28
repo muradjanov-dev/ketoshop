@@ -253,6 +253,9 @@ async def index(request: web.Request):
     # question every 2 days (daily_quiz.py).
     import quiz_bank
     html = html.replace("{{GAME_BANK}}", quiz_bank.bank_json())
+    # Yangi alifbo switch (alphabet.py) — the page converts its own text.
+    import alphabet
+    html = html.replace("{{NEW_ALPHABET}}", "1" if alphabet.is_on() else "0")
     return web.Response(
         text=html,
         content_type="text/html",

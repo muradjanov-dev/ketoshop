@@ -79,6 +79,9 @@ _SINGLES = {
     "I": "И", "J": "Ж", "K": "К", "L": "Л", "M": "М", "N": "Н", "O": "О",
     "P": "П", "Q": "Қ", "R": "Р", "S": "С", "T": "Т", "U": "У", "V": "В",
     "X": "Х", "Y": "Й", "Z": "З",
+    # 2026 alphabet (Law OʻRQ-1184): ö ğ ş ç are ў ғ ш ч.
+    "ö": "ў", "ğ": "ғ", "ş": "ш", "ç": "ч",
+    "Ö": "Ў", "Ğ": "Ғ", "Ş": "Ш", "Ç": "Ч",
 }
 
 # Word-initial e/E. The lookbehind has to reject ANY letter, not just a Latin
@@ -259,3 +262,87 @@ def cyr_to_lat(text: str) -> str:
     for token, original in store.items():
         text = text.replace(token, original)
     return text
+
+
+# ─────────────────────── the 2026 Latin alphabet ────────────────────────────
+#
+# Law OʻRQ-1184 (signed 21.10.2026, in force 22.04.2027): Oʻ → Ö, Gʻ → Ğ,
+# Sh → Ş, Ch → Ç; "ng" is no longer a letter of its own (still written ng);
+# the apostrophe stays as the tutuq belgisi (ma'lumot, ta'm). Owner,
+# 2026-10-28: "loyihani yangi alifboga o'tkaz" — shown now, with a switch
+# (alphabet.py). Every text in the code and the database stays in the old
+# Latin; this runs where the text leaves for a reader.
+
+_APOSTROPHES = "'ʻ‘’`ʼ"
+# Words that keep their sh/ch: our own brand (and its handle, already a link)
+# and foreign product names.
+_NEW_LATIN_KEEP_RE = re.compile(r"keto\s?shop|charged", re.IGNORECASE)
+# 'Kakao' — a word in single quotes. Its closing quote is not the oʻ/gʻ mark.
+_SINGLE_QUOTED_RE = re.compile(r"(?<![^\W_])['‘]([^'‘’\n]{1,60})['’](?![^\W_])")
+# Is'hoq, as'hob: the apostrophe only kept s and h apart; with ş in the
+# alphabet they are just written "sh".
+_S_H_SPLIT_RE = re.compile(r"([sScC])[%s]([hH])" % _APOSTROPHES)
+_OG_RE = re.compile(r"([oOgG])[%s]" % _APOSTROPHES)
+_SH_CH_RE = re.compile(r"([sScC])([hH])")
+_NEW_OG = {"o": "ö", "O": "Ö", "g": "ğ", "G": "Ğ"}
+# Private-use markers of our own \u2014 _stash's tokens are \ue000\u2026\ue001, so these
+# must not be: "s and h stay two letters", and the two quotes of a 'word'.
+_SPLIT = "\ue011"
+_QUOTE_OPEN, _QUOTE_CLOSE = "\ue012", "\ue013"
+
+
+def _new_digraph(m: re.Match) -> str:
+    first, second = m.group(1), m.group(2)
+    letter = "ş" if first in "sS" else "ç"
+    # Sh / SH → Ş; sh / sH → ş (case follows the first letter).
+    return letter.upper() if first.isupper() else letter
+
+
+def to_new_latin(text: str) -> str:
+    """Old Uzbek Latin → the 2026 alphabet: oʻ gʻ sh ch → ö ğ ş ç.
+
+    Leaves HTML tags, {format} tokens, links, @handles, /commands and
+    brands untouched; Cyrillic and Russian pass through as they are.
+    Idempotent: new-alphabet text has nothing left to change."""
+    if not text or not any(c in text for c in "oOgGsScC"):
+        return text
+    store: dict[str, str] = {}
+    counter = [0]
+    text = _stash(text, _HTML_TAG_RE, store, counter)
+    text = _stash(text, _FMT_TOKEN_RE, store, counter)
+    text = _stash(text, _HANDLE_OR_LINK_RE, store, counter)
+    text = _stash(text, _BOT_COMMAND_RE, store, counter)
+    text = _stash(text, _NEW_LATIN_KEEP_RE, store, counter)
+
+    # 'Kakao' keeps its quotes as quotes.
+    quotes: list[tuple[str, str]] = []
+
+    def _hold(m: re.Match) -> str:
+        quotes.append((m.group(0)[0], m.group(0)[-1]))
+        return f"{_QUOTE_OPEN}{m.group(1)}{_QUOTE_CLOSE}"
+
+    text = _SINGLE_QUOTED_RE.sub(_hold, text)
+    text = _S_H_SPLIT_RE.sub(lambda m: m.group(1) + _SPLIT + m.group(2), text)
+    text = _OG_RE.sub(lambda m: _NEW_OG[m.group(1)], text)
+    text = _SH_CH_RE.sub(_new_digraph, text)
+    # An invisible joiner-breaker keeps that s and h apart for good, so a
+    # second pass (the Mini App re-reads what it wrote) can't make it ş.
+    text = text.replace(_SPLIT, "\u200c")
+    for open_q, close_q in quotes:
+        text = text.replace(_QUOTE_OPEN, open_q, 1).replace(_QUOTE_CLOSE, close_q, 1)
+
+    for token, original in reversed(list(store.items())):
+        text = text.replace(token, original)
+    return text
+
+
+_OLD_LATIN = {"ö": "o'", "Ö": "O'", "ğ": "g'", "Ğ": "G'", "ş": "sh", "Ş": "Sh",
+              "ç": "ch", "Ç": "Ch"}
+
+
+def to_old_latin(text: str) -> str:
+    """The 2026 letters back to the old Latin the database is written in —
+    for search: a buyer typing "şokolad" must find "Shokolad"."""
+    if not text:
+        return text
+    return "".join(_OLD_LATIN.get(ch, ch) for ch in text)

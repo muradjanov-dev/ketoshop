@@ -157,6 +157,9 @@ def require_auth(handler):
 async def admin_page(request: web.Request):
     html_path = Path(__file__).parent / "webapp" / "admin.html"
     html = html_path.read_text(encoding="utf-8")
+    # Yangi alifbo switch (alphabet.py) — the page converts its own text.
+    import alphabet
+    html = html.replace("{{NEW_ALPHABET}}", "1" if alphabet.is_on() else "0")
     return web.Response(
         text=html, content_type="text/html",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
@@ -1785,6 +1788,8 @@ async def kuryer_page(request: web.Request):
     inject = ('<script src="https://telegram.org/js/telegram-web-app.js"></script>\n'
               '<script>window.KURYER_MODE=true;</script>\n</head>')
     html = html.replace("</head>", inject, 1)
+    import alphabet
+    html = html.replace("{{NEW_ALPHABET}}", "1" if alphabet.is_on() else "0")
     return web.Response(
         text=html, content_type="text/html",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},

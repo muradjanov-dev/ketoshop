@@ -153,6 +153,11 @@ async def main():
     tg_safety.install(bot)
     # A mood-lifting line under every admin notification — see admin_mood.py.
     bot.session.middleware(admin_mood.AdminCheerMiddleware(ADMIN_IDS))
+    # Yangi alifbo (Ö Ğ Ş Ç) for Latin-Uzbek readers — registered after the
+    # cheer line so it converts the final text; /alifbo flips it (alphabet.py).
+    import alphabet
+    await alphabet.load()
+    bot.session.middleware(alphabet.NewAlphabetMiddleware())
     storage = PostgresStorage()
     dp = Dispatcher(storage=storage)
     dp.update.outer_middleware(admin_mood.CurrentUserMiddleware())
@@ -237,6 +242,7 @@ async def main():
     # search and support-relay catch-alls below.
     dp.include_router(order_edit_router)
     dp.include_router(admin_mood.router)
+    dp.include_router(alphabet.router)
     # Meta lead inbox — admin-only /leads, /leads_test and the
     # "Bog'landim" callback. Registered high so its slash commands beat
     # any FSM state an admin happens to be stuck in, same reasoning as
