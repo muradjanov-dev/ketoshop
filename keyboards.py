@@ -467,10 +467,44 @@ def confirm_delete_keyboard(lang: str, product_id: int, page: int = 0) -> Inline
     ])
 
 
+def order_list_ret(status_filter: str, page: int) -> str:
+    """Return context for an order card opened from the admin order list.
+
+    Appended to every callback the card makes (seller_order, order_act,
+    oedit, msgclient, order_delete, oe:notify), so ⬅️, a status change, a
+    saved edit or a cancel all land back on that same filter+page instead of
+    the start of «Buyurtmalar» (owner request 2026-11-01)."""
+    return f":list:{status_filter}:{page}"
+
+
+def parse_order_ret(parts: list[str], at: int) -> str:
+    """The ":list:FILTER:PAGE" suffix found at parts[at:], or "" if absent."""
+    tail = parts[at:at + 3]
+    if len(tail) == 3 and tail[0] == "list" and tail[1] and tail[2].isdigit():
+        return order_list_ret(tail[1], int(tail[2]))
+    return ""
+
+
+def order_ret_back(ret: str) -> str:
+    """Where the card's ⬅️ goes: the admin list it came from, else the seller page."""
+    if ret:
+        _, _, status_filter, page = ret.split(":")
+        return f"admin:orders:{status_filter}:{page}"
+    return "seller:orders"
+
+
 def seller_order_keyboard(lang: str, order_id: int, status: str,
                            buyer_username: str | None = None,
-                           is_admin: bool = False) -> InlineKeyboardMarkup:
+                           is_admin: bool = False, ret: str = "",
+                           notify: bool = False) -> InlineKeyboardMarkup:
+    """Order card buttons. `ret` is the order_list_ret() suffix (or "");
+    `notify` adds the order editor's «📨 Mijozga xabar berish» on top, right
+    after a saved edit."""
     buttons = []
+    if notify:
+        buttons.append([
+            InlineKeyboardButton(text=get_text("oe_btn_notify", lang), callback_data=f"oe:notify:{order_id}{ret}"),
+        ])
     if buyer_username:
         buttons.append([
             InlineKeyboardButton(
@@ -480,38 +514,38 @@ def seller_order_keyboard(lang: str, order_id: int, status: str,
         ])
     if status == "pending":
         buttons.append([
-            InlineKeyboardButton(text=get_text("btn_accept_order", lang), callback_data=f"order_act:confirm:{order_id}"),
-            InlineKeyboardButton(text=get_text("btn_reject_order", lang), callback_data=f"order_act:cancel:{order_id}"),
+            InlineKeyboardButton(text=get_text("btn_accept_order", lang), callback_data=f"order_act:confirm:{order_id}{ret}"),
+            InlineKeyboardButton(text=get_text("btn_reject_order", lang), callback_data=f"order_act:cancel:{order_id}{ret}"),
         ])
     elif status in ("confirmed", "preparing", "ready"):
         # preparing/ready are set from the courier board; from the bot they all
         # take the same next step, so the card keeps its "Yo'lda" button.
         buttons.append([
-            InlineKeyboardButton(text=get_text("btn_mark_shipped", lang), callback_data=f"order_act:ship:{order_id}"),
+            InlineKeyboardButton(text=get_text("btn_mark_shipped", lang), callback_data=f"order_act:ship:{order_id}{ret}"),
         ])
     elif status == "shipped":
         buttons.append([
-            InlineKeyboardButton(text=get_text("btn_mark_delivered", lang), callback_data=f"order_act:delivered:{order_id}"),
+            InlineKeyboardButton(text=get_text("btn_mark_delivered", lang), callback_data=f"order_act:delivered:{order_id}{ret}"),
         ])
     # Send a message to the buyer *through the bot* (shows as coming from the
     # shop, unlike the @username deep-link above which opens a personal DM).
     buttons.append([
-        InlineKeyboardButton(text=get_text("btn_message_client", lang), callback_data=f"msgclient:{order_id}"),
+        InlineKeyboardButton(text=get_text("btn_message_client", lang), callback_data=f"msgclient:{order_id}{ret}"),
     ])
     # Admin-only line editor (handlers/order_edit.py) — until the box ships.
     if is_admin and status in ("pending", "confirmed", "preparing", "ready"):
         buttons.append([
-            InlineKeyboardButton(text=get_text("btn_edit_order", lang), callback_data=f"oedit:{order_id}"),
+            InlineKeyboardButton(text=get_text("btn_edit_order", lang), callback_data=f"oedit:{order_id}{ret}"),
         ])
     # Admin-only hard delete — for cleaning up orders created by mistake.
     # Regular sellers shouldn't see this; cancellation is the normal flow.
     if is_admin:
         buttons.append([
             InlineKeyboardButton(text=get_text("btn_delete_order", lang),
-                                  callback_data=f"order_delete:{order_id}"),
+                                  callback_data=f"order_delete:{order_id}{ret}"),
         ])
     buttons.append([
-        InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="seller:orders"),
+        InlineKeyboardButton(text=get_text("btn_back", lang), callback_data=order_ret_back(ret)),
     ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 

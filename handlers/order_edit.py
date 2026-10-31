@@ -12,6 +12,12 @@ Flow, from the admin's order card (✏️ Tarkibni o'zgartirish):
                  and spent Keto stay as charged), stale drafts are refused.
     oe:notify:{id}   optional: send the buyer the updated list.
 
+Navigation (owner, 2026-11-01: "bitta mahsulot qo'shgach bitta oldingi oynaga
+o'tsin"): one editor message at a time — prompts, search results and the old
+editor are deleted when it is redrawn (oe_msg_id / oe_junk) — and save/cancel
+go straight back to the order card, which keeps the return context (oe_ret)
+to the admin order list it was opened from.
+
 Aksiya bonus / gift lines are shown but never edited: their eligibility and
 expense booking are computed elsewhere (promotions.py, gift_campaign.py).
 Quantities are whole numbers, like the buyer's cart.
@@ -100,20 +106,47 @@ async def _render(target, state: FSMContext, *, edit: bool):
     ])
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
 
-    if edit and isinstance(target, CallbackQuery):
-        msg = target.message
-        # The card this was opened from is text, but never bare-edit a
-        # message that could be a photo (see the order cheque below cards).
-        if not msg.photo and not msg.document:
-            try:
-                await msg.edit_text(text, reply_markup=kb, parse_mode="HTML")
-                return
-            except Exception:
-                pass
-        await msg.answer(text, reply_markup=kb, parse_mode="HTML")
-    else:
-        msg = target.message if isinstance(target, CallbackQuery) else target
-        await msg.answer(text, reply_markup=kb, parse_mode="HTML")
+    msg = target.message if isinstance(target, CallbackQuery) else target
+    shown = None
+    # The card this was opened from is text, but never bare-edit a
+    # message that could be a photo (see the order cheque below cards).
+    if edit and isinstance(target, CallbackQuery) and not msg.photo and not msg.document:
+        try:
+            await msg.edit_text(text, reply_markup=kb, parse_mode="HTML")
+            shown = msg.message_id
+        except Exception:
+            pass
+    if shown is None:
+        shown = (await msg.answer(text, reply_markup=kb, parse_mode="HTML")).message_id
+    # One editor on screen: the previous one and any prompt / search result
+    # left from ➕ or a typed quantity go away.
+    await _delete(msg, {data.get("oe_msg_id"), *data.get("oe_junk", [])} - {shown, None})
+    await state.update_data(oe_msg_id=shown, oe_junk=[])
+
+
+async def _delete(msg, ids) -> None:
+    for mid in ids:
+        try:
+            await msg.bot.delete_message(msg.chat.id, mid)
+        except Exception:
+            pass
+
+
+async def _junk(state: FSMContext, sent: Message) -> None:
+    """A helper message (prompt, no-results, search results) — deleted on the next redraw."""
+    data = await state.get_data()
+    await state.update_data(oe_junk=data.get("oe_junk", []) + [sent.message_id])
+
+
+async def _back_to_card(callback: CallbackQuery, data: dict, *, notice: str = "",
+                        notify: bool = False) -> None:
+    """Close the editor and redraw the order card in its place — the window
+    the editor was opened from, with the same way back to the order list."""
+    from handlers.seller import render_order_card
+    msg = callback.message
+    await _delete(msg, {data.get("oe_msg_id"), *data.get("oe_junk", [])} - {msg.message_id, None})
+    await render_order_card(callback, data["oe_order_id"], data.get("oe_ret", ""),
+                            notice=notice, notify=notify)
 
 
 async def _draft_or_alert(callback: CallbackQuery, state: FSMContext) -> dict | None:
@@ -133,7 +166,9 @@ async def open_editor(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("❌", show_alert=True)
         return
-    order_id = int(callback.data.split(":")[1])
+    from keyboards import parse_order_ret
+    parts = callback.data.split(":")
+    order_id = int(parts[1])
     lang = await database.get_user_language(callback.from_user.id)
     order = await database.get_order(order_id)
     if not order:
@@ -155,7 +190,11 @@ async def open_editor(callback: CallbackQuery, state: FSMContext):
     await state.update_data(
         lang=lang, oe_order_id=order_id, oe_orig=items,
         oe_items=[dict(it) for it in items], oe_old_total=float(order["total"] or 0),
+        oe_ret=parse_order_ret(parts, 2),
     )
+    # The card turns into the editor; its pin/cheque come back with the card.
+    from handlers.seller import drop_card_extras
+    await drop_card_extras(callback.message)
     await _render(callback, state, edit=True)
     await callback.answer()
 
@@ -200,8 +239,8 @@ async def ask_qty(callback: CallbackQuery, state: FSMContext):
         return
     await state.set_state(OrderEditStates.waiting_qty)
     await state.update_data(oe_qty_idx=idx)
-    await callback.message.answer(
-        get_text("oe_ask_qty", data["lang"], name=html.escape(draft[idx].get("name") or "?")))
+    await _junk(state, await callback.message.answer(
+        get_text("oe_ask_qty", data["lang"], name=html.escape(draft[idx].get("name") or "?"))))
     await callback.answer()
 
 
@@ -215,7 +254,7 @@ async def got_qty(message: Message, state: FSMContext):
         await _render(message, state, edit=False)
         return
     if not raw.isdigit():
-        await message.answer(get_text("oe_bad_qty", lang))
+        await _junk(state, await message.answer(get_text("oe_bad_qty", lang)))
         return
     qty = int(raw)
     draft = data["oe_items"]
@@ -223,7 +262,7 @@ async def got_qty(message: Message, state: FSMContext):
     if 0 <= idx < len(draft):
         if qty == 0:
             if sum(1 for it in draft if not _is_fixed(it)) <= 1:
-                await message.answer(get_text("oe_last_line", lang))
+                await _junk(state, await message.answer(get_text("oe_last_line", lang)))
                 return
             draft.pop(idx)
         else:
@@ -239,7 +278,7 @@ async def ask_search(callback: CallbackQuery, state: FSMContext):
     if data is None:
         return
     await state.set_state(OrderEditStates.waiting_search)
-    await callback.message.answer(get_text("oe_ask_search", data["lang"]))
+    await _junk(state, await callback.message.answer(get_text("oe_ask_search", data["lang"])))
     await callback.answer()
 
 
@@ -255,13 +294,15 @@ async def got_search(message: Message, state: FSMContext):
     found = [p for p in await database.admin_search_products(raw, limit=30)
              if p.get("is_active") == 1 and float(p.get("price") or 0) > 0][:10]
     if not found:
-        await message.answer(get_text("oe_no_results", lang))
+        await _junk(state, await message.answer(get_text("oe_no_results", lang)))
         return
     rows = [[InlineKeyboardButton(
         text=f"{p['name'][:30]} — {_money(float(p['price']))} ({_qty(p.get('quantity'))})",
         callback_data=f"oe:pick:{p['id']}",
     )] for p in found]
-    await message.answer(get_text("oe_pick", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    # Picking turns this list into the editor (pick_product → _render).
+    await _junk(state, await message.answer(
+        get_text("oe_pick", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)))
 
 
 @router.callback_query(F.data.regexp(r"^oe:pick:\d+$"))
@@ -306,14 +347,15 @@ async def cancel_edit(callback: CallbackQuery, state: FSMContext):
     order_id = data.get("oe_order_id")
     lang = data.get("lang") or await database.get_user_language(callback.from_user.id)
     await state.clear()
-    kb = None
     if order_id:
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
-            text=get_text("oe_btn_back_order", lang), callback_data=f"seller_order:{order_id}")]])
+        # Straight back to the order card the editor was opened from.
+        await _back_to_card(callback, data)
+        await callback.answer(get_text("oe_no_changes", lang))
+        return
     try:
-        await callback.message.edit_text(get_text("oe_no_changes", lang), reply_markup=kb)
+        await callback.message.edit_text(get_text("oe_no_changes", lang))
     except Exception:
-        await callback.message.answer(get_text("oe_no_changes", lang), reply_markup=kb)
+        await callback.message.answer(get_text("oe_no_changes", lang))
     await callback.answer()
 
 
@@ -362,14 +404,9 @@ async def save_edit(callback: CallbackQuery, state: FSMContext, bot: Bot):
     text = get_text("oe_saved", lang, order_id=order_id,
                     old_total=_money(result["old_total"]),
                     new_total=_money(result["new_total"]), paid_note=paid_note)
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=get_text("oe_btn_notify", lang), callback_data=f"oe:notify:{order_id}")],
-        [InlineKeyboardButton(text=get_text("oe_btn_back_order", lang), callback_data=f"seller_order:{order_id}")],
-    ])
-    try:
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-    except Exception:
-        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    # Back to the (updated) order card, the result on top and «📨 Mijozga
+    # xabar berish» as its first button — no extra "saved" screen to leave.
+    await _back_to_card(callback, data, notice=text, notify=True)
     await callback.answer()
 
 
@@ -378,7 +415,10 @@ async def notify_buyer(callback: CallbackQuery, bot: Bot):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("❌", show_alert=True)
         return
-    order_id = int(callback.data.split(":")[2])
+    from keyboards import parse_order_ret, seller_order_keyboard
+    parts = callback.data.split(":")
+    order_id = int(parts[2])
+    ret = parse_order_ret(parts, 3)
     lang = await database.get_user_language(callback.from_user.id)
     order = await database.get_order(order_id)
     if not order:
@@ -398,10 +438,10 @@ async def notify_buyer(callback: CallbackQuery, bot: Bot):
     try:
         await bot.send_message(order["user_id"], text, parse_mode="HTML")
         await callback.answer(get_text("oe_notified", lang), show_alert=True)
+        # The card stays; only its «📨» button goes (sent once is enough).
         try:
-            await callback.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text=get_text("oe_btn_back_order", lang),
-                                     callback_data=f"seller_order:{order_id}")]]))
+            await callback.message.edit_reply_markup(reply_markup=seller_order_keyboard(
+                lang, order_id, order["status"], is_admin=True, ret=ret))
         except Exception:
             pass
     except Exception as exc:
