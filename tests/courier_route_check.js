@@ -26,12 +26,12 @@ function fn(name) {
 const src = [
   line('const KB_COORD_PREFIX_RE='),
   line('const KB_ROUTE_KEY='),
-  line('const KB_ROUTE_SKIP_METHODS='),
+  'const KB_DELIVERY={bts:"📦 BTS"};',
   line('const KB_POS_TTL='),
   line('let KB_MY_POS='),
   'let KB_BOARD=null, KB_MAP=null, KB_ROUTE_LINE=null, KB_ME_MARKER=null, KB_ROUTE_NUM=new Map(), KB_ROUTE_OPEN=true;',
   ...['kbNavUrl', 'kbNavAttr', 'kbMyPos', 'kbWidgetUrl', 'kbRouteLegs', 'kbMapWhere', 'kbMapPin',
-      'kbRouteLoad', 'kbRouteSave', 'kbRouteCandidates', 'kbDist', 'kbRouteStops', 'kbRouteMove',
+      'kbRouteLoad', 'kbRouteSave', 'kbRouteCandidates', 'kbRouteReady', 'kbDist', 'kbRouteStops', 'kbRouteMove',
       'kbRouteSkip', 'kbRouteRender'].map(fn),
   'this.api={kbNavUrl,kbWidgetUrl,kbRouteStops,kbRouteMove,kbRouteSkip,kbRouteRender,kbRouteLoad,' +
   'setBoard:b=>{KB_BOARD=b;},num:()=>[...KB_ROUTE_NUM.entries()],' +
@@ -73,7 +73,7 @@ const others = [
   card(4, 'ready', 41.32, 69.22, { delivery_method: 'pickup' }),
   card(5, 'ready', null, null, { address: 'Chilonzor 5' }),
   card(6, 'confirmed', 41.33, 69.23),
-  card(7, 'ready', 41.34, 69.24, { delivery_method: 'yandex_taxi' }),
+  card(7, 'ready', 40.33, 67.97, { delivery_method: 'bts' }),   // regional parcel — still a stop
   card(8, 'preparing', 41.34, 69.25),
 ];
 api.setBoard(board([A, B, C, ...others]));
@@ -106,6 +106,12 @@ api.setBoard(board(many));
 api.kbRouteRender();
 out.legs = (box.innerHTML.match(/🧭 \d+–\d+/g) || []);
 out.legLinks = (box.innerHTML.match(/rtext=~[^"&]*/g) || []).map(s => s.split('~').length - 1);
+
+// ready orders exist but none to drive to → the panel says why, never vanishes
+api.setBoard(board([others[0], others[1]]));
+api.kbRouteRender();
+out.noStopHidden = box.hidden;
+out.noStopHtml = box.innerHTML;
 
 api.setBoard(board([]));
 api.kbRouteRender();
