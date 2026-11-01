@@ -603,6 +603,35 @@
 .kb-pop .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .kb-pop .acts a,.kb-pop .acts button{font:700 12px system-ui,sans-serif;border-radius:8px;padding:5px 9px;
         border:1px solid #D9D1BF;background:#F6F2E8;color:#1F1B14;text-decoration:none;cursor:pointer}
+/* stop number on a map pin that is part of the route */
+.kb-pin .n{display:inline-grid;place-items:center;min-width:17px;height:17px;margin-right:5px;border-radius:50%;
+           background:#fff;color:#1F1B14;font-size:11px;font-weight:900}
+/* route panel: Yandex button + the courier's own stop order */
+.kb-route{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:10px 12px;margin:0 0 10px}
+.kb-route[hidden]{display:none}
+.kb-route .hd{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.kb-route .hd .ttl{font-size:14px;font-weight:800;color:var(--ink);margin-right:auto}
+.kb-route .hd .btn{text-decoration:none}
+.kb-route .hd button.lnk{border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);border-radius:9px;
+                         font-size:12.5px;font-weight:700;padding:6px 10px;cursor:pointer}
+.kb-route ol{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
+.kb-route li{display:flex;align-items:center;gap:9px;padding:7px 8px;border:1px solid var(--line);border-radius:11px;
+             background:var(--surface-2)}
+.kb-route li .n{flex:0 0 26px;height:26px;border-radius:50%;display:grid;place-items:center;
+                background:var(--accent);color:#fff;font-weight:900;font-size:13px}
+.kb-route li .t{flex:1 1 auto;min-width:0;font-size:13px;color:var(--ink);line-height:1.3}
+.kb-route li .t small{display:block;color:var(--ink-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kb-route li .b{display:flex;gap:4px;flex:0 0 auto}
+.kb-route li .b a,.kb-route li .b button{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;
+        border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:14px;text-decoration:none;cursor:pointer}
+.kb-route li .b button:disabled{opacity:.35;cursor:default}
+.kb-route .skipped{margin-top:9px;font-size:12.5px;color:var(--ink-3);line-height:1.8}
+.kb-route .skipped button{border:1px dashed var(--line);background:none;color:var(--ink-2);border-radius:8px;
+                          font-size:12px;font-weight:700;padding:2px 8px;margin:0 2px;cursor:pointer}
+.kb-route .hint{margin-top:8px;font-size:11.5px;color:var(--ink-3);line-height:1.5}
+/* the whole mini map in the order panel is one tap into Yandex navigation */
+.kb-map .tap{position:absolute;inset:0;z-index:1}
+.kb-map .full{z-index:2}
 .kb-nav{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 10px}
 .kb-nav::-webkit-scrollbar{display:none}
 .kb-nav[hidden]{display:none}
@@ -1036,6 +1065,8 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
          bitta kartada lokatsiyalari ko'rinib tursin faollari"). -->
     <div class="kb-mapview" id="kbMapView" hidden>
       <div class="kb-map-legend" id="kbMapLegend"></div>
+      <!-- Route through every ready order, opened in Yandex (owner, 2026-11-01). -->
+      <div class="kb-route" id="kbRoute" hidden></div>
       <div class="kb-map-canvas" id="kbMapCanvas"></div>
       <div class="kb-map-note" id="kbMapNote"></div>
     </div>
@@ -3911,8 +3942,16 @@ function kbPin(c){
   const m=KB_COORD_RE.exec(kbAddr(c))||/^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*[—–‒-]/.exec(kbAddr(c));
   return m?[parseFloat(m[1]),parseFloat(m[2])]:null;
 }
+/* Yandex Maps' route screen from the courier's own position (the empty start
+   of rtext is "my location") through `pins` in order; on a phone it opens the
+   Yandex app ready to drive (owner, 2026-11-01: "haritaga bosganda yandex
+   dasturini navigatsiya bo'limiga redirect qilsin"). */
+function kbNavUrl(pins){
+  return 'https://yandex.uz/maps/?rtext=~'
+    +pins.map(p=>`${(+p[0]).toFixed(6)},${(+p[1]).toFixed(6)}`).join('~')+'&rtt=auto';
+}
 function kbYandex(c,pin){
-  return pin?`https://yandex.uz/maps/?pt=${pin[1]},${pin[0]}&z=17&l=map`
+  return pin?kbNavUrl([pin])
             :`https://yandex.uz/maps/?text=${encodeURIComponent(kbAddr(c))}`;
 }
 /* "🔁 2-buyurtmasi (oldingi 1 tasi yetkazilgan)" — the bot's order card line. */
@@ -4166,7 +4205,7 @@ function kbCardHtml(c,col,i){
   const tel=(c.phone||'').replace(/[^\d+]/g,'');
   const links=[tel?`<a href="tel:${esc(tel)}">📞 ${esc(c.phone)}</a>`:'',
                c.delivery_method!=='pickup'&&(pin||kbAddr(c))
-                 ?`<a href="${kbYandex(c,pin)}" target="_blank" rel="noopener">🗺 Xarita</a>`:'']
+                 ?`<a href="${kbYandex(c,pin)}" target="_blank" rel="noopener">${pin?'🧭 Yo’l':'🗺 Xarita'}</a>`:'']
     .filter(Boolean).join('');
 
   const nx=kbNext(c.status), pv=kbPrev(c.status);
@@ -4460,11 +4499,12 @@ function kbRenderDetail(id,opts){
       <div class="kb-map">
         <iframe src="${kbMapEmbed(pin)}" loading="lazy" referrerpolicy="no-referrer"
                 title="Buyurtma #${c.id} lokatsiyasi"></iframe>
-        <a class="full" href="${mapHref}" target="_blank" rel="noopener">⤢ Kattaroq</a>
+        <a class="tap" href="${mapHref}" target="_blank" rel="noopener" aria-label="Yandex navigatsiyada ochish"></a>
+        <a class="full" href="${mapHref}" target="_blank" rel="noopener">🧭 Yo’l ko’rsatish</a>
       </div>
       <div class="kb-coord">📍 ${pin[0].toFixed(6)}, ${pin[1].toFixed(6)}</div>
       <div class="kb-move">
-        <a class="btn btn-o btn-sm" href="${mapHref}" target="_blank" rel="noopener">🗺 Yandex xarita</a>
+        <a class="btn btn-o btn-sm" href="${mapHref}" target="_blank" rel="noopener">🧭 Yandex navigatsiya</a>
         <button type="button" class="btn btn-o btn-sm" id="kbPinBtn">📲 Telegramga yuborish</button>
       </div>
       <div class="hint" style="margin-top:6px">Telegramga yuborilganda pin navigatorda ochiladi — barcha adminlarga boradi.</div>
@@ -4563,6 +4603,134 @@ const KB_MAP_COLS=['new','accepted','delivery'];
 let KB_VIEW='board', KB_MAP=null, KB_MAP_LAYER=null, KB_MAP_FITTED=false, KB_MAP_BOUNDS=[];
 const KB_MARKERS=new Map();
 
+/* ===== Marshrut (owner, 2026-11-01: "hamma buyurtmalar (tayyor bo'lganlar)
+   navigatsiyasini chizib bersin, ... birinchi qayerga borishni almashtira
+   olishi kerak") =====
+   Every ready / on-the-road order with a pin that our own courier carries
+   (not pickup, taxi, post, BTS/EMU) is a stop. The order is the courier's:
+   ▲▼ move a stop, ✕ leaves it out, ↺ goes back to the automatic order — the
+   longest-waiting first, then always the nearest next. It is kept in this
+   phone's localStorage, so the 12-second refresh never reshuffles it: new
+   orders join after the last stop, delivered ones drop off. The map draws
+   the line with numbered pins; «Yandex'da yo'lga chiqish» opens Yandex's
+   route from the courier's position through the stops in this order, split
+   into legs past KB_ROUTE_CHUNK stops. */
+const KB_ROUTE_KEY='ketoshop_kb_route', KB_ROUTE_CHUNK=10;
+const KB_ROUTE_SKIP_METHODS=['pickup','yandex_taxi','yandex_market','bts','emu','uzpost'];
+let KB_ROUTE_LINE=null, KB_ROUTE_NUM=new Map(), KB_ROUTE_OPEN=true;
+try{KB_ROUTE_OPEN=localStorage.getItem('ketoshop_kb_route_open')!=='0';}catch(e){}
+
+function kbRouteLoad(){
+  try{
+    const s=JSON.parse(localStorage.getItem(KB_ROUTE_KEY)||'{}');
+    return {order:Array.isArray(s.order)?s.order:[], skip:Array.isArray(s.skip)?s.skip:[]};
+  }catch(e){return {order:[],skip:[]};}
+}
+function kbRouteSave(st){try{localStorage.setItem(KB_ROUTE_KEY,JSON.stringify(st));}catch(e){}}
+function kbRouteCandidates(){
+  const out=[];
+  for(const col of (KB_BOARD&&KB_BOARD.columns)||[]){
+    for(const c of col.cards){
+      if(c.status!=='ready'&&c.status!=='shipped')continue;
+      if(KB_ROUTE_SKIP_METHODS.includes(c.delivery_method))continue;
+      const pin=kbMapPin(c);
+      if(pin)out.push({c,pin});
+    }
+  }
+  return out;
+}
+/* Flat-earth distance — plenty for ordering stops inside one city. */
+function kbDist(a,b){
+  const k=Math.cos((a[0]+b[0])/2*Math.PI/180);
+  return Math.hypot(a[0]-b[0],(a[1]-b[1])*k);
+}
+/* The stops in the courier's order: the saved order first, then any new
+   stop by nearest-next from the last one (from the longest-waiting if the
+   route is empty). Left-out stops come back as `skipped`. */
+function kbRouteStops(){
+  const cands=kbRouteCandidates(), st=kbRouteLoad();
+  const byId=new Map(cands.map(x=>[x.c.id,x]));
+  const skip=st.skip.filter(id=>byId.has(id));
+  const stops=st.order.filter(id=>byId.has(id)&&!skip.includes(id)).map(id=>byId.get(id));
+  const rest=cands.filter(x=>!stops.includes(x)&&!skip.includes(x.c.id));
+  if(!stops.length&&rest.length){
+    rest.sort((a,b)=>(b.c.stage_minutes||0)-(a.c.stage_minutes||0));
+    stops.push(rest.shift());
+  }
+  while(rest.length){
+    const last=stops[stops.length-1].pin;
+    let bi=0;
+    for(let i=1;i<rest.length;i++)if(kbDist(last,rest[i].pin)<kbDist(last,rest[bi].pin))bi=i;
+    stops.push(rest.splice(bi,1)[0]);
+  }
+  const next={order:stops.map(x=>x.c.id),skip};
+  if(JSON.stringify(next)!==JSON.stringify(st))kbRouteSave(next);
+  return {stops,skipped:skip.map(id=>byId.get(id))};
+}
+function kbRouteMove(id,delta){
+  const ids=kbRouteStops().stops.map(x=>x.c.id);
+  const i=ids.indexOf(id), j=i+delta;
+  if(i<0||j<0||j>=ids.length)return;
+  [ids[i],ids[j]]=[ids[j],ids[i]];
+  kbRouteSave({order:ids,skip:kbRouteLoad().skip});
+  kbMapRender();
+}
+function kbRouteSkip(id,leaveOut){
+  const st=kbRouteLoad();
+  st.skip=st.skip.filter(x=>x!==id);
+  if(leaveOut)st.skip.push(id);
+  else st.order=st.order.filter(x=>x!==id);   // back in → joins after the last stop
+  kbRouteSave(st);
+  kbMapRender();
+}
+/* Draws the route line and the panel; fills KB_ROUTE_NUM for the pins. */
+function kbRouteRender(){
+  const box=$('#kbRoute');
+  const {stops,skipped}=kbRouteStops();
+  KB_ROUTE_NUM=new Map(stops.map((x,i)=>[x.c.id,i+1]));
+  if(KB_MAP){
+    const pts=stops.map(x=>x.pin);
+    if(pts.length>1){
+      if(KB_ROUTE_LINE)KB_ROUTE_LINE.setLatLngs(pts);
+      else{
+        const color=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#E48A3D';
+        KB_ROUTE_LINE=window.L.polyline(pts,{color,weight:4,opacity:.85,dashArray:'9 7'}).addTo(KB_MAP);
+      }
+    }else if(KB_ROUTE_LINE){KB_MAP.removeLayer(KB_ROUTE_LINE);KB_ROUTE_LINE=null;}
+  }
+  if(!box)return;
+  if(!stops.length&&!skipped.length){box.hidden=true;box.innerHTML='';return;}
+  box.hidden=false;
+  const legs=[];
+  for(let i=0;i<stops.length;i+=KB_ROUTE_CHUNK){
+    const part=stops.slice(i,i+KB_ROUTE_CHUNK);
+    const label=stops.length>KB_ROUTE_CHUNK?`🧭 ${i+1}–${i+part.length}`:'🧭 Yandex’da yo’lga chiqish';
+    legs.push(`<a class="btn btn-p btn-sm" href="${kbNavUrl(part.map(x=>x.pin))}" target="_blank" rel="noopener">${label}</a>`);
+  }
+  const rows=stops.map((x,i)=>{
+    const c=x.c, where=kbMapWhere(c)||(c.address_note||'').trim()||'Xaritadagi nuqta';
+    return `<li><span class="n">${i+1}</span>
+      <span class="t"><b>#${c.id}</b> ${esc(c.customer_name||'—')}${c.status==='shipped'?' · 🚚':''}${c.courier_name?' · 🧍 '+esc(c.courier_name):''}
+        <small>${esc(where)}</small></span>
+      <span class="b">
+        <a href="${kbNavUrl([x.pin])}" target="_blank" rel="noopener" title="Faqat shu manzilga yo’l" aria-label="Faqat shu manzilga yo’l">🧭</a>
+        <button type="button" data-route-move="${c.id}:-1" aria-label="Oldinroqqa"${i?'':' disabled'}>▲</button>
+        <button type="button" data-route-move="${c.id}:1" aria-label="Keyinroqqa"${i<stops.length-1?'':' disabled'}>▼</button>
+        <button type="button" data-route-skip="${c.id}" aria-label="Marshrutdan olib tashlash">✕</button>
+      </span></li>`;
+  }).join('');
+  box.innerHTML=`<div class="hd">
+      <span class="ttl">🧭 Marshrut · ${stops.length} ta manzil</span>
+      ${legs.join('')}
+      ${stops.length?`<button type="button" class="lnk" data-route-toggle>${KB_ROUTE_OPEN?'Tartib ▴':'Tartib ▾'}</button>`:''}
+      <button type="button" class="lnk" data-route-reset title="Avtomatik tartib">↺</button>
+    </div>
+    ${KB_ROUTE_OPEN&&stops.length?`<ol>${rows}</ol>
+    <div class="hint">Yandex sizning joyingizdan boshlab shu tartibda yo’l chizadi. Birinchi qayerga borishni ▲ ▼ bilan o’zgartiring, ✕ — bu safar bormaysiz.</div>`:''}
+    ${skipped.length?`<div class="skipped">Marshrutda emas: ${skipped.map(x=>
+      `<button type="button" data-route-add="${x.c.id}">＋ #${x.c.id} ${esc(x.c.customer_name||'')}</button>`).join('')}</div>`:''}`;
+}
+
 function kbLoadLeaflet(){
   if(window.L&&typeof window.L.map==='function')return Promise.resolve();
   return new Promise((resolve,reject)=>{
@@ -4583,7 +4751,8 @@ function kbMapPin(c){
 }
 function kbMapPinHtml(c,col){
   const shipped=c.status==='shipped'?'🚚 ':'';
-  return `<div class="kb-pin" style="--c:var(--kb-${col.tone})">${shipped}#${c.id}</div>`;
+  const n=KB_ROUTE_NUM.get(c.id);
+  return `<div class="kb-pin" style="--c:var(--kb-${col.tone})">${n?`<span class="n">${n}</span>`:''}${shipped}#${c.id}</div>`;
 }
 function kbMapPopupHtml(c,col,pin){
   const cash=!c.payment_method||c.payment_method==='cash';
@@ -4599,7 +4768,7 @@ function kbMapPopupHtml(c,col,pin){
     <div class="r">${cash?'💵 Naqd: ':'✅ To’langan: '}<b>${kbSom(c.total)} so'm</b>${c.mystery_gift?' · 🎁':''}</div>
     <div class="acts">
       <button type="button" data-kbmap-open="${c.id}">⋯ Batafsil</button>
-      <a href="https://yandex.uz/maps/?pt=${pin[1]},${pin[0]}&z=17&l=map" target="_blank" rel="noopener">🗺 Yandex</a>
+      <a href="${kbNavUrl([pin])}" target="_blank" rel="noopener">🧭 Yo’l ko’rsatish</a>
     </div>
   </div>`;
 }
@@ -4632,6 +4801,7 @@ function kbMapRender(){
   // Cheap when nothing changed; needed when the Kuryer tab was hidden while
   // the map was set up (a 0×0 canvas draws grey).
   KB_MAP.invalidateSize();
+  kbRouteRender();   // first: the pins below carry its stop numbers
   const visible=$('#kbMapCanvas').offsetWidth>0;
   const match=kbMatcher(), seen=new Set(), missing=[], legend=[];
   KB_MAP_BOUNDS=[];
@@ -4674,6 +4844,21 @@ $('#kbView').addEventListener('click',e=>{
 });
 $('#kbMapView').addEventListener('click',e=>{
   if(e.target.closest('#kbMapFitBtn')){kbMapFit();return;}
+  const mv=e.target.closest('[data-route-move]');
+  if(mv){const [id,d]=mv.dataset.routeMove.split(':');kbRouteMove(+id,+d);return;}
+  const sk=e.target.closest('[data-route-skip]');
+  if(sk){kbRouteSkip(+sk.dataset.routeSkip,true);return;}
+  const ad=e.target.closest('[data-route-add]');
+  if(ad){kbRouteSkip(+ad.dataset.routeAdd,false);return;}
+  if(e.target.closest('[data-route-toggle]')){
+    KB_ROUTE_OPEN=!KB_ROUTE_OPEN;
+    try{localStorage.setItem('ketoshop_kb_route_open',KB_ROUTE_OPEN?'1':'0');}catch(err){}
+    kbRouteRender();return;
+  }
+  if(e.target.closest('[data-route-reset]')){
+    try{localStorage.removeItem(KB_ROUTE_KEY);}catch(err){}
+    kbMapRender();return;
+  }
   const b=e.target.closest('[data-kbmap-open]');
   if(b)kbOpenDetail(+b.dataset.kbmapOpen);
 });
