@@ -41,6 +41,7 @@ from keyboards import (
     admin_panel_keyboard, admin_stats_menu_keyboard, admin_products_menu_keyboard,
     admin_users_menu_keyboard, admin_marketing_menu_keyboard,
     admin_cancel_keyboard, admin_order_filter_keyboard, admin_stats_keyboard,
+    order_list_ret, parse_order_ret,
     stats_keyboard, admin_delivery_zone_keyboard, admin_user_action_keyboard,
     back_to_menu_keyboard, category_select_keyboard,
 )
@@ -960,6 +961,9 @@ async def show_filtered_orders(callback: CallbackQuery):
         page = 0
     page = max(0, page)
     lang = await get_user_language(callback.from_user.id)
+    # Coming back from an order card (its ⬅️) — the pin/cheque under it go too.
+    from handlers.seller import drop_card_extras
+    await drop_card_extras(callback.message)
     await render_orders_list(callback, status_filter, page, lang)
     await callback.answer()
 
@@ -1014,16 +1018,17 @@ async def render_orders_list(callback: CallbackQuery, status_filter: str, page: 
     # pending → confirmed → (preparing → ready) → shipped → delivered; the
     # middle two are set from the courier board and share the "Yo'lda" action.
     buttons = []
+    # Return context appended so order_act refreshes this same list view
+    # (filter+page) in place instead of switching to a panel — and the card
+    # opened from here carries it on, so its ⬅️ and buttons come back here too.
+    ret = order_list_ret(status_filter, page)
     for o in orders:
         status_text = get_order_status(o["status"], lang)
         total_str = f"{int(o['total']):,}".replace(",", " ")
         title_btn = InlineKeyboardButton(
             text=f"#{o['id']} — {status_text} — {total_str} so'm",
-            callback_data=f"seller_order:{o['id']}",
+            callback_data=f"seller_order:{o['id']}{ret}",
         )
-        # Return context appended so order_act refreshes this same list view
-        # (filter+page) in place instead of switching to a panel.
-        ret = f":list:{status_filter}:{page}"
         action_btn = None
         if o["status"] == "pending":
             action_btn = InlineKeyboardButton(
@@ -1092,17 +1097,21 @@ async def admin_delete_order_prompt(callback: CallbackQuery):
         await callback.answer("❌", show_alert=True)
         return
 
-    order_id = int(callback.data.split(":")[1])
+    parts = callback.data.split(":")
+    order_id = int(parts[1])
+    ret = parse_order_ret(parts, 2)
     lang = await get_user_language(callback.from_user.id)
 
+    from handlers.seller import drop_card_extras
+    await drop_card_extras(callback.message)
     await callback.message.edit_text(
         get_text("confirm_delete_order", lang, order_id=order_id),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text=get_text("btn_yes", lang),
-                                      callback_data=f"order_delete_do:{order_id}"),
+                                      callback_data=f"order_delete_do:{order_id}{ret}"),
                 InlineKeyboardButton(text=get_text("btn_no", lang),
-                                      callback_data=f"seller_order:{order_id}"),
+                                      callback_data=f"seller_order:{order_id}{ret}"),
             ],
         ]),
         parse_mode="HTML",
@@ -1118,10 +1127,18 @@ async def admin_delete_order_do(callback: CallbackQuery):
         return
 
     from database import delete_order_permanently  # local import — avoids touching the big top-level group
-    order_id = int(callback.data.split(":")[1])
+    parts = callback.data.split(":")
+    order_id = int(parts[1])
+    ret = parse_order_ret(parts, 2)
     lang = await get_user_language(callback.from_user.id)
 
     deleted = await delete_order_permanently(order_id)
+    if deleted is not None and ret:
+        # Opened from the order list → back to that same list, result as a toast.
+        _, _, status_filter, page = ret.split(":")
+        await render_orders_list(callback, status_filter, int(page), lang)
+        await callback.answer(get_text("order_deleted", lang, order_id=order_id))
+        return
     back_kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=get_text("btn_back", lang),
                                callback_data="admin:orders")],

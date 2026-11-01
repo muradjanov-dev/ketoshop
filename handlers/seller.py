@@ -1356,10 +1356,41 @@ async def do_delete_product(callback: CallbackQuery):
 
 # ===== SELLER ORDERS =====
 
+# The delivery pin and payment cheque sent under an order card, keyed by the
+# card's (chat_id, message_id). Leaving the card — ⬅️, a status button, the
+# editor, delete — removes them with it, so the chat shows the screen the
+# admin went back to, not a stale pin below it. Memory only: after a restart
+# old ones just stay in the chat.
+_CARD_EXTRAS: dict[tuple[int, int], list[int]] = {}
+_CARD_EXTRAS_MAX = 500
+
+
+async def drop_card_extras(message) -> None:
+    """Delete the pin/cheque sent under the order card `message` (if any)."""
+    if message is None or getattr(message, "chat", None) is None:
+        return
+    ids = _CARD_EXTRAS.pop((message.chat.id, message.message_id), None)
+    for mid in ids or ():
+        try:
+            await message.bot.delete_message(message.chat.id, mid)
+        except Exception:
+            pass
+
+
+def _remember_card_extras(card, sent: list) -> None:
+    ids = [m.message_id for m in sent if m is not None]
+    if not ids or getattr(card, "chat", None) is None:
+        return
+    while len(_CARD_EXTRAS) >= _CARD_EXTRAS_MAX:
+        _CARD_EXTRAS.pop(next(iter(_CARD_EXTRAS)))
+    _CARD_EXTRAS[(card.chat.id, card.message_id)] = ids
+
+
 @router.callback_query(F.data == "seller:orders")
 async def show_seller_orders(callback: CallbackQuery):
     """Show orders for this seller"""
     lang = await get_user_language(callback.from_user.id)
+    await drop_card_extras(callback.message)
     await render_seller_orders(callback, lang)
     await callback.answer()
 
@@ -1423,15 +1454,32 @@ async def render_seller_orders(callback: CallbackQuery, lang: str):
 
 @router.callback_query(F.data.startswith("seller_order:"))
 async def view_seller_order(callback: CallbackQuery):
-    """View order details for seller"""
+    """View order details for seller.
+
+    seller_order:ID, or seller_order:ID:list:FILTER:PAGE when opened from the
+    admin order list (keyboards.order_list_ret) — the card then leads back there."""
+    from keyboards import parse_order_ret
+    parts = callback.data.split(":")
+    if not await render_order_card(callback, int(parts[1]), parse_order_ret(parts, 2)):
+        await callback.answer("❌")
+        return
+    await callback.answer()
+
+
+async def render_order_card(callback: CallbackQuery, order_id: int, ret: str = "", *,
+                            notice: str = "", notify: bool = False) -> bool:
+    """Draw the order card in place of callback.message (False if no order).
+
+    `ret` — return context (keyboards.order_list_ret) for the card's buttons;
+    `notice` — a line put above the card (the order editor's «saved» result);
+    `notify` — show the editor's «📨 Mijozga xabar berish» button.
+    Caller answers the callback."""
     import json
-    order_id = int(callback.data.split(":")[1])
     lang = await get_user_language(callback.from_user.id)
     order = await get_order(order_id)
 
     if not order:
-        await callback.answer("❌")
-        return
+        return False
 
     items = json.loads(order["items"]) if isinstance(order["items"], str) else order["items"]
     items_text = ""
@@ -1523,21 +1571,35 @@ async def view_seller_order(callback: CallbackQuery):
     if order.get("delivered_at"):
         lifecycle_lines.append(f"{delivered_label} {format_local_dt(order['delivered_at'])}")
     text += "\n\n" + "\n".join(lifecycle_lines)
+    if notice:
+        text = notice + "\n\n" + text
 
     is_admin = callback.from_user.id in ADMIN_IDS
-    await callback.message.edit_text(
-        text,
-        reply_markup=seller_order_keyboard(lang, order_id, order["status"], is_admin=is_admin),
-        parse_mode="HTML",
-        disable_web_page_preview=True,
-    )
+    kb = seller_order_keyboard(lang, order_id, order["status"], is_admin=is_admin,
+                               ret=ret, notify=notify)
+    # Pin/cheque from an earlier draw of this same card go; fresh ones follow.
+    await drop_card_extras(callback.message)
+    # Never bare-edit a photo/cheque message into text — send the card instead.
+    card = callback.message
+    edited = False
+    if not (getattr(card, "photo", None) or getattr(card, "document", None)):
+        try:
+            await card.edit_text(text, reply_markup=kb, parse_mode="HTML",
+                                 disable_web_page_preview=True)
+            edited = True
+        except TelegramBadRequest as e:
+            edited = "not modified" in str(e)
+    if not edited:
+        card = await callback.message.answer(text, reply_markup=kb, parse_mode="HTML",
+                                             disable_web_page_preview=True)
 
     # Drop the delivery pin and, for online orders, the payment cheque right
     # below the card so the admin can act on them without digging.
+    sent = []
     if order.get("latitude") and order.get("longitude"):
         try:
-            await callback.message.answer_location(
-                latitude=order["latitude"], longitude=order["longitude"])
+            sent.append(await callback.message.answer_location(
+                latitude=order["latitude"], longitude=order["longitude"]))
         except Exception:
             pass
     cheque_id = order.get("cheque_file_id")
@@ -1545,13 +1607,13 @@ async def view_seller_order(callback: CallbackQuery):
         cap = get_text("order_cheque_caption", lang, order_id=order_id)
         try:
             if order.get("cheque_type") == "document":
-                await callback.message.answer_document(cheque_id, caption=cap, parse_mode="HTML")
+                sent.append(await callback.message.answer_document(cheque_id, caption=cap, parse_mode="HTML"))
             else:
-                await callback.message.answer_photo(cheque_id, caption=cap, parse_mode="HTML")
+                sent.append(await callback.message.answer_photo(cheque_id, caption=cap, parse_mode="HTML"))
         except Exception:
             pass
-
-    await callback.answer()
+    _remember_card_extras(card, sent)
+    return True
 
 
 @router.callback_query(F.data.startswith("order_act:"))
@@ -1607,6 +1669,7 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
             if list_ctx is not None and is_admin:
                 from handlers.admin import render_orders_list
                 status_filter, page = list_ctx
+                await drop_card_extras(callback.message)
                 await render_orders_list(callback, status_filter, page, lang)
             await callback.answer(get_text("order_act_already_done", lang), show_alert=True)
             return
@@ -1717,9 +1780,13 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
         "delivered": "order_marked_delivered",
     }.get(action, "order_accepted")
 
-    # Came from the admin order list → refresh that same list (filter+page) in
-    # place and surface the result as a toast, so the admin keeps working
-    # through the list instead of being bounced to a panel.
+    # The card (or list row) is left behind either way — its pin/cheque go too.
+    await drop_card_extras(callback.message)
+
+    # Came from the admin order list — its quick buttons, or a card opened
+    # from it — → refresh that same list (filter+page) in place and surface
+    # the result as a toast, so the admin keeps working through the list
+    # instead of starting again from «Buyurtmalar» (owner, 2026-11-01).
     if list_ctx is not None and is_admin:
         from handlers.admin import render_orders_list
         status_filter, page = list_ctx
@@ -1776,7 +1843,9 @@ class MessageClientStates(StatesGroup):
 
 @router.callback_query(F.data.startswith("msgclient:"))
 async def message_client_start(callback: CallbackQuery, state: FSMContext):
-    order_id = int(callback.data.split(":")[1])
+    from keyboards import parse_order_ret
+    parts = callback.data.split(":")
+    order_id = int(parts[1])
     order = await get_order(order_id)
     is_admin = callback.from_user.id in ADMIN_IDS
     if not order or (order["seller_id"] != callback.from_user.id and not is_admin):
@@ -1784,7 +1853,8 @@ async def message_client_start(callback: CallbackQuery, state: FSMContext):
         return
     lang = await get_user_language(callback.from_user.id)
     await state.set_state(MessageClientStates.waiting_message)
-    await state.update_data(mc_order_id=order_id, mc_target=order["user_id"], lang=lang)
+    await state.update_data(mc_order_id=order_id, mc_target=order["user_id"], lang=lang,
+                            mc_ret=parse_order_ret(parts, 2))
     await callback.message.answer(
         get_text("message_client_prompt", lang, order_id=order_id),
         parse_mode="HTML",
@@ -1798,11 +1868,15 @@ async def message_client_send(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     lang = data.get("lang", "uz")
     raw = (message.text or "").strip()
+    order_id = data.get("mc_order_id")
+    # One tap back to the order card (and from there to the list it came from).
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+        text=get_text("oe_btn_back_order", lang),
+        callback_data=f"seller_order:{order_id}{data.get('mc_ret') or ''}")]]) if order_id else None
     if raw.lower() in ("/cancel", "cancel", "bekor"):
         await state.clear()
-        await message.answer(get_text("message_client_cancelled", lang))
+        await message.answer(get_text("message_client_cancelled", lang), reply_markup=back_kb)
         return
-    order_id = data.get("mc_order_id")
     target = data.get("mc_target")
     await state.clear()
     if not target:
@@ -1829,6 +1903,6 @@ async def message_client_send(message: Message, state: FSMContext, bot: Bot):
             await announce_support_answer(bot, target, message.from_user.id, raw)
         except Exception:
             pass
-        await message.answer(get_text("message_client_sent", lang))
+        await message.answer(get_text("message_client_sent", lang), reply_markup=back_kb)
     except Exception:
-        await message.answer(get_text("message_client_failed", lang))
+        await message.answer(get_text("message_client_failed", lang), reply_markup=back_kb)
