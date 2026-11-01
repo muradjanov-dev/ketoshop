@@ -27,11 +27,15 @@ const src = [
   line('const KB_COORD_PREFIX_RE='),
   line('const KB_ROUTE_KEY='),
   line('const KB_ROUTE_SKIP_METHODS='),
-  'let KB_BOARD=null, KB_MAP=null, KB_ROUTE_LINE=null, KB_ROUTE_NUM=new Map(), KB_ROUTE_OPEN=true;',
-  ...['kbNavUrl', 'kbMapWhere', 'kbMapPin', 'kbRouteLoad', 'kbRouteSave', 'kbRouteCandidates',
-      'kbDist', 'kbRouteStops', 'kbRouteMove', 'kbRouteSkip', 'kbRouteRender'].map(fn),
-  'this.api={kbNavUrl,kbRouteStops,kbRouteMove,kbRouteSkip,kbRouteRender,' +
-  'setBoard:b=>{KB_BOARD=b;},num:()=>[...KB_ROUTE_NUM.entries()]};',
+  line('const KB_POS_TTL='),
+  line('let KB_MY_POS='),
+  'let KB_BOARD=null, KB_MAP=null, KB_ROUTE_LINE=null, KB_ME_MARKER=null, KB_ROUTE_NUM=new Map(), KB_ROUTE_OPEN=true;',
+  ...['kbNavUrl', 'kbNavAttr', 'kbMyPos', 'kbWidgetUrl', 'kbRouteLegs', 'kbMapWhere', 'kbMapPin',
+      'kbRouteLoad', 'kbRouteSave', 'kbRouteCandidates', 'kbDist', 'kbRouteStops', 'kbRouteMove',
+      'kbRouteSkip', 'kbRouteRender'].map(fn),
+  'this.api={kbNavUrl,kbWidgetUrl,kbRouteStops,kbRouteMove,kbRouteSkip,kbRouteRender,kbRouteLoad,' +
+  'setBoard:b=>{KB_BOARD=b;},num:()=>[...KB_ROUTE_NUM.entries()],' +
+  'setPos:p=>{KB_MY_POS=p;KB_MY_POS_AT=p?Date.now():0;KB_POS_STATE=p?"ok":"off";}};',
 ].join('\n');
 
 const store = {};
@@ -78,6 +82,7 @@ out.single = api.kbNavUrl([[41.3, 69.2]]);
 
 api.kbRouteMove(3, -1);
 out.moved = ids();
+out.manualAfterMove = api.kbRouteLoad().manual;
 // next poll: #1 delivered (gone), #9 new next to #2
 const H = card(9, 'ready', 41.311, 69.211);
 api.setBoard(board([B, C, H, ...others]));
@@ -93,9 +98,10 @@ api.kbRouteRender();
 out.html = box.innerHTML;
 out.hidden = box.hidden;
 out.num = api.num();
+out.offLine = box.innerHTML.includes('data-route-locate');
 
 const many = Array.from({ length: 12 }, (_, i) => card(100 + i, 'ready', 41.2 + i / 100, 69.2));
-store.ketoshop_kb_route = undefined; delete store.ketoshop_kb_route;
+delete store.ketoshop_kb_route;
 api.setBoard(board(many));
 api.kbRouteRender();
 out.legs = (box.innerHTML.match(/🧭 \d+–\d+/g) || []);
@@ -104,5 +110,20 @@ out.legLinks = (box.innerHTML.match(/rtext=~[^"&]*/g) || []).map(s => s.split('~
 api.setBoard(board([]));
 api.kbRouteRender();
 out.emptyHidden = box.hidden;
+
+// The courier's position known → the automatic order starts nearest to them,
+// and every link and the Yandex widget start from there.
+delete store.ketoshop_kb_route;
+api.setBoard(board([A, B, C, H]));
+api.setPos([41.351, 69.301]);
+out.fromMe = ids();
+out.navFromMe = api.kbNavUrl([[41.3, 69.2]]);
+out.widgetFromMe = api.kbWidgetUrl([[41.3, 69.2], [41.31, 69.21]]);
+api.kbRouteRender();
+out.posLine = box.innerHTML.includes('Yo’l hozirgi joyingizdan boshlanadi');
+out.viewBtn = box.innerHTML.includes('data-route-view');
+out.navAttr = (box.innerHTML.match(/data-nav="[^"]*"/) || [''])[0];
+api.setPos(null);
+out.widgetNoPos = api.kbWidgetUrl([[41.3, 69.2], [41.31, 69.21]]);
 
 process.stdout.write(JSON.stringify(out));

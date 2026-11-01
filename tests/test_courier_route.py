@@ -1,9 +1,11 @@
 """Kuryer panelidagi marshrut (egasi, 2026-11-01).
 
-Xarita/«Yo'l» bosilsa Yandex navigatsiya (rtext=~… — boshlanish kuryerning
-o'z joyi), hamma tayyor/yo'ldagi buyurtmalar bitta marshrutda, kuryer
-tartibni o'zi o'zgartiradi. Kod webapp/admin.html ichida — node'da soxta
-doska va localStorage bilan tekshiriladi (tests/courier_route_check.js).
+Xarita/«Yo'l» bosilsa Yandex navigatsiya, hamma tayyor/yo'ldagi buyurtmalar
+bitta marshrutda, kuryer tartibni o'zi o'zgartiradi. Kuryerning joylashuvi
+ma'lum bo'lsa, marshrut va har bir havola shu joydan boshlanadi (kompyuterda
+«Откуда» bo'sh qolmasin), «🛣 Yo'lni ko'rish» — Yandex vidjetida butun yo'l.
+Kod webapp/admin.html ichida — node'da soxta doska va localStorage bilan
+tekshiriladi (tests/courier_route_check.js).
 """
 import json
 import shutil
@@ -28,12 +30,13 @@ class CourierRouteTest(unittest.TestCase):
         # pickup, no pin, not-yet-ready, Yandex Taxi and old 'preparing' stay out
         self.assertEqual(self.r["auto"], [1, 2, 3])
 
-    def test_single_stop_link_is_navigation_from_my_location(self):
+    def test_single_stop_link_without_position_starts_empty(self):
         self.assertEqual(self.r["single"],
                          "https://yandex.uz/maps/?rtext=~41.300000,69.200000&rtt=auto")
 
     def test_courier_order_survives_refresh(self):
         self.assertEqual(self.r["moved"], [1, 3, 2])
+        self.assertTrue(self.r["manualAfterMove"])
         # delivered #1 drops off, new #9 joins after the last stop
         self.assertEqual(self.r["afterPoll"], [3, 2, 9])
 
@@ -49,6 +52,7 @@ class CourierRouteTest(unittest.TestCase):
         self.assertIn("rtext=~41.310000,69.210000~41.311000,69.211000~41.350000,69.300000&rtt=auto", html)
         self.assertIn('data-route-move="2:-1"', html)
         self.assertEqual(self.r["num"], [[2, 1], [9, 2], [3, 3]])
+        self.assertTrue(self.r["offLine"])        # no position → «📍 Aniqlash»
 
     def test_long_route_split_into_legs(self):
         self.assertEqual(self.r["legs"], ["🧭 1–10", "🧭 11–12"])
@@ -56,6 +60,25 @@ class CourierRouteTest(unittest.TestCase):
 
     def test_no_stops_no_panel(self):
         self.assertTrue(self.r["emptyHidden"])
+
+    def test_known_position_is_the_start(self):
+        # nearest to the courier first (#3), then nearest-next
+        self.assertEqual(self.r["fromMe"], [3, 9, 2, 1])
+        self.assertEqual(self.r["navFromMe"],
+                         "https://yandex.uz/maps/?rtext=41.351000,69.301000~41.300000,69.200000&rtt=auto")
+        self.assertEqual(self.r["widgetFromMe"],
+                         "https://yandex.uz/map-widget/v1/?mode=routes&rtext="
+                         "41.351000,69.301000~41.300000,69.200000~41.310000,69.210000&rtt=auto")
+        self.assertTrue(self.r["posLine"])
+        self.assertTrue(self.r["viewBtn"])
+        # data-nav keeps only the stops — the start is added when the link is used
+        self.assertRegex(self.r["navAttr"], r'^data-nav="\d+\.\d{6},\d+\.\d{6}(;\d+\.\d{6},\d+\.\d{6})*"$')
+        self.assertNotIn("41.351000,69.301000", self.r["navAttr"])
+
+    def test_no_position_widget_starts_at_stop_one(self):
+        self.assertEqual(self.r["widgetNoPos"],
+                         "https://yandex.uz/map-widget/v1/?mode=routes&rtext="
+                         "41.300000,69.200000~41.310000,69.210000&rtt=auto")
 
 
 if __name__ == "__main__":

@@ -629,6 +629,20 @@
 .kb-route .skipped button{border:1px dashed var(--line);background:none;color:var(--ink-2);border-radius:8px;
                           font-size:12px;font-weight:700;padding:2px 8px;margin:0 2px;cursor:pointer}
 .kb-route .hint{margin-top:8px;font-size:11.5px;color:var(--ink-3);line-height:1.5}
+.kb-route .pos{margin-top:8px;font-size:12.5px;font-weight:700;color:var(--ink-2);line-height:1.6}
+.kb-route .pos .lnk{border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);border-radius:8px;
+                    font-size:12px;font-weight:700;padding:3px 9px;margin-left:4px;cursor:pointer}
+/* full-screen Yandex route — above the order modal and Leaflet's panes */
+.kb-routeview{position:fixed;inset:0;z-index:300;display:flex;flex-direction:column;background:var(--bg)}
+.kb-routeview[hidden]{display:none}
+.kb-routeview .bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;
+                   border-bottom:1px solid var(--line);background:var(--panel)}
+.kb-routeview .bar b{font-size:14.5px;color:var(--ink);margin-right:auto}
+.kb-routeview .bar .go{display:flex;flex-wrap:wrap;gap:6px}
+.kb-routeview .bar .btn{text-decoration:none}
+.kb-routeview iframe{flex:1 1 auto;width:100%;border:0;display:block}
+.kb-routeview .hint{padding:8px 12px;font-size:12px;color:var(--ink-3);background:var(--panel);
+                    border-top:1px solid var(--line);line-height:1.5}
 /* the whole mini map in the order panel is one tap into Yandex navigation */
 .kb-map .tap{position:absolute;inset:0;z-index:1}
 .kb-map .full{z-index:2}
@@ -1069,6 +1083,16 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
       <div class="kb-route" id="kbRoute" hidden></div>
       <div class="kb-map-canvas" id="kbMapCanvas"></div>
       <div class="kb-map-note" id="kbMapNote"></div>
+    </div>
+    <!-- 🛣 The whole route drawn by Yandex along the streets (owner, 2026-11-01). -->
+    <div class="kb-routeview" id="kbRouteView" hidden role="dialog" aria-label="Marshrut xaritasi">
+      <div class="bar">
+        <b id="kbRouteViewTtl">🛣 Marshrut</b>
+        <span class="go" id="kbRouteViewGo"></span>
+        <button type="button" class="btn btn-o btn-sm" id="kbRouteViewClose">✕ Yopish</button>
+      </div>
+      <iframe id="kbRouteFrame" title="Marshrut — Yandex xarita" src="about:blank" allow="geolocation"></iframe>
+      <div class="hint" id="kbRouteViewHint"></div>
     </div>
   </section>
 
@@ -3942,14 +3966,110 @@ function kbPin(c){
   const m=KB_COORD_RE.exec(kbAddr(c))||/^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*[—–‒-]/.exec(kbAddr(c));
   return m?[parseFloat(m[1]),parseFloat(m[2])]:null;
 }
-/* Yandex Maps' route screen from the courier's own position (the empty start
-   of rtext is "my location") through `pins` in order; on a phone it opens the
-   Yandex app ready to drive (owner, 2026-11-01: "haritaga bosganda yandex
-   dasturini navigatsiya bo'limiga redirect qilsin"). */
+/* Yandex Maps' route screen from the courier's own position through `pins`
+   in order; on a phone it opens the Yandex app ready to drive (owner,
+   2026-11-01: "haritaga bosganda yandex dasturini navigatsiya bo'limiga
+   redirect qilsin"). The start is the position kbLocate found; without one
+   it is left empty, which only the phone app reads as "my location" — on a
+   computer «Откуда» stayed blank (owner's screenshot, same day). */
 function kbNavUrl(pins){
-  return 'https://yandex.uz/maps/?rtext=~'
-    +pins.map(p=>`${(+p[0]).toFixed(6)},${(+p[1]).toFixed(6)}`).join('~')+'&rtt=auto';
+  const f=p=>`${(+p[0]).toFixed(6)},${(+p[1]).toFixed(6)}`, me=kbMyPos();
+  return 'https://yandex.uz/maps/?rtext='+(me?f(me):'')+'~'+pins.map(f).join('~')+'&rtt=auto';
 }
+/* data-nav on every 🧭 link: its stops, so the href can be rebuilt once the
+   position is known (kbPosChanged) or found on the tap itself. */
+function kbNavAttr(pins){
+  return `data-nav="${pins.map(p=>`${(+p[0]).toFixed(6)},${(+p[1]).toFixed(6)}`).join(';')}"`;
+}
+function kbNavPins(a){return String(a.dataset.nav||'').split(';').filter(Boolean).map(s=>s.split(',').map(Number));}
+
+/* The courier's position — asked when the courier panel, the map or an order
+   with a pin opens, and on a 🧭 tap if still unknown. In the Mini App through
+   Telegram's LocationManager (its own permission prompt), elsewhere through
+   the browser. Fresh for KB_POS_TTL. KB_POS_STATE: '' not asked, 'wait',
+   'ok', 'off' (denied / no fix). */
+const KB_POS_TTL=5*60*1000;
+let KB_MY_POS=null, KB_MY_POS_AT=0, KB_LOCATING=null, KB_POS_STATE='';
+function kbMyPos(){return KB_MY_POS&&Date.now()-KB_MY_POS_AT<KB_POS_TTL?KB_MY_POS:null;}
+function kbTgLocation(){
+  const tg=window.Telegram&&window.Telegram.WebApp;
+  return tg&&tg.initData&&tg.LocationManager&&tg.isVersionAtLeast&&tg.isVersionAtLeast('8.0')
+    ?tg.LocationManager:null;
+}
+function kbLocate(){
+  if(kbMyPos())return Promise.resolve(KB_MY_POS);
+  if(KB_LOCATING)return KB_LOCATING;
+  KB_POS_STATE='wait';
+  KB_LOCATING=new Promise(resolve=>{
+    let settled=false;
+    const done=p=>{
+      if(settled)return;
+      settled=true;
+      if(p&&isFinite(p[0])&&isFinite(p[1])){KB_MY_POS=[+p[0],+p[1]];KB_MY_POS_AT=Date.now();KB_POS_STATE='ok';}
+      else KB_POS_STATE='off';
+      KB_LOCATING=null;
+      resolve(kbMyPos());
+      kbPosChanged();
+    };
+    setTimeout(()=>done(null),20000);   // a permission prompt left unanswered
+    const browser=()=>{
+      if(!navigator.geolocation)return done(null);
+      navigator.geolocation.getCurrentPosition(
+        p=>done([p.coords.latitude,p.coords.longitude]),()=>done(null),
+        {enableHighAccuracy:true,timeout:10000,maximumAge:60000});
+    };
+    const lm=kbTgLocation();
+    if(lm){
+      try{
+        const ask=()=>lm.isLocationAvailable
+          ?lm.getLocation(d=>done(d?[d.latitude,d.longitude]:null))
+          :browser();
+        if(lm.isInited)ask();else lm.init(ask);
+        return;
+      }catch(e){}
+    }
+    browser();
+  });
+  return KB_LOCATING;
+}
+function kbPosChanged(){
+  document.querySelectorAll('a[data-nav]').forEach(a=>{a.href=kbNavUrl(kbNavPins(a));});
+  if(KB_VIEW==='map')kbMapRender();
+  if(!$('#kbRouteView').hidden)kbRouteViewOpen();
+}
+/* Leaves the panel for Yandex: Telegram's openLink in the Mini App, a new
+   tab elsewhere. */
+function kbOpenOut(url){
+  const tg=window.Telegram&&window.Telegram.WebApp;
+  if(tg&&tg.initData&&tg.openLink){try{tg.openLink(url);return;}catch(e){}}
+  const w=window.open(url,'_blank');
+  if(w){try{w.opener=null;}catch(e){}return;}
+  toast('Brauzer yangi oynani to’sdi — 🧭 tugmasini yana bir bosing');
+}
+/* A 🧭 tap: with a fresh position the link already starts from it; without
+   one, find it first and then open — so «Откуда» is never left blank when
+   the position can be had. Capture phase: Leaflet popups stop clicks. */
+document.addEventListener('click',e=>{
+  const a=e.target&&e.target.closest?e.target.closest('a[data-nav]'):null;
+  if(!a)return;
+  const pins=kbNavPins(a);
+  if(kbMyPos()){
+    a.href=kbNavUrl(pins);
+    // In the Mini App, leave through Telegram's own openLink — on a phone
+    // that is what hands the link to the Yandex app.
+    const tg=window.Telegram&&window.Telegram.WebApp;
+    if(tg&&tg.initData&&tg.openLink){e.preventDefault();kbOpenOut(a.href);}
+    return;
+  }
+  e.preventDefault();
+  toast('📍 Joylashuvingiz aniqlanmoqda…');
+  kbLocate().then(pos=>{
+    const url=kbNavUrl(pins);
+    a.href=url;
+    if(!pos)toast('⚠️ Joylashuv aniqlanmadi — Yandex’da «Откуда»ni o’zingiz tanlang');
+    kbOpenOut(url);
+  });
+},true);
 function kbYandex(c,pin){
   return pin?kbNavUrl([pin])
             :`https://yandex.uz/maps/?text=${encodeURIComponent(kbAddr(c))}`;
@@ -4205,7 +4325,7 @@ function kbCardHtml(c,col,i){
   const tel=(c.phone||'').replace(/[^\d+]/g,'');
   const links=[tel?`<a href="tel:${esc(tel)}">📞 ${esc(c.phone)}</a>`:'',
                c.delivery_method!=='pickup'&&(pin||kbAddr(c))
-                 ?`<a href="${kbYandex(c,pin)}" target="_blank" rel="noopener">${pin?'🧭 Yo’l':'🗺 Xarita'}</a>`:'']
+                 ?`<a href="${kbYandex(c,pin)}" ${pin?kbNavAttr([pin]):''} target="_blank" rel="noopener">${pin?'🧭 Yo’l':'🗺 Xarita'}</a>`:'']
     .filter(Boolean).join('');
 
   const nx=kbNext(c.status), pv=kbPrev(c.status);
@@ -4421,7 +4541,11 @@ $('#kanban').addEventListener('click',e=>{
 });
 
 /* ── detail modal ── */
-function kbOpenDetail(id){KB_DETAIL_ID=id;kbRenderDetail(id,{force:true});$('#kbModal').classList.add('open');}
+function kbOpenDetail(id){
+  KB_DETAIL_ID=id;kbRenderDetail(id,{force:true});$('#kbModal').classList.add('open');
+  const c=kbCard(id);
+  if(c&&kbPin(c))kbLocate();   // its 🧭 links then start from the courier
+}
 let KB_DETAIL_SIG='';
 function kbRenderDetail(id,opts){
   const c=kbCard(id);
@@ -4499,12 +4623,12 @@ function kbRenderDetail(id,opts){
       <div class="kb-map">
         <iframe src="${kbMapEmbed(pin)}" loading="lazy" referrerpolicy="no-referrer"
                 title="Buyurtma #${c.id} lokatsiyasi"></iframe>
-        <a class="tap" href="${mapHref}" target="_blank" rel="noopener" aria-label="Yandex navigatsiyada ochish"></a>
-        <a class="full" href="${mapHref}" target="_blank" rel="noopener">🧭 Yo’l ko’rsatish</a>
+        <a class="tap" href="${mapHref}" ${kbNavAttr([pin])} target="_blank" rel="noopener" aria-label="Yandex navigatsiyada ochish"></a>
+        <a class="full" href="${mapHref}" ${kbNavAttr([pin])} target="_blank" rel="noopener">🧭 Yo’l ko’rsatish</a>
       </div>
       <div class="kb-coord">📍 ${pin[0].toFixed(6)}, ${pin[1].toFixed(6)}</div>
       <div class="kb-move">
-        <a class="btn btn-o btn-sm" href="${mapHref}" target="_blank" rel="noopener">🧭 Yandex navigatsiya</a>
+        <a class="btn btn-o btn-sm" href="${mapHref}" ${kbNavAttr([pin])} target="_blank" rel="noopener">🧭 Yandex navigatsiya</a>
         <button type="button" class="btn btn-o btn-sm" id="kbPinBtn">📲 Telegramga yuborish</button>
       </div>
       <div class="hint" style="margin-top:6px">Telegramga yuborilganda pin navigatorda ochiladi — barcha adminlarga boradi.</div>
@@ -4617,14 +4741,14 @@ const KB_MARKERS=new Map();
    into legs past KB_ROUTE_CHUNK stops. */
 const KB_ROUTE_KEY='ketoshop_kb_route', KB_ROUTE_CHUNK=10;
 const KB_ROUTE_SKIP_METHODS=['pickup','yandex_taxi','yandex_market','bts','emu','uzpost'];
-let KB_ROUTE_LINE=null, KB_ROUTE_NUM=new Map(), KB_ROUTE_OPEN=true;
+let KB_ROUTE_LINE=null, KB_ME_MARKER=null, KB_ROUTE_NUM=new Map(), KB_ROUTE_OPEN=true;
 try{KB_ROUTE_OPEN=localStorage.getItem('ketoshop_kb_route_open')!=='0';}catch(e){}
 
 function kbRouteLoad(){
   try{
     const s=JSON.parse(localStorage.getItem(KB_ROUTE_KEY)||'{}');
-    return {order:Array.isArray(s.order)?s.order:[], skip:Array.isArray(s.skip)?s.skip:[]};
-  }catch(e){return {order:[],skip:[]};}
+    return {order:Array.isArray(s.order)?s.order:[], skip:Array.isArray(s.skip)?s.skip:[], manual:!!s.manual};
+  }catch(e){return {order:[],skip:[],manual:false};}
 }
 function kbRouteSave(st){try{localStorage.setItem(KB_ROUTE_KEY,JSON.stringify(st));}catch(e){}}
 function kbRouteCandidates(){
@@ -4644,26 +4768,31 @@ function kbDist(a,b){
   const k=Math.cos((a[0]+b[0])/2*Math.PI/180);
   return Math.hypot(a[0]-b[0],(a[1]-b[1])*k);
 }
-/* The stops in the courier's order: the saved order first, then any new
-   stop by nearest-next from the last one (from the longest-waiting if the
-   route is empty). Left-out stops come back as `skipped`. */
+/* The stops in order. Once the courier moved one (▲▼) the order is theirs:
+   kept as is, new stops join after the last one. Until then it is automatic
+   and rebuilt on every draw — nearest-next from where the courier stands
+   once kbLocate knows it, else from the longest-waiting order. Left-out
+   stops come back as `skipped`. */
 function kbRouteStops(){
   const cands=kbRouteCandidates(), st=kbRouteLoad();
   const byId=new Map(cands.map(x=>[x.c.id,x]));
   const skip=st.skip.filter(id=>byId.has(id));
-  const stops=st.order.filter(id=>byId.has(id)&&!skip.includes(id)).map(id=>byId.get(id));
+  const stops=st.manual?st.order.filter(id=>byId.has(id)&&!skip.includes(id)).map(id=>byId.get(id)):[];
   const rest=cands.filter(x=>!stops.includes(x)&&!skip.includes(x.c.id));
-  if(!stops.length&&rest.length){
+  let from=stops.length?stops[stops.length-1].pin:kbMyPos();
+  if(!from&&rest.length){
     rest.sort((a,b)=>(b.c.stage_minutes||0)-(a.c.stage_minutes||0));
     stops.push(rest.shift());
+    from=stops[0].pin;
   }
   while(rest.length){
-    const last=stops[stops.length-1].pin;
     let bi=0;
-    for(let i=1;i<rest.length;i++)if(kbDist(last,rest[i].pin)<kbDist(last,rest[bi].pin))bi=i;
-    stops.push(rest.splice(bi,1)[0]);
+    for(let i=1;i<rest.length;i++)if(kbDist(from,rest[i].pin)<kbDist(from,rest[bi].pin))bi=i;
+    const nx=rest.splice(bi,1)[0];
+    stops.push(nx);
+    from=nx.pin;
   }
-  const next={order:stops.map(x=>x.c.id),skip};
+  const next={order:stops.map(x=>x.c.id),skip,manual:st.manual};
   if(JSON.stringify(next)!==JSON.stringify(st))kbRouteSave(next);
   return {stops,skipped:skip.map(id=>byId.get(id))};
 }
@@ -4672,8 +4801,45 @@ function kbRouteMove(id,delta){
   const i=ids.indexOf(id), j=i+delta;
   if(i<0||j<0||j>=ids.length)return;
   [ids[i],ids[j]]=[ids[j],ids[i]];
-  kbRouteSave({order:ids,skip:kbRouteLoad().skip});
+  kbRouteSave({order:ids,skip:kbRouteLoad().skip,manual:true});
   kbMapRender();
+}
+/* The whole route drawn by Yandex itself, along the streets, inside the
+   panel (owner, 2026-11-01: "barcha tayyor statusidagi buyurtma manzillarini
+   bitta haritada tayyor navigatsiyalari chizilgan oynada") — Yandex's
+   embeddable map widget takes the same rtext as the app link. Starts from
+   the courier when kbLocate knows where that is, else from stop 1. */
+function kbWidgetUrl(pins){
+  const f=p=>`${(+p[0]).toFixed(6)},${(+p[1]).toFixed(6)}`, me=kbMyPos();
+  return 'https://yandex.uz/map-widget/v1/?mode=routes&rtext='
+    +(me?[me,...pins]:pins).map(f).join('~')+'&rtt=auto';
+}
+function kbRouteViewOpen(){
+  const {stops}=kbRouteStops();
+  if(!stops.length)return;
+  $('#kbRouteViewTtl').textContent=`🛣 Marshrut · ${stops.length} ta manzil`;
+  $('#kbRouteViewGo').innerHTML=kbRouteLegs(stops);
+  $('#kbRouteViewHint').textContent=(kbMyPos()?'Yo’l hozirgi joyingizdan boshlanadi. ':'Joylashuvingiz aniqlanmadi — yo’l 1-manzildan chizildi. ')
+    +'Tartib: '+stops.map((x,i)=>`${i+1}) #${x.c.id}`).join(' → ');
+  $('#kbRouteView').hidden=false;
+  // Load the widget only once its box is on screen: started inside a hidden
+  // (0×0) box it fits the route to nothing and opens zoomed out off to the side.
+  const url=kbWidgetUrl(stops.map(x=>x.pin));
+  requestAnimationFrame(()=>{if(!$('#kbRouteView').hidden)$('#kbRouteFrame').src=url;});
+}
+function kbRouteViewClose(){
+  $('#kbRouteView').hidden=true;
+  $('#kbRouteFrame').src='about:blank';
+}
+/* «🧭 Yandex'da yo'lga chiqish» — one link, or legs past KB_ROUTE_CHUNK stops. */
+function kbRouteLegs(stops){
+  const legs=[];
+  for(let i=0;i<stops.length;i+=KB_ROUTE_CHUNK){
+    const pins=stops.slice(i,i+KB_ROUTE_CHUNK).map(x=>x.pin);
+    const label=stops.length>KB_ROUTE_CHUNK?`🧭 ${i+1}–${i+pins.length}`:'🧭 Yandex’da yo’lga chiqish';
+    legs.push(`<a class="btn btn-p btn-sm" href="${kbNavUrl(pins)}" ${kbNavAttr(pins)} target="_blank" rel="noopener">${label}</a>`);
+  }
+  return legs.join('');
 }
 function kbRouteSkip(id,leaveOut){
   const st=kbRouteLoad();
@@ -4688,8 +4854,15 @@ function kbRouteRender(){
   const box=$('#kbRoute');
   const {stops,skipped}=kbRouteStops();
   KB_ROUTE_NUM=new Map(stops.map((x,i)=>[x.c.id,i+1]));
+  const me=kbMyPos();
   if(KB_MAP){
-    const pts=stops.map(x=>x.pin);
+    // "You are here" dot; the dashed line starts from it.
+    if(me){
+      if(KB_ME_MARKER)KB_ME_MARKER.setLatLng(me);
+      else KB_ME_MARKER=window.L.circleMarker(me,{radius:8,color:'#fff',weight:3,fillColor:'#2F7DF6',fillOpacity:1})
+        .bindTooltip('Siz shu yerdasiz').addTo(KB_MAP);
+    }else if(KB_ME_MARKER){KB_MAP.removeLayer(KB_ME_MARKER);KB_ME_MARKER=null;}
+    const pts=(me&&stops.length?[me]:[]).concat(stops.map(x=>x.pin));
     if(pts.length>1){
       if(KB_ROUTE_LINE)KB_ROUTE_LINE.setLatLngs(pts);
       else{
@@ -4701,19 +4874,16 @@ function kbRouteRender(){
   if(!box)return;
   if(!stops.length&&!skipped.length){box.hidden=true;box.innerHTML='';return;}
   box.hidden=false;
-  const legs=[];
-  for(let i=0;i<stops.length;i+=KB_ROUTE_CHUNK){
-    const part=stops.slice(i,i+KB_ROUTE_CHUNK);
-    const label=stops.length>KB_ROUTE_CHUNK?`🧭 ${i+1}–${i+part.length}`:'🧭 Yandex’da yo’lga chiqish';
-    legs.push(`<a class="btn btn-p btn-sm" href="${kbNavUrl(part.map(x=>x.pin))}" target="_blank" rel="noopener">${label}</a>`);
-  }
+  const posLine=me?'📍 Yo’l hozirgi joyingizdan boshlanadi.'
+    :KB_POS_STATE==='wait'?'📍 Joylashuvingiz aniqlanmoqda…'
+    :`⚠️ Joylashuvingiz aniqlanmadi — Yandex’da «Откуда»ni o’zingiz tanlaysiz. <button type="button" class="lnk" data-route-locate>📍 Aniqlash</button>`;
   const rows=stops.map((x,i)=>{
     const c=x.c, where=kbMapWhere(c)||(c.address_note||'').trim()||'Xaritadagi nuqta';
     return `<li><span class="n">${i+1}</span>
       <span class="t"><b>#${c.id}</b> ${esc(c.customer_name||'—')}${c.status==='shipped'?' · 🚚':''}${c.courier_name?' · 🧍 '+esc(c.courier_name):''}
         <small>${esc(where)}</small></span>
       <span class="b">
-        <a href="${kbNavUrl([x.pin])}" target="_blank" rel="noopener" title="Faqat shu manzilga yo’l" aria-label="Faqat shu manzilga yo’l">🧭</a>
+        <a href="${kbNavUrl([x.pin])}" ${kbNavAttr([x.pin])} target="_blank" rel="noopener" title="Faqat shu manzilga yo’l" aria-label="Faqat shu manzilga yo’l">🧭</a>
         <button type="button" data-route-move="${c.id}:-1" aria-label="Oldinroqqa"${i?'':' disabled'}>▲</button>
         <button type="button" data-route-move="${c.id}:1" aria-label="Keyinroqqa"${i<stops.length-1?'':' disabled'}>▼</button>
         <button type="button" data-route-skip="${c.id}" aria-label="Marshrutdan olib tashlash">✕</button>
@@ -4721,12 +4891,14 @@ function kbRouteRender(){
   }).join('');
   box.innerHTML=`<div class="hd">
       <span class="ttl">🧭 Marshrut · ${stops.length} ta manzil</span>
-      ${legs.join('')}
+      ${stops.length?'<button type="button" class="btn btn-o btn-sm" data-route-view>🛣 Yo’lni ko’rish</button>':''}
+      ${kbRouteLegs(stops)}
       ${stops.length?`<button type="button" class="lnk" data-route-toggle>${KB_ROUTE_OPEN?'Tartib ▴':'Tartib ▾'}</button>`:''}
       <button type="button" class="lnk" data-route-reset title="Avtomatik tartib">↺</button>
     </div>
+    ${stops.length?`<div class="pos">${posLine}</div>`:''}
     ${KB_ROUTE_OPEN&&stops.length?`<ol>${rows}</ol>
-    <div class="hint">Yandex sizning joyingizdan boshlab shu tartibda yo’l chizadi. Birinchi qayerga borishni ▲ ▼ bilan o’zgartiring, ✕ — bu safar bormaysiz.</div>`:''}
+    <div class="hint">Avtomatik tartib — joyingizga eng yaqinidan boshlab. Birinchi qayerga borishni ▲ ▼ bilan o’zgartiring, ✕ — bu safar bormaysiz, ↺ — yana avtomatik.</div>`:''}
     ${skipped.length?`<div class="skipped">Marshrutda emas: ${skipped.map(x=>
       `<button type="button" data-route-add="${x.c.id}">＋ #${x.c.id} ${esc(x.c.customer_name||'')}</button>`).join('')}</div>`:''}`;
 }
@@ -4768,7 +4940,7 @@ function kbMapPopupHtml(c,col,pin){
     <div class="r">${cash?'💵 Naqd: ':'✅ To’langan: '}<b>${kbSom(c.total)} so'm</b>${c.mystery_gift?' · 🎁':''}</div>
     <div class="acts">
       <button type="button" data-kbmap-open="${c.id}">⋯ Batafsil</button>
-      <a href="${kbNavUrl([pin])}" target="_blank" rel="noopener">🧭 Yo’l ko’rsatish</a>
+      <a href="${kbNavUrl([pin])}" ${kbNavAttr([pin])} target="_blank" rel="noopener">🧭 Yo’l ko’rsatish</a>
     </div>
   </div>`;
 }
@@ -4781,6 +4953,8 @@ async function kbSetView(view){
   $('#view-courier').classList.toggle('kb-map-mode',map);
   try{localStorage.setItem('ketoshop_kb_view',KB_VIEW);}catch(e){}
   if(!map){kbNavRender();return;}
+  kbLocate();   // the route starts from the courier
+
   try{await kbLoadLeaflet();}
   catch(err){$('#kbMapNote').textContent='⚠️ '+err.message;return;}
   if(!KB_MAP){
@@ -4859,9 +5033,18 @@ $('#kbMapView').addEventListener('click',e=>{
     try{localStorage.removeItem(KB_ROUTE_KEY);}catch(err){}
     kbMapRender();return;
   }
+  if(e.target.closest('[data-route-view]')){kbRouteViewOpen();return;}
+  if(e.target.closest('[data-route-locate]')){
+    // Refused once in Telegram → only its settings screen can give it back.
+    const lm=kbTgLocation();
+    if(lm&&lm.isInited&&lm.isAccessRequested&&!lm.isAccessGranted&&lm.openSettings){lm.openSettings();return;}
+    kbLocate();kbRouteRender();return;
+  }
   const b=e.target.closest('[data-kbmap-open]');
   if(b)kbOpenDetail(+b.dataset.kbmapOpen);
 });
+$('#kbRouteViewClose').addEventListener('click',kbRouteViewClose);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#kbRouteView').hidden)kbRouteViewClose();});
 try{if(localStorage.getItem('ketoshop_kb_view')==='map')kbSetView('map');}catch(e){}
 
 /* ===== start ===== */
@@ -4881,6 +5064,7 @@ function bootKuryer(){
   if(tg){try{tg.ready();tg.expand();if(tg.disableVerticalSwipes)tg.disableVerticalSwipes();}catch(e){}}
   if(!tg||!tg.initData){showKuryerDenied("Bu sahifa botdagi «🚚 Kuryer paneli» tugmasi orqali ochiladi.");return;}
   showShell();switchView('courier');
+  kbLocate();   // asked once up front, so every 🧭 opens from where the courier is
 }
 if(window.KURYER_MODE){bootKuryer();}
 else{(async()=>{try{await boot();}catch(e){showLogin();}})();}
