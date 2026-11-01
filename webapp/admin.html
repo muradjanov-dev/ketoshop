@@ -4730,8 +4730,10 @@ const KB_MARKERS=new Map();
 /* ===== Marshrut (owner, 2026-11-01: "hamma buyurtmalar (tayyor bo'lganlar)
    navigatsiyasini chizib bersin, ... birinchi qayerga borishni almashtira
    olishi kerak") =====
-   Every ready / on-the-road order with a pin that our own courier carries
-   (not pickup, taxi, post, BTS/EMU) is a stop. The order is the courier's:
+   Every ready / on-the-road order with a pin is a stop — all of them, BTS /
+   EMU / UzPost / Taxi too (owner, same day: "barcha tayyor statusidagi";
+   with those left out the panel vanished whenever only regional orders were
+   ready). Only pickup stays out: nobody drives anywhere. The order is the courier's:
    ▲▼ move a stop, ✕ leaves it out, ↺ goes back to the automatic order — the
    longest-waiting first, then always the nearest next. It is kept in this
    phone's localStorage, so the 12-second refresh never reshuffles it: new
@@ -4740,7 +4742,6 @@ const KB_MARKERS=new Map();
    route from the courier's position through the stops in this order, split
    into legs past KB_ROUTE_CHUNK stops. */
 const KB_ROUTE_KEY='ketoshop_kb_route', KB_ROUTE_CHUNK=10;
-const KB_ROUTE_SKIP_METHODS=['pickup','yandex_taxi','yandex_market','bts','emu','uzpost'];
 let KB_ROUTE_LINE=null, KB_ME_MARKER=null, KB_ROUTE_NUM=new Map(), KB_ROUTE_OPEN=true;
 try{KB_ROUTE_OPEN=localStorage.getItem('ketoshop_kb_route_open')!=='0';}catch(e){}
 
@@ -4753,13 +4754,18 @@ function kbRouteLoad(){
 function kbRouteSave(st){try{localStorage.setItem(KB_ROUTE_KEY,JSON.stringify(st));}catch(e){}}
 function kbRouteCandidates(){
   const out=[];
+  for(const c of kbRouteReady()){
+    if(c.delivery_method==='pickup')continue;
+    const pin=kbMapPin(c);
+    if(pin)out.push({c,pin});
+  }
+  return out;
+}
+/* Every ready / on-the-road card, stop or not — the panel explains the rest. */
+function kbRouteReady(){
+  const out=[];
   for(const col of (KB_BOARD&&KB_BOARD.columns)||[]){
-    for(const c of col.cards){
-      if(c.status!=='ready'&&c.status!=='shipped')continue;
-      if(KB_ROUTE_SKIP_METHODS.includes(c.delivery_method))continue;
-      const pin=kbMapPin(c);
-      if(pin)out.push({c,pin});
-    }
+    for(const c of col.cards)if(c.status==='ready'||c.status==='shipped')out.push(c);
   }
   return out;
 }
@@ -4872,15 +4878,28 @@ function kbRouteRender(){
     }else if(KB_ROUTE_LINE){KB_MAP.removeLayer(KB_ROUTE_LINE);KB_ROUTE_LINE=null;}
   }
   if(!box)return;
-  if(!stops.length&&!skipped.length){box.hidden=true;box.innerHTML='';return;}
+  // Never vanish silently while something is ready: say why there is no stop.
+  const ready=kbRouteReady();
+  if(!stops.length&&!skipped.length&&!ready.length){box.hidden=true;box.innerHTML='';return;}
   box.hidden=false;
+  if(!stops.length&&!skipped.length){
+    const pickup=ready.filter(c=>c.delivery_method==='pickup').length, nopin=ready.length-pickup;
+    box.innerHTML=`<div class="hd"><span class="ttl">🧭 Marshrut · 0 ta manzil</span></div>
+      <div class="pos">Tayyor buyurtmalar bor, lekin yo’lga chiqadiganlari yo’q:
+        ${[pickup?`${pickup} tasi do’kondan olib ketiladi`:'',nopin?`${nopin} tasida xaritadagi nuqta (lokatsiya) yo’q`:'']
+          .filter(Boolean).join(', ')}.</div>`;
+    return;
+  }
   const posLine=me?'📍 Yo’l hozirgi joyingizdan boshlanadi.'
     :KB_POS_STATE==='wait'?'📍 Joylashuvingiz aniqlanmoqda…'
     :`⚠️ Joylashuvingiz aniqlanmadi — Yandex’da «Откуда»ni o’zingiz tanlaysiz. <button type="button" class="lnk" data-route-locate>📍 Aniqlash</button>`;
   const rows=stops.map((x,i)=>{
     const c=x.c, where=kbMapWhere(c)||(c.address_note||'').trim()||'Xaritadagi nuqta';
+    // A parcel for BTS / EMU / UzPost / Taxi says so — ✕ if it is not this trip.
+    const via=['self','courier','',null,undefined].includes(c.delivery_method)?''
+      :' · '+esc(KB_DELIVERY[c.delivery_method]||c.delivery_method);
     return `<li><span class="n">${i+1}</span>
-      <span class="t"><b>#${c.id}</b> ${esc(c.customer_name||'—')}${c.status==='shipped'?' · 🚚':''}${c.courier_name?' · 🧍 '+esc(c.courier_name):''}
+      <span class="t"><b>#${c.id}</b> ${esc(c.customer_name||'—')}${c.status==='shipped'?' · 🚚':''}${via}${c.courier_name?' · 🧍 '+esc(c.courier_name):''}
         <small>${esc(where)}</small></span>
       <span class="b">
         <a href="${kbNavUrl([x.pin])}" ${kbNavAttr([x.pin])} target="_blank" rel="noopener" title="Faqat shu manzilga yo’l" aria-label="Faqat shu manzilga yo’l">🧭</a>

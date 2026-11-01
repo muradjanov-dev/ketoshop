@@ -46,15 +46,17 @@ NOTES = (
     "4. Mijozga xabar yuborgach «📦 Buyurtmaga qaytish» tugmasi chiqadi. Buyurtma ostidagi 📍 lokatsiya va chek siz undan chiqqanda o'chadi — chat toza qoladi.\n"
     '\n'
     '🚚 <b>Kuryer paneli</b>\n'
-    "5. Buyurtmadagi «🧭 Yo'l», buyurtma oynasidagi kichik xarita va xaritadagi pin endi Yandex'ni <b>yo'l ko'rsatish rejimida</b> ochadi — sizning joyingizdan o'sha manzilgacha.\n"
+    "5. Panel <b>joylashuvingizni o'zi aniqlaydi</b> — birinchi ochganda Telegram ruxsat so'raydi, «Ruxsat berish»ni bosing. Shundan keyin har bir «🧭 Yo'l», buyurtma oynasidagi kichik xarita va xaritadagi pin Yandex'ni <b>yo'l ko'rsatish rejimida</b>, siz turgan joydan o'sha manzilgacha ochadi.\n"
     '\n'
-    "6. «🗺 Xarita» bo'limida yangi <b>«🧭 Marshrut»</b>: tayyor va yo'ldagi hamma buyurtmalar raqamlanib, xaritada chiziq bilan ko'rinadi (olib ketish, Yandex Taxi/Market, BTS, EMU va UzPost kirmaydi).\n"
+    "6. «🗺 Xarita» bo'limida yangi <b>«🧭 Marshrut»</b>: <b>barcha</b> tayyor va yo'ldagi buyurtmalar (viloyat — BTS, EMU, UzPost ham, yonida yozib qo'yiladi) raqamlanib, xaritada chiziq bilan ko'rinadi. Faqat do'kondan olib ketiladiganlar kirmaydi.\n"
     '\n'
-    "7. <b>Birinchi qayerga borishni o'zingiz tanlaysiz:</b> ▲ ▼ — tartibni o'zgartiradi, ✕ — bu safar bormaysiz (pastdagi «＋» bilan qaytarasiz), ↺ — avtomatik tartib: eng uzoq kutgandan boshlab, keyin har doim eng yaqini. Tartib telefoningizda saqlanadi.\n"
+    "7. <b>Birinchi qayerga borishni o'zingiz tanlaysiz:</b> avtomatik tartib sizga eng yaqin manzildan boshlanadi; ▲ ▼ — tartibni o'zgartiradi, ✕ — bu safar bormaysiz (pastdagi «＋» bilan qaytarasiz), ↺ — yana avtomatik. Tartib telefoningizda saqlanadi.\n"
     '\n'
-    "8. «🧭 Yandex'da yo'lga chiqish» — hamma manzilni shu tartibda bitta marshrut qilib Yandex'da ochadi (10 tadan ko'p bo'lsa — «1–10», «11–…» bo'laklarga).\n"
+    "8. <b>«🛣 Yo'lni ko'rish»</b> — hamma manzil bitta xaritada, yo'lni Yandex ko'chalar bo'yicha chizib beradi: necha daqiqa va necha km.\n"
     '\n'
-    "Kuryerlardan iltimos: birinchi marshrutni ochib ko'ring — Yandex to'g'ri ochilmasa yoki tartib noto'g'ri chiqsa, xabar bering.\n"
+    "9. «🧭 Yandex'da yo'lga chiqish» — butun marshrutni shu tartibda telefoningizdagi Yandex ilovasida ochadi, «Поехали» bosib yo'lga chiqasiz (10 tadan ko'p bo'lsa — «1–10», «11–…» bo'laklarga).\n"
+    '\n'
+    "Kuryerlardan iltimos: telefonga <b>Yandex Maps (Яндекс Карты)</b> ilovasini o'rnating va birinchi marshrutni ochib ko'ring — Yandex to'g'ri ochilmasa yoki tartib noto'g'ri chiqsa, xabar bering.\n"
     '\n'
     'Rahmat 🤝'
 )

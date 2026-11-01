@@ -26,32 +26,35 @@ class CourierRouteTest(unittest.TestCase):
             raise AssertionError(out.stderr)
         cls.r = json.loads(out.stdout)
 
-    def test_only_our_courier_stops_longest_waiting_then_nearest(self):
-        # pickup, no pin, not-yet-ready, Yandex Taxi and old 'preparing' stay out
-        self.assertEqual(self.r["auto"], [1, 2, 3])
+    def test_all_ready_stops_longest_waiting_then_nearest(self):
+        # every ready/shipped order with a pin, the BTS parcel too; pickup,
+        # no pin, not-yet-ready and old 'preparing' stay out
+        self.assertEqual(self.r["auto"], [1, 2, 3, 7])
 
     def test_single_stop_link_without_position_starts_empty(self):
         self.assertEqual(self.r["single"],
                          "https://yandex.uz/maps/?rtext=~41.300000,69.200000&rtt=auto")
 
     def test_courier_order_survives_refresh(self):
-        self.assertEqual(self.r["moved"], [1, 3, 2])
+        self.assertEqual(self.r["moved"], [1, 3, 2, 7])
         self.assertTrue(self.r["manualAfterMove"])
         # delivered #1 drops off, new #9 joins after the last stop
-        self.assertEqual(self.r["afterPoll"], [3, 2, 9])
+        self.assertEqual(self.r["afterPoll"], [3, 2, 7, 9])
 
     def test_leave_out_and_bring_back(self):
-        self.assertEqual(self.r["skipped"], [2, 9])
+        self.assertEqual(self.r["skipped"], [2, 7, 9])
         self.assertEqual(self.r["skippedList"], [3])
-        self.assertEqual(self.r["readded"], [2, 9, 3])
+        self.assertEqual(self.r["readded"], [2, 7, 9, 3])
 
     def test_panel_and_numbered_pins(self):
         html = self.r["html"]
         self.assertFalse(self.r["hidden"])
         self.assertIn("Yandex’da yo’lga chiqish", html)
-        self.assertIn("rtext=~41.310000,69.210000~41.311000,69.211000~41.350000,69.300000&rtt=auto", html)
+        self.assertIn("rtext=~41.310000,69.210000~40.330000,67.970000~41.311000,69.211000"
+                      "~41.350000,69.300000&rtt=auto", html)
+        self.assertIn("📦 BTS", html)                # a regional parcel says how it goes
         self.assertIn('data-route-move="2:-1"', html)
-        self.assertEqual(self.r["num"], [[2, 1], [9, 2], [3, 3]])
+        self.assertEqual(self.r["num"], [[2, 1], [7, 2], [9, 3], [3, 4]])
         self.assertTrue(self.r["offLine"])        # no position → «📍 Aniqlash»
 
     def test_long_route_split_into_legs(self):
@@ -60,6 +63,12 @@ class CourierRouteTest(unittest.TestCase):
 
     def test_no_stops_no_panel(self):
         self.assertTrue(self.r["emptyHidden"])
+
+    def test_ready_but_nothing_to_drive_to_explains_instead_of_vanishing(self):
+        self.assertFalse(self.r["noStopHidden"])
+        self.assertIn("0 ta manzil", self.r["noStopHtml"])
+        self.assertIn("1 tasi do’kondan olib ketiladi", self.r["noStopHtml"])
+        self.assertIn("1 tasida xaritadagi nuqta (lokatsiya) yo’q", self.r["noStopHtml"])
 
     def test_known_position_is_the_start(self):
         # nearest to the courier first (#3), then nearest-next
