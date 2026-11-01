@@ -24,7 +24,7 @@ from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
-RELEASE_KEY = "2026-10-28-mahsulot-tarkibi"
+RELEASE_KEY = "2026-11-01-navigatsiya-marshrut"
 TZ_OFFSET = timedelta(hours=5)
 SEND_WINDOW = (8, 22)          # never wake admins at night
 # True bypasses the daytime window (used 2026-09-25, and 2026-10-22 at 03:00
@@ -34,25 +34,27 @@ SEND_NOW = RELEASE_KEY == "2026-10-22-sayt-yangiliklari"
 CHECK_EVERY = 300
 
 NOTES = (
-    '🆕 <b>Yangi: har bir mahsulotda «🧾 Tarkibi»</b>\n'
+    "🆕 <b>Yangi: buyurtmalarda oson navigatsiya va kuryer uchun marshrut</b>\n"
     '\n'
-    "1. Botdagi mahsulot kartochkasida va saytdagi mahsulot oynasida tavsif ostida endi <b>«🧾 Tarkibi»</b> chiqadi — mijozning o'z tilida (lotin, kirill, rus).\n"
+    '📦 <b>Botda — «Buyurtmalar»</b>\n'
+    "1. Filtrdan (masalan «Yo'lda») buyurtmani ochsangiz, «◀️ Orqaga» endi <b>o'sha ro'yxatning o'sha sahifasiga</b> qaytaradi — «Buyurtmalar»ga boshidan kirish shart emas.\n"
     '\n'
-    "2. <b>111 ta mahsulotning tarkibi avtomatik yozildi</b> — bitta xomashyodan iborat mahsulotlar: unlar, urug'lar, eritritol, alluloza, toza steviya, himolay tuzi, Extra Virgin yog'lar, GHEE, asal va h.k. (masalan, «Maydalangan bodom mag'zi — 100%»). Shunday yangi mahsulot qo'shilsa, unga ham bir soat ichida o'zi yoziladi.\n"
+    "2. Qabul qilish, Yo'lga chiqarish, Yetkazildi, Rad etish yoki o'chirishdan keyin ham o'sha ro'yxat ochiladi, natija qisqa xabar bo'lib chiqadi — keyingi buyurtmaga darhol o'tasiz.\n"
     '\n'
-    "3. ✍️ <b>Sizdan iltimos — quyidagilarning tarkibini qadoqdagi yorliqdan ko'chirib kiriting.</b> Ular ataylab bo'sh qoldirilgan: tarkibni taxmin qilsak, allergen yashirinib qolishi mumkin.\n"
-    '• Победа shokoladlari, qora shokolad granula\n'
-    '• Losos tushonkasi, kokos slivka, kokos chipsi\n'
-    '• Stevia 200g, 500g va 1000g\n'
-    '• Makaronlar: Barilla, kepakli, grechkali, ismaloqli\n'
-    "• Xandonpista va yeryong'oq pastalari\n"
-    "• Zakvaska, oq solod, qovurish uchun zaytun yog'i, Keto set\n"
+    "3. ✏️ <b>Tarkibni o'zgartirish</b>da ekranda doim bitta oyna qoladi: mahsulot qo'shsangiz yoki son yozsangiz, eski oyna va yordamchi xabarlar o'chadi. 💾 Saqlash yoki Bekor qilish — to'g'ri <b>buyurtmaning o'ziga</b> qaytaradi; saqlangandan keyin birinchi tugma «📨 Mijozga xabar berish».\n"
     '\n'
-    "4. <b>Qanday kiritiladi:</b> botda mahsulot → ✏️ Tahrirlash → «🧾 Tarkib» → tarkibni yozing. Ruschasi avtomatik tarjima bo'ladi, kerak bo'lsa «🇷🇺 Tarkib (rus)» bilan tuzatasiz. «-» yuborsangiz, tarkib o'chadi. Admin saytida — mahsulot formasidagi «Tarkibi (UZ/RU)» maydonlari.\n"
+    "4. Mijozga xabar yuborgach «📦 Buyurtmaga qaytish» tugmasi chiqadi. Buyurtma ostidagi 📍 lokatsiya va chek siz undan chiqqanda o'chadi — chat toza qoladi.\n"
     '\n'
-    "5. Saqlangan zahoti do'kon va katalogda ko'rinadi. Avtomatik yozilganlardan qadoqdagidan farq qiladiganini ko'rsangiz (masalan, tuzlangan pista) — o'sha tugma bilan tuzating.\n"
+    '🚚 <b>Kuryer paneli</b>\n'
+    "5. Buyurtmadagi «🧭 Yo'l», buyurtma oynasidagi kichik xarita va xaritadagi pin endi Yandex'ni <b>yo'l ko'rsatish rejimida</b> ochadi — sizning joyingizdan o'sha manzilgacha.\n"
     '\n'
-    '6. AI sotuvchi ham endi tarkibni biladi; tarkibi kiritilmagan mahsulot haqida taxmin qilmaydi.\n'
+    "6. «🗺 Xarita» bo'limida yangi <b>«🧭 Marshrut»</b>: tayyor va yo'ldagi hamma buyurtmalar raqamlanib, xaritada chiziq bilan ko'rinadi (olib ketish, Yandex Taxi/Market, BTS, EMU va UzPost kirmaydi).\n"
+    '\n'
+    "7. <b>Birinchi qayerga borishni o'zingiz tanlaysiz:</b> ▲ ▼ — tartibni o'zgartiradi, ✕ — bu safar bormaysiz (pastdagi «＋» bilan qaytarasiz), ↺ — avtomatik tartib: eng uzoq kutgandan boshlab, keyin har doim eng yaqini. Tartib telefoningizda saqlanadi.\n"
+    '\n'
+    "8. «🧭 Yandex'da yo'lga chiqish» — hamma manzilni shu tartibda bitta marshrut qilib Yandex'da ochadi (10 tadan ko'p bo'lsa — «1–10», «11–…» bo'laklarga).\n"
+    '\n'
+    "Kuryerlardan iltimos: birinchi marshrutni ochib ko'ring — Yandex to'g'ri ochilmasa yoki tartib noto'g'ri chiqsa, xabar bering.\n"
     '\n'
     'Rahmat 🤝'
 )
