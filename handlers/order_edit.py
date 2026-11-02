@@ -20,11 +20,13 @@ to the admin order list it was opened from.
 
 Aksiya bonus / gift lines are shown but never edited: their eligibility and
 expense booking are computed elsewhere (promotions.py, gift_campaign.py).
-Quantities are whole numbers, like the buyer's cart.
+Buyer pack quantities are whole numbers, like the cart. Manual lines also
+accept fractional quantities, matching manual entry, and never move stock.
 """
 import html
 import json
 import logging
+import math
 
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
@@ -174,9 +176,8 @@ async def open_editor(callback: CallbackQuery, state: FSMContext):
     if not order:
         await callback.answer("❌", show_alert=True)
         return
-    if (order.get("source") or "bot") in ("manual", "b2b"):
-        # Offline / wholesale rows are keyed in by admins with weights, not
-        # buyer carts — this editor is for customers' own orders only.
+    if order.get("source") == "b2b":
+        # Wholesale sales use their own accounting flow.
         await callback.answer("❌", show_alert=True)
         return
     if order["status"] not in database.ORDER_EDITABLE_STATUSES:
@@ -190,7 +191,7 @@ async def open_editor(callback: CallbackQuery, state: FSMContext):
     await state.update_data(
         lang=lang, oe_order_id=order_id, oe_orig=items,
         oe_items=[dict(it) for it in items], oe_old_total=float(order["total"] or 0),
-        oe_ret=parse_order_ret(parts, 2),
+        oe_ret=parse_order_ret(parts, 2), oe_source=order.get("source") or "bot",
     )
     # The card turns into the editor; its pin/cheque come back with the card.
     from handlers.seller import drop_card_extras
@@ -239,8 +240,10 @@ async def ask_qty(callback: CallbackQuery, state: FSMContext):
         return
     await state.set_state(OrderEditStates.waiting_qty)
     await state.update_data(oe_qty_idx=idx)
+    decimal_qty = data.get("oe_source") == "manual" or draft[idx].get("bulk")
     await _junk(state, await callback.message.answer(
-        get_text("oe_ask_qty", data["lang"], name=html.escape(draft[idx].get("name") or "?"))))
+        get_text("oe_ask_decimal_qty" if decimal_qty else "oe_ask_qty",
+                 data["lang"], name=html.escape(draft[idx].get("name") or "?"))))
     await callback.answer()
 
 
@@ -253,12 +256,17 @@ async def got_qty(message: Message, state: FSMContext):
         await state.set_state(OrderEditStates.editing)
         await _render(message, state, edit=False)
         return
-    if not raw.isdigit():
-        await _junk(state, await message.answer(get_text("oe_bad_qty", lang)))
-        return
-    qty = int(raw)
     draft = data["oe_items"]
     idx = data.get("oe_qty_idx", -1)
+    decimal_qty = data.get("oe_source") == "manual" or (0 <= idx < len(draft) and draft[idx].get("bulk"))
+    try:
+        qty = float(raw.replace(",", ".")) if decimal_qty else int(raw)
+        if not math.isfinite(qty) or qty < 0 or (not decimal_qty and not raw.isdigit()):
+            raise ValueError
+    except (ValueError, OverflowError):
+        await _junk(state, await message.answer(get_text(
+            "oe_bad_decimal_qty" if decimal_qty else "oe_bad_qty", lang)))
+        return
     if 0 <= idx < len(draft):
         if qty == 0:
             if sum(1 for it in draft if not _is_fixed(it)) <= 1:
@@ -406,7 +414,9 @@ async def save_edit(callback: CallbackQuery, state: FSMContext, bot: Bot):
                     new_total=_money(result["new_total"]), paid_note=paid_note)
     # Back to the (updated) order card, the result on top and «📨 Mijozga
     # xabar berish» as its first button — no extra "saved" screen to leave.
-    await _back_to_card(callback, data, notice=text, notify=True)
+    # Manual rows carry the creator admin's user_id, not a buyer Telegram ID.
+    await _back_to_card(callback, data, notice=text,
+                        notify=bool(order and order.get("source") not in ("manual", "b2b")))
     await callback.answer()
 
 
@@ -421,7 +431,7 @@ async def notify_buyer(callback: CallbackQuery, bot: Bot):
     ret = parse_order_ret(parts, 3)
     lang = await database.get_user_language(callback.from_user.id)
     order = await database.get_order(order_id)
-    if not order:
+    if not order or order.get("source") in ("manual", "b2b"):
         await callback.answer("❌", show_alert=True)
         return
     buyer_lang = await database.get_user_language(order["user_id"])

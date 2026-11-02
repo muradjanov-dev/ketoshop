@@ -5688,9 +5688,10 @@ async def admin_update_order_items(order_id: int, original_items: list[dict],
     * `original_items` is what the admin's editor started from; if the stored
       lines differ now (another admin edited it), or the order left the
       editable statuses, OrderChangedError is raised and nothing changes.
-    * Stock moves by the difference only: added/increased lines are taken
-      from the shelf (InsufficientStockError if there isn't enough, same rule
-      as checkout), removed/decreased lines go back.
+    * Customer-order stock moves by the difference only: added/increased lines
+      are taken from the shelf (InsufficientStockError if there isn't enough, same rule
+      as checkout), removed/decreased lines go back. Manual orders never move
+      stock, matching add_manual_order. B2B sales are not editable here.
     * The total moves by the goods difference only, so the delivery fee and
       any Keto the buyer spent stay exactly as they were charged.
 
@@ -5719,10 +5720,12 @@ async def admin_update_order_items(order_id: int, original_items: list[dict],
                 raise OrderChangedError("order not found")
             stored = row["items"]
             stored = json.loads(stored) if isinstance(stored, str) else (stored or [])
-            if row["status"] not in ORDER_EDITABLE_STATUSES or stored != original_items:
+            if (row["status"] not in ORDER_EDITABLE_STATUSES or stored != original_items
+                    or row.get("source") == "b2b"):
                 raise OrderChangedError("order changed since the editor opened")
 
-            for (kind, ref_id), delta in order_edit_deltas(stored, new_items).items():
+            deltas = {} if row.get("source") == "manual" else order_edit_deltas(stored, new_items)
+            for (kind, ref_id), delta in deltas.items():
                 if kind == "set":
                     parts = await conn.fetch(
                         "SELECT product_id, quantity FROM product_set_items WHERE set_id = $1", ref_id)
@@ -5740,6 +5743,17 @@ async def admin_update_order_items(order_id: int, original_items: list[dict],
             new_total = old_total - order_goods_total(stored) + order_goods_total(new_items)
             if new_total < 0:
                 raise ValueError("Total would go negative")
+            if row.get("source") == "manual":
+                # Newly added lines need the same cost snapshot as manual entry.
+                # Leave historical lines (including legacy missing costs) alone.
+                old_keys = {order_line_key(it) for it in stored}
+                added_indices = [i for i, it in enumerate(new_items)
+                                 if order_line_key(it) is not None
+                                 and order_line_key(it) not in old_keys]
+                snapshots = await _snapshot_order_costs(conn, [new_items[i] for i in added_indices])
+                new_items = list(new_items)
+                for i, item in zip(added_indices, snapshots):
+                    new_items[i] = item
             await conn.execute(
                 "UPDATE orders SET items = $1, total = $2 WHERE id = $3",
                 json.dumps(new_items, ensure_ascii=False), new_total, order_id,
