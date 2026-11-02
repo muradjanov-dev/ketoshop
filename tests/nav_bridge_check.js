@@ -53,4 +53,8 @@ process.stdout.write(JSON.stringify({
   iosLeft: run(IOS, P, { hide: true }),
   pc: run(PC, P),
   empty: run(ANDROID, '?p=abc~1000,5'),
+  single: run(ANDROID, '?p=41.311,69.279'),
+  origin: run(ANDROID, P + '&from=41.35,69.3'),
+  originFallback: run(ANDROID, P + '&from=41.35,69.3&s=2'),
+  many: run(ANDROID, '?p=' + Array.from({length: 30}, (_, i) => (41 + i / 1000) + ',69.2').join('~')),
 }));

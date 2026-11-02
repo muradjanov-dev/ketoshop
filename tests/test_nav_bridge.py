@@ -1,9 +1,9 @@
 """Kuryer panelidan telefonda Yandex ilovasiga o'tish (egasi, 2026-11-02:
 "saytda ochmasin").
 
-/nav (webapp/nav.html) avval Yandex Maps, keyin Yandex Navigator ilovasini
-o'z sxemasi bilan ochadi; Android'da intent:// + paket + browser_fallback_url
-orqali keyingi qadamga, ikkalasi ham yo'q bo'lsa — "o'rnating". Sayt faqat
+/nav (webapp/nav.html) Yandex Navigator ilovasini barcha nuqtalar bilan
+ochadi; Android'da intent:// + paket + browser_fallback_url
+orqali ilova bo'lmasa — "o'rnating". Maps alohida tanlanadi; sayt faqat
 pastdagi kichik havola. Skript node'da soxta brauzer bilan yuritiladi
 (tests/nav_bridge_check.js).
 """
@@ -14,7 +14,7 @@ import shutil
 import subprocess
 import unittest
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote, urlsplit
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test/test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
@@ -41,36 +41,36 @@ class NavBridgeTest(unittest.TestCase):
             raise AssertionError(out.stderr)
         cls.r = json.loads(out.stdout)
 
-    def test_android_opens_yandex_maps_app_first(self):
+    def test_android_opens_navigator_with_every_stop_first(self):
         url = self.r["android1"]["nav"]["replaced"]
-        self.assertTrue(url.startswith(f"intent://maps.yandex.ru/?rtext=~{STOPS}&rtt=auto#Intent;"), url)
-        self.assertIn(";scheme=yandexmaps;package=ru.yandex.yandexmaps;", url)
-        fb = _fallback(url)
-        self.assertEqual(fb, f"https://keto.test/nav?p={STOPS}&s=2")
-        self.assertNotIn(";", fb)          # a ";" would split the intent URI
-
-    def test_android_then_navigator_with_via_points(self):
-        url = self.r["android2"]["nav"]["replaced"]
         self.assertTrue(url.startswith(
             "intent://build_route_on_map?lat_to=41.299000&lon_to=69.240000"
             "&lat_via_0=41.311000&lon_via_0=69.279000&lat_via_1=41.326400&lon_via_1=69.234700#Intent;"), url)
         self.assertIn(";scheme=yandexnavi;package=ru.yandex.yandexnavi;", url)
-        self.assertEqual(_fallback(url), f"https://keto.test/nav?p={STOPS}&s=3")
+        fb = _fallback(url)
+        self.assertEqual(fb, f"https://keto.test/nav?p={STOPS}&s=2")
+        self.assertNotIn(";", fb)          # a ";" would split the intent URI
+
+    def test_missing_navigator_offers_install_without_launching_another_app(self):
+        r = self.r["android2"]
+        self.assertIsNone(r["nav"]["replaced"])
+        self.assertFalse(r["view"]["inst"]["hidden"])
+        self.assertIn("id=ru.yandex.yandexnavi", r["view"]["inst"]["href"])
 
     def test_android_no_app_asks_to_install_not_the_website(self):
         r = self.r["android3"]
         self.assertIsNone(r["nav"]["replaced"])
         self.assertFalse(r["view"]["inst"]["hidden"])
-        self.assertIn("play.google.com/store/apps/details?id=ru.yandex.yandexmaps", r["view"]["inst"]["href"])
+        self.assertIn("play.google.com/store/apps/details?id=ru.yandex.yandexnavi", r["view"]["inst"]["href"])
         self.assertEqual(r["view"]["inst"]["cls"], "btn p")
         self.assertNotEqual(r["view"]["web"]["cls"], "btn p")   # the site stays a small link
 
-    def test_ios_tries_maps_then_navigator_then_install(self):
+    def test_ios_opens_navigator_then_offers_install_if_page_stays_visible(self):
         r = self.r["iosStay"]
-        self.assertEqual(r["nav"]["assigned"][0], f"yandexmaps://maps.yandex.ru/?rtext=~{STOPS}&rtt=auto")
-        self.assertTrue(r["nav"]["assigned"][1].startswith("yandexnavi://build_route_on_map?lat_to=41.299000"))
+        self.assertEqual(len(r["nav"]["assigned"]), 1)
+        self.assertTrue(r["nav"]["assigned"][0].startswith("yandexnavi://build_route_on_map?lat_to=41.299000"))
         self.assertFalse(r["view"]["inst"]["hidden"])
-        self.assertIn("apps.apple.com", r["view"]["inst"]["href"])
+        self.assertEqual(r["view"]["inst"]["href"], "https://apps.apple.com/app/id474500851")
         # the app opened (page hidden) → no further jumps, no install prompt
         left = self.r["iosLeft"]
         self.assertEqual(len(left["nav"]["assigned"]), 1)
@@ -87,6 +87,26 @@ class NavBridgeTest(unittest.TestCase):
         r = self.r["empty"]
         self.assertIsNone(r["nav"]["replaced"])
         self.assertEqual(r["view"]["ttl"]["text"], "Manzil topilmadi")
+
+    def test_single_destination_has_no_extra_via_point(self):
+        params = parse_qs(urlsplit(self.r["single"]["state"]["naviUrl"]).query)
+        self.assertEqual(params, {"lat_to": ["41.311000"], "lon_to": ["69.279000"]})
+
+    def test_all_thirty_stops_reach_navigator_in_order(self):
+        params = parse_qs(urlsplit(self.r["many"]["state"]["naviUrl"]).query)
+        self.assertEqual(params["lat_to"], ["41.029000"])
+        self.assertEqual(params["lat_via_0"], ["41.000000"])
+        self.assertEqual(params["lat_via_28"], ["41.028000"])
+        self.assertEqual(len([key for key in params if key.startswith("lat_via_")]), 29)
+
+    def test_known_origin_is_preserved_in_launch_and_fallback(self):
+        params = parse_qs(urlsplit(self.r["origin"]["state"]["naviUrl"]).query)
+        self.assertEqual(params.get("lat_from"), ["41.350000"])
+        self.assertEqual(params.get("lon_from"), ["69.300000"])
+        fb = _fallback(self.r["origin"]["nav"]["replaced"])
+        self.assertEqual(parse_qs(urlsplit(fb).query)["from"], ["41.350000,69.300000"])
+        self.assertEqual(self.r["originFallback"]["state"]["naviUrl"],
+                         self.r["origin"]["state"]["naviUrl"])
 
 
 class NavRouteTest(unittest.TestCase):

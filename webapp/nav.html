@@ -14,17 +14,14 @@
   otherwise it shows the website. So the panel opens this page instead, and
   this page — now in Telegram's own browser, Chrome or Safari — asks for the
   app by its scheme, which Telegram passes on to the phone:
-    1. Yandex Maps  yandexmaps://maps.yandex.ru/?rtext=~A~B&rtt=auto
-       (documented, no key; its «Навигатор» drives with voice; an empty
-       start = where the phone is)
-    2. Yandex Navigator  yandexnavi://build_route_on_map?lat_to…&lat_via_N…
-    3. neither installed → "install Yandex Maps"; the website only as a
-       small last link.
-  On Android each step is an intent:// with the app's package and a
-  browser_fallback_url back to this page with the next step (s=2, s=3);
+    1. Yandex Navigator yandexnavi://build_route_on_map?lat_to…&lat_via_N…
+       with every destination in the courier's chosen order.
+    2. not installed → offer Navigator installation; Maps remains an
+       explicitly chosen fallback, never another automatic app launch.
+  On Android the intent:// names Navigator's package and has a
+  browser_fallback_url back to this page with s=2;
   the stops are joined with "~", never ";" — ";" splits an intent URI.
-  Yandex Go takes no route from outside (its links only order a taxi).
-  Query: p=lat,lon~lat,lon~… (stops in order), s=step.
+  Query: p=lat,lon~lat,lon~… (all stops), from=lat,lon (optional origin), s=step.
 -->
 <style>
   :root{--bg:#F6F2E8;--card:#FFFFFF;--ink:#1F1B14;--ink2:#6B6252;--line:#E4DCCB;--accent:#E48A3D;--accent2:#D97A28}
@@ -46,19 +43,24 @@
 <body>
 <div class="card">
   <div class="ic" id="ic">🧭</div>
-  <h1 id="ttl">Yandex ochilmoqda…</h1>
-  <p id="msg">Marshrut Yandex ilovasida ochiladi.</p>
-  <a class="btn p" id="maps" href="#">🗺 Yandex Maps'da ochish</a>
-  <a class="btn" id="navi" href="#">🧭 Yandex Navigator'da ochish</a>
-  <a class="btn" id="inst" href="#" hidden>⬇️ Yandex Maps'ni o'rnatish</a>
+  <h1 id="ttl">Yandex Navigator ochilmoqda…</h1>
+  <p id="msg">Barcha manzillar bitta marshrutda ochiladi.</p>
+  <a class="btn p" id="navi" href="#">🧭 Yandex Navigator'da ochish</a>
+  <a class="btn" id="maps" href="#">🗺 Yandex Maps'da ochish</a>
+  <a class="btn" id="inst" href="#" hidden>⬇️ Yandex Navigator'ni o'rnatish</a>
   <a class="web" id="web" href="#" rel="noopener">Brauzerda ochish</a>
 </div>
 <script>
 (function(){
   var q=new URLSearchParams(location.search);
-  var pts=(q.get('p')||'').split('~').map(function(s){return s.split(',').map(Number);})
-    .filter(function(p){return p.length===2&&isFinite(p[0])&&isFinite(p[1])&&Math.abs(p[0])<=90&&Math.abs(p[1])<=180&&!(p[0]===0&&p[1]===0);})
-    .slice(0,25);
+  function point(s){
+    var parts=s.split(','), p=parts.map(Number);
+    return parts.length===2&&parts.every(function(v){return v.trim()!=='';})
+      &&isFinite(p[0])&&isFinite(p[1])&&Math.abs(p[0])<=90&&Math.abs(p[1])<=180
+      &&!(p[0]===0&&p[1]===0)?p:null;
+  }
+  var pts=(q.get('p')||'').split('~').map(point).filter(Boolean);
+  var from=point(q.get('from')||'');
   var step=parseInt(q.get('s'),10)||1;
   var ua=navigator.userAgent||'', android=/Android/i.test(ua), ios=/iPhone|iPad|iPod/i.test(ua);
   var $=function(id){return document.getElementById(id);};
@@ -69,43 +71,42 @@
     return;
   }
   function f(p){return p[0].toFixed(6)+','+p[1].toFixed(6);}
-  var rtext='~'+pts.map(f).join('~');
+  var rtext=(from?f(from):'')+'~'+pts.map(f).join('~');
   var mapsUrl='yandexmaps://maps.yandex.ru/?rtext='+rtext+'&rtt=auto';
   var last=pts[pts.length-1], via=pts.slice(0,-1);
   var naviUrl='yandexnavi://build_route_on_map?lat_to='+last[0].toFixed(6)+'&lon_to='+last[1].toFixed(6)
-    +via.map(function(p,i){return '&lat_via_'+i+'='+p[0].toFixed(6)+'&lon_via_'+i+'='+p[1].toFixed(6);}).join('');
+    +via.map(function(p,i){return '&lat_via_'+i+'='+p[0].toFixed(6)+'&lon_via_'+i+'='+p[1].toFixed(6);}).join('')
+    +(from?'&lat_from='+from[0].toFixed(6)+'&lon_from='+from[1].toFixed(6):'');
   var webUrl='https://yandex.uz/maps/?rtext='+rtext+'&rtt=auto';
-  function self(s){return location.origin+location.pathname+'?p='+pts.map(f).join('~')+'&s='+s;}
+  function self(s){return location.origin+location.pathname+'?p='+pts.map(f).join('~')
+    +(from?'&from='+f(from):'')+'&s='+s;}
   function intent(url,pkg,fallback){
     var m=/^([a-z]+):\/\/(.*)$/.exec(url);
     return 'intent://'+m[2]+'#Intent;scheme='+m[1]+';package='+pkg
       +';S.browser_fallback_url='+encodeURIComponent(fallback)+';end';
   }
-  var mapsHref=android?intent(mapsUrl,'ru.yandex.yandexmaps',self(3)):mapsUrl;
-  var naviHref=android?intent(naviUrl,'ru.yandex.yandexnavi',self(3)):naviUrl;
+  var mapsHref=android?intent(mapsUrl,'ru.yandex.yandexmaps',self(2)):mapsUrl;
+  var naviHref=android?intent(naviUrl,'ru.yandex.yandexnavi',self(2)):naviUrl;
   $('maps').href=mapsHref;$('navi').href=naviHref;$('web').href=webUrl;
-  $('inst').href=android?'https://play.google.com/store/apps/details?id=ru.yandex.yandexmaps'
-                        :'https://apps.apple.com/app/id313877526';
+  $('inst').href=android?'https://play.google.com/store/apps/details?id=ru.yandex.yandexnavi'
+                        :'https://apps.apple.com/app/id474500851';
   function noApp(){
-    $('ic').textContent='📲';$('ttl').textContent='Yandex ilovasi topilmadi';
-    $('msg').textContent='Telefoningizga Yandex Maps ilovasini o’rnating — ichida ovozli navigator bor. O’rnatgach, panelda 🧭 ni yana bosing.';
-    $('inst').hidden=false;$('inst').className='btn p';$('maps').className='btn';
+    $('ic').textContent='📲';$('ttl').textContent='Yandex Navigator ochilmadi';
+    $('msg').textContent='Navigator o’rnatilgan bo’lsa, ochish tugmasini bosing. Aks holda ilovani o’rnating va qayta urinib ko’ring.';
+    $('inst').hidden=false;$('inst').className='btn p';$('navi').className='btn';
   }
   window.__nav={mapsUrl:mapsUrl,naviUrl:naviUrl,webUrl:webUrl,mapsHref:mapsHref,naviHref:naviHref,step:step};
   if(android){
-    // Maps first; its fallback comes back here as s=2 (Navigator), then s=3.
-    if(step===1)location.replace(intent(mapsUrl,'ru.yandex.yandexmaps',self(2)));
-    else if(step===2)location.replace(intent(naviUrl,'ru.yandex.yandexnavi',self(3)));
+    if(step===1)location.replace(naviHref);
     else noApp();
   }else if(ios){
     var left=false;
     document.addEventListener('visibilitychange',function(){if(document.hidden)left=true;});
-    location.href=mapsUrl;
-    setTimeout(function(){if(!left)location.href=naviUrl;},1600);
+    location.href=naviUrl;
     setTimeout(function(){if(!left)noApp();},3400);
   }else{
     $('ttl').textContent='Telefonda oching';
-    $('msg').textContent='Bu tugma telefonda Yandex ilovasini ochadi. Kompyuterda — brauzerda:';
+    $('msg').textContent='Bu tugma telefonda Yandex Navigator’ni ochadi. Kompyuterda — brauzerda:';
     $('web').className='btn p';$('maps').hidden=true;$('navi').hidden=true;
   }
 })();

@@ -4050,12 +4050,13 @@ function kbOpenOut(url){
    (owner, 2026-11-02: "saytda ochmasin"). Telegram passes an https link to
    an app only if one claims that URL — the couriers' phones had none for
    yandex.uz/maps, so they got the site. /nav (webapp/nav.html) asks for
-   Yandex Maps / Navigator by their own schemes instead. No waiting for the
+   Yandex Navigator by its own scheme instead. No waiting for the
    position: the app starts from where the phone is, and Telegram drops an
    openLink that comes more than 10 s after the tap. */
 const KB_PHONE=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
 function kbAppUrl(pins){
-  return location.origin+'/nav?p='+pins.map(p=>`${(+p[0]).toFixed(6)},${(+p[1]).toFixed(6)}`).join('~');
+  const f=p=>`${(+p[0]).toFixed(6)},${(+p[1]).toFixed(6)}`, me=kbMyPos();
+  return location.origin+'/nav?p='+pins.map(f).join('~')+(me?'&from='+f(me):'');
 }
 /* A 🧭 tap on a computer: with a fresh position the link already starts from
    it; without one, find it first and then open — so «Откуда» is never left
@@ -4742,7 +4743,7 @@ const KB_MARKERS=new Map();
 /* ===== Marshrut (owner, 2026-11-01: "hamma buyurtmalar (tayyor bo'lganlar)
    navigatsiyasini chizib bersin, ... birinchi qayerga borishni almashtira
    olishi kerak") =====
-   Every ready / on-the-road order with a pin is a stop — all of them, BTS /
+   Every active order with a pin is a stop (owner, 2026-11-02) — BTS /
    EMU / UzPost / Taxi too (owner, same day: "barcha tayyor statusidagi";
    with those left out the panel vanished whenever only regional orders were
    ready). Only pickup stays out: nobody drives anywhere. The order is the courier's:
@@ -4751,9 +4752,8 @@ const KB_MARKERS=new Map();
    phone's localStorage, so the 12-second refresh never reshuffles it: new
    orders join after the last stop, delivered ones drop off. The map draws
    the line with numbered pins; «Yandex'da yo'lga chiqish» opens Yandex's
-   route from the courier's position through the stops in this order, split
-   into legs past KB_ROUTE_CHUNK stops. */
-const KB_ROUTE_KEY='ketoshop_kb_route', KB_ROUTE_CHUNK=10;
+   route from the courier's position through all stops in this order. */
+const KB_ROUTE_KEY='ketoshop_kb_route';
 let KB_ROUTE_LINE=null, KB_ME_MARKER=null, KB_ROUTE_NUM=new Map(), KB_ROUTE_OPEN=true;
 try{KB_ROUTE_OPEN=localStorage.getItem('ketoshop_kb_route_open')!=='0';}catch(e){}
 
@@ -4773,11 +4773,11 @@ function kbRouteCandidates(){
   }
   return out;
 }
-/* Every ready / on-the-road card, stop or not — the panel explains the rest. */
+/* All active map orders, stop or not — the panel explains the rest. */
 function kbRouteReady(){
   const out=[];
   for(const col of (KB_BOARD&&KB_BOARD.columns)||[]){
-    for(const c of col.cards)if(c.status==='ready'||c.status==='shipped')out.push(c);
+    for(const c of col.cards)if(['pending','confirmed','preparing','ready','shipped'].includes(c.status))out.push(c);
   }
   return out;
 }
@@ -4849,15 +4849,17 @@ function kbRouteViewClose(){
   $('#kbRouteView').hidden=true;
   $('#kbRouteFrame').src='about:blank';
 }
-/* «🧭 Yandex'da yo'lga chiqish» — one link, or legs past KB_ROUTE_CHUNK stops. */
+/* All destinations in one Navigator route, including more than ten stops. */
 function kbRouteLegs(stops){
-  const legs=[];
-  for(let i=0;i<stops.length;i+=KB_ROUTE_CHUNK){
-    const pins=stops.slice(i,i+KB_ROUTE_CHUNK).map(x=>x.pin);
-    const label=stops.length>KB_ROUTE_CHUNK?`🧭 ${i+1}–${i+pins.length}`:'🧭 Yandex’da yo’lga chiqish';
-    legs.push(`<a class="btn btn-p btn-sm" href="${kbNavUrl(pins)}" ${kbNavAttr(pins)} target="_blank" rel="noopener">${label}</a>`);
-  }
-  return legs.join('');
+  if(!stops.length)return '';
+  const pins=stops.map(x=>x.pin);
+  return `<a class="btn btn-p btn-sm" href="${kbNavUrl(pins)}" ${kbNavAttr(pins)} target="_blank" rel="noopener">🧭 Yandex Navigator’da ochish</a>`;
+}
+function kbOpenRoute(){
+  const {stops}=kbRouteStops();
+  if(!stops.length){toast('📍 Marshrut uchun lokatsiyali faol buyurtma yo’q');return;}
+  const pins=stops.map(x=>x.pin);
+  kbOpenOut(KB_PHONE?kbAppUrl(pins):kbNavUrl(pins));
 }
 function kbRouteSkip(id,leaveOut){
   const st=kbRouteLoad();
@@ -4897,14 +4899,14 @@ function kbRouteRender(){
   if(!stops.length&&!skipped.length){
     const pickup=ready.filter(c=>c.delivery_method==='pickup').length, nopin=ready.length-pickup;
     box.innerHTML=`<div class="hd"><span class="ttl">🧭 Marshrut · 0 ta manzil</span></div>
-      <div class="pos">Tayyor buyurtmalar bor, lekin yo’lga chiqadiganlari yo’q:
+      <div class="pos">Faol buyurtmalar bor, lekin yo’lga chiqadiganlari yo’q:
         ${[pickup?`${pickup} tasi do’kondan olib ketiladi`:'',nopin?`${nopin} tasida xaritadagi nuqta (lokatsiya) yo’q`:'']
           .filter(Boolean).join(', ')}.</div>`;
     return;
   }
   const posLine=me?'📍 Yo’l hozirgi joyingizdan boshlanadi.'
     :KB_POS_STATE==='wait'?'📍 Joylashuvingiz aniqlanmoqda…'
-    :`⚠️ Joylashuvingiz aniqlanmadi — Yandex’da «Откуда»ni o’zingiz tanlaysiz. <button type="button" class="lnk" data-route-locate>📍 Aniqlash</button>`;
+    :`⚠️ Eng yaqinidan tartiblash uchun joylashuvga ruxsat bering. Navigator yo’lni turgan joyingizdan boshlaydi. <button type="button" class="lnk" data-route-locate>📍 Aniqlash</button>`;
   const rows=stops.map((x,i)=>{
     const c=x.c, where=kbMapWhere(c)||(c.address_note||'').trim()||'Xaritadagi nuqta';
     // A parcel for BTS / EMU / UzPost / Taxi says so — ✕ if it is not this trip.
@@ -4948,9 +4950,14 @@ function kbMapWhere(c){
   return String(c.address||'').replace(/^\s*📍\s*/u,'').replace(KB_COORD_PREFIX_RE,'').trim();
 }
 function kbMapPin(c){
-  if(c.latitude&&c.longitude)return [c.latitude,c.longitude];
-  const m=/^\s*(?:📍\s*)?(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/u.exec(String(c.address||''));
-  return m?[parseFloat(m[1]),parseFloat(m[2])]:null;
+  let pin;
+  if([c.latitude,c.longitude].every(v=>v!==null&&v!==undefined&&v!==''))pin=[+c.latitude,+c.longitude];
+  else{
+    const m=/^\s*(?:📍\s*)?(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/u.exec(String(c.address||''));
+    pin=m?[parseFloat(m[1]),parseFloat(m[2])]:null;
+  }
+  return pin&&pin.every(Number.isFinite)&&Math.abs(pin[0])<=90&&Math.abs(pin[1])<=180
+    &&!(pin[0]===0&&pin[1]===0)?pin:null;
 }
 function kbMapPinHtml(c,col){
   const shipped=c.status==='shipped'?'🚚 ':'';
@@ -5045,7 +5052,10 @@ function kbMapRender(){
 }
 $('#kbView').addEventListener('click',e=>{
   const b=e.target.closest('[data-view]');
-  if(b&&b.dataset.view!==KB_VIEW)kbSetView(b.dataset.view);
+  if(!b)return;
+  if(b.dataset.view!==KB_VIEW)kbSetView(b.dataset.view);
+  // Only a deliberate map tap launches the app; restore/poll stay in the panel.
+  if(b.dataset.view==='map')kbOpenRoute();
 });
 $('#kbMapView').addEventListener('click',e=>{
   if(e.target.closest('#kbMapFitBtn')){kbMapFit();return;}
