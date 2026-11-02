@@ -4064,6 +4064,7 @@ function kbAppUrl(pins){
 document.addEventListener('click',e=>{
   const a=e.target&&e.target.closest?e.target.closest('a[data-nav]'):null;
   if(!a)return;
+  if(a.dataset.routeNav!==undefined){e.preventDefault();return kbOpenRoute();}
   const pins=kbNavPins(a);
   if(KB_PHONE){e.preventDefault();kbOpenOut(kbAppUrl(pins));return;}
   if(kbMyPos()){
@@ -4853,13 +4854,37 @@ function kbRouteViewClose(){
 function kbRouteLegs(stops){
   if(!stops.length)return '';
   const pins=stops.map(x=>x.pin);
-  return `<a class="btn btn-p btn-sm" href="${kbNavUrl(pins)}" ${kbNavAttr(pins)} target="_blank" rel="noopener">🧭 Yandex Navigator’da ochish</a>`;
+  return `<a class="btn btn-p btn-sm" href="${kbNavUrl(pins)}" ${kbNavAttr(pins)} data-route-nav target="_blank" rel="noopener">🧭 Yandex Navigator’da ochish</a>`;
 }
-function kbOpenRoute(){
+async function kbOpenRoute(){
+  if(!kbRouteStops().stops.length){toast('📍 Marshrut uchun lokatsiyali faol buyurtma yo’q');return;}
+  let popup=null, useThisTab=false;
+  if(!kbMyPos()&&!kbRouteLoad().manual){
+    // Telegram accepts openLink within 10 s of the tap. Other browsers need
+    // their window reserved synchronously so awaiting GPS cannot block it.
+    const tg=window.Telegram&&window.Telegram.WebApp;
+    if(!(tg&&tg.initData&&tg.openLink)){
+      try{
+        popup=window.open('about:blank','_blank');
+        if(popup){
+          popup.document.title='Ketoshop — Marshrut';
+          popup.document.body.textContent='📍 Joylashuvingiz aniqlanmoqda…';
+          popup.opener=null;
+        }
+      }catch(e){}
+      useThisTab=!popup;
+    }
+    toast('📍 Joylashuvingiz aniqlanmoqda…');
+    await Promise.race([kbLocate(),new Promise(resolve=>setTimeout(resolve,4000))]).catch(()=>{});
+  }
+  // Rebuild after the location result (and any board refresh while waiting).
   const {stops}=kbRouteStops();
-  if(!stops.length){toast('📍 Marshrut uchun lokatsiyali faol buyurtma yo’q');return;}
+  if(!stops.length){if(popup)popup.close();toast('📍 Marshrut uchun lokatsiyali faol buyurtma yo’q');return;}
   const pins=stops.map(x=>x.pin);
-  kbOpenOut(KB_PHONE?kbAppUrl(pins):kbNavUrl(pins));
+  const url=KB_PHONE?kbAppUrl(pins):kbNavUrl(pins);
+  if(popup)popup.location.replace(url);
+  else if(useThisTab)location.assign(url);
+  else kbOpenOut(url);
 }
 function kbRouteSkip(id,leaveOut){
   const st=kbRouteLoad();
@@ -5055,7 +5080,7 @@ $('#kbView').addEventListener('click',e=>{
   if(!b)return;
   if(b.dataset.view!==KB_VIEW)kbSetView(b.dataset.view);
   // Only a deliberate map tap launches the app; restore/poll stay in the panel.
-  if(b.dataset.view==='map')kbOpenRoute();
+  if(b.dataset.view==='map')return kbOpenRoute();
 });
 $('#kbMapView').addEventListener('click',e=>{
   if(e.target.closest('#kbMapFitBtn')){kbMapFit();return;}

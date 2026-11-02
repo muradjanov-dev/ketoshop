@@ -84,6 +84,28 @@ class CourierRouteTest(unittest.TestCase):
         self.assertEqual(params["from"], ["41.310000,69.278000"])
         self.assertEqual(self.r["emptyTapOpened"], 1)
 
+    def test_first_map_tap_waits_for_location_before_nearest_order(self):
+        self.assertEqual(self.r["delayedOpenedBeforePosition"], 0)
+        self.assertTrue(self.r["delayedRequestedPosition"])
+        params = parse_qs(urlsplit(self.r["delayedRoute"]).query)
+        self.assertEqual(params["p"], ["41.350000,69.300000~41.310000,69.210000~41.300000,69.200000"])
+        self.assertEqual(params["from"], ["41.351000,69.301000"])
+
+    def test_browser_popup_preserves_tap_while_location_is_pending(self):
+        self.assertEqual(self.r["reservedBeforePosition"], 1)
+        self.assertIsNone(self.r["reservedOpener"])
+        self.assertEqual(self.r["reservedRoute"], self.r["delayedRoute"])
+
+    def test_location_timeout_and_popup_block_have_a_bounded_fallback(self):
+        self.assertEqual(len(self.r["boundedFallback"]), 1)
+        params = parse_qs(urlsplit(self.r["boundedFallback"][0]).query)
+        self.assertEqual(len(params["p"][0].split("~")), 3)
+
+    def test_complete_route_button_preserves_manual_order_without_waiting(self):
+        self.assertEqual(self.r["manualRequestedPosition"], 0)
+        params = parse_qs(urlsplit(self.r["manualRoute"]).query)
+        self.assertEqual(params["p"], ["41.300000,69.200000~41.350000,69.300000~41.310000,69.210000"])
+
     def test_no_stops_no_panel(self):
         self.assertTrue(self.r["emptyHidden"])
 

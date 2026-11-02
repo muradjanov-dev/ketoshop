@@ -20,7 +20,7 @@ function fn(name) {
     if (html[j] === '{') depth++;
     else if (html[j] === '}' && --depth === 0) break;
   }
-  return html.slice(i, j + 1);
+  return html.slice(html.slice(i - 6, i) === 'async ' ? i - 6 : i, j + 1);
 }
 
 const src = [
@@ -31,7 +31,7 @@ const src = [
   line('let KB_MY_POS='),
   "const KB_PHONE=true; let KB_VIEW='board';",
   'let KB_BOARD=null, KB_MAP=null, KB_ROUTE_LINE=null, KB_ME_MARKER=null, KB_ROUTE_NUM=new Map(), KB_ROUTE_OPEN=true;',
-  ...['kbNavUrl', 'kbNavAttr', 'kbNavPins', 'kbMyPos', 'kbAppUrl', 'kbWidgetUrl', 'kbRouteLegs', 'kbMapWhere', 'kbMapPin',
+  ...['kbNavUrl', 'kbNavAttr', 'kbNavPins', 'kbMyPos', 'kbTgLocation', 'kbLocate', 'kbAppUrl', 'kbWidgetUrl', 'kbRouteLegs', 'kbMapWhere', 'kbMapPin',
       'kbRouteLoad', 'kbRouteSave', 'kbRouteCandidates', 'kbRouteReady', 'kbDist', 'kbRouteStops', 'kbRouteMove',
       'kbRouteSkip', 'kbRouteRender'].map(fn),
   ...(html.includes('function kbOpenRoute(') ? [fn('kbOpenRoute')] : []),
@@ -40,7 +40,7 @@ const src = [
   html.slice(html.indexOf("document.addEventListener('click',e=>{\n  const a=e.target"),
              html.indexOf('\nfunction kbYandex(')),
   'this.api={kbNavUrl,kbWidgetUrl,kbRouteStops,kbRouteMove,kbRouteSkip,kbRouteRender,kbRouteLoad,' +
-  'kbAppUrl,' +
+  'kbAppUrl,kbOpenRoute,' +
   'setBoard:b=>{KB_BOARD=b;},num:()=>[...KB_ROUTE_NUM.entries()],' +
   'setPos:p=>{KB_MY_POS=p;KB_MY_POS_AT=p?Date.now():0;KB_POS_STATE=p?"ok":"off";}};',
 ].join('\n');
@@ -48,6 +48,7 @@ const src = [
 const store = {};
 const box = { hidden: true, innerHTML: '' };
 const listeners = {}, opened = [], views = [], notices = [];
+const locationRequests = [], timers = [], popups = [], sameWindow = [];
 const ctx = {
   localStorage: {
     getItem: k => (k in store ? store[k] : null),
@@ -55,7 +56,11 @@ const ctx = {
     removeItem: k => { delete store[k]; },
   },
   $: sel => (sel === '#kbRoute' ? box : sel === '#kbView' ? {addEventListener: (ev, cb) => {listeners[ev] = cb;}} : null),
-  location: {origin: 'https://keto.test'},
+  location: {origin: 'https://keto.test', assign: url => sameWindow.push(url)},
+  window: {Telegram:{WebApp:{initData:'fixture',openLink:()=>{}}}},
+  navigator: {geolocation: {getCurrentPosition: (ok, fail) => locationRequests.push({ok, fail})}},
+  setTimeout: (callback, ms) => {timers.push({callback, ms});return timers.length;},
+  kbPosChanged: () => {},
   kbOpenOut: url => opened.push(url),
   kbSetView: view => views.push(view),
   toast: text => notices.push(text),
@@ -170,4 +175,47 @@ listeners['doc:click']({target:{closest: () => ({dataset:{nav:'41.300000,69.2000
 out.singleTapPrevented = singleTapPrevented;
 out.singleTapOpened = opened[opened.length - 1];
 
-process.stdout.write(JSON.stringify(out));
+(async () => {
+  delete store.ketoshop_kb_route;
+  api.setBoard(board([A,B,C]));
+  api.setPos(null);
+  const count = opened.length, requests = locationRequests.length;
+  const pending = listeners.click({target:{closest: () => ({dataset:{view:'map'}})}});
+  out.delayedOpenedBeforePosition = opened.length - count;
+  out.delayedRequestedPosition = locationRequests.length > requests;
+  if(locationRequests.length > requests)locationRequests[requests].ok({coords:{latitude:41.351,longitude:69.301}});
+  await pending;
+  out.delayedRoute = opened[opened.length - 1];
+
+  // A normal browser reserves its popup during the tap, before the location promise.
+  api.setPos(null);
+  ctx.window = {open: () => {
+    const popup = {opener: {}, document:{title:'',body:{textContent:''}},
+      location:{replace:url=>{popup.url=url;}},close:()=>{popup.closed=true;}};
+    popups.push(popup);return popup;
+  }};
+  const browserRequests = locationRequests.length;
+  const browserPending = api.kbOpenRoute();
+  out.reservedBeforePosition = popups.length;
+  if(locationRequests.length > browserRequests)locationRequests[browserRequests].ok({coords:{latitude:41.351,longitude:69.301}});
+  await browserPending;
+  out.reservedRoute = popups.length ? popups[0].url : null;
+  out.reservedOpener = popups.length ? popups[0].opener : 'not-reserved';
+
+  // Unknown location has a bounded fallback, and a blocked popup uses this tab.
+  api.setPos(null);
+  ctx.window = {open: () => null};
+  const fallbackPending = api.kbOpenRoute();
+  const bound = timers.filter(timer => timer.ms <= 5000).pop();
+  if(bound)bound.callback();
+  await fallbackPending;
+  out.boundedFallback = sameWindow.slice();
+
+  delete store.ketoshop_kb_route;
+  api.kbRouteMove(3,-1);
+  const manualRequests=locationRequests.length;
+  await listeners['doc:click']({target:{closest:()=>({dataset:{routeNav:''}})},preventDefault:()=>{}});
+  out.manualRoute=opened[opened.length-1];
+  out.manualRequestedPosition=locationRequests.length-manualRequests;
+  process.stdout.write(JSON.stringify(out));
+})().catch(error => {console.error(error);process.exitCode=1;});

@@ -25,12 +25,12 @@ Interfaces: `kbRouteLegs(stops)` returns one complete route link;
 `kbOpenRoute()` launches the current ordered route;
 `kbAppUrl(pins)` supplies `/nav?p=...&from=...` when origin is known.
 
-- [ ] Add regression cases for Navigator as the first app, complete 30-stop
+- [x] Add regression cases for Navigator as the first app, complete 30-stop
   links, all active statuses and origin propagation; run them and observe failures.
-- [ ] Make Navigator the automatic Android/iOS launch, offer installation on
+- [x] Make Navigator the automatic Android/iOS launch, offer installation on
   failure and retain Maps as a manually chosen fallback.
-- [ ] Replace chunked links with a complete route and launch it only from
+- [x] Replace chunked links with a complete route and launch it only from
   deliberate map-tab taps. Reuse nearest-next ordering for the expanded candidates.
-- [ ] Run `test_courier_route.py`, `test_nav_bridge.py`, then all CI commands.
-- [ ] Review the whole change, fix material findings, commit and open one PR.
+- [x] Run `test_courier_route.py`, `test_nav_bridge.py`, then all CI commands.
+- [x] Review the whole change, fix material findings, commit and open one PR.
 - [ ] After checks, release and verify image SHA, health and deployed route tests.

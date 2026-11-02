@@ -10,6 +10,10 @@ and cancelled orders. Use the existing nearest-next ordering from the
 courier's fresh position, while retaining explicit manual ordering/exclusions.
 If location is unavailable, Navigator uses its own current location; the panel
 continues to explain how to grant location access for nearest-first ordering.
+On a first/expired automatic-route tap, wait up to four seconds for location
+before finalizing stop order. Telegram opens within its tap window; ordinary
+browsers reserve the destination window during the tap. Manual ordering does
+not wait. A blocked reserved window falls back to navigation in the current tab.
 
 Send all selected destinations as zero-based via points and a final destination,
 with the known origin when available. Do not split at ten stops or silently
