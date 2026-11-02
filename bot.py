@@ -61,6 +61,7 @@ from referral_program import router as referral_program_router
 from retention_stats import router as retention_stats_router
 from review_stats import router as review_stats_router
 from jar_stats import router as jar_stats_router
+from sinov_buyurtma import router as sinov_buyurtma_router
 
 from webapp_server import create_webapp
 
@@ -263,6 +264,7 @@ async def main():
     dp.include_router(retention_stats_router)
     dp.include_router(review_stats_router)
     dp.include_router(jar_stats_router)
+    dp.include_router(sinov_buyurtma_router)
     dp.include_router(search_router)
     dp.include_router(catalog_router)
     dp.include_router(reviews_router)

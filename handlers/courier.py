@@ -215,6 +215,12 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
         delivered_order = None
         async with database.pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM orders WHERE id = $1 AND courier_id = $2", order_id, callback.from_user.id)
+            import sinov_buyurtma
+            if row and action == "delivered" and sinov_buyurtma.is_test(dict(row)):
+                # A 🧪 test order never "arrives" — that would book the courier
+                # expense, Keto and cashback for nothing.
+                await callback.answer(sinov_buyurtma.NO_DELIVERY, show_alert=True)
+                return
             if row:
                 if action == "delivered":
                     await conn.execute(
