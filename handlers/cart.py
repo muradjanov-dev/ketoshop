@@ -754,7 +754,7 @@ async def build_cart_view(user_id: int, lang: str):
             line = get_text("cart_item_discount", lang,
                 i=i,
                 name=name,
-                quantity=item["cart_quantity"],
+                quantity=_fmt_qty(item["cart_quantity"]),
                 unit=get_display_unit(item["unit"], lang),
                 old=f"{int(item['price']):,}".replace(",", " "),
                 price=f"{int(unit_price):,}".replace(",", " "),
@@ -765,7 +765,7 @@ async def build_cart_view(user_id: int, lang: str):
             line = get_text("cart_item", lang,
                 i=i,
                 name=name,
-                quantity=item["cart_quantity"],
+                quantity=_fmt_qty(item["cart_quantity"]),
                 unit=get_display_unit(item["unit"], lang),
                 price=f"{int(unit_price):,}".replace(",", " "),
                 total=f"{int(item_total):,}".replace(",", " "),
@@ -1842,7 +1842,7 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
             badge = f" 🔥-{item['discount_percent']}%" if item.get("discount_percent") else ""
         name = localize_product_text(item["name"], item.get("name_ru"), lang)
         keto_tag = gamification.reward_badge(gamification.keto_for(item_total, keto_rate)) if keto_rate else ""
-        items_text += f"{i}. {name} — {item['quantity']} {get_display_unit(item['unit'], lang)} × {int(item['price']):,}{badge} = {int(item_total):,}".replace(",", " ")
+        items_text += f"{i}. {name} — {_fmt_qty(item['quantity'])} {get_display_unit(item['unit'], lang)} × {int(item['price']):,}{badge} = {int(item_total):,}".replace(",", " ")
         items_text += (f"  {keto_tag}\n" if keto_tag else "\n")
     if bot_saved:
         items_text += bot_discount.saving_line(lang, bot_pct, bot_saved) + "\n"
@@ -2613,7 +2613,7 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
                 saved_total += (op - item["price"]) * item["quantity"]
             else:
                 price_part = new_p
-            items_text += (f"• {_escape_html(item['name'])} — {item['quantity']} "
+            items_text += (f"• {_escape_html(item['name'])} — {_fmt_qty(item['quantity'])} "
                            f"{unit} × {price_part}\n")
         saved_block = ""
         if saved_total > 0:

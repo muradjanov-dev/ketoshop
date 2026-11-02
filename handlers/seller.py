@@ -1495,8 +1495,9 @@ async def render_order_card(callback: CallbackQuery, order_id: int, ret: str = "
         else:
             price_part = new_p
         from locales import line_unit
+        from handlers.cart import _fmt_qty
         unit = line_unit(item, lang)
-        items_text += f"• {item['name']} — {item['quantity']}{' ' + unit if unit else ''} × {price_part}\n"
+        items_text += f"• {item['name']} — {_fmt_qty(item['quantity'])}{' ' + unit if unit else ''} × {price_part}\n"
     saved_block = ""
     if saved_total > 0:
         saved_block = get_text("new_order_discount_total", lang,
@@ -1557,6 +1558,12 @@ async def render_order_card(callback: CallbackQuery, order_id: int, ret: str = "
         total=f"{int(order['total']):,}".replace(",", " "),
         saved_block=saved_block,
     )
+    # 🎁 Sirli sovg'a has no order line — this card is what the team packs
+    # from, so the reminder must be here too, not only on the first message.
+    import mystery_gift
+    gift_note = mystery_gift.order_admin_note(order, lang)
+    if gift_note:
+        text += "\n" + gift_note
 
     # Lifecycle timestamps block
     created_label = "📅 Buyurtma:" if lang == "uz" else "📅 Заказ:"

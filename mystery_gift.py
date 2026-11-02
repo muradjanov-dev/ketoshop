@@ -14,11 +14,14 @@ Every place that shows money to a buyer shows one of these lines:
   cart_hint()   — "yours" once the cart is there, "X more" while it is close
   order_line()  — on the order summary and the confirmation
   admin_note()  — "put one in the box" on the admins' order card
+  order_admin_note() — the same for a saved order (opened card, status cards)
 
 All of them measure the goods subtotal: products after discounts, before any
 Keto redemption and without the delivery fee — the same basis as free
 delivery, so a buyer can never be told two different sums for the same cart.
 """
+import json
+
 from config import MYSTERY_GIFT_FROM
 from locales import get_text
 
@@ -64,6 +67,26 @@ def admin_note(subtotal, lang: str = "uz") -> str:
     if not qualifies(subtotal):
         return ""
     return get_text("mystery_admin_note", lang, amount=_som(MYSTERY_GIFT_FROM))
+
+
+# Orders an admin typed in (offline sale, wholesale) or a 🧪 test: no buyer
+# was ever promised the gift on them.
+NOT_PROMISED = ("manual", "b2b", "test")
+
+
+def order_admin_note(order: dict, lang: str = "uz") -> str:
+    """admin_note for a saved order row — on every card the team packs from,
+    not only the first "new order" message (owner, 2026-11-02: the opened
+    order card and the status cards had lost the line)."""
+    if (order.get("source") or "bot") in NOT_PROMISED:
+        return ""
+    raw = order.get("items")
+    try:
+        items = json.loads(raw) if isinstance(raw, str) else (raw or [])
+    except (TypeError, ValueError):
+        return ""
+    goods = sum(float(it.get("price") or 0) * float(it.get("quantity") or 0) for it in items)
+    return admin_note(goods, lang)
 
 
 def free_delivery_card_line(lang: str) -> str:

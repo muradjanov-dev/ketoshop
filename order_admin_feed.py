@@ -46,6 +46,7 @@ from aiogram import Bot
 from aiogram.enums import ParseMode
 
 import database
+import mystery_gift
 from config import ADMIN_IDS
 from locales import get_order_status, line_unit
 
@@ -261,6 +262,10 @@ def build_card(order: dict, lang: str, *, title: str, by: str,
 
     lines.append("")
     lines.append(_t("total", lang, sum=_som(order.get("total"))))
+    # 🎁 Sirli sovg'a — the packing reminder rides on every status card too.
+    gift_note = mystery_gift.order_admin_note(order, lang)
+    if gift_note:
+        lines.append(gift_note)
     lines.append(_t("by", lang, who=esc(by or "—")))
     return "\n".join(lines)
 
