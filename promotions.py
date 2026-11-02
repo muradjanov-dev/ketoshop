@@ -515,15 +515,19 @@ def fmt_sum(value: float) -> str:
 
 
 def bonus_price_html(bonus: dict, lang: str) -> str:
-    """"<s>25 000</s> 0 so'm" — the giveaway's shelf price struck through next
-    to what the buyer actually pays. The strikethrough is the whole point: a
+    """"<s>25 000 so'm</s> → bepul" — the giveaway's shelf price struck
+    through, then what the buyer pays. The strikethrough is the whole point: a
     plain "bepul" reads as worthless, the crossed-out number reads as money
-    saved. Falls back to just "bepul" when we have no price to show."""
+    saved. The unit and the arrow keep it readable where the strikethrough
+    is lost (copied text, some phones): the old "<s>15 000</s> 0" came out as
+    "15 000 0" and was read as 150 000 (owner, 2026-11-02). Falls back to just
+    "bepul" when we have no price to show."""
     free = "bepul" if lang != "ru" else "бесплатно"
     value = float(bonus.get("bonus_value") or 0)
     if value <= 0:
         return free
-    return f"<s>{fmt_sum(value)}</s> <b>0</b> — {free}"
+    som = "so'm" if lang != "ru" else "сум"
+    return f"<s>{fmt_sum(value)} {som}</s> → <b>{free}</b>"
 
 
 def bonuses_total_value(bonuses: list[dict]) -> float:
