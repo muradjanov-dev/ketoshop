@@ -405,6 +405,10 @@ async def move_order(order_id: int, target: str, *, expected_from: str | None = 
     current = order.get("status")
     if order.get("delivery_method") == "pickup" and target == "shipped":
         return {"ok": False, "error": "Olib ketish buyurtmasi kuryerga berilmaydi"}
+    import sinov_buyurtma
+    if target == "delivered" and sinov_buyurtma.is_test(order):
+        # Delivery books the courier expense, Keto and cashback — never for a 🧪 test.
+        return {"ok": False, "error": sinov_buyurtma.NO_DELIVERY}
     if current == target:
         return {"ok": True, "order": _card(order), "unchanged": True}
     if expected_from and expected_from != current:

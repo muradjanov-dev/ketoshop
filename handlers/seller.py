@@ -1650,6 +1650,12 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
     new_status = status_map.get(action, "pending")
     old_status = order.get("status")
 
+    import sinov_buyurtma
+    if new_status == "delivered" and sinov_buyurtma.is_test(order):
+        # Delivery books the courier expense, Keto and cashback — never for a 🧪 test.
+        await callback.answer(sinov_buyurtma.NO_DELIVERY, show_alert=True)
+        return
+
     if new_status == "cancelled":
         # Atomic: flips status + restores stock in one transaction (idempotent)
         await db_cancel_order(order_id)

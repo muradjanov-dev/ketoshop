@@ -43,6 +43,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="sovga", description="🎁 Sovg'a kampaniyasi (Eritritol)"),
     BotCommand(command="sovga_elon", description="🎉 Sovg'a uzaytirish e'loni (3 tilda + kanal)"),
     BotCommand(command="ombor", description="📦 Tugagan va kam qolgan mahsulotlar"),
+    BotCommand(command="test_buyurtma", description="🧪 Kuryer paneli uchun test buyurtma (tushumga kirmaydi)"),
     BotCommand(command="bron", description="🛒 Savatlardagi bron: kim, nima, qachongacha"),
     BotCommand(command="xabarlar", description="💬 Botga yozilgan xabarlar"),
     BotCommand(command="reklama", description="📣 Reklama statistikasi"),
