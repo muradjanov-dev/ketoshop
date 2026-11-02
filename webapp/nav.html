@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Ketoshop — Yo'lga chiqish</title>
+<!--
+  Bridge from the courier panel to the Yandex apps (owner, 2026-11-02: "saytda
+  ochmasin", the couriers landed on the Yandex website instead of an app).
+
+  A Telegram Mini App can only open http(s) links (Telegram.WebApp.openLink),
+  and Telegram hands such a link to an app only when one claims that URL —
+  otherwise it shows the website. So the panel opens this page instead, and
+  this page — now in Telegram's own browser, Chrome or Safari — asks for the
+  app by its scheme, which Telegram passes on to the phone:
+    1. Yandex Maps  yandexmaps://maps.yandex.ru/?rtext=~A~B&rtt=auto
+       (documented, no key; its «Навигатор» drives with voice; an empty
+       start = where the phone is)
+    2. Yandex Navigator  yandexnavi://build_route_on_map?lat_to…&lat_via_N…
+    3. neither installed → "install Yandex Maps"; the website only as a
+       small last link.
+  On Android each step is an intent:// with the app's package and a
+  browser_fallback_url back to this page with the next step (s=2, s=3);
+  the stops are joined with "~", never ";" — ";" splits an intent URI.
+  Yandex Go takes no route from outside (its links only order a taxi).
+  Query: p=lat,lon~lat,lon~… (stops in order), s=step.
+-->
+<style>
+  :root{--bg:#F6F2E8;--card:#FFFFFF;--ink:#1F1B14;--ink2:#6B6252;--line:#E4DCCB;--accent:#E48A3D;--accent2:#D97A28}
+  @media (prefers-color-scheme:dark){:root{--bg:#17140F;--card:#221E17;--ink:#F3EDE1;--ink2:#B3A890;--line:#3A3326;--accent:#E48A3D;--accent2:#F09A4E}}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
+       font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;align-items:center;justify-content:center;padding:20px 16px}
+  .card{width:100%;max-width:420px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px 18px;text-align:center}
+  .ic{font-size:44px;line-height:1;margin-bottom:8px}
+  h1{font-size:20px;margin:0 0 6px}
+  p{margin:0 0 16px;color:var(--ink2);font-size:14.5px}
+  .btn{display:block;width:100%;padding:14px 16px;margin:0 0 10px;border-radius:13px;font-weight:800;font-size:16px;
+       text-decoration:none;border:1.5px solid var(--line);color:var(--ink);background:var(--card)}
+  .btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+  .web{display:inline-block;margin-top:6px;font-size:13px;color:var(--ink2)}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="ic" id="ic">🧭</div>
+  <h1 id="ttl">Yandex ochilmoqda…</h1>
+  <p id="msg">Marshrut Yandex ilovasida ochiladi.</p>
+  <a class="btn p" id="maps" href="#">🗺 Yandex Maps'da ochish</a>
+  <a class="btn" id="navi" href="#">🧭 Yandex Navigator'da ochish</a>
+  <a class="btn" id="inst" href="#" hidden>⬇️ Yandex Maps'ni o'rnatish</a>
+  <a class="web" id="web" href="#" rel="noopener">Brauzerda ochish</a>
+</div>
+<script>
+(function(){
+  var q=new URLSearchParams(location.search);
+  var pts=(q.get('p')||'').split('~').map(function(s){return s.split(',').map(Number);})
+    .filter(function(p){return p.length===2&&isFinite(p[0])&&isFinite(p[1])&&Math.abs(p[0])<=90&&Math.abs(p[1])<=180&&!(p[0]===0&&p[1]===0);})
+    .slice(0,25);
+  var step=parseInt(q.get('s'),10)||1;
+  var ua=navigator.userAgent||'', android=/Android/i.test(ua), ios=/iPhone|iPad|iPod/i.test(ua);
+  var $=function(id){return document.getElementById(id);};
+  if(!pts.length){
+    $('ic').textContent='⚠️';$('ttl').textContent='Manzil topilmadi';
+    $('msg').textContent='Kuryer panelidan qaytadan 🧭 tugmasini bosing.';
+    ['maps','navi','web'].forEach(function(id){$(id).hidden=true;});
+    return;
+  }
+  function f(p){return p[0].toFixed(6)+','+p[1].toFixed(6);}
+  var rtext='~'+pts.map(f).join('~');
+  var mapsUrl='yandexmaps://maps.yandex.ru/?rtext='+rtext+'&rtt=auto';
+  var last=pts[pts.length-1], via=pts.slice(0,-1);
+  var naviUrl='yandexnavi://build_route_on_map?lat_to='+last[0].toFixed(6)+'&lon_to='+last[1].toFixed(6)
+    +via.map(function(p,i){return '&lat_via_'+i+'='+p[0].toFixed(6)+'&lon_via_'+i+'='+p[1].toFixed(6);}).join('');
+  var webUrl='https://yandex.uz/maps/?rtext='+rtext+'&rtt=auto';
+  function self(s){return location.origin+location.pathname+'?p='+pts.map(f).join('~')+'&s='+s;}
+  function intent(url,pkg,fallback){
+    var m=/^([a-z]+):\/\/(.*)$/.exec(url);
+    return 'intent://'+m[2]+'#Intent;scheme='+m[1]+';package='+pkg
+      +';S.browser_fallback_url='+encodeURIComponent(fallback)+';end';
+  }
+  var mapsHref=android?intent(mapsUrl,'ru.yandex.yandexmaps',self(3)):mapsUrl;
+  var naviHref=android?intent(naviUrl,'ru.yandex.yandexnavi',self(3)):naviUrl;
+  $('maps').href=mapsHref;$('navi').href=naviHref;$('web').href=webUrl;
+  $('inst').href=android?'https://play.google.com/store/apps/details?id=ru.yandex.yandexmaps'
+                        :'https://apps.apple.com/app/id313877526';
+  function noApp(){
+    $('ic').textContent='📲';$('ttl').textContent='Yandex ilovasi topilmadi';
+    $('msg').textContent='Telefoningizga Yandex Maps ilovasini o’rnating — ichida ovozli navigator bor. O’rnatgach, panelda 🧭 ni yana bosing.';
+    $('inst').hidden=false;$('inst').className='btn p';$('maps').className='btn';
+  }
+  window.__nav={mapsUrl:mapsUrl,naviUrl:naviUrl,webUrl:webUrl,mapsHref:mapsHref,naviHref:naviHref,step:step};
+  if(android){
+    // Maps first; its fallback comes back here as s=2 (Navigator), then s=3.
+    if(step===1)location.replace(intent(mapsUrl,'ru.yandex.yandexmaps',self(2)));
+    else if(step===2)location.replace(intent(naviUrl,'ru.yandex.yandexnavi',self(3)));
+    else noApp();
+  }else if(ios){
+    var left=false;
+    document.addEventListener('visibilitychange',function(){if(document.hidden)left=true;});
+    location.href=mapsUrl;
+    setTimeout(function(){if(!left)location.href=naviUrl;},1600);
+    setTimeout(function(){if(!left)noApp();},3400);
+  }else{
+    $('ttl').textContent='Telefonda oching';
+    $('msg').textContent='Bu tugma telefonda Yandex ilovasini ochadi. Kompyuterda — brauzerda:';
+    $('web').className='btn p';$('maps').hidden=true;$('navi').hidden=true;
+  }
+})();
+</script>
+</body>
+</html>

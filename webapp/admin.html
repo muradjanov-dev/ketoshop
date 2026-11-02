@@ -4046,13 +4046,25 @@ function kbOpenOut(url){
   if(w){try{w.opener=null;}catch(e){}return;}
   toast('Brauzer yangi oynani to’sdi — 🧭 tugmasini yana bir bosing');
 }
-/* A 🧭 tap: with a fresh position the link already starts from it; without
-   one, find it first and then open — so «Откуда» is never left blank when
-   the position can be had. Capture phase: Leaflet popups stop clicks. */
+/* On a phone a 🧭 tap must land in the Yandex app, not on its website
+   (owner, 2026-11-02: "saytda ochmasin"). Telegram passes an https link to
+   an app only if one claims that URL — the couriers' phones had none for
+   yandex.uz/maps, so they got the site. /nav (webapp/nav.html) asks for
+   Yandex Maps / Navigator by their own schemes instead. No waiting for the
+   position: the app starts from where the phone is, and Telegram drops an
+   openLink that comes more than 10 s after the tap. */
+const KB_PHONE=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
+function kbAppUrl(pins){
+  return location.origin+'/nav?p='+pins.map(p=>`${(+p[0]).toFixed(6)},${(+p[1]).toFixed(6)}`).join('~');
+}
+/* A 🧭 tap on a computer: with a fresh position the link already starts from
+   it; without one, find it first and then open — so «Откуда» is never left
+   blank when the position can be had. Capture phase: Leaflet popups stop clicks. */
 document.addEventListener('click',e=>{
   const a=e.target&&e.target.closest?e.target.closest('a[data-nav]'):null;
   if(!a)return;
   const pins=kbNavPins(a);
+  if(KB_PHONE){e.preventDefault();kbOpenOut(kbAppUrl(pins));return;}
   if(kbMyPos()){
     a.href=kbNavUrl(pins);
     // In the Mini App, leave through Telegram's own openLink — on a phone

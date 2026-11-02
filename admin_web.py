@@ -1811,6 +1811,17 @@ async def kuryer_page(request: web.Request):
     )
 
 
+async def nav_page(request: web.Request):
+    """/nav?p=lat,lon~lat,lon — the courier panel's way into the Yandex apps
+    on a phone (webapp/nav.html). Public: it holds no data of its own, only
+    the coordinates already in its URL."""
+    html_path = Path(__file__).parent / "webapp" / "nav.html"
+    return web.Response(
+        text=html_path.read_text(encoding="utf-8"), content_type="text/html",
+        headers={"Cache-Control": "no-cache", "Referrer-Policy": "no-referrer"},
+    )
+
+
 @require_courier_auth
 async def api_courier_board(request: web.Request):
     """Whole Kanban board in one payload — see courier_board.board_snapshot.
@@ -1899,6 +1910,7 @@ async def api_courier_location(request: web.Request):
 def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin", admin_page)
     app.router.add_get("/kuryer", kuryer_page)
+    app.router.add_get("/nav", nav_page)
     app.router.add_post("/admin/api/login", api_login)
     app.router.add_post("/admin/api/logout", api_logout)
     app.router.add_get("/admin/api/session", api_session)
