@@ -231,6 +231,61 @@ class EditorFlowTest(unittest.TestCase):
         self.assertEqual(_buttons(card.markup)[-1], "admin:orders:all:0")
         self.assertEqual(cb.answer.call_args.args[0], seller.get_text("oe_no_changes", "uz"))
 
+    def test_manual_order_opens_and_saves_without_buyer_notification(self):
+        card = FakeMsg(self.bot, message_id=90)
+        order = dict(ORDER, source="manual", status="pending")
+        self.db += [patch.object(order_edit.database, "get_order", AsyncMock(return_value=order)),
+                    patch.object(seller, "get_order", AsyncMock(return_value=order))]
+        cb = _cb("oedit:7:list:pending:0", card)
+        self._go(order_edit.open_editor(cb, self.state))
+        self.assertEqual(asyncio.run(self.state.get_state()), "OrderEditStates:editing")
+        self.assertIn("oe:save", _buttons(card.markup))
+        self._go(order_edit.ask_qty(_cb("oe:qty:0", card), self.state))
+        typed = FakeMsg(self.bot, text="0,75")
+        self._go(order_edit.got_qty(typed, self.state))
+        self.assertEqual(asyncio.run(self.state.get_data())["oe_items"][0]["quantity"], 0.75)
+        card = typed.sent[-1]
+        saved = {"old_total": 90000, "new_total": 67500, "low_stock": []}
+        with patch.object(order_edit.database, "admin_update_order_items", AsyncMock(return_value=saved)):
+            self._go(order_edit.save_edit(_cb("oe:save", card), self.state, self.bot))
+        self.assertNotIn("oe:notify:7:list:pending:0", _buttons(card.markup))
+        self.assertEqual(_buttons(card.markup)[-1], "admin:orders:pending:0")
+        self.assertIsNone(asyncio.run(self.state.get_state()))
+
+    def test_manual_and_bulk_quantities_accept_decimals_but_buyer_packs_stay_whole(self):
+        cases = [("manual", False, "0,75", 0.75), ("manual", False, "0.75", 0.75),
+                 ("bot", True, "0,75", 0.75), ("bot", False, "0.75", 1),
+                 ("manual", False, "nan", 1), ("manual", False, "inf", 1),
+                 ("manual", False, "-0.5", 1)]
+        for source, bulk, raw, expected in cases:
+            with self.subTest(source=source, bulk=bulk, raw=raw):
+                item = {"product_id": 3, "name": "Bodom uni", "quantity": 1,
+                        "price": 90000, "unit": "kg"}
+                if bulk:
+                    item["bulk"] = True
+                asyncio.run(self.state.set_state(order_edit.OrderEditStates.waiting_qty))
+                asyncio.run(self.state.set_data({"lang": "uz", "oe_order_id": 7,
+                    "oe_source": source,
+                    "oe_items": [dict(item)], "oe_orig": [dict(item)],
+                    "oe_old_total": 90000, "oe_qty_idx": 0}))
+                self._go(order_edit.got_qty(FakeMsg(self.bot, text=raw), self.state))
+                data = asyncio.run(self.state.get_data())
+                self.assertEqual(data["oe_items"][0]["quantity"], expected)
+
+    def test_manual_order_cannot_notify_admin_as_if_they_were_the_buyer(self):
+        cb = _cb("oe:notify:7", FakeMsg(self.bot))
+        self.db.append(patch.object(order_edit.database, "get_order",
+                                    AsyncMock(return_value=dict(ORDER, source="manual"))))
+        self._go(order_edit.notify_buyer(cb, self.bot))
+        self.assertEqual(self.bot.send_message.call_count, 0)
+
+    def test_non_admin_cannot_open_manual_editor(self):
+        cb = _cb("oedit:7", FakeMsg(self.bot))
+        cb.from_user.id = 99
+        self._go(order_edit.open_editor(cb, self.state))
+        self.assertIsNone(asyncio.run(self.state.get_state()))
+        self.assertEqual(cb.answer.call_args.args, ("❌",))
+
 
 if __name__ == "__main__":
     unittest.main()
