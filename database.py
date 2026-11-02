@@ -5743,6 +5743,17 @@ async def admin_update_order_items(order_id: int, original_items: list[dict],
             new_total = old_total - order_goods_total(stored) + order_goods_total(new_items)
             if new_total < 0:
                 raise ValueError("Total would go negative")
+            if row.get("source") == "manual":
+                # Newly added lines need the same cost snapshot as manual entry.
+                # Leave historical lines (including legacy missing costs) alone.
+                old_keys = {order_line_key(it) for it in stored}
+                added_indices = [i for i, it in enumerate(new_items)
+                                 if order_line_key(it) is not None
+                                 and order_line_key(it) not in old_keys]
+                snapshots = await _snapshot_order_costs(conn, [new_items[i] for i in added_indices])
+                new_items = list(new_items)
+                for i, item in zip(added_indices, snapshots):
+                    new_items[i] = item
             await conn.execute(
                 "UPDATE orders SET items = $1, total = $2 WHERE id = $3",
                 json.dumps(new_items, ensure_ascii=False), new_total, order_id,

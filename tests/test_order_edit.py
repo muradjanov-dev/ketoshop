@@ -49,6 +49,8 @@ class FakeConn:
         return self.stock.get(args[0], 0)
 
     async def fetch(self, sql, *args):
+        if "FROM products WHERE id = ANY" in sql:
+            return []           # catalogue costs missing unless supplied by a test
         if "SUM(qty) AS held" in sql:
             return []           # no other buyer holds anything (Savat broni)
         return [{"product_id": p, "quantity": q} for p, q in self.set_items.get(args[0], [])]
@@ -123,7 +125,8 @@ class OrderEditTest(unittest.TestCase):
         res, conn = self._run(old, new, {1: 0, 2: 0, 3: 0},
                               total=145_000, source="manual")
         self.assertEqual(conn.stock, {1: 0, 2: 0, 3: 0})
-        self.assertEqual(conn.saved, (new, 180_000))
+        self.assertEqual(conn.saved, ([new[0], dict(new[1], unit_cost_snapshot=0,
+                                                  unit_cost_known=False)], 180_000))
         self.assertEqual(res["low_stock"], [])
 
     def test_b2b_edit_rejected_without_writing(self):
@@ -135,6 +138,29 @@ class OrderEditTest(unittest.TestCase):
             asyncio.run(database.admin_update_order_items(1, [_line(1, 1, 10)], [_line(1, 2, 10)]))
         self.assertIsNone(conn.saved)
         self.assertEqual(conn.stock, {1: 5})
+
+    def test_manual_added_line_cost_stays_fixed_after_catalog_change(self):
+        old = [dict(_line(1, 2, 50_000), unit_cost_snapshot=30_000,
+                    unit_cost_known=True), _line(2, 1, 20_000)]
+        new = [dict(old[0], quantity=3), old[1], _line(3, 0.5, 10_000)]
+
+        class CostConn(FakeConn):
+            async def fetch(self, sql, *args):
+                if "FROM products WHERE id = ANY" in sql:
+                    return [{"id": pid, "cost_price": 6_000} for pid in args[0]]
+                return await super().fetch(sql, *args)
+
+        conn = CostConn({"id": 1, "user_id": 7, "status": "pending",
+                         "source": "manual", "total": 145_000,
+                         "items": json.dumps(old)}, {1: 0, 2: 0, 3: 0})
+        database.pool = FakePool(conn)
+        asyncio.run(database.admin_update_order_items(1, old, new))
+        saved, total = conn.saved
+        self.assertEqual(saved[:2], new[:2])  # preserve historical/legacy costs
+        self.assertEqual(database.line_cost(saved[2], {3: 9_000}, {}), (3_000, True))
+        self.assertEqual(total, 200_000)
+        self.assertEqual(conn.stock, {1: 0, 2: 0, 3: 0})
+        self.assertNotIn("unit_cost_snapshot", new[2])  # leave the draft alone
 
     def test_set_line_moves_components(self):
         old = [{"set_id": 7, "is_set": True, "name": "set", "quantity": 1, "price": 90_000}]
