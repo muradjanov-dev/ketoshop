@@ -669,6 +669,7 @@ body.kuryer-mode #loginView,
 body.kuryer-mode .tabs,
 body.kuryer-mode #logoutBtn,
 body.kuryer-mode .view:not(#view-courier){display:none!important}
+body.kuryer-mode .kb-admin-only{display:none!important}
 .kuryer-denied{min-height:100dvh;display:grid;place-items:center;padding:24px;text-align:center;
   font-size:16px;line-height:1.5;color:var(--ink-2)}
   #view-expenses .exp-name{overflow-wrap:anywhere}
@@ -1066,6 +1067,8 @@ body.kuryer-mode .view:not(#view-courier){display:none!important}
       </label>
       <button class="kb-live on" id="kbAutoBtn" type="button"><span class="dot"></span><span id="kbAutoLab">Jonli</span></button>
       <button class="btn btn-o btn-sm" id="kbRefreshBtn" type="button">↻ Yangilash</button>
+      <button class="btn btn-o btn-sm kb-admin-only" id="kbTestBtn" type="button"
+              title="Kuryer paneli sinovi uchun «Yo’lda» buyurtma — 0 so’m, tushumga kirmaydi">🧪 Test buyurtma</button>
     </div>
     <!-- Moving between columns without swiping (owner, 2026-10-04: "swipe
          qilishga qiynalyapman") — tap a column tab or an arrow. -->
@@ -4647,6 +4650,11 @@ function kbRenderDetail(id,opts){
       </div>
       <div class="hint" style="margin-top:6px">Telegramga yuborilganda pin navigatorda ochiladi — barcha adminlarga boradi.</div>
     </div>`:''}
+    ${c.source==='test'&&!window.KURYER_MODE?`<div class="sec">
+      <h4>🧪 Test buyurtma</h4>
+      <div class="hint" style="margin-bottom:8px">Sinov uchun: 0 so’m, tushumga kirmaydi, «Yetkazildi» qilinmaydi.</div>
+      <button type="button" class="btn btn-o btn-sm" id="kbTestDelBtn">🗑 Test buyurtmani o’chirish</button>
+    </div>`:''}
     <div class="sec">
       <h4>Kuryer</h4>
       <select id="kbCourierSel">${courierOpts}</select>
@@ -4659,6 +4667,15 @@ function kbRenderDetail(id,opts){
 
   $('#kbModalBody').querySelectorAll('[data-move]').forEach(b=>
     b.addEventListener('click',()=>{kbMove(id,b.dataset.move);}));
+  const testDel=$('#kbTestDelBtn');
+  if(testDel)testDel.addEventListener('click',async()=>{
+    testDel.disabled=true;
+    try{
+      await api('/admin/api/courier/test-order',{method:'POST',body:JSON.stringify({action:'delete'})});
+      closeModals();toast('🗑 Test buyurtma o’chirildi');
+      await loadCourier();
+    }catch(err){toast('⚠️ '+err.message);testDel.disabled=false;}
+  });
   const pinBtn=$('#kbPinBtn');
   if(pinBtn)pinBtn.addEventListener('click',async()=>{
     pinBtn.disabled=true;
@@ -4717,6 +4734,17 @@ $('#kbScope').addEventListener('click',e=>{
   KB_LOADED=false;KB_COUNTS={};loadCourier();
 });
 $('#kbRefreshBtn').addEventListener('click',()=>loadCourier());
+/* 🧪 One test order in «Yo’lda» to try the 🧭 / map flow on (owner,
+   2026-11-02) — 0 so’m, never revenue, never «Yetkazildi» (sinov_buyurtma.py). */
+$('#kbTestBtn').addEventListener('click',async()=>{
+  const b=$('#kbTestBtn');b.disabled=true;
+  try{
+    const r=await api('/admin/api/courier/test-order',{method:'POST',body:JSON.stringify({action:'create'})});
+    toast(`🧪 Test buyurtma #${r.id} — «Tayyor + Yo’lda» ustunida`);
+    await loadCourier();
+  }catch(err){toast('⚠️ '+err.message);}
+  finally{b.disabled=false;}
+});
 $('#kbSearch').addEventListener('input',()=>renderKanban());
 try{
   if(localStorage.getItem(KB_SCOPE_KEY)==='active'){

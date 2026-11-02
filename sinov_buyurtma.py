@@ -3,7 +3,9 @@
 toshkentdagi istalgan lokatsiyaga buyurtma yaratib ber, faqat uni tushumlarga
 qo'shma — kartasiga bosib sinab ko'rmoqchiman").
 
-/test_buyurtma (admins only) puts ONE order on the courier board:
+/test_buyurtma (admins only), the «🧪 Test buyurtma» button on the admin
+site's Kuryer tab, and a one-off at the first startup (ensure_once) put ONE
+order on the courier board:
   • status «Yo'lda» (shipped), Ketoshop courier, a pin on Amir Temur xiyoboni
     in Tashkent — so its 🧭 / map can be tried from the courier panel;
   • source 'test', no items, total 0 — the shop's money figures sum totals,
@@ -37,19 +39,39 @@ LAT, LON = 41.311151, 69.279737          # Amir Temur xiyoboni, Toshkent
 PLACE = "Amir Temur xiyoboni (TEST)"
 NAME = "🧪 TEST — sinov buyurtma"
 NOTE = "Sinov buyurtma — yetkazilmaydi. Sinovdan keyin o'chiring."
-NO_DELIVERY = "🧪 Bu test buyurtma — «Yetkazildi» qilinmaydi. Sinovdan keyin /test_buyurtma xabaridagi tugma bilan o'chiring."
+NO_DELIVERY = ("🧪 Bu test buyurtma — «Yetkazildi» qilinmaydi. Sinovdan keyin o'chiring "
+               "(saytda buyurtma ichidagi «🗑» yoki /test_buyurtma xabaridagi tugma).")
+# One automatic test order after the deploy (owner, 2026-11-02, looking at an
+# empty «Yo'lda» column on the admin site: "qara hechnima yo'q") — the card
+# just appears, nobody has to send a command first.
+ONCE_KEY = "test-buyurtma-2026-11-02"
 
 
 def is_test(order: dict | None) -> bool:
     return bool(order) and (order.get("source") or "") == SOURCE
 
 
-async def create(admin_id: int) -> tuple[int, list[int]]:
-    """Remove earlier test orders, insert a fresh one. Returns (id, removed ids)."""
+async def pick_buyer() -> int | None:
+    """An admin account the bot knows — orders.user_id is a foreign key to
+    users. Used when no one in particular asked (the admin site, the one-off)."""
+    async with database.pool.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT user_id FROM users WHERE user_id = ANY($1::bigint[]) ORDER BY user_id LIMIT 1",
+            [int(i) for i in ADMIN_IDS])
+
+
+async def delete_all() -> list[int]:
+    """Every test order, gone for good. Returns their ids."""
     async with database.pool.acquire() as conn:
         old = [r["id"] for r in await conn.fetch("SELECT id FROM orders WHERE source = $1", SOURCE)]
     for oid in old:
         await database.delete_order_permanently(oid)
+    return old
+
+
+async def create(admin_id: int) -> tuple[int, list[int]]:
+    """Remove earlier test orders, insert a fresh one. Returns (id, removed ids)."""
+    old = await delete_all()
     async with database.pool.acquire() as conn:
         order_id = await conn.fetchval(
             """INSERT INTO orders (user_id, seller_id, customer_name, phone, address, items, total,
@@ -81,8 +103,12 @@ async def cmd_test_order(message: Message):
         return
     logger.info("Test order #%s created by admin %s (removed earlier: %s)",
                 order_id, message.from_user.id, removed)
+    await message.answer(_created_text(order_id, removed), parse_mode="HTML", reply_markup=_kb(order_id))
+
+
+def _created_text(order_id: int, removed: list[int]) -> str:
     gone = f"\n♻️ Avvalgi test buyurtma o'chirildi: {', '.join('#' + str(i) for i in removed)}" if removed else ""
-    await message.answer(
+    return (
         f"🧪 <b>Test buyurtma #{order_id} yaratildi</b>\n\n"
         f"🚚 Holati: <b>Yo'lda</b> · Ketoshop kuryeri\n"
         f"📍 {html.escape(PLACE)}\n"
@@ -90,9 +116,29 @@ async def cmd_test_order(message: Message):
         f"Kuryer panelida «🚚 Tayyor + Yo'lda» ustunida turibdi: kartasidagi «🧭 Yo'l», "
         f"kichik xarita yoki «🗺 Xarita» → «🧭 Yandex'da yo'lga chiqish» ni bosib sinang.\n\n"
         f"⚠️ Uni «Yetkazildi» qilib bo'lmaydi. Sinovdan keyin pastdagi tugma bilan o'chiring."
-        f"{gone}",
-        parse_mode="HTML", reply_markup=_kb(order_id),
+        f"{gone}"
     )
+
+
+async def ensure_once(bot) -> None:
+    """Startup, once per ONCE_KEY: put the test order on the board and tell
+    the admin it is filed under, with the 🗑 button."""
+    try:
+        if not await database.claim_release_notes(ONCE_KEY):
+            return
+        buyer = await pick_buyer()
+        if not buyer:
+            logger.warning("test order: no admin account in users — one-off skipped")
+            return
+        order_id, removed = await create(buyer)
+        logger.info("Test order #%s created at startup for admin %s", order_id, buyer)
+        try:
+            await bot.send_message(buyer, _created_text(order_id, removed),
+                                   parse_mode="HTML", reply_markup=_kb(order_id))
+        except Exception:
+            logger.warning("test order: notice to admin %s failed", buyer, exc_info=True)
+    except Exception:
+        logger.exception("test order: one-off create failed")
 
 
 @router.callback_query(F.data.regexp(r"^testord:del:\d+$"))
