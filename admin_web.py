@@ -1811,6 +1811,26 @@ async def kuryer_page(request: web.Request):
     )
 
 
+@require_auth
+async def api_courier_test_order(request: web.Request):
+    """🧪 Test buyurtma from the admin site's Kuryer tab (sinov_buyurtma.py):
+    {"action": "create"} puts one on the board (replacing an earlier one),
+    {"action": "delete"} removes every test order. The admin password only —
+    never the couriers' Telegram login."""
+    import sinov_buyurtma
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if (body or {}).get("action") == "delete":
+        return _json({"ok": True, "deleted": await sinov_buyurtma.delete_all()})
+    buyer = await sinov_buyurtma.pick_buyer()
+    if not buyer:
+        return _json({"error": "Bot bazasida admin hisobi topilmadi"}, status=400)
+    order_id, removed = await sinov_buyurtma.create(buyer)
+    return _json({"ok": True, "id": order_id, "removed": removed})
+
+
 async def nav_page(request: web.Request):
     """/nav?p=lat,lon~lat,lon — the courier panel's way into the Yandex apps
     on a phone (webapp/nav.html). Public: it holds no data of its own, only
@@ -1973,4 +1993,5 @@ def setup_admin_routes(app: web.Application):
     app.router.add_post("/admin/api/courier/orders/{id:\\d+}/move", api_courier_move)
     app.router.add_post("/admin/api/courier/orders/{id:\\d+}/courier", api_courier_assign)
     app.router.add_post("/admin/api/courier/orders/{id:\\d+}/location", api_courier_location)
+    app.router.add_post("/admin/api/courier/test-order", api_courier_test_order)
     app.router.add_get("/img/{id:\\d+}", serve_image)

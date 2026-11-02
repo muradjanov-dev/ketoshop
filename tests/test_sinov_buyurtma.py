@@ -33,6 +33,9 @@ class FakeConn:
         return [{"id": 5}]
 
     async def fetchval(self, sql, *args):
+        if "FROM users" in sql:
+            self.buyer_args = args
+            return 917456291
         assert sql.strip().startswith("INSERT INTO orders")
         self.inserted = (sql, args)
         return 99
@@ -119,6 +122,58 @@ class TestOrderTest(unittest.TestCase):
 
     def test_command_published_for_admins(self):
         self.assertIn("test_buyurtma", [c.command for c in keyboards.ADMIN_COMMANDS])
+
+
+class OneOffAndSiteTest(unittest.TestCase):
+    """Egasi saytda bo'sh «Yo'lda» ustunini ko'rdi — deploydan keyin test kartasi
+    o'zi paydo bo'ladi (bir marta), saytdagi tugma yaratadi / o'chiradi."""
+
+    def test_buyer_is_a_known_admin(self):
+        conn = FakeConn()
+        with patch.object(database, "pool", FakePool(conn)), \
+             patch.object(test_order, "ADMIN_IDS", [1035429145, 917456291]):
+            self.assertEqual(asyncio.run(test_order.pick_buyer()), 917456291)
+        self.assertEqual(sorted(conn.buyer_args[0]), [917456291, 1035429145])
+
+    def test_one_off_creates_once_and_tells_the_admin(self):
+        bot = NS(send_message=AsyncMock())
+        create = AsyncMock(return_value=(99, []))
+        with patch.object(database, "claim_release_notes", AsyncMock(return_value=True)), \
+             patch.object(test_order, "pick_buyer", AsyncMock(return_value=917456291)), \
+             patch.object(test_order, "create", create):
+            asyncio.run(test_order.ensure_once(bot))
+        create.assert_awaited_once_with(917456291)
+        self.assertEqual(bot.send_message.call_args.args[0], 917456291)
+        self.assertIn("#99", bot.send_message.call_args.args[1])
+        # already claimed (a restart) → nothing again
+        create.reset_mock()
+        with patch.object(database, "claim_release_notes", AsyncMock(return_value=False)), \
+             patch.object(test_order, "create", create):
+            asyncio.run(test_order.ensure_once(bot))
+        create.assert_not_awaited()
+
+    def test_site_button_creates_and_deletes(self):
+        import admin_web
+
+        def req(action):
+            return NS(json=AsyncMock(return_value={"action": action}), cookies={})
+
+        with patch.object(admin_web, "ADMIN_WEB_PASSWORD", "x"), \
+             patch.object(admin_web, "_authed", lambda r: True), \
+             patch.object(test_order, "pick_buyer", AsyncMock(return_value=917456291)), \
+             patch.object(test_order, "create", AsyncMock(return_value=(99, [5]))), \
+             patch.object(test_order, "delete_all", AsyncMock(return_value=[99])):
+            made = json.loads(asyncio.run(admin_web.api_courier_test_order(req("create"))).text)
+            gone = json.loads(asyncio.run(admin_web.api_courier_test_order(req("delete"))).text)
+        self.assertEqual((made["id"], made["removed"]), (99, [5]))
+        self.assertEqual(gone["deleted"], [99])
+
+    def test_site_button_needs_the_admin_password(self):
+        import admin_web
+        with patch.object(admin_web, "ADMIN_WEB_PASSWORD", "x"), \
+             patch.object(admin_web, "_authed", lambda r: False):
+            resp = asyncio.run(admin_web.api_courier_test_order(NS(cookies={})))
+        self.assertEqual(resp.status, 401)
 
 
 if __name__ == "__main__":

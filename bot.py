@@ -444,6 +444,9 @@ async def main():
 
     from release_notes import scheduler_loop as release_notes_loop
     release_notes_task = asyncio.create_task(release_notes_loop(bot))
+    # 🧪 One test order on the courier board after this deploy (sinov_buyurtma.py).
+    from sinov_buyurtma import ensure_once as test_order_once
+    asyncio.create_task(test_order_once(bot))
     # 📦 All products and sets, 15 / 30 days — once to every admin.
     from jar_stats import scheduler_loop as jar_stats_loop
     jar_stats_task = asyncio.create_task(jar_stats_loop(bot))
