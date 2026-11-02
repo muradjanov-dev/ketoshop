@@ -5688,9 +5688,10 @@ async def admin_update_order_items(order_id: int, original_items: list[dict],
     * `original_items` is what the admin's editor started from; if the stored
       lines differ now (another admin edited it), or the order left the
       editable statuses, OrderChangedError is raised and nothing changes.
-    * Stock moves by the difference only: added/increased lines are taken
-      from the shelf (InsufficientStockError if there isn't enough, same rule
-      as checkout), removed/decreased lines go back.
+    * Customer-order stock moves by the difference only: added/increased lines
+      are taken from the shelf (InsufficientStockError if there isn't enough, same rule
+      as checkout), removed/decreased lines go back. Manual orders never move
+      stock, matching add_manual_order. B2B sales are not editable here.
     * The total moves by the goods difference only, so the delivery fee and
       any Keto the buyer spent stay exactly as they were charged.
 
@@ -5719,10 +5720,12 @@ async def admin_update_order_items(order_id: int, original_items: list[dict],
                 raise OrderChangedError("order not found")
             stored = row["items"]
             stored = json.loads(stored) if isinstance(stored, str) else (stored or [])
-            if row["status"] not in ORDER_EDITABLE_STATUSES or stored != original_items:
+            if (row["status"] not in ORDER_EDITABLE_STATUSES or stored != original_items
+                    or row.get("source") == "b2b"):
                 raise OrderChangedError("order changed since the editor opened")
 
-            for (kind, ref_id), delta in order_edit_deltas(stored, new_items).items():
+            deltas = {} if row.get("source") == "manual" else order_edit_deltas(stored, new_items)
+            for (kind, ref_id), delta in deltas.items():
                 if kind == "set":
                     parts = await conn.fetch(
                         "SELECT product_id, quantity FROM product_set_items WHERE set_id = $1", ref_id)

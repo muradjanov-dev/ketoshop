@@ -1075,6 +1075,14 @@ TEXTS = {
         "uz": "Butun son yozing, masalan 2.",
         "ru": "Введите целое число, например 2.",
     },
+    "oe_ask_decimal_qty": {
+        "uz": "«{name}» uchun yangi miqdorni yozing, masalan 0.5 (0 — olib tashlash). /cancel — orqaga.",
+        "ru": "Введите новое количество для «{name}», например 0.5 (0 — удалить). /cancel — назад.",
+    },
+    "oe_bad_decimal_qty": {
+        "uz": "Musbat son yozing, masalan 0.5. 0 — olib tashlash.",
+        "ru": "Введите положительное число, например 0.5. 0 — удалить.",
+    },
     "oe_ask_search": {
         "uz": "Qo'shiladigan mahsulot nomini yozing (uz yoki ru). /cancel — orqaga.",
         "ru": "Введите название товара для добавления (uz или ru). /cancel — назад.",
