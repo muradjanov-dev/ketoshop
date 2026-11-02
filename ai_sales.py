@@ -123,8 +123,8 @@ import ai_stats
 import ai_provider
 import database
 from config import (ADMIN_IDS, BOT_USERNAME, FREE_DELIVERY_FROM, LOW_STOCK_THRESHOLD,
-                    PAYMENT_CARD_NUMBER, PAYMENT_RECIPIENT_NAME, REQUIRED_CHANNEL_ID,
-                    SUPPORT_PHONES)
+                    MYSTERY_GIFT_FROM, PAYMENT_CARD_NUMBER, PAYMENT_RECIPIENT_NAME,
+                    REQUIRED_CHANNEL_ID, SUPPORT_PHONES)
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -1122,6 +1122,12 @@ def _sales_rules() -> str:
         "bo'lsa «✅ Tasdiqlash» ni bosing 😊'.\n"
         "- SO'RAMA: ism, qo'shimcha telefon, Keto tangachalar, to'lov turi — kartada tugmasi bor "
         "(💵 naqd / 💳 karta, Keto). Mijoz o'zi aytsa — tolov_turi yoki qoshimcha_telefon ga yoz.\n"
+        "- NARX VA JAMI: hech qachon o'zing qo'shma, ko'paytirma va eski suhbatdan yoki xotiradan "
+        "olma. Bir nechta mahsulot narxi yoki jami kerak bo'lsa — avval hisob ni (savatdagisi "
+        "uchun savatni_korish ni) chaqir va raqamlarni FAQAT o'shandan ko'chir. Mahsulot nomini "
+        "katalogdagidek to'liq yoz (1000gr / 500gr bilan): 'grechka uni' va 'grechka doni' — "
+        "boshqa-boshqa mahsulot. Kod javobingdagi har bir so'm summasini katalog va vositalar "
+        "bilan solishtiradi.\n"
         "- O'ZING YOZMA: buyurtma xulosasi, mahsulotlar ro'yxati va narxlari, JAMI, 'Tasdiqlaysizmi?' "
         "— buni karta qiladi. Buyurtmani sen TUZMAYSAN: 'buyurtmangiz qabul qilindi' DEMA — "
         "buyurtma faqat mijoz kartada tasdiqlaganda tuziladi va bot o'zi raqami bilan xabar "
@@ -1275,6 +1281,32 @@ _TOOL_SPECS = [
         "description": "Savatdagi mahsulotlar, chegirmalar, sovg'alar, yetkazish narxi va "
                        "aniq jami summa — checkout bilan bir xil hisob.",
         "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "strict": True,
+    },
+    {
+        "name": "hisob",
+        "description": "Bir nechta mahsulotning aniq narxi va JAMI summasini KOD hisoblaydi — "
+                       "savatga solmaydi. Mijozga mahsulotlar ro'yxatini narxi bilan yoki jami "
+                       "summani aytishdan OLDIN chaqir va raqamlarni faqat shundan ko'chir.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mahsulotlar": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "mahsulot_id": {"type": "integer", "description": "Katalogdagi id"},
+                            "miqdor": {"type": "number", "description": "Necha kg yoki dona"},
+                        },
+                        "required": ["mahsulot_id", "miqdor"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["mahsulotlar"],
+            "additionalProperties": False,
+        },
         "strict": True,
     },
     {
@@ -1537,6 +1569,45 @@ async def _promo_hint(user_id: int) -> str:
     except Exception:
         logger.warning("Promo hint failed for %s", user_id, exc_info=True)
         return ""
+
+
+async def _tool_quote(user_id: int, args: dict) -> str:
+    """Savatga solmasdan narx va jami — savat qatori bilan bir xil formula
+    (mahsulot chegirmasi bilan). Egasi, 2026-11-02: model «Hisob to'liq»
+    ro'yxatida Yashil grechka uni 1000gr ni 29 000 deb (katalogda 48 000)
+    yozib, jamini o'zi qo'shgan; mijoz savatda boshqa summani ko'rgan."""
+    rows = args.get("mahsulotlar") or []
+    if not rows:
+        return "Xato: mahsulotlar ro'yxati bo'sh."
+    lines, notes, total = [], [], 0.0
+    for row in rows[:30]:
+        product_id = int(row.get("mahsulot_id") or 0)
+        qty = float(row.get("miqdor") or 0)
+        product = await database.get_product(product_id)
+        if not product or not product.get("is_active"):
+            notes.append(f"{product_id} raqamli mahsulot katalogda yo'q")
+            continue
+        if qty <= 0:
+            notes.append(f"{product['name']}: miqdor 0 dan katta bo'lishi kerak")
+            continue
+        discount = database.active_discount(product.get("discount_percent"), product.get("discount_until"))
+        price = database.effective_price(float(product["price"]), discount, product.get("discount_until"))
+        line_total = price * qty
+        total += line_total
+        unit = product.get("unit") or "dona"
+        lines.append(f"- {product['name']} — {qty:g} {unit} × {_fmt(price)} = {_fmt(line_total)} so'm"
+                     + (f" (chegirma -{discount}%, asl narxi {_fmt(product['price'])})" if discount else ""))
+        stock = float(product.get("quantity") or 0)
+        if qty > stock:
+            notes.append(f"{product['name']}: omborda atigi {stock:g} {unit} bor")
+    if not lines:
+        return "Xato: " + "; ".join(notes)
+    out = ("HISOB (kod hisobladi, savatga solinmadi). Nom va raqamlarni aynan shundan ko'chir:\n"
+           + "\n".join(lines) + f"\nJami (mahsulotlar): {_fmt(total)} so'm\n"
+           "Yetkazish, aksiya sovg'alari va aniq to'lov summasi — savat va buyurtma kartasida.")
+    if notes:
+        out += "\nDiqqat: " + "; ".join(notes)
+    return out
 
 
 async def _tool_cart(user_id: int) -> str:
@@ -2080,6 +2151,142 @@ def drop_order_claims(reply: str) -> str:
     return "\n".join(p for p in parts if not _ORDER_CLAIM.search(p)).strip()
 
 
+# ── Narx tekshiruvi (egasi, 2026-11-02) ─────────────────────────────────────
+# Model «Hisob to'liq» ro'yxatida Yashil grechka uni 1000gr ni 29 000 deb
+# (katalogda 48 000) yozib, jamini o'zi qo'shdi — 332 000; mijoz savatda
+# 406 000 ni ko'rdi. "O'zing yozma" qoidasi bor edi; endi kod tekshiradi:
+# javobdagi har bir so'm summasi katalog narxi × miqdor, vosita natijasi,
+# qoidalar/katalog yoki mijoz yozgan raqam bo'lishi shart. Aks holda model bir
+# marta qayta so'raladi, keyin ham to'qilgan summa qolsa — o'sha qator chiqmaydi.
+_MONEY = re.compile(
+    r"(?<![\d.,])(\d{1,3}(?:[   .,]\d{3})+|\d+)(?:[.,](\d{1,2}))?\s*"
+    r"(ming|тысяч\w*|тыс\.?)?\s*(?:s[oö]['ʻ’`‘]?m\w*|сўм\w*|сум\w*|sum\b)",
+    re.IGNORECASE)
+_NUMBER = re.compile(r"\d{1,3}(?:[   .,]\d{3})+(?!\d)|\d+")
+_CATALOG_PRICE = re.compile(r"\|\s*(\d{1,3}(?:[  ]\d{3})+|\d+)\s*so'm")
+# Miqdorlar: 0.5 kg qadam bilan 10 gacha, keyin butun son 30 gacha.
+_QUANTITIES = [q / 2 for q in range(1, 21)] + list(range(11, 31))
+
+
+def money_values(text: str) -> list[int]:
+    """'48 000 so'm', '48000 сум', '48 ming so'm' → [48000, ...]."""
+    out = []
+    for m in _MONEY.finditer(text or ""):
+        whole = re.sub(r"\D", "", m.group(1))
+        if not whole:
+            continue
+        if m.group(3):                                   # "48,5 ming"
+            out.append(int(round(float(f"{whole}.{m.group(2) or 0}") * 1000)))
+        else:
+            out.append(int(whole))
+    return out
+
+
+def grounded_numbers(*texts: str) -> set[int]:
+    """Every number a model may legitimately repeat from these texts."""
+    found: set[int] = set()
+    for text in texts:
+        found.update(int(re.sub(r"\D", "", m.group())) for m in _NUMBER.finditer(text or ""))
+        found.update(money_values(text))
+    return found
+
+
+def catalog_multiples(catalog: str) -> set[int]:
+    """Katalog narxi × miqdor — "2 kg — 40 000" kabi qatorlar uchun."""
+    prices = {int(re.sub(r"\D", "", m.group(1))) for m in _CATALOG_PRICE.finditer(catalog or "")}
+    return {int(round(p * q)) for p in prices for q in _QUANTITIES}
+
+
+_CATALOG_LINE = re.compile(r"^\s*\d+\s*\|\s*([^|\n]+?)\s*\|\s*(\d[\d  ]*)\s*so'm([^\n]*)$", re.M)
+_SIZE_TAIL = re.compile(r"\s*\d+(?:[.,]\d+)?\s*(?:gr|g|kg|ml|l|litr|гр|г|кг|мл|л)\b.*$", re.I)
+
+
+def _norm_name(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"['ʻ’`‘]", "'", (text or "").lower())).strip()
+
+
+def catalog_families(catalog: str) -> dict[str, set[int]]:
+    """Mahsulot nomi (gramm/ml siz) → o'sha nomdagi mahsulot(lar) narxi × miqdor.
+    "Yashil grechka uni" qatoridagi summa grechka unining narxidan bo'lishi
+    kerak — katalogda 29 000 li "Yashil grechka doni" borligi uni oqlamaydi."""
+    families: dict[str, set[int]] = {}
+    for m in _CATALOG_LINE.finditer(catalog or ""):
+        base = _norm_name(_SIZE_TAIL.sub("", re.sub(r"\s*\(ru:[^)]*\)", "", m.group(1))))
+        if len(base) < 5:
+            continue
+        prices = {int(re.sub(r"\D", "", m.group(2)))}
+        old = re.search(r"asl narxi (\d[\d  ]*)", m.group(3))
+        if old:
+            prices.add(int(re.sub(r"\D", "", old.group(1))))
+        families.setdefault(base, set()).update(int(round(p * q)) for p in prices for q in _QUANTITIES)
+    return families
+
+
+class PriceCheck:
+    """Bitta javob uchun: qaysi so'm summalari "ko'chirilgan", qaysilari to'qilgan.
+
+    • Qatorda katalogdagi mahsulot nomi bo'lsa — summa o'sha mahsulot narxi ×
+      miqdor, shu javobdagi vosita natijasi, mijoz yozgan raqam yoki umumiy
+      shart (yetkazish narxi, bepul yetkazish/sovg'a chegarasi, set, aksiya)
+      bo'lishi kerak — BOSHQA mahsulotning narxi emas.
+    • Boshqa qatorlarda — qoidalar/katalog/vosita/mijoz matnidagi biror raqam."""
+
+    def __init__(self, rules: str, catalog: str, user_text: str):
+        self.user = grounded_numbers(user_text)
+        # Mahsulot qatorlaridan tashqari hamma narsa: qoidalar, setlar, aksiya, bilimlar.
+        self.context = (grounded_numbers(rules, _CATALOG_LINE.sub("", catalog or ""))
+                        | {MYSTERY_GIFT_FROM, FREE_DELIVERY_FROM})
+        self.grounded = (self.context | grounded_numbers(catalog) | self.user
+                         | catalog_multiples(catalog))
+        self.families = catalog_families(catalog)
+        self.tools: set[int] = set()
+
+    def add_tool_output(self, text: str) -> None:
+        numbers = grounded_numbers(text)
+        self.tools |= numbers
+        self.grounded |= numbers
+
+    def bad(self, text: str) -> list[int]:
+        out = []
+        for line in (text or "").split("\n"):
+            amounts = [v for v in money_values(line) if v >= 1000]
+            if not amounts:
+                continue
+            low = _norm_name(line)
+            allowed = None
+            for base, multiples in self.families.items():
+                if base in low:
+                    allowed = (allowed or set()) | multiples
+            for v in amounts:
+                if allowed is not None:
+                    ok = v in allowed or v in self.tools or v in self.user or v in self.context
+                else:
+                    ok = v in self.grounded
+                if not ok:
+                    out.append(v)
+        return out
+
+    def drop(self, reply: str, lang: str) -> str:
+        """Qayta so'ralgandan keyin ham to'qilgan summa qolsa — o'sha qatorlar
+        chiqmaydi; mijoz noto'g'ri narxni ko'rgandan ko'ra aniq summani savatda ko'rsin."""
+        lines = (reply or "").split("\n")
+        kept = [line for line in lines if not self.bad(line)]
+        if len(kept) == len(lines):
+            return reply
+        note = _t("Aniq narx va jami summani savatda ko'rsataman — savatga qo'shamizmi? 🛒",
+                  "Точную цену и сумму покажу в корзине — добавить в корзину? 🛒", lang)
+        text = "\n".join(kept).strip()
+        return f"{text}\n\n{note}" if text else note
+
+
+def price_fix(bad: list[int]) -> str:
+    shown = ", ".join(_fmt(v) for v in sorted(set(bad)))
+    return (f"[TIZIM: javobingdagi summa ({shown} so'm) katalog narxi, vosita natijasi yoki "
+            "mijoz yozgan raqamga mos emas. Narx va jamini o'zing hisoblama, eski suhbatdan "
+            "olma: hisob ni (savatdagisi uchun savatni_korish ni) chaqir, mahsulot nomi va "
+            "raqamlarni faqat o'shandan ko'chir. Javobni qayta yoz.]")
+
+
 async def _pickup_place() -> tuple[str, str]:
     """Olib ketish manzili: admin panelidagi pickup sozlamasi yoqilgan bo'lsa —
     o'sha (tugmali checkout bilan bir xil), aks holda egasi bergan mo'ljal va havola."""
@@ -2109,6 +2316,8 @@ async def _run_tool(bot: Bot, message: Message, name: str, args: dict) -> str:
         return await _tool_add_set(user_id, args)
     if name == "savatni_korish":
         return await _tool_cart(user_id)
+    if name == "hisob":
+        return await _tool_quote(user_id, args)
     if name == "savatdan_ochirish":
         return await _tool_remove(user_id, args)
     if name == "eslab_qol":
@@ -2176,6 +2385,9 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
         user_text = f"{note}\n\n{user_text}"
     rules, catalog = _sales_rules(), await _dynamic_block(await _catalog_text())
     lang = await _lang(user_id)
+    # Summalar shulardan bo'lishi mumkin: qoidalar, katalog (narx × miqdor bilan),
+    # mijoz xabari va shu javobdagi vosita natijalari (pastda qo'shiladi).
+    prices = PriceCheck(rules, catalog, user_text)
 
     turn = await _step(state, rules, catalog, TOOLS, user=user_text,
                        max_tokens=MAX_TOKENS, history_limit=HISTORY_LIMIT)
@@ -2203,11 +2415,21 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
                 if (fix is None and "lang" not in corrected and russian and not session.get("card")
                         and uzbek_reply(reply_text)):
                     fix, kind = RU_FIX, "lang"
+                # To'qilgan narx yoki o'zi qo'shgan jami (egasi, 2026-11-02). Karta
+                # chiqadigan javob baribir kodning jumlasi bilan almashadi (_answer).
+                if fix is None and "price" not in corrected and not session.get("card"):
+                    bad = prices.bad(reply_text)
+                    if bad:
+                        fix, kind = price_fix(bad), "price"
             if fix is None:
                 if not session.get("placed") and _ORDER_CLAIM.search(reply_text or ""):
                     reply_text = drop_order_claims(reply_text)
                 if russian:
                     reply_text = drop_uzbek_lines(reply_text)
+                if not session.get("card") and prices.bad(reply_text):
+                    logger.warning("AI sales reply still had made-up amounts for user %s — lines dropped",
+                                   user_id)
+                    reply_text = prices.drop(reply_text, lang)
                 return reply_text
             corrected.add(kind)
             logger.warning("AI sales reply needs a fix (%s, user %s) — asking again", kind, user_id)
@@ -2225,6 +2447,7 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
                 output, is_error = "Xato: ichki nosozlik.", True
             if not is_error:
                 done.add(call.name)
+            prices.add_tool_output(output)             # hisob / savat raqamlari — model ko'chiradi
             results.append(ai_provider.ToolResult(call.id, output, is_error))
 
         if attempt == MAX_TURNS - 1:
