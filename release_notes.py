@@ -34,7 +34,7 @@ SEND_NOW = RELEASE_KEY == "2026-10-22-sayt-yangiliklari"
 CHECK_EVERY = 300
 
 NOTES = (
-    "🆕 <b>Yangi: Yandex Navigator, sirli sovg'a eslatmasi va AI narxlari</b>\n"
+    "🆕 <b>Yangi: Yandex Navigator, sirli sovg'a eslatmasi, AI narxlari va kanal</b>\n"
     '\n'
     '🚚 <b>Kuryer paneli</b>\n'
     "1. Telefonda «🧭 Yo'l» yoki xaritani bossangiz, endi <b>sayt emas — Yandex ilovasi</b> ochiladi: avval <b>Yandex Navigator</b>, u bo'lmasa Yandex Maps; ikkalasi ham yo'q bo'lsa — «o'rnatish» tugmasi chiqadi. Yandex Go tashqaridan marshrut qabul qilmaydi.\n"
@@ -54,6 +54,11 @@ NOTES = (
     '\n'
     '🤖 <b>AI sotuvchi</b>\n'
     "8. AI endi narx va «Jami»ni <b>o'zi hisoblamaydi</b> — kod hisoblaydi va javobdagi har bir summa katalog bilan tekshiriladi. «Yashil grechka uni»ni 29 000 deb (bu — grechka <b>doni</b> narxi) yozib, jamini o'zi qo'shgan xato endi takrorlanmaydi: noto'g'ri summa mijozga ketmaydi.\n"
+    '\n'
+    '📣 <b>Kanal</b>\n'
+    "9. Kanal postlarida endi <b>tugma yo'q — izoh yozish mumkin</b>: do'kon, bot yoki mahsulot havolasi matnning o'zida turadi.\n"
+    '\n'
+    "10. Yangi rubrika <b>«🔎 Keto fakt»</b>: har 2 kunda soat 16:00 da (retseptsiz kunlarda) savol bilan boshlanadigan qisqa fakt — mahsulot zararlari, noto'g'ri ishlatish holatlari, kutilmagan foydalar, tarixiy faktlar. Keyingisini ko'rish: /fakt_test, to'xtatish: /fakt_off.\n"
     '\n'
     "AI yoki Navigator bilan g'alati narsa ko'rsangiz — skrinshot yuboring.\n"
     '\n'
