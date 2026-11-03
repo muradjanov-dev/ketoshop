@@ -55,6 +55,7 @@ from welcome_recipe import router as welcome_recipe_router
 from bot_discount_campaign import router as bot_discount_campaign_router
 from stock_alerts import router as stock_alerts_router
 from recipe_channel import router as recipe_channel_router
+from keto_fakt import router as keto_fakt_router
 from restock_notify import router as restock_notify_router
 from referral_stats import router as referral_stats_router
 from referral_program import router as referral_program_router
@@ -286,6 +287,7 @@ async def main():
     # /ombor — current low / out-of-stock list.
     dp.include_router(stock_alerts_router)
     dp.include_router(recipe_channel_router)
+    dp.include_router(keto_fakt_router)
     dp.include_router(restock_notify_router)
     # Catch-all for free text that no state/handler above claimed — must stay
     # last so it never steals a message a real flow was waiting on.
@@ -410,6 +412,9 @@ async def main():
     # (recipe_channel.py), 11:00 on the days a new recipe opens.
     from recipe_channel import scheduler_loop as recipe_channel_loop
     recipe_channel_task = asyncio.create_task(recipe_channel_loop(bot))
+    # 🔎 «Keto fakt» — every 2 days at 16:00, on the recipe-free days.
+    from keto_fakt import scheduler_loop as keto_fakt_loop
+    keto_fakt_task = asyncio.create_task(keto_fakt_loop(bot))
     # "Siz qiziqqan mahsulot qaytdi" — buyers who asked on a sold-out product
     # hear when it's restocked, 09:00–21:00 (restock_notify.py).
     from restock_notify import scheduler_loop as restock_notify_loop
@@ -484,6 +489,7 @@ async def main():
         stock_alerts_task.cancel()
         stock_night_task.cancel()
         recipe_channel_task.cancel()
+        keto_fakt_task.cancel()
         restock_notify_task.cancel()
         review_followup_task.cancel()
         composition_task.cancel()
