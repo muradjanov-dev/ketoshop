@@ -1542,8 +1542,8 @@ class AiFalseClaimTest(unittest.TestCase):
 
     def test_added_to_cart_without_the_tool_is_asked_again(self):
         reply, provider = self._respond([
-            Turn(text="Bodom uni 2 dona savatga qo'shildi 😊"),
-            Turn(text="Bodom uni 500gr — 89 000 so'm. Savatga qo'shamizmi? 🛒"),
+            Turn(text="Kokos uni 2 kg savatga qo'shildi 😊"),
+            Turn(text="Kokos uni 1000gr — 55 000 so'm. Savatga qo'shamizmi? 🛒"),
         ])
         self.assertTrue(provider.calls[1]["user"].startswith("[TIZIM"))
         self.assertIn("qo'shamizmi", reply)
@@ -2166,6 +2166,103 @@ class AnthropicProviderFormatTest(unittest.TestCase):
         ai_provider._trim_at_user_turn(messages, 4)
         # 4 ta qoldirish tool_result dan boshlanardi — u holda API 400 beradi.
         self.assertEqual(messages[0], {"role": "user", "content": "2"})
+
+
+class AiPriceGroundingTest(unittest.TestCase):
+    """Egasi, 2026-11-02: AI «Hisob to'liq» da Yashil grechka uni 1000gr ni 29 000
+    deb yozib (katalogda 48 000), jamini o'zi qo'shdi — 332 000; savatda 406 000.
+    Endi summa katalog × miqdor yoki vosita natijasidan bo'lmasa — qayta so'raladi,
+    yana bo'lmasa — o'sha qator chiqmaydi."""
+
+    CATALOG = ("11 | Guruch uni | 20 000 so'm / dona\n"
+               "12 | Yashil grechka uni 1000gr | 48 000 so'm / dona\n"
+               "13 | Yashil grechka doni 1000gr | 29 000 so'm / dona\n"
+               "14 | Zig'ir uni 1000gr | 37 000 so'm / dona\n"
+               "15 | Tabiiy GHEE 1000ml | 122 000 so'm / litr\n"
+               "16 | Himalay tuz 1000gr | 28 000 so'm / dona\n"
+               "17 | Stevia 500g | 76 000 so'm / dona")
+    PRODUCTS = {11: ("Guruch uni", 20000, "dona"), 12: ("Yashil grechka uni 1000gr", 48000, "dona"),
+                14: ("Zig'ir uni 1000gr", 37000, "dona"), 15: ("Tabiiy GHEE 1000ml", 122000, "litr"),
+                16: ("Himalay tuz 1000gr", 28000, "dona"), 17: ("Stevia 500g", 76000, "dona")}
+    MADE_UP = ("Hisob to'liq:\n\n• Guruch uni 2 kg - 40 000 so'm\n• Yashil grechka uni 1 kg - 29 000 so'm\n"
+               "• Zig'ir uni 1 kg - 37 000 so'm\n• GHEE yog'i 1 l - 122 000 so'm\n"
+               "• Himalay tuz 1 kg - 28 000 so'm\n• Stevia 500g - 76 000 so'm\n\n"
+               "Jami: 332 000 so'm\n\nXohlasangiz, shularni savatga ham joylab beramiz.")
+
+    def setUp(self):
+        ai_sales._sessions.clear()
+        _patch(self, ai_sales, "_catalog_cache", (9e18, self.CATALOG))
+
+        async def product(pid):
+            if pid not in self.PRODUCTS:
+                return None
+            name, price, unit = self.PRODUCTS[pid]
+            return {"id": pid, "name": name, "price": price, "unit": unit, "is_active": 1,
+                    "quantity": 50, "discount_percent": 0, "discount_until": None}
+        _patch(self, database, "get_product", product)
+        ai_sales._session(777)
+        saved = ai_sales.PROVIDER
+        self.addCleanup(setattr, ai_sales, "PROVIDER", saved)
+
+    def tearDown(self):
+        ai_sales._sessions.clear()
+
+    def _respond(self, turns):
+        ai_sales.PROVIDER = _FakeProvider(turns)
+        reply = _run(ai_sales._respond(None, _FakeMessage("hisobini ayting"), "hisobini ayting"))
+        return reply, ai_sales.PROVIDER
+
+    def test_amount_parsing(self):
+        mv = ai_sales.money_values
+        self.assertEqual(mv("48 000 so'm"), [48000])
+        self.assertEqual(mv("48000 сум, 48 ming so'm, 48,5 ming so'm"), [48000, 48000, 48500])
+        self.assertEqual(mv("400 000 so'mdan oshsa"), [400000])
+        self.assertEqual(mv("Jami: 332 000 söm"), [332000])
+        self.assertEqual(mv("+2 030 Keto, 500gr, 2 kg"), [])
+
+    def test_owners_case_is_caught_and_rewritten_from_the_quote_tool(self):
+        rows = [{"mahsulot_id": i, "miqdor": q} for i, q in ((11, 2), (12, 1), (14, 1), (15, 1), (16, 1), (17, 1))]
+        good = ("• Guruch uni — 2 dona × 20 000 = 40 000 so'm\n"
+                "• Yashil grechka uni 1000gr — 1 dona × 48 000 = 48 000 so'm\n"
+                "Jami (mahsulotlar): 351 000 so'm. Savatga qo'shamizmi? 🛒")
+        reply, provider = self._respond([
+            Turn(text=self.MADE_UP),
+            Turn(calls=[ToolCall("q1", "hisob", {"mahsulotlar": rows})]),
+            Turn(text=good),
+        ])
+        fix = provider.calls[1]["user"]
+        self.assertTrue(fix.startswith("[TIZIM"))
+        self.assertIn("332 000", fix)                    # the made-up total, named
+        self.assertIn("29 000", fix)                     # grechka DONI's price on the UNI line
+        quote = provider.calls[2]["results"][0].output
+        self.assertIn("Yashil grechka uni 1000gr — 1 dona × 48 000 = 48 000 so'm", quote)
+        self.assertIn("Jami (mahsulotlar): 351 000 so'm", quote)
+        self.assertEqual(reply, good)
+
+    def test_still_made_up_after_the_retry_never_reaches_the_customer(self):
+        reply, provider = self._respond([Turn(text=self.MADE_UP), Turn(text=self.MADE_UP)])
+        self.assertEqual(len(provider.calls), 2)
+        self.assertNotIn("332 000", reply)
+        self.assertNotIn("29 000", reply)
+        self.assertIn("Guruch uni 2 kg - 40 000", reply)  # catalog price × 2 is fine
+        self.assertIn("Stevia 500g - 76 000", reply)
+        self.assertIn("savatda ko'rsataman", reply)
+
+    def test_correct_prices_are_not_questioned(self):
+        reply, provider = self._respond([
+            Turn(text="Yashil grechka uni 1000gr — 48 000 so'm, 2 ta olsangiz 96 000 so'm. "
+                      "800 000 so'mdan yetkazish bepul, 400 000 so'mdan sirli sovg'a 🎁")])
+        self.assertEqual(len(provider.calls), 1)
+        self.assertIn("96 000", reply)
+
+    def test_rules_and_tool_are_in_place(self):
+        rules = ai_sales._sales_rules()
+        self.assertIn("NARX VA JAMI", rules)
+        self.assertIn("'grechka uni' va 'grechka doni'", rules)
+        rendered = {t["name"]: t for t in ai_provider.OpenAIProvider.render_tools(ai_sales.TOOLS)}
+        self.assertTrue(rendered["hisob"]["strict"])
+        out = _run(ai_sales._tool_quote(777, {"mahsulotlar": [{"mahsulot_id": 99, "miqdor": 1}]}))
+        self.assertTrue(out.startswith("Xato:"))
 
 
 if __name__ == "__main__":
