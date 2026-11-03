@@ -14,10 +14,10 @@ from datetime import date, datetime, timedelta, timezone
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+import channel_link
 
 import database
-from config import BOT_USERNAME, REQUIRED_CHANNEL_ID
+from config import REQUIRED_CHANNEL_ID
 from translit import lat_to_cyr
 
 logger = logging.getLogger(__name__)
@@ -57,16 +57,14 @@ async def _tick(bot: Bot) -> None:
     products = await database.get_channel_bestsellers()
     if not products:
         return
-    text = build_text(products)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🛒 Дўконни очиш", url=f"https://t.me/{BOT_USERNAME}/shop")
-    ]])
+    # The shop link in the text, no button — a button hides the comments.
+    text = channel_link.with_link(build_text(products))
     key = f"channel-bestsellers:{day.isoformat()}"
     if not await database.claim_release_notes(key):
         return
     try:
         await bot.send_message(REQUIRED_CHANNEL_ID, text, parse_mode=ParseMode.HTML,
-                               reply_markup=keyboard, disable_web_page_preview=True)
+                               disable_web_page_preview=True)
     except (TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter):
         await database.release_release_notes(key)
         logger.warning("Bestseller channel post rejected; retry next tick (%s)", key, exc_info=True)

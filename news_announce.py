@@ -122,14 +122,15 @@ def buyer_keyboard(lang: str) -> InlineKeyboardMarkup | None:
     ]])
 
 
-def channel_keyboard(lang: str = CHANNEL_LANG) -> InlineKeyboardMarkup:
+def channel_text(text: str, lang: str = CHANNEL_LANG) -> str:
+    """A channel post with «👉 Botni ochish 👈» as its last line — in the text,
+    not a button: a button hides the post's comments (channel_link.py)."""
+    import channel_link
     label = _CHANNEL_BUTTON["ru"] if lang == "ru" else _CHANNEL_BUTTON["uz"]
     if lang == "uz_cyr":
         from translit import lat_to_cyr
         label = lat_to_cyr(label)
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=label, url=f"https://t.me/{BOT_USERNAME}")
-    ]])
+    return channel_link.with_link(text, f"https://t.me/{BOT_USERNAME}", label)
 
 
 async def send_to_user(bot: Bot, user_id: int, lang: str) -> bool:
@@ -171,9 +172,8 @@ async def post_to_channel(bot: Bot) -> bool:
     if not REQUIRED_CHANNEL_ID:
         return False
     try:
-        await bot.send_message(REQUIRED_CHANNEL_ID, text_for(CHANNEL_LANG),
+        await bot.send_message(REQUIRED_CHANNEL_ID, channel_text(text_for(CHANNEL_LANG)),
                                parse_mode=ParseMode.HTML,
-                               reply_markup=channel_keyboard(),
                                disable_web_page_preview=True)
         return True
     except Exception:

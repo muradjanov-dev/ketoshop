@@ -158,7 +158,9 @@ class ProductMediaTests(unittest.IsolatedAsyncioTestCase):
         messages = self.sent()
         self.assertEqual(messages[0].photo, "https://keto.example/img/3")
         self.assertIn(lat_to_cyr(p["description"]), strip_markup(messages[-1].text))
-        self.assertTrue(messages[-1].reply_markup.inline_keyboard[0][0].url.endswith("prod_145"))
+        # No button (it would hide the comments) — the product link is in the text.
+        self.assertIsNone(messages[-1].reply_markup)
+        self.assertIn("prod_145\"", messages[-1].text)
 
     async def test_cached_broadcast_caption_is_complete_in_each_language(self):
         p = product()
