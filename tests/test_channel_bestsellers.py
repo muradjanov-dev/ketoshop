@@ -110,7 +110,10 @@ class PostTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("30 кун", text)
         self.assertNotIn("987654", text)
         self.assertNotIn("123456", text)
-        self.assertIn("https://t.me/", call.kwargs["reply_markup"].inline_keyboard[0][0].url)
+        # The shop link is in the text — no button, so the post keeps its comments.
+        self.assertIn('<a href="https://t.me/', text)
+        self.assertIn("Дўконни очиш", text)
+        self.assertIsNone(call.kwargs.get("reply_markup"))
 
     async def test_text_escapes_names_and_stays_within_telegram_limit(self):
         text = self.posts.build_text([{"name": "Un <yangi> & asal"}])

@@ -702,10 +702,10 @@ async def kanal_test(message: Message):
         f"{week}-hafta «{theme}»:",
         parse_mode=ParseMode.HTML,
     )
+    # Exactly as the channel gets it: the shop link in the text, no button.
     await message.answer(
-        channel_posts.build_text(slug),
+        channel_posts.build_text(slug) + "\n\n" + channel_posts.link_line(),
         parse_mode=ParseMode.HTML,
-        reply_markup=channel_posts.keyboard(),
         disable_web_page_preview=True,
     )
 

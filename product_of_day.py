@@ -32,7 +32,6 @@ from aiogram.exceptions import (
     TelegramBadRequest,
     TelegramRetryAfter,
 )
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import database
 import product_card
@@ -153,14 +152,16 @@ async def broadcast(bot: Bot, product: dict, day=None) -> tuple[int, int]:
     return sent, failed
 
 
-def channel_keyboard(product_id: int, lang: str = CHANNEL_LANG) -> InlineKeyboardMarkup:
+def channel_link_line(product_id: int, lang: str = CHANNEL_LANG) -> str:
+    """«👉 Ботда сотиб олиш 👈» to this product — a link in the caption, not a
+    button: a button hides the post's comments (channel_link.py). A link, not a
+    callback: a channel reader may never have opened the bot."""
+    import channel_link
     label = _CHANNEL_BUTTON["ru"] if lang == "ru" else _CHANNEL_BUTTON["uz"]
     if lang == "uz_cyr":
         from translit import lat_to_cyr
         label = lat_to_cyr(label)
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=label, url=product_card.product_link(product_id))
-    ]])
+    return channel_link.link_line(product_card.product_link(product_id), label)
 
 
 async def post_to_channel(bot: Bot, product: dict, day=None) -> bool:
@@ -177,8 +178,8 @@ async def post_to_channel(bot: Bot, product: dict, day=None) -> bool:
         caption = await product_card.build_caption(
             product, CHANNEL_LANG, rate,
             product_ideas.recipe_block(product, CHANNEL_LANG, _recipe_seed(day)))
-        markup = channel_keyboard(product["id"])
-        await product_card.send_product_message(bot, REQUIRED_CHANNEL_ID, product, caption, markup)
+        caption = f"{caption.rstrip()}\n\n{channel_link_line(product['id'])}"
+        await product_card.send_product_message(bot, REQUIRED_CHANNEL_ID, product, caption, None)
         return True
     except Exception:
         logger.exception("Spotlight channel post failed")

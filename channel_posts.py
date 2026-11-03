@@ -27,7 +27,7 @@ from datetime import datetime, timedelta
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+import channel_link
 
 import database
 import channel_posts_content as content
@@ -76,10 +76,10 @@ def build_text(slug: str) -> str:
     return f"<b>{title_html}</b>\n\n{body_html}"
 
 
-def keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=BUTTON_LABEL, url=SHOP_URL)
-    ]])
+def link_line() -> str:
+    """The shop link, inside the post — no inline button: it would hide the
+    comments (channel_link.py)."""
+    return channel_link.link_line(SHOP_URL, BUTTON_LABEL)
 
 
 async def _notify_admins(bot: Bot, text: str):
@@ -101,12 +101,12 @@ async def post_to_channel(bot: Bot, slug: str) -> int | None:
     footer = await bot_discount.channel_footer()
     if len(text) + len(footer) <= 4096:
         text += footer
+    text = channel_link.with_link(text, SHOP_URL, BUTTON_LABEL)
     try:
         msg = await bot.send_message(
             REQUIRED_CHANNEL_ID,
             text,
             parse_mode=ParseMode.HTML,
-            reply_markup=keyboard(),
             disable_web_page_preview=True,
         )
         return msg.message_id

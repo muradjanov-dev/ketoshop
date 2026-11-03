@@ -206,9 +206,9 @@ def _customer_button(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[button]])
 
 
-def _channel_button() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=_pick(_BUTTON, CHANNEL_LANG), url=SHOP_URL)]])
+def _channel_link() -> str:
+    import channel_link
+    return channel_link.link_line(SHOP_URL, _pick(_BUTTON, CHANNEL_LANG))
 
 
 def build_channel_message(step: str) -> tuple[str, InlineKeyboardMarkup | None]:
@@ -217,8 +217,8 @@ def build_channel_message(step: str) -> tuple[str, InlineKeyboardMarkup | None]:
     text = _text(step, CHANNEL_LANG)
     if step not in _BUTTON_STEPS:
         return text, None
-    text += f"\n\n👉 @{BOT_USERNAME}"
-    return text, _channel_button()
+    # The link in the text, no button — a button hides the comments (channel_link.py).
+    return f"{text}\n\n{_channel_link()}", None
 
 
 # ───────────────────────────── narxlar ro'yxati ─────────────────────────────
@@ -271,9 +271,11 @@ def split_parts(head: str, lines: list[str], limit: int | None = None) -> list[s
 def build_list_messages(step: str, lang: str, items: list[dict],
                         channel: bool = False) -> list[tuple[str, InlineKeyboardMarkup | None]]:
     """Sarlavha + ro'yxat bir necha xabarda; izoh va tugma — oxirgisida."""
-    tail = _pick(_LIST_FOOTER, lang) + (f"\n\n👉 @{BOT_USERNAME}" if channel else "")
+    # Channel: the shop link is the last line of the text, never a button —
+    # a button hides the post's comments (channel_link.py).
+    tail = _pick(_LIST_FOOTER, lang) + (f"\n\n{_channel_link()}" if channel else "")
     parts = split_parts(_text(step, lang), price_list_lines(items, lang) + ["\n" + tail])
-    markup = _channel_button() if channel else _customer_button(lang)
+    markup = None if channel else _customer_button(lang)
     return [(p, None) for p in parts[:-1]] + [(parts[-1], markup)]
 
 

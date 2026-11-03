@@ -334,8 +334,8 @@ class CampaignMessageTest(unittest.TestCase):
         self.assertIn("Ассалому алайкум", text)
         self.assertIsNone(markup)
         text, markup = campaign.build_channel_message("announce")
-        self.assertIn("@", text)
-        self.assertTrue(markup.inline_keyboard[0][0].url.startswith("https://t.me/"))
+        self.assertIn('<a href="https://t.me/', text)      # link in the text …
+        self.assertIsNone(markup)                            # … no button: comments stay open
 
     def test_no_pushy_words(self):
         for step in campaign.STEPS:
@@ -483,7 +483,8 @@ class CountdownTest(unittest.TestCase):
             self.assertIsNotNone(markup)
         text, markup = campaign.build_channel_message("left2")
         self.assertIn("14-октябр", text)
-        self.assertTrue(markup.inline_keyboard[0][0].url.startswith("https://t.me/"))
+        self.assertIn('<a href="https://t.me/', text)
+        self.assertIsNone(markup)
 
     def test_no_pushy_words(self):
         for step in campaign.COUNTDOWN_STEPS:
@@ -647,7 +648,8 @@ class PriceListTest(unittest.TestCase):
         self.assertIsNotNone(per_chat[1][-1][1])
         channel = per_chat[campaign.REQUIRED_CHANNEL_ID]
         self.assertIn("чегирма", channel[0][0])                       # channel in Cyrillic
-        self.assertTrue(channel[-1][1].inline_keyboard[0][0].url.startswith("https://t.me/"))
+        self.assertIn('<a href="https://t.me/', channel[-1][0])     # link in the last part
+        self.assertTrue(all(markup is None for _, markup in channel))  # never a button
         self.assertTrue(per_chat[3][0][0].startswith("⏳ <b>До конца скидки 10% — 3 дня</b>"))
 
 

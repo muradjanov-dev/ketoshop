@@ -60,17 +60,16 @@ class PayloadTest(unittest.TestCase):
         self.assertTrue(product_card.product_link(42).endswith("?start=prod_42"))
 
 
-class ChannelKeyboardTest(unittest.TestCase):
-    def test_url_button_not_callback(self):
-        # A channel reader may never have opened the bot, so a callback button
-        # would do nothing for them — it has to be a link.
-        btn = pod.channel_keyboard(42).inline_keyboard[0][0]
-        self.assertIsNone(btn.callback_data)
-        self.assertEqual(btn.url, product_card.product_link(42))
+class ChannelLinkTest(unittest.TestCase):
+    """Kanal posti tugmasiz — havola caption ichida (egasi, 2026-11-03: izohlar ochiq)."""
+
+    def test_link_not_button(self):
+        # A channel reader may never have opened the bot — a link, never a callback.
+        line = pod.channel_link_line(42)
+        self.assertIn(f'href="{product_card.product_link(42)}"', line)
 
     def test_channel_label_is_cyrillic(self):
-        btn = pod.channel_keyboard(42).inline_keyboard[0][0]
-        self.assertIn("Ботда", btn.text)
+        self.assertIn("Ботда", pod.channel_link_line(42))
 
 
 if __name__ == "__main__":

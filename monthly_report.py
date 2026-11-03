@@ -43,8 +43,7 @@ TEXT = (
 
 
 async def send_preview(bot: Bot, chat_id: int) -> None:
-    await bot.send_message(chat_id, TEXT, parse_mode=ParseMode.HTML,
-                           reply_markup=news_announce.channel_keyboard(),
+    await bot.send_message(chat_id, news_announce.channel_text(TEXT), parse_mode=ParseMode.HTML,
                            disable_web_page_preview=True)
 
 
@@ -52,9 +51,8 @@ async def post_to_channel(bot: Bot) -> bool:
     if not REQUIRED_CHANNEL_ID:
         return False
     try:
-        await bot.send_message(REQUIRED_CHANNEL_ID, TEXT, parse_mode=ParseMode.HTML,
-                               reply_markup=news_announce.channel_keyboard(),
-                               disable_web_page_preview=True)
+        await bot.send_message(REQUIRED_CHANNEL_ID, news_announce.channel_text(TEXT),
+                               parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         return True
     except Exception:
         logger.exception("Oylik hisobotni kanalga yuborib bo'lmadi")
