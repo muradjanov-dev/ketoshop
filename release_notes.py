@@ -24,7 +24,7 @@ from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
-RELEASE_KEY = "2026-11-01-navigatsiya-marshrut"
+RELEASE_KEY = "2026-11-03-navigator-sovga-ai-narx"
 TZ_OFFSET = timedelta(hours=5)
 SEND_WINDOW = (8, 22)          # never wake admins at night
 # True bypasses the daytime window (used 2026-09-25, and 2026-10-22 at 03:00
@@ -34,29 +34,28 @@ SEND_NOW = RELEASE_KEY == "2026-10-22-sayt-yangiliklari"
 CHECK_EVERY = 300
 
 NOTES = (
-    "🆕 <b>Yangi: buyurtmalarda oson navigatsiya va kuryer uchun marshrut</b>\n"
-    '\n'
-    '📦 <b>Botda — «Buyurtmalar»</b>\n'
-    "1. Filtrdan (masalan «Yo'lda») buyurtmani ochsangiz, «◀️ Orqaga» endi <b>o'sha ro'yxatning o'sha sahifasiga</b> qaytaradi — «Buyurtmalar»ga boshidan kirish shart emas.\n"
-    '\n'
-    "2. Qabul qilish, Yo'lga chiqarish, Yetkazildi, Rad etish yoki o'chirishdan keyin ham o'sha ro'yxat ochiladi, natija qisqa xabar bo'lib chiqadi — keyingi buyurtmaga darhol o'tasiz.\n"
-    '\n'
-    "3. ✏️ <b>Tarkibni o'zgartirish</b>da ekranda doim bitta oyna qoladi: mahsulot qo'shsangiz yoki son yozsangiz, eski oyna va yordamchi xabarlar o'chadi. 💾 Saqlash yoki Bekor qilish — to'g'ri <b>buyurtmaning o'ziga</b> qaytaradi; saqlangandan keyin birinchi tugma «📨 Mijozga xabar berish».\n"
-    '\n'
-    "4. Mijozga xabar yuborgach «📦 Buyurtmaga qaytish» tugmasi chiqadi. Buyurtma ostidagi 📍 lokatsiya va chek siz undan chiqqanda o'chadi — chat toza qoladi.\n"
+    "🆕 <b>Yangi: Yandex Navigator, sirli sovg'a eslatmasi va AI narxlari</b>\n"
     '\n'
     '🚚 <b>Kuryer paneli</b>\n'
-    "5. Panel <b>joylashuvingizni o'zi aniqlaydi</b> — birinchi ochganda Telegram ruxsat so'raydi, «Ruxsat berish»ni bosing. Shundan keyin har bir «🧭 Yo'l», buyurtma oynasidagi kichik xarita va xaritadagi pin Yandex'ni <b>yo'l ko'rsatish rejimida</b>, siz turgan joydan o'sha manzilgacha ochadi.\n"
+    "1. Telefonda «🧭 Yo'l» yoki xaritani bossangiz, endi <b>sayt emas — Yandex ilovasi</b> ochiladi: avval <b>Yandex Navigator</b>, u bo'lmasa Yandex Maps; ikkalasi ham yo'q bo'lsa — «o'rnatish» tugmasi chiqadi. Yandex Go tashqaridan marshrut qabul qilmaydi.\n"
     '\n'
-    "6. «🗺 Xarita» bo'limida yangi <b>«🧭 Marshrut»</b>: <b>barcha</b> tayyor va yo'ldagi buyurtmalar (viloyat — BTS, EMU, UzPost ham, yonida yozib qo'yiladi) raqamlanib, xaritada chiziq bilan ko'rinadi. Faqat do'kondan olib ketiladiganlar kirmaydi.\n"
+    "2. «🗺 Xarita» bo'limidagi marshrut tugmasi <b>barcha faol manzillarni bitta marshrut</b> qilib Navigatorda ochadi — sizga eng yaqinidan boshlab (joylashuvga ruxsat bering). Bitta buyurtmaning xaritasi — faqat o'sha manzilni.\n"
     '\n'
-    "7. <b>Birinchi qayerga borishni o'zingiz tanlaysiz:</b> avtomatik tartib sizga eng yaqin manzildan boshlanadi; ▲ ▼ — tartibni o'zgartiradi, ✕ — bu safar bormaysiz (pastdagi «＋» bilan qaytarasiz), ↺ — yana avtomatik. Tartib telefoningizda saqlanadi.\n"
+    "3. ⚠️ Yandex qoidasi: Navigator bitta telefonda kuniga taxminan <b>5 marta</b> tashqi havoladan marshrut ochadi. Ochilmay qolsa — «🗺 Yandex Maps'da ochish» tugmasini bosing.\n"
     '\n'
-    "8. <b>«🛣 Yo'lni ko'rish»</b> — hamma manzil bitta xaritada, yo'lni Yandex ko'chalar bo'yicha chizib beradi: necha daqiqa va necha km.\n"
+    "4. 🧪 <b>Test buyurtma</b>: admin saytida «Kuryer» → «🧪 Test buyurtma» (yoki botda /test_buyurtma) — «Yo'lda» turgan sinov kartasi: Amir Temur xiyoboni, 0 so'm, <b>tushumga kirmaydi</b>, «Yetkazildi» qilinmaydi. Sinab bo'lgach kartaning «⋯» → «🗑» bilan o'chiring.\n"
     '\n'
-    "9. «🧭 Yandex'da yo'lga chiqish» — butun marshrutni shu tartibda telefoningizdagi Yandex ilovasida ochadi, «Поехали» bosib yo'lga chiqasiz (10 tadan ko'p bo'lsa — «1–10», «11–…» bo'laklarga).\n"
+    '📦 <b>Buyurtmalar</b>\n'
+    "5. 🎁 400 000 so'mdan yuqori buyurtmada «<b>SIRLI SOVG'A — qutiga soling</b>» eslatmasi endi <b>ochilgan buyurtma kartasida va holat kartalarida</b> ham turadi (avval faqat birinchi xabarda edi).\n"
     '\n'
-    "Kuryerlardan iltimos: telefonga <b>Yandex Maps (Яндекс Карты)</b> ilovasini o'rnating va birinchi marshrutni ochib ko'ring — Yandex to'g'ri ochilmasa yoki tartib noto'g'ri chiqsa, xabar bering.\n"
+    "6. Savat va buyurtma matnida miqdor «2.0 dona» emas, <b>«2 dona»</b>; sovg'a narxi «<s>15 000 so'm</s> → bepul» (avval «15 000 0» bo'lib, 150 000 deb o'qilardi).\n"
+    '\n'
+    "7. ✏️ Qo'lda kiritilgan (oflayn) buyurtmaning tarkibini ham «Tarkibni o'zgartirish» bilan tahrirlash mumkin — ombor o'zgarmaydi.\n"
+    '\n'
+    '🤖 <b>AI sotuvchi</b>\n'
+    "8. AI endi narx va «Jami»ni <b>o'zi hisoblamaydi</b> — kod hisoblaydi va javobdagi har bir summa katalog bilan tekshiriladi. «Yashil grechka uni»ni 29 000 deb (bu — grechka <b>doni</b> narxi) yozib, jamini o'zi qo'shgan xato endi takrorlanmaydi: noto'g'ri summa mijozga ketmaydi.\n"
+    '\n'
+    "AI yoki Navigator bilan g'alati narsa ko'rsangiz — skrinshot yuboring.\n"
     '\n'
     'Rahmat 🤝'
 )
