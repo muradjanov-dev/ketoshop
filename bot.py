@@ -160,6 +160,10 @@ async def main():
     import alphabet
     await alphabet.load()
     bot.session.middleware(alphabet.NewAlphabetMiddleware())
+    # «💚 @ketoshop_uz — Сизнинг Кето дўконингиз» at the end of every channel
+    # post — registered last, so it signs the final text (channel_signature.py).
+    import channel_signature
+    bot.session.middleware(channel_signature.ChannelSignatureMiddleware())
     storage = PostgresStorage()
     dp = Dispatcher(storage=storage)
     dp.update.outer_middleware(admin_mood.CurrentUserMiddleware())
