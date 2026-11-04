@@ -4430,7 +4430,8 @@ async def book_gift_expense(order_id: int, name: str, amount: float) -> bool:
         return row is not None
 
 
-async def get_unbooked_delivery_orders(methods: list[str], since, limit: int = 200) -> list[dict]:
+async def get_unbooked_delivery_orders(methods: list[str], since, limit: int = 200,
+                                       skip_address: str | None = None) -> list[dict]:
     """Delivered orders on one of `methods`, delivered at or after `since`,
     with no courier-fee row yet.
 
@@ -4449,9 +4450,26 @@ async def get_unbooked_delivery_orders(methods: list[str], since, limit: int = 2
                   AND o.delivery_method = ANY($1::text[])
                   AND COALESCE(o.delivered_at, o.created_at) >= $2
                   AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.delivery_order_id = o.id)
+                  AND ($4::text IS NULL OR COALESCE(o.address, '') !~* $4)
                 ORDER BY o.id
                 LIMIT $3""",
-            methods, since, limit,
+            methods, since, limit, skip_address,
+        )
+        return [dict(r) for r in rows]
+
+
+async def remove_pickup_courier_expenses(address_re: str) -> list[dict]:
+    """Delete the courier-fee rows booked on orders the buyer collected —
+    delivery method "pickup", or an address matching `address_re`
+    (delivery_costs.PICKUP_ADDRESS_RE). Returns what was removed."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """DELETE FROM expenses e
+                 USING orders o
+                WHERE e.delivery_order_id = o.id
+                  AND (o.delivery_method = 'pickup' OR COALESCE(o.address, '') ~* $1)
+            RETURNING e.id, e.amount, o.id AS order_id""",
+            address_re,
         )
         return [dict(r) for r in rows]
 
