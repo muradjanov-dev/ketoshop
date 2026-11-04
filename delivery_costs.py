@@ -11,7 +11,13 @@ the order total. These are the amounts that leave the till, so they are
 booked even when the buyer got free delivery (800 000 so'm and up) — the
 courier is paid either way. The two happen to be 25 000 today; they are
 separate constants because they are separate numbers. Yandex Taxi is not in
-the table on purpose: the buyer pays that ride directly.
+the table on purpose: the buyer pays that ride directly. Nor is pickup: the
+buyer collects it, nobody is paid — and an order whose address says the
+buyer collected it ("Olib ketdi", "Ofisdan olib ketdi", "Олиб кетди"…, see
+PICKUP_ADDRESS_RE) is pickup too, whatever method it was keyed with (owner,
+2026-11-04: the manual-order form had no pickup option, so walk-in sales were
+entered as "Ketoshop kuryer" and charged 25 000 so'm each; the sweep now
+also takes such rows back out — remove_pickup_courier_costs).
 
 Booked on **delivered**, not on shipped, for two reasons: a cancelled order
 never reaches it, so nothing has to be un-booked, and every profit figure in
@@ -45,6 +51,13 @@ COURIER_COST = {
     # inside the order total, so it leaves the till too. See uzpost_cost().
     "uzpost": 5_000,
 }
+
+# An address that says the buyer collected the order: "Olib ketdi",
+# "Ofisdan olib ketdi", "Ishdan olib ketdi", "Olib ketish", "Олиб кетди",
+# "самовывоз"… A PostgreSQL regular expression, matched case-insensitively
+# (~*); both letter cases are spelt out for Cyrillic in case the database's
+# locale doesn't fold them.
+PICKUP_ADDRESS_RE = r"(olib|[оО]либ)\s*(ket|[кК]ет)|[сС]амовывоз|pickup"
 
 # Human label per method, for the Chiqimlar row.
 _LABEL = {
@@ -109,7 +122,7 @@ async def book_delivered_courier_costs() -> tuple[int, float]:
     an order already booked is skipped by the unique index.
     """
     orders = await database.get_unbooked_delivery_orders(
-        list(COURIER_COST), _start_from(), _BATCH)
+        list(COURIER_COST), _start_from(), _BATCH, skip_address=PICKUP_ADDRESS_RE)
     if not orders:
         return 0, 0.0
 
@@ -128,12 +141,45 @@ async def book_delivered_courier_costs() -> tuple[int, float]:
     return booked, total
 
 
+async def remove_pickup_courier_costs(bot: Bot | None = None) -> tuple[int, float]:
+    """Take out every courier fee booked on an order the buyer picked up —
+    method "pickup", or an address that says so (PICKUP_ADDRESS_RE) — and tell
+    the admins what came back. Returns (rows removed, so'm removed); safe to
+    run on every sweep, it finds nothing once they are gone."""
+    rows = await database.remove_pickup_courier_expenses(PICKUP_ADDRESS_RE)
+    if not rows:
+        return 0, 0.0
+    total = sum(float(r["amount"]) for r in rows)
+    ids = sorted(int(r["order_id"]) for r in rows)
+    logger.info("Kuryer xarajati: olib ketilgan %d buyurtmadan %d so'm qaytarildi: %s",
+                len(rows), int(total), ids)
+    if bot is not None:
+        from config import ADMIN_IDS
+        shown = ", ".join(f"#{i}" for i in ids[:30]) + (f" va yana {len(ids) - 30} ta" if len(ids) > 30 else "")
+        text = ("🧾 <b>Kuryer chiqimlari tuzatildi</b>\n"
+                f"Mijoz o'zi olib ketgan <b>{len(rows)} ta</b> buyurtmaga xato yozilgan kuryer chiqimi "
+                f"o'chirildi — jami <b>{int(total):,} so'm</b> qaytdi.\n".replace(",", " ") +
+                f"Buyurtmalar: {shown}\n"
+                "Foyda va chiqim hisoblari shunga ko'ra o'zgardi. Qo'lda buyurtmada endi "
+                "«🏪 Olib ketish» tanlansin — unga kuryer chiqimi yozilmaydi.")
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(admin_id, text, parse_mode="HTML")
+            except Exception:
+                logger.warning("Kuryer xarajati xabari %s ga yetmadi", admin_id, exc_info=True)
+    return len(rows), total
+
+
 # ─────────────────────────────── scheduler ──────────────────────────────────
 
 async def scheduler_loop(bot: Bot) -> None:
     """Sweep every CHECK_EVERY seconds. Quiet by design — the rows show up in
     Chiqimlar, and an admin ping every ten minutes would be noise."""
     while True:
+        try:
+            await remove_pickup_courier_costs(bot)
+        except Exception:
+            logger.exception("Olib ketilgan buyurtmalarning kuryer xarajatini qaytarib bo'lmadi")
         try:
             await book_delivered_courier_costs()
         except Exception:

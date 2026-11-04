@@ -2998,6 +2998,10 @@ async def manual_payment(callback: CallbackQuery, state: FSMContext):
     # already, so let them pick from the full list of methods.
     options = [
         ("self", "btn_delivery_self"),
+        # A walk-in sale (2026-11-04): before this option it was keyed as
+        # "Ketoshop kuryer" with "Olib ketdi" for an address and charged a
+        # courier fee in Chiqimlar — see delivery_costs.PICKUP_ADDRESS_RE.
+        ("pickup", "btn_delivery_pickup"),
         ("yandex_taxi", "btn_delivery_yandex_taxi"),
         # Yandex Market retired 2026-09-18 — see keyboards.delivery_method_keyboard
         ("bts", "btn_delivery_bts"),
