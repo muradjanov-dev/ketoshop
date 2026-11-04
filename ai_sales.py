@@ -156,7 +156,11 @@ MIRROR_TEXT_MAX = 1500
 # hammaga" + mo'ljal). Mijoz DO'KON qayerda deb so'raganda — botda ham, guruhda ham.
 SHOP_ADDRESS_URL = os.getenv("SHOP_ADDRESS_URL", "https://t.me/ketoshop_uz/1071").strip()
 # Egasi, 2026-10-24: "Mo'ljal Ko'kcha masjidi atrofida ... masjidni ro'parasi emas".
-SHOP_LANDMARK = os.getenv("SHOP_LANDMARK", "Toshkent shahri, Ko'kcha masjidi atrofida").strip()
+SHOP_LANDMARK = os.getenv("SHOP_LANDMARK", "Ko'kcha masjidi atrofida").strip()
+# Egasi, 2026-11-04: "manzilga qo'shimcha qilib endi buni ham qo'sh javoblarda:
+# Toshkent shahri, Oqsoy 1-tor ko'chasi, 2A".
+SHOP_STREET = os.getenv("SHOP_STREET", "Toshkent shahri, Oqsoy 1-tor ko'chasi, 2A").strip()
+SHOP_PLACE = f"{SHOP_STREET} (mo'ljal: {SHOP_LANDMARK})"
 
 # Mijoz tanlaydigan yetkazish -> bazadagi delivery_method. Tugmali checkout
 # bilan bir xil to'plam (keyboards.delivery_method_keyboard).
@@ -252,7 +256,7 @@ _UZ_CYR_LETTERS = re.compile(r"[ўқғҳЎҚҒҲ]")
 _SOM_LATIN = re.compile(r"\bso['ʻ’`‘]?m\b", re.IGNORECASE)
 _BUTTON_LINES = re.compile(r"^[ \t•\-]*(?:📍 Lokatsiyani yuborish|📞 Raqamni yuborish|"
                            r"📍 Отправить локацию|📞 Отправить номер)[ \t]*\n?", re.MULTILINE)
-_LANDMARK_RE = re.compile(r"Ko[ʻ'’`‘]?kcha|Кўкча|Кукча|Кокча", re.IGNORECASE)
+_LANDMARK_RE = re.compile(r"Ko[ʻ'’`‘]?kcha|Кўкча|Кукча|Кокча|Oqsoy|Оқсой|Оксой", re.IGNORECASE)
 
 
 def _script(text: str | None) -> str | None:
@@ -914,7 +918,7 @@ def _shop_knowledge() -> str:
         "- Viloyatlarga BTS yoki EMU pochtasi orqali: pochta haqi pochtaga alohida to'lanadi, "
         "mahsulot puli faqat karta orqali oldindan. Muddatini pochta belgilaydi — aniq kun "
         "va'da qilma.\n"
-        f"- Do'kondan o'zi olib ketish: BEPUL. Mo'ljal: {SHOP_LANDMARK}, havola: "
+        f"- Do'kondan o'zi olib ketish: BEPUL. Manzil: {SHOP_PLACE}, havola: "
         f"{SHOP_ADDRESS_URL} . Buyurtma tayyor bo'lgach operatorimiz xabar beradi. To'lov naqd "
         "yoki karta. Faqat Toshkentdagi mijozga taklif qil — viloyatdagiga emas.\n"
         "- Yetkazish usullarini taklif qilganda shunday ro'yxat qil (narxlari bilan, har biri "
@@ -925,8 +929,9 @@ def _shop_knowledge() -> str:
         "  📦 Viloyatlarga BTS / EMU pochtasi — pochta haqi alohida\n"
         "  🚖 Toshkentda Yandex Taxi — yo'l haqi haydovchiga\n"
         "- DO'KON MANZILI: mijoz do'kon/ofis qayerda, manzilingiz, adres, lokatsiya, qanday "
-        f"borsa bo'ladi deb so'rasa — mo'ljalni ayt ({SHOP_LANDMARK}) va shu havolani ber: "
-        f"{SHOP_ADDRESS_URL} . Havolani o'zgartirmay, to'liq yoz. Buni mijozning o'z "
+        f"borsa bo'ladi deb so'rasa — manzilni TO'LIQ ayt: {SHOP_STREET}, mo'ljal: "
+        f"{SHOP_LANDMARK} — va shu havolani ber: {SHOP_ADDRESS_URL} . Manzil va havolani "
+        "o'zgartirmay, to'liq yoz. Buni mijozning o'z "
         "yetkazish manzilini so'rash bilan adashtirma — bunda lokatsiya_tugmasi ni CHAQIRMA "
         "(u mijozning o'z manzili uchun).\n"
     )
@@ -1147,6 +1152,12 @@ def _sales_rules() -> str:
         "mo'ljal). Do'kondan olib ketishda manzil kerak emas.\n"
         "- '[Mijoz «✅ Tasdiqlash» ni bosdi: buyurtma #N ...]' kelsa — buyurtma tuzilgan, rahmat "
         "xabarini bot yuborgan; qayta rasmiylashtirma.\n\n"
+        "BUYURTMA HOLATI (egasi, 2026-11-04)\n"
+        "- Mijoz buyurtmasi qayerda, holati qanday, qachon keladi, yetib keldimi, nega kelmadi deb "
+        "so'rasa — buyurtma_holati ni chaqir (raqamini aytsa — o'sha raqam bilan) va hozirgi holatni "
+        "qisqa ayt. MIJOZ XOTIRASI dagi holat eskirgan bo'lishi mumkin — holatni doim vositadan ol.\n"
+        "- Faqat shu mijozning buyurtmalari. Boshqa raqam yoki boshqa odam haqida ma'lumot berma.\n"
+        "- Kechikkan, yetib bormagan yoki muammo bo'lsa — holatni ayt, uzr so'ra va raqamimizni ber.\n\n"
         "TO'LOV\n"
         "- Toshkent kuryeri va do'kondan olib ketishda: NAQD (qo'lma-qo'l) yoki KARTA orqali "
         "oldindan — mijoz kartada tanlaydi. Yandex va pochtada faqat KARTA.\n"
@@ -1332,6 +1343,21 @@ _TOOL_SPECS = [
                                 "description": "Fikr yoki qiziqish aniq mahsulotga tegishli bo'lsa"},
             },
             "required": ["turi", "matn"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "buyurtma_holati",
+        "description": "Mijozning O'Z buyurtmalari holati hozir: qabul qilingan, tasdiqlangan, "
+                       "tayyor, yo'lda, yetkazilgan yoki bekor qilingan; sana, yetkazish usuli, "
+                       "mahsulotlar, jami va to'lov holati. Mijoz buyurtmasi qayerda, qachon "
+                       "keladi, holati qanday, yetib keldimi deb so'rasa chaqir. Raqamini aytsa — "
+                       "o'sha raqam bilan, aytmasa — raqamsiz (ochiq buyurtmalari chiqadi).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"buyurtma_raqami": {"type": "integer",
+                                               "description": "Mijoz aytgan raqam (#5001 → 5001); "
+                                                              "aytmagan bo'lsa — berma"}},
             "additionalProperties": False,
         },
     },
@@ -2136,10 +2162,11 @@ def false_claim(reply: str, done: set[str], session: dict) -> str | None:
     if _CART_CLAIM.search(reply or "") and not done & _ADD_TOOLS:
         return ("[TIZIM: bu javobda savatga hech narsa qo'shilmadi. Mijoz mahsulot olmoqchi "
                 "bo'lsa — savatga_qoshish ni chaqir; aks holda 'qo'shdik' dema. Javobni qayta yoz.]")
-    if _ORDER_CLAIM.search(reply or "") and not session.get("placed"):
+    if (_ORDER_CLAIM.search(reply or "") and not session.get("placed")
+            and "buyurtma_holati" not in done):
         return ("[TIZIM: bu suhbatda buyurtma tuzilmagan — 'qabul qilindi' dema. Buyurtma faqat "
                 "mijoz buyurtma_kartasi dagi «✅ Tasdiqlash» ni bosganda tuziladi. Mijoz oldingi "
-                "buyurtmasini so'rayotgan bo'lsa — MIJOZ XOTIRASI dagi raqami va holatini ayt. "
+                "buyurtmasini so'rayotgan bo'lsa — buyurtma_holati ni chaqir. "
                 "Javobni qayta yoz.]")
     return None
 
@@ -2287,6 +2314,93 @@ def price_fix(bad: list[int]) -> str:
             "raqamlarni faqat o'shandan ko'chir. Javobni qayta yoz.]")
 
 
+# ─────────────────────────── buyurtma holati ────────────────────────────────
+# Egasi, 2026-11-04: "ai chatbotdan buyurtmalari statusini so'rashsa hozir qaysi
+# statusda ekanini aytib berishi kerak, buni raqamdan yoki mijozni o'zidan
+# aniqlashing mumkin". Holat har safar bazadan o'qiladi — suhbat boshidagi
+# MIJOZ XOTIRASI eskirgan bo'lishi mumkin. Faqat shu Telegram akkauntining
+# buyurtmalari: boshqa odamning raqamini aytsa ham ochilmaydi.
+
+_STATUS_MEANING = {
+    "pending": "qabul qilingan — adminimiz tasdiqlashi kutilyapti (odatda tez tasdiqlanadi)",
+    "confirmed": "tasdiqlangan — tayyorlanyapti",
+    "preparing": "tayyorlanyapti",
+    "ready": "tayyor — qadoqlangan, kuryerga topshiriladi",
+    "shipped": "yo'lda — kuryer olib ketgan",
+    "delivering": "yo'lda — kuryer yetkazyapti",
+    "delivered": "yetkazilgan",
+    "cancelled": "bekor qilingan",
+}
+_DELIVERY_NAME = {"self": "Toshkent kuryeri", "pickup": "do'kondan olib ketish",
+                  "yandex_taxi": "Yandex Taxi", "bts": "BTS pochta", "emu": "EMU pochta"}
+OPEN_STATUS_SHOWN = 3
+
+
+def _status_meaning(order: dict) -> str:
+    status = order.get("status") or "pending"
+    method = order.get("delivery_method") or "self"
+    if method == "pickup" and status == "ready":
+        return "tayyor — do'kondan olib ketsa bo'ladi"
+    if method == "pickup" and status == "delivered":
+        return "olib ketilgan"
+    if method in ("bts", "emu") and status in ("shipped", "delivering"):
+        office = (order.get("post_office") or "").strip()
+        return "pochtaga topshirilgan, yo'lda" + (f" ({office})" if office else "")
+    meaning = _STATUS_MEANING.get(status, status)
+    if status == "delivered" and order.get("delivered_at"):
+        meaning += f" {order['delivered_at']:%d.%m}"
+    return meaning
+
+
+def _payment_note(order: dict) -> str:
+    import payment_state
+    state = payment_state.card_payment_state(order.get("payment_method"), order.get("address_note"),
+                                             order.get("cheque_file_id"))
+    if state == "unpaid":
+        return "karta orqali to'lov kutilmoqda (chek hali yuborilmagan)"
+    if state == "cheque":
+        return "chek yuborilgan, adminimiz tekshiryapti"
+    return "to'langan (karta)" if order.get("payment_method") == "online" else "naqd"
+
+
+def _order_status_line(order: dict) -> str:
+    import json
+    items = order.get("items") or "[]"
+    try:
+        items = json.loads(items) if isinstance(items, str) else items
+    except ValueError:
+        items = []
+    goods = ", ".join(f"{i.get('name')} ×{float(i.get('quantity') or 0):g}"
+                      for i in items if not (i.get("is_bonus") or i.get("is_gift")))[:300]
+    when = order.get("created_at")
+    when = f"{when:%d.%m %H:%M}" if hasattr(when, "strftime") else str(when or "")[:16]
+    method = _DELIVERY_NAME.get(order.get("delivery_method") or "self", order.get("delivery_method") or "")
+    return (f"#{order['id']} · {when} · HOLATI: {_status_meaning(order)} · {method} · "
+            f"jami {_fmt(order.get('total'))} so'm · to'lov: {_payment_note(order)}"
+            + (f" · {goods}" if goods else ""))
+
+
+async def _tool_order_status(user_id: int, args: dict) -> str:
+    orders = await database.get_user_orders(user_id)      # eng yangisi birinchi, qo'lda kiritilmagan
+    number = int(args.get("buyurtma_raqami") or 0)
+    if number:
+        chosen = [o for o in orders if int(o.get("id") or 0) == number]
+        if not chosen:
+            return (f"Xato: #{number} raqamli buyurtma bu mijozning akkauntida yo'q. Boshqa odamning "
+                    "buyurtmasi haqida HECH NARSA AYTMA. Mijozdan raqamni tekshirishni so'ra yoki "
+                    "raqamsiz qayta chaqir; topilmasa — raqamimizni ber, xodimimiz aniqlaydi.")
+    else:
+        open_orders = [o for o in orders if o.get("status") not in ("delivered", "cancelled")]
+        chosen = open_orders[:OPEN_STATUS_SHOWN] or orders[:1]
+        if not chosen:
+            return ("Bu mijozning bot orqali buyurtmasi yo'q. Buyurtmani telefon yoki boshqa yo'l "
+                    "bilan bergan bo'lsa — raqamimizni ber, xodimimiz aniqlaydi.")
+    return ("\n".join(_order_status_line(o) for o in chosen)
+            + "\nMijozga holatni oddiy so'z bilan, qisqa ayt (raqami bilan). Aniq kun yoki soat "
+              "va'da qilma — kuryer: 24 soat ichida. Kechikkan, muammo yoki shikoyat bo'lsa — uzr "
+              "so'rab raqamimizni ber.")
+
+
 async def _pickup_place() -> tuple[str, str]:
     """Olib ketish manzili: admin panelidagi pickup sozlamasi yoqilgan bo'lsa —
     o'sha (tugmali checkout bilan bir xil), aks holda egasi bergan mo'ljal va havola."""
@@ -2297,7 +2411,7 @@ async def _pickup_place() -> tuple[str, str]:
             return config["address"], config["map_url"]
     except Exception:
         logger.warning("Pickup settings unavailable for AI", exc_info=True)
-    return f"Do'kondan olib ketadi: {SHOP_LANDMARK}", SHOP_ADDRESS_URL
+    return f"Do'kondan olib ketadi: {SHOP_PLACE}", SHOP_ADDRESS_URL
 
 
 async def _run_tool(bot: Bot, message: Message, name: str, args: dict) -> str:
@@ -2324,6 +2438,8 @@ async def _run_tool(bot: Bot, message: Message, name: str, args: dict) -> str:
         return await _tool_remember(user_id, args)
     if name == "buyurtma_kartasi":
         return await _tool_card(message, args)
+    if name == "buyurtma_holati":
+        return await _tool_order_status(user_id, args)
     if name == "javobsiz_savol":
         await database.log_ai_question(str(args.get("savol") or ""), user_id)
         return ("OK: savol adminlarga yozib qo'yildi. Endi mijozga uzr so'rab "
@@ -2422,7 +2538,8 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
                     if bad:
                         fix, kind = price_fix(bad), "price"
             if fix is None:
-                if not session.get("placed") and _ORDER_CLAIM.search(reply_text or ""):
+                if (not session.get("placed") and "buyurtma_holati" not in done
+                        and _ORDER_CLAIM.search(reply_text or "")):
                     reply_text = drop_order_claims(reply_text)
                 if russian:
                     reply_text = drop_uzbek_lines(reply_text)
@@ -3961,6 +4078,8 @@ def _group_rules() -> str:
         "- Kimdir sotib olmoqchi bo'lsa, javobni ber va botga yo'naltir: 'buyurtma uchun "
         "@" + BOT_USERNAME + " ga yozing — o'sha yerda rasmiylashtirib beramiz'.\n"
         "- Karta raqami, to'lov, chek — bular haqida guruhda gaplashma, botga yubor.\n"
+        "- Buyurtmasining holatini so'rasa — guruhda aytma (shaxsiy ma'lumot): '@" + BOT_USERNAME +
+        " ga yozing, buyurtmangiz holatini darrov aytib beramiz' de.\n"
         "- Retsept so'ralsa — guruhda retsept yozma, muloyim botga yo'naltir: 'Retseptni "
         "@" + BOT_USERNAME + " da mamnuniyat bilan ulashamiz 😊'.\n\n"
         "SALOMLASHISH\n"
