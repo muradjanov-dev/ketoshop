@@ -282,6 +282,32 @@ async def api_categories(request: web.Request):
     return _json(cats)
 
 
+# Counts and a photo for every catalog tile (2026-11-04), the same for every
+# buyer, so kept for five minutes rather than counted on each opening.
+_TILES = {"at": 0.0, "data": None}
+
+
+async def api_category_tiles(request: web.Request):
+    """GET /api/category-tiles — {total, discounts: {count, photo_url},
+    categories: {key: {count, photo_url}}} for the Mini App's category tiles."""
+    now = time.monotonic()
+    if _TILES["data"] is None or now - _TILES["at"] > 300:
+        import database
+        raw = await database.get_category_tiles()
+        cats = {k: {"count": v["count"], "photo_url": photo_url(v["photo"])} for k, v in raw["categories"].items()}
+        total = sum(v["count"] for v in cats.values())
+        from database import get_active_sets_for_catalog
+        sets = await get_active_sets_for_catalog()
+        cats["sets"] = {"count": len(sets),
+                        "photo_url": photo_url(next((s.get("image_url") for s in sets if s.get("image_url")), None))}
+        _TILES.update(at=now, data={
+            "total": total,
+            "discounts": {"count": raw["discounts"]["count"], "photo_url": photo_url(raw["discounts"]["photo"])},
+            "categories": cats,
+        })
+    return _json(_TILES["data"])
+
+
 async def api_products(request: web.Request):
     """Return paginated products, optionally filtered by category."""
     lang = request.get("user_lang", "uz")
@@ -1967,6 +1993,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_get("/", index)
     app.router.add_get(BOT_ACCESS_PATH, api_bot_access)
     app.router.add_get("/api/categories", api_categories)
+    app.router.add_get("/api/category-tiles", api_category_tiles)
     app.router.add_get("/api/pickup-config", api_pickup_config)
     app.router.add_get("/api/promo", api_promo)
     app.router.add_get("/api/products", api_products)

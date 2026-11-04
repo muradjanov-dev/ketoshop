@@ -34,7 +34,8 @@ vm.runInContext(code, ctx);
 const T = ctx.Trk;
 const fire = (key, ev) => (listeners[key] || []).forEach(f => f(ev || {}));
 
-T.start('direct');                       // home
+T.start('direct');                       // the shop opens on the catalog (2026-11-04)…
+T.page('home');                          // …and this visit goes to the home page first
 now += 4000;
 T.page('catalog', 'all');                // 4 s on home
 now += 2000;

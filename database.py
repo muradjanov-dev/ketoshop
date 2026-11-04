@@ -1509,6 +1509,42 @@ async def get_products_by_category(category: str, page: int = 0, per_page: int =
         return [dict(r) for r in rows], total
 
 
+async def get_category_tiles() -> dict:
+    """What the Mini App's category tiles show (2026-11-04): per category the
+    shop's products (active, not B2B-only) and the photo on its tile — an
+    in-stock product with a picture, the most opened in the last 60 days, so
+    the buyer recognises the shelf; and the same for the discounts shelf.
+    Photo values are the raw image_url / photo_id (webapp_server.photo_url
+    turns them into addresses)."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    pic = "COALESCE(NULLIF(p.image_url, ''), NULLIF(p.photo_id, ''))"
+    async with pool.acquire() as conn:
+        counts = await conn.fetch(
+            """SELECT category, COUNT(*) AS n FROM products
+                WHERE is_active = 1 AND (b2b_only IS NOT TRUE) GROUP BY category""")
+        pics = await conn.fetch(f"""
+            SELECT DISTINCT ON (p.category) p.category, {pic} AS ref
+              FROM products p
+              LEFT JOIN (SELECT product_id, COUNT(*) AS n FROM product_views
+                          WHERE viewed_at >= $1 GROUP BY product_id) v ON v.product_id = p.id
+             WHERE p.is_active = 1 AND (p.b2b_only IS NOT TRUE) AND {pic} IS NOT NULL
+             ORDER BY p.category, (COALESCE(p.quantity, 0) > 0) DESC, COALESCE(v.n, 0) DESC, p.id""",
+            now - timedelta(days=60))
+        disc = await conn.fetchrow(f"""
+            SELECT COUNT(*) AS n,
+                   (ARRAY_AGG({pic} ORDER BY (COALESCE(p.quantity, 0) > 0) DESC, p.discount_percent DESC, p.id)
+                      FILTER (WHERE {pic} IS NOT NULL))[1] AS ref
+              FROM products p
+             WHERE p.is_active = 1 AND (p.b2b_only IS NOT TRUE) AND COALESCE(p.discount_percent, 0) > 0
+               AND (p.discount_until IS NULL OR p.discount_until > $1)""", now)
+    photos = {r["category"]: r["ref"] for r in pics}
+    return {
+        "categories": {r["category"]: {"count": int(r["n"]), "photo": photos.get(r["category"])} for r in counts},
+        "discounts": {"count": int(disc["n"] or 0), "photo": disc["ref"]},
+    }
+
+
 async def get_discounted_products(page: int = 0, per_page: int = 5) -> tuple[list[dict], int]:
     """Active-discount products across all categories, for the bot's Discounts
     section. 'Active' mirrors active_discount(): percent > 0 and not expired
