@@ -1169,6 +1169,170 @@
     padding: 8px 14px 18px;
   }
 
+  /* ── Catalog first (2026-11-04): category tiles, the view switch, and
+     the three-column and list views of the product grid ─────────────── */
+  .cat-tiles {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(2, auto);
+    grid-auto-columns: clamp(96px, 30%, 150px);
+    gap: 10px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding: 6px 14px 12px;
+    scroll-padding: 0 14px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .cat-tiles::-webkit-scrollbar { display: none; }
+  .cat-tiles[hidden] { display: none; }
+  .cat-tile {
+    --cc: var(--c-orange);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-start;
+    aspect-ratio: 1;
+    min-width: 0;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 20px;
+    overflow: hidden;
+    background: var(--cc);
+    color: #fff;
+    text-align: left;
+    cursor: pointer;
+    scroll-snap-align: start;
+    box-shadow: var(--shadow-1);
+    transition: transform .3s var(--ease-spring), box-shadow .2s var(--ease);
+  }
+  .cat-tile::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(180deg, rgba(0,0,0,0) 36%, rgba(0,0,0,.72));
+  }
+  .cat-tile:active { transform: scale(.95); }
+  .cat-tile.active { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5.5px var(--cc); }
+  .cat-tile .ct-photo, .cat-tile .ct-collage { position: absolute; inset: 0; }
+  .cat-tile .ct-photo { background: #fff center / cover no-repeat; }
+  .cat-tile .ct-collage { display: grid; grid-template: 1fr 1fr / 1fr 1fr; gap: 2px; background: #fff; }
+  .cat-tile .ct-collage i { background: #fff center / cover no-repeat; }
+  .cat-tile .ct-name, .cat-tile .ct-count, .cat-tile .ct-badge { position: relative; z-index: 2; }
+  .cat-tile .ct-name {
+    font: 800 12.5px/1.2 var(--font-display);
+    text-shadow: 0 1px 4px rgba(0,0,0,.45);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .cat-tile .ct-count { margin-top: 2px; font: 600 10.5px var(--font-body); opacity: .92; }
+  .cat-tile .ct-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--berry);
+    font: 800 12px/1.2 var(--font-display);
+  }
+  .cat-tile[data-cat="discounts"], .cat-tile[data-cat="vinegar"], .cat-tile[data-cat="sweeteners"] { --cc: var(--c-berry); }
+  .cat-tile[data-cat="coconut"], .cat-tile[data-cat="ready_made"], .cat-tile[data-cat="diet_rice"] { --cc: var(--c-mint); }
+  .cat-tile[data-cat="pp_flour"], .cat-tile[data-cat="seeds"] { --cc: var(--c-leaf); }
+  .cat-tile[data-cat="supplements"], .cat-tile[data-cat="sourdough"], .cat-tile[data-cat="sets"] { --cc: var(--c-lilac); }
+  .cat-tile[data-cat="oils"], .cat-tile[data-cat="salt"], .cat-tile[data-cat="fish"] { --cc: var(--c-sky); }
+
+  /* With tiles on the page the chip row is not in the way at the top: it
+     floats in only once the tiles have scrolled away. */
+  .categories.cat-float {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+    transform: translateY(-110%);
+    opacity: 0;
+    pointer-events: none;
+    box-shadow: 0 10px 22px -16px rgba(0,0,0,.4);
+    transition: transform .3s var(--ease), opacity .2s var(--ease);
+  }
+  .categories.cat-float.show { transform: none; opacity: 1; pointer-events: auto; }
+
+  .catalog-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 4px 14px 2px;
+  }
+  .catalog-heading {
+    min-width: 0;
+    font: 800 15px/1.25 var(--font-display);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .catalog-count { font: 600 12.5px var(--font-body); color: var(--hint); }
+  .view-switch {
+    flex-shrink: 0;
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+  }
+  .view-switch button {
+    width: 36px;
+    height: 30px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--hint);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background-color .2s var(--ease), color .2s var(--ease);
+  }
+  .view-switch button svg { width: 17px; height: 17px; fill: currentColor; }
+  .view-switch button[aria-pressed="true"] { background: var(--text); color: var(--surface); }
+
+  #product-grid.pg-3 { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; padding: 6px 10px 16px; }
+  #product-grid.pg-3 .product-card { padding: 4px 4px 8px; }
+  #product-grid.pg-3 .product-card > :not(.card-img-wrap) { margin-left: 3px; margin-right: 3px; }
+  #product-grid.pg-3 .product-card .card-img-wrap { border-radius: 14px; }
+  #product-grid.pg-3 .card-name { margin-top: 6px; font-size: 11.5px; line-height: 1.25; }
+  #product-grid.pg-3 .card-price { margin-top: 3px; font-size: 12px; }
+  #product-grid.pg-3 .card-saving, #product-grid.pg-3 .bonus-badge, #product-grid.pg-3 .keto-badge,
+  #product-grid.pg-3 .card-desc, #product-grid.pg-3 .disc-until-corner { display: none; }
+  #product-grid.pg-3 .card-soon { font-size: 10.5px; }
+  #product-grid.pg-3 .card-fav-btn { width: 26px; height: 26px; top: 4px; right: 4px; font-size: 11px; }
+  #product-grid.pg-3 .card-img-wrap::after { width: 20px; height: 20px; right: 4px; bottom: 4px; background-size: 10px; }
+  #product-grid.pg-3 .discount-corner { font-size: 9.5px; padding: 3px 6px; top: 4px; left: 4px; }
+  #product-grid.pg-3 .sold-out-stamp { font-size: 10px; }
+
+  #product-grid.pg-list { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  #product-grid.pg-list .product-card {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-rows: repeat(6, min-content) 1fr;
+    column-gap: 12px;
+    align-items: start;
+    padding: 8px 12px 8px 8px;
+  }
+  #product-grid.pg-list .product-card .card-img-wrap { grid-row: 1 / -1; grid-column: 1; width: 96px; border-radius: 16px; }
+  #product-grid.pg-list .product-card > :not(.card-img-wrap) { grid-column: 2; margin-left: 0; margin-right: 0; }
+  #product-grid.pg-list .card-name { margin-top: 2px; font-size: 14px; }
+  #product-grid.pg-list .card-fav-btn { width: 28px; height: 28px; top: 5px; right: 5px; font-size: 12px; }
+  #product-grid.pg-list .card-img-wrap::after { width: 24px; height: 24px; right: 5px; bottom: 5px; background-size: 11px; }
+  #product-grid.pg-list .discount-corner { font-size: 10px; padding: 3px 7px; top: 5px; left: 5px; }
+  #product-grid.pg-list .disc-until-corner { display: none; }
+
   /* ── Page headers ──────────────────────────────────────────────────────
      Big display titles that end in an accent full stop. */
   .cart-page-header, .fav-header, .orders-header, .checkout-header, .games-header {
@@ -3257,7 +3421,7 @@
 <div class="organic-leaves" id="organic-leaves" aria-hidden="true"></div>
 
 <!-- ===== PAGE: HOME ===== -->
-<div class="page active" id="page-home">
+<div class="page" id="page-home">
   <!-- Every product, auto-scrolling, at the very top (owner, 2026-10-02:
        "barcha mahsulotlarni saytda eng tepada"). Filled by renderHomePage. -->
   <!-- A new recipe every 2 days, first thing on the page (owner, 2026-10-08:
@@ -3313,7 +3477,7 @@
 </div>
 
 <!-- ===== PAGE: CATALOG ===== -->
-<div class="page" id="page-catalog">
+<div class="page active" id="page-catalog">
   <div class="catalog-search-bar">
     <div class="search-wrap">
       <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -3322,7 +3486,12 @@
   </div>
   <button class="promo-strip" id="catalog-promo-strip" style="display:none" type="button" onclick="openPromoSheet()"></button>
   <div class="perk-strip" id="catalog-perks" style="display:none"></div>
+  <div class="cat-tiles" id="cat-tiles" hidden></div>
   <div class="categories" id="categories"></div>
+  <div class="catalog-toolbar" id="catalog-toolbar">
+    <div class="catalog-heading"><span id="catalog-title"></span> <span class="catalog-count" id="catalog-count"></span></div>
+    <div class="view-switch" id="view-switch" role="group"></div>
+  </div>
   <div class="product-grid" id="product-grid"></div>
   <div class="loading" id="catalog-loading" style="display:none"></div>
   <div class="empty-state" id="catalog-empty" style="display:none">
@@ -3434,7 +3603,7 @@
     <div id="order-success-detail" style="margin-top:8px"></div>
     <div id="order-success-pickup" style="margin-top:12px;display:none"></div>
     <div id="order-success-keto" style="margin-top:14px;font-size:14px;font-weight:600;display:none"></div>
-    <button class="checkout-submit-btn" style="margin-top:24px;width:80%" onclick="switchPage('home')" id="btn-continue-shopping"></button>
+    <button class="checkout-submit-btn" style="margin-top:24px;width:80%" onclick="switchPage('catalog')" id="btn-continue-shopping"></button>
   </div>
 </div>
 
@@ -3625,13 +3794,13 @@
 
 <!-- ===== BOTTOM TAB BAR ===== -->
 <nav class="tab-bar" id="tab-bar">
-  <div class="tab-item active" data-page="home">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/></svg>
-    <span id="tab-home-label">Bosh sahifa</span>
-  </div>
-  <div class="tab-item" data-page="catalog">
+  <div class="tab-item active" data-page="catalog">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
     <span id="tab-catalog-label">Katalog</span>
+  </div>
+  <div class="tab-item" data-page="home">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/></svg>
+    <span id="tab-home-label">Bosh sahifa</span>
   </div>
   <div class="tab-item" data-page="cart">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>
@@ -5085,9 +5254,11 @@ async function switchLanguage(newLang) {
     // so re-rendering the cached payload would keep showing them in the old
     // language — which is exactly what happened after a switch to Cyrillic.
     renderCatalogCategories();
+    renderViewSwitch();
+    renderCatalogTiles();
     loadPromo();
     loadProducts();
-    renderHomePage();
+    if (homeRendered) renderHomePage();
     if (activePage === 'cart') renderCartPage();
     if (activePage === 'profile') renderProfilePage();
     if (activePage === 'fav') renderFavPage();
@@ -5140,6 +5311,7 @@ let ketoRate = 0;
 let searchTimeout = null;
 let favorites = JSON.parse(localStorage.getItem('ketoshop_fav') || '{}'); // { productId: { product data } }
 let homeProductsCache = {}; // { catKey: products[] }
+let homeRendered = false;   // the home page is drawn when first opened (2026-11-04)
 // ===== SITE ANALYTICS (owner, 2026-10-18) =====
 // "Saytni har bir qismi kuzatib borilishi kerak … qaysi qismida odamlar
 // ko'proq qolib ketishyapti": which screen the buyer is on and for how long
@@ -5154,7 +5326,7 @@ const Trk = (() => {
   const newSid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   let sid = newSid();
   const q = [];
-  let base = { s: 'home', r: null };
+  let base = { s: 'catalog', r: 'all' };
   const stack = [];                       // open windows over the page, top last
   let cur = null, since = 0, depth = 0, depthSent = false, hiddenAt = 0;
   let lastTap = null, lastTapAt = 0, io = null, rowSeen = new Set();
@@ -5281,7 +5453,7 @@ const Trk = (() => {
 })();
 function trk(fn) { try { fn(); } catch (_) {} }
 
-let activePage = 'home';
+let activePage = 'catalog';   // the shop opens on the catalog (2026-11-04)
 
 // ===== TAB NAVIGATION =====
 function switchPage(page) {
@@ -5297,6 +5469,7 @@ function switchPage(page) {
   if (page === 'profile') renderProfilePage();
   if (page === 'orders') loadOrdersPage();
   if (page === 'games') renderGamesPage();
+  if (page === 'home' && !homeRendered) renderHomePage();           // drawn the first time it is opened
   if (page === 'catalog') requestAnimationFrame(catalogLoadMore);   // fill a short grid
 
   trk(() => Trk.page(page, page === 'catalog' ? currentCat : null));
@@ -5322,10 +5495,11 @@ function onBackPressed() {
   if (_isModalOpen('site-fb-modal')) { closeSiteFeedback(true); return; }
   // Inside a game, back returns to the games menu first.
   if (activePage === 'games' && gameState) { renderGamesPage(); return; }
-  // Then page-level: anywhere except home → go home. (Home itself has
-  // BackButton hidden, so Telegram handles back natively → app closes.)
-  if (activePage && activePage !== 'home') {
-    switchPage('home');
+  // Then page-level: anywhere except the catalog (where the shop opens) →
+  // back to it. (The catalog itself hides BackButton, so Telegram handles
+  // back natively → app closes.)
+  if (activePage && activePage !== 'catalog') {
+    switchPage('catalog');
   }
 }
 
@@ -5336,7 +5510,7 @@ function updateBackButton() {
     _isModalOpen('detail-modal') ||
     _isModalOpen('recipe-modal') ||
     _isModalOpen('site-fb-modal') ||
-    (activePage && activePage !== 'home')
+    (activePage && activePage !== 'catalog')
   );
   if (shouldShow) tg.BackButton.show();
   else tg.BackButton.hide();
@@ -6017,8 +6191,9 @@ async function checkStartGate(manual) {
     categories = await api('/api/categories');
     await ketoRatePromise;
     await loadPromo();
-    renderHomePage();
     renderCatalogCategories();
+    renderViewSwitch();
+    loadCatalogTiles();
     await loadProducts();
     await loadCart();
 
@@ -6400,6 +6575,7 @@ function closeRecipe() {
 }
 
 async function renderHomePage() {
+  homeRendered = true;
   loadRecipes();
   const container = document.getElementById('home-sections');
   const topSlot = document.getElementById('home-top-carousel');
@@ -6794,6 +6970,133 @@ async function quickAddToCart(p, btn) {
 }
 
 // ===== CATALOG PAGE =====
+// ===== CATALOG FIRST (owner, 2026-11-04) =====
+// "Mijozlar kirganda birinchi mahsulotlarni ko'rishlari kerak … kategoriya
+// rasmlari … tushunarli bo'lsin … 3x3 … ro'yxat rejimi". The shop opens on
+// the catalog: picture tiles for the categories (each with a real product
+// photo, from /api/category-tiles), and the products straight under them, in
+// two columns, three columns or a list — the buyer's choice stays on the
+// phone. The chip row floats in at the top only once the tiles are gone.
+let catTiles = null, tilesWatch = null;
+const CATALOG_VIEW_KEY = 'ketoshop_catalog_view';
+const CATALOG_VIEWS = ['2', '3', 'list'];
+
+function tileCountText(n) {
+  const m10 = n % 10, m100 = n % 100;
+  const ru = m10 === 1 && m100 !== 11 ? 'товар'
+    : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) ? 'товара' : 'товаров';
+  return gx(n + ' ta mahsulot', n + ' ' + ru);
+}
+function cssUrl(u) {
+  return String(u).replace(/[\\'"()\s]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'));
+}
+
+async function loadCatalogTiles() {
+  try { catTiles = await api('/api/category-tiles'); } catch (_) { catTiles = null; }
+  renderCatalogTiles();
+}
+
+function renderCatalogTiles() {
+  const box = document.getElementById('cat-tiles');
+  const chips = document.getElementById('categories');
+  if (!box) return;
+  const C = catTiles && catTiles.categories;
+  if (!C) { box.innerHTML = ''; box.hidden = true; chips.classList.remove('cat-float', 'show'); return; }
+  const tiles = [{ key: 'all', name: t.all, count: catTiles.total,
+                   collage: categories.map(c => C[c.key] && C[c.key].photo_url).filter(Boolean).slice(0, 4) }];
+  if (catTiles.discounts && catTiles.discounts.count > 0) {
+    tiles.push({ key: 'discounts', name: t.discountsTab, count: catTiles.discounts.count,
+                 photo: catTiles.discounts.photo_url, badge: '%' });
+  }
+  categories.forEach(c => {
+    const x = C[c.key];
+    if (x && x.count > 0) tiles.push({ key: c.key, name: c.name, count: x.count, photo: x.photo_url });
+  });
+  box.innerHTML = '';
+  tiles.forEach(tl => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cat-tile' + (tl.key === currentCat ? ' active' : '');
+    b.dataset.cat = tl.key;
+    let art = '';
+    if (tl.collage && tl.collage.length) {
+      art = '<span class="ct-collage">' + tl.collage.map(u => '<i style="background-image:url(\'' + cssUrl(u) + '\')"></i>').join('') + '</span>';
+    } else if (tl.photo) {
+      art = '<span class="ct-photo" style="background-image:url(\'' + cssUrl(tl.photo) + '\')"></span>';
+    }
+    b.innerHTML = art + (tl.badge ? '<span class="ct-badge">' + tl.badge + '</span>' : '') +
+      '<span class="ct-name">' + escapeHtml(tl.name) + '</span>' +
+      '<span class="ct-count">' + escapeHtml(tileCountText(tl.count || 0)) + '</span>';
+    b.onclick = () => { selectCategory(tl.key); scrollToCatalogList(false); };
+    box.appendChild(b);
+  });
+  box.hidden = false;
+  if (window.IntersectionObserver) {
+    chips.classList.add('cat-float');
+    if (!tilesWatch) {
+      tilesWatch = new IntersectionObserver(es => es.forEach(e => chips.classList.toggle('show', !e.isIntersecting)));
+      tilesWatch.observe(box);
+    }
+  }
+}
+
+// Bring the start of the product list up under the floating chip row —
+// after a tile is tapped always, after a chip only when the buyer is below it.
+function scrollToCatalogList(onlyIfBelow) {
+  const bar = document.getElementById('catalog-toolbar');
+  if (!bar || activePage !== 'catalog') return;
+  const top = Math.max(0, bar.getBoundingClientRect().top + window.scrollY - 62);
+  if (onlyIfBelow && window.scrollY <= top) return;
+  if (Math.abs(window.scrollY - top) > 4) window.scrollTo({ top, behavior: 'smooth' });
+}
+
+function setCatalogHeading(total) {
+  const title = document.getElementById('catalog-title');
+  const count = document.getElementById('catalog-count');
+  if (!title) return;
+  const q = (document.getElementById('catalog-search').value || '').trim();
+  let name;
+  if (q.length >= 2) name = lang === 'ru' ? 'По запросу «' + q + '»' : '«' + q + '» ' + gx("bo'yicha", '');
+  else if (currentCat === 'all') name = t.all;
+  else if (currentCat === 'discounts') name = t.discountsTab;
+  else name = (categories.find(c => c.key === currentCat) || {}).name || '';
+  title.textContent = name;
+  count.textContent = total == null ? '' : '· ' + tileCountText(total);
+}
+
+function catalogView() {
+  try {
+    const v = localStorage.getItem(CATALOG_VIEW_KEY);
+    return CATALOG_VIEWS.includes(v) ? v : '2';
+  } catch (_) { return '2'; }
+}
+function applyCatalogView(v) {
+  const grid = document.getElementById('product-grid');
+  grid.classList.toggle('pg-3', v === '3');
+  grid.classList.toggle('pg-list', v === 'list');
+  document.querySelectorAll('#view-switch button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === v)));
+}
+function renderViewSwitch() {
+  const box = document.getElementById('view-switch');
+  if (!box) return;
+  const labels = { '2': gx('Katta', 'Крупно'), '3': gx('Kichik', 'Мелко'), list: gx("Ro'yxat", 'Списком') };
+  const sq = (x, y, s) => '<rect x="' + x + '" y="' + y + '" width="' + s + '" height="' + s + '" rx="1.6"/>';
+  const icons = {
+    '2': sq(3, 3, 8) + sq(13, 3, 8) + sq(3, 13, 8) + sq(13, 13, 8),
+    '3': [3, 10, 17].map(y => [3, 10, 17].map(x => sq(x, y, 5)).join('')).join(''),
+    list: [4, 10, 16].map(y => sq(3, y, 4) + '<rect x="10" y="' + (y + 1) + '" width="11" height="2.2" rx="1.1"/>').join(''),
+  };
+  box.innerHTML = CATALOG_VIEWS.map(v => '<button type="button" data-view="' + v + '" aria-label="' + labels[v] +
+    '" title="' + labels[v] + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + icons[v] + '</svg></button>').join('');
+  box.querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      try { localStorage.setItem(CATALOG_VIEW_KEY, b.dataset.view); } catch (_) {}
+      applyCatalogView(b.dataset.view);
+    };
+  });
+  applyCatalogView(catalogView());
+}
+
 function renderCatalogCategories() {
   const container = document.getElementById('categories');
   container.innerHTML = '';
@@ -6803,7 +7106,7 @@ function renderCatalogCategories() {
   allTab.className = 'cat-tab active';
   allTab.dataset.cat = 'all';
   allTab.textContent = t.all;
-  allTab.onclick = () => selectCategory('all');
+  allTab.onclick = () => { selectCategory('all'); scrollToCatalogList(true); };
   container.appendChild(allTab);
 
   // Discounts pseudo-category — only products currently on discount.
@@ -6811,7 +7114,7 @@ function renderCatalogCategories() {
   discTab.className = 'cat-tab';
   discTab.dataset.cat = 'discounts';
   discTab.textContent = t.discountsTab;
-  discTab.onclick = () => selectCategory('discounts');
+  discTab.onclick = () => { selectCategory('discounts'); scrollToCatalogList(true); };
   container.appendChild(discTab);
 
   categories.forEach(cat => {
@@ -6819,7 +7122,7 @@ function renderCatalogCategories() {
     tab.className = 'cat-tab';
     tab.dataset.cat = cat.key;
     tab.textContent = cat.name;
-    tab.onclick = () => selectCategory(cat.key);
+    tab.onclick = () => { selectCategory(cat.key); scrollToCatalogList(true); };
     container.appendChild(tab);
   });
 }
@@ -6834,6 +7137,8 @@ function selectCategory(key) {
   const activeTab = document.querySelector('#categories .cat-tab.active');
   if (activeTab) activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
   document.getElementById('catalog-search').value = '';
+  document.querySelectorAll('#cat-tiles .cat-tile').forEach(el => el.classList.toggle('active', el.dataset.cat === key));
+  setCatalogHeading(null);
   trk(() => Trk.cat(key));
   loadProducts();
 }
@@ -6874,6 +7179,7 @@ async function loadProducts(append = false) {
     if (seq !== catalogSeq) return;
     const products = data.products || [];
     totalPages = data.pages || 1;
+    if (!append) setCatalogHeading(data.total != null ? data.total : products.length);
 
     loading.style.display = 'none';
 
@@ -6996,6 +7302,7 @@ document.getElementById('catalog-search').addEventListener('input', function(e) 
     try {
       const products = await api('/api/search?q=' + encodeURIComponent(q));
       trk(() => { Trk.cat('search'); Trk.ev('search', 'catalog', q, null, products.length); });
+      setCatalogHeading(products.length);
       loading.style.display = 'none';
       if (products.length === 0) {
         empty.style.display = 'block';
