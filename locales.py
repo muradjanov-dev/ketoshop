@@ -961,6 +961,11 @@ TEXTS = {
                "⚖️ Примерный вес: ~{kg} кг · обычно доходит за 1 рабочий день.\n"
                "Забрать можно с паспортом или ID-картой."),
     },
+    # Manual order (handlers/admin.py, 2026-11-05): the UzPost fee on the confirm screen.
+    "manual_uzpost_line": {
+        "uz": "📮 ~{kg} kg · yetkazish {fee} so'm (jamiga qo'shildi)",
+        "ru": "📮 ~{kg} кг · доставка {fee} сум (включена в итог)",
+    },
     "uzpost_office_unknown": {
         "uz": "📮 Eng yaqin pochta bo'limini admin aniqlab, sizga yozadi.",
         "ru": "📮 Ближайшее почтовое отделение уточнит администратор и напишет вам.",

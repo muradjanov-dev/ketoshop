@@ -2596,6 +2596,19 @@ def _items_total(items: list[dict]) -> float:
     return sum(float(it["price"]) * float(it["quantity"]) for it in items)
 
 
+def _manual_uzpost(data: dict) -> tuple[int, float]:
+    """(buyer's fee, parcel kg) for a manual UzPost order, or (0, 0) for any
+    other method. The same rule as the bot and the site (uzpost.buyer_fee);
+    Karakalpakstan / Khorezm / Surkhandarya are read from the typed address."""
+    if data.get("delivery") != "uzpost":
+        return 0, 0.0
+    import regions
+    import uzpost
+    items = data.get("items") or []
+    far = uzpost.is_far(regions.region_from_text(data.get("address")))
+    return uzpost.buyer_fee(items, far), uzpost.parcel_kg(items)
+
+
 async def _show_manual_category_picker(target, state: FSMContext, lang: str) -> None:
     """Show categories + a Finish button (when at least one item is in the cart).
     `target` may be a Message (initial entry) or a CallbackQuery message (loop)."""
@@ -3006,6 +3019,9 @@ async def manual_payment(callback: CallbackQuery, state: FSMContext):
         # Yandex Market retired 2026-09-18 — see keyboards.delivery_method_keyboard
         ("bts", "btn_delivery_bts"),
         ("emu", "btn_delivery_emu"),
+        # 2026-11-05: the parcel is priced by weight like a buyer's own order
+        # and the fee goes into the total — see _manual_uzpost.
+        ("uzpost", "btn_delivery_uzpost"),
     ]
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=get_text(label_key, lang), callback_data=f"manualdel:{code}")]
@@ -3072,7 +3088,11 @@ async def _show_manual_confirm(target, state: FSMContext, lang: str) -> None:
         )
     items_block = "\n".join(items_lines) if items_lines else "—"
 
-    total_str = _fmt_price(_items_total(items))
+    fee, kg = _manual_uzpost(data)
+    if fee:
+        import uzpost
+        delivery_label += "\n" + get_text("manual_uzpost_line", lang, kg=uzpost.fmt_kg(kg), fee=_fmt_price(fee))
+    total_str = _fmt_price(_items_total(items) + fee)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=get_text("btn_manual_add_more", lang), callback_data="manualconfirm:addmore")],
@@ -3136,7 +3156,7 @@ async def manual_save(callback: CallbackQuery, state: FSMContext):
         phone=data["phone"],
         address=data["address"],
         items_data=items,
-        total=_items_total(items),
+        total=_items_total(items) + _manual_uzpost(data)[0],
         payment_method=data["payment"],
         delivery_method=data["delivery"],
         status=data["status"],
