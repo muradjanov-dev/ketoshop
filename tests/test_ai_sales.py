@@ -1714,6 +1714,116 @@ class AiNaturalToneTest(unittest.TestCase):
         self.assertEqual(sleeps, [1.2, 3.0])
 
 
+class AiOrderStatusTest(unittest.TestCase):
+    """Egasi, 2026-11-04: "buyurtmalari statusini so'rashsa hozir qaysi statusda
+    ekanini aytib berishi kerak, buni raqamdan yoki mijozni o'zidan aniqlashing mumkin"."""
+
+    ORDERS = [
+        {"id": 5003, "status": "shipped", "delivery_method": "self", "total": 203000,
+         "payment_method": "cash", "address_note": None, "cheque_file_id": None,
+         "created_at": datetime(2026, 11, 3, 14, 20),
+         "items": json.dumps([{"name": "Bodom uni 500gr", "quantity": 2},
+                              {"name": "Eritritol 100gr", "quantity": 1, "is_gift": True}])},
+        {"id": 5002, "status": "pending", "delivery_method": "pickup", "total": 68000,
+         "payment_method": "online", "address_note": None, "cheque_file_id": "c",
+         "created_at": datetime(2026, 11, 2, 10, 0), "items": "[]"},
+        {"id": 4100, "status": "delivered", "delivery_method": "self", "total": 93000,
+         "payment_method": "cash", "address_note": None, "cheque_file_id": None,
+         "created_at": datetime(2026, 10, 20, 9, 0), "delivered_at": datetime(2026, 10, 21, 16, 0),
+         "items": "[]"},
+    ]
+
+    def setUp(self):
+        ai_sales._sessions.clear()
+        _patch(self, database, "get_user_orders", AsyncMock(return_value=list(self.ORDERS)))
+
+    def tearDown(self):
+        ai_sales._sessions.clear()
+
+    def status(self, number=None):
+        return _run(ai_sales._tool_order_status(777, {"buyurtma_raqami": number} if number else {}))
+
+    def test_without_a_number_the_open_orders_are_told(self):
+        out = self.status()
+        self.assertIn("#5003", out)
+        self.assertIn("HOLATI: yo'lda", out)
+        self.assertIn("Bodom uni 500gr ×2", out)
+        self.assertNotIn("Eritritol 100gr", out)                         # sovg'a qatori emas
+        self.assertIn("#5002", out)
+        self.assertIn("to'langan (karta)", out)                          # online — chek bilan to'langan
+        self.assertNotIn("#4100", out)                                    # yetkazilgani — ochiq emas
+        self.assertIn("va'da qilma", out)
+
+    def test_by_number_only_the_customers_own_order(self):
+        out = self.status(4100)
+        self.assertIn("#4100", out)
+        self.assertIn("yetkazilgan 21.10", out)
+        out = self.status(9999)                                           # boshqa odamniki yoki yo'q
+        self.assertTrue(out.startswith("Xato:"), out)
+        self.assertIn("HECH NARSA AYTMA", out)
+        self.assertNotIn("HOLATI", out)
+
+    def test_meanings_follow_the_delivery_method_and_payment(self):
+        meaning = ai_sales._status_meaning
+        self.assertIn("olib ketsa bo'ladi", meaning({"status": "ready", "delivery_method": "pickup"}))
+        self.assertIn("pochtaga topshirilgan", meaning({"status": "shipped", "delivery_method": "bts",
+                                                         "post_office": "Samarqand 140100"}))
+        self.assertIn("adminimiz tasdiqlashi", meaning({"status": "pending"}))
+        note = ai_sales._payment_note
+        self.assertIn("chek hali yuborilmagan", note({"payment_method": "cash",
+                                                      "address_note": "To'lov: KARTA (chek kutilmoqda)"}))
+        self.assertEqual(note({"payment_method": "cash"}), "naqd")
+
+    def test_no_orders_and_only_delivered_ones(self):
+        database.get_user_orders = AsyncMock(return_value=[])
+        self.assertIn("buyurtmasi yo'q", self.status())
+        database.get_user_orders = AsyncMock(return_value=[self.ORDERS[2]])
+        self.assertIn("#4100", self.status())                             # ochig'i yo'q — oxirgisi
+
+    def test_an_honest_status_reply_is_not_taken_for_a_false_order_claim(self):
+        saved = ai_sales.PROVIDER
+        self.addCleanup(setattr, ai_sales, "PROVIDER", saved)
+        _patch(self, ai_sales, "_catalog_cache", (9e18, "12 | Bodom uni 500gr | 89 000 so'm / dona"))
+        _patch(self, database, "get_user_language", AsyncMock(return_value="uz"))
+        ai_sales.PROVIDER = _FakeProvider([
+            Turn(calls=[ToolCall("s1", "buyurtma_holati", {"buyurtma_raqami": 5002})]),
+            Turn(text="Buyurtmangiz #5002 qabul qilindi, hozir tasdiqlanishi kutilyapti 😊"),
+        ])
+        reply = _run(ai_sales._respond(None, _FakeMessage("5002 buyurtmam qayerda"), "5002 buyurtmam qayerda"))
+        self.assertEqual(len(ai_sales.PROVIDER.calls), 2)                 # qayta so'ralmadi
+        self.assertIn("qabul qilindi", reply)
+
+    def test_rules_and_tool_are_wired(self):
+        self.assertIn("buyurtma_holati", {t.name for t in ai_sales.TOOLS})
+        rules = ai_sales._sales_rules()
+        self.assertIn("BUYURTMA HOLATI", rules)
+        self.assertIn("holatni doim vositadan ol", rules)
+        self.assertIn("buyurtmangiz holatini darrov aytib beramiz", ai_sales._group_rules())
+
+
+class AiShopAddressTest(unittest.TestCase):
+    """Egasi, 2026-11-04: "manzilga qo'shimcha qilib endi buni ham qo'sh javoblarda:
+    Toshkent shahri, Oqsoy 1-tor ko'chasi, 2A"."""
+
+    def test_street_landmark_and_link_reach_the_bot_and_the_group(self):
+        for rules in (ai_sales._sales_rules(), ai_sales._group_rules()):
+            self.assertIn("Toshkent shahri, Oqsoy 1-tor ko'chasi, 2A", rules)
+            self.assertIn("Ko'kcha masjidi atrofida", rules)
+            self.assertIn("https://t.me/ketoshop_uz/1071", rules)
+
+    def test_pickup_without_admin_settings_uses_the_full_address(self):
+        _patch(self, database, "get_pickup_settings",
+               AsyncMock(return_value={"enabled": False, "address": "", "map_url": ""}))
+        address, url = _run(ai_sales._pickup_place())
+        self.assertIn("Oqsoy 1-tor ko'chasi, 2A", address)
+        self.assertIn("Ko'kcha masjidi atrofida", address)
+        self.assertEqual(url, "https://t.me/ketoshop_uz/1071")
+
+    def test_a_reply_naming_the_street_gets_the_link(self):
+        out = ai_sales.polish_reply("Do'konimiz: Toshkent shahri, Oqsoy 1-tor ko'chasi, 2A")
+        self.assertIn("https://t.me/ketoshop_uz/1071", out)
+
+
 class AiCardCheckoutScreenTest(unittest.TestCase):
     """handlers/cart.py tomoni: AI kartasidagi to'lov tugmasi, olib ketish va AI ga signal."""
 
