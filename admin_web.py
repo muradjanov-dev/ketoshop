@@ -937,6 +937,81 @@ def _expense_fields(body) -> tuple[str, float]:
     return name, amount
 
 
+ADMIN_MESSAGE_PART = 3900      # under Telegram's 4096-character limit
+ADMIN_MESSAGE_MAX_EXTRA = 10   # extra recipients besides the admins
+
+
+def split_admin_message(text: str, limit: int = ADMIN_MESSAGE_PART) -> list[str]:
+    """Telegram-sized parts, cut at blank lines (then line ends) so a section
+    stays in one message where it fits."""
+    parts, cur = [], ""
+    for block in text.split("\n\n"):
+        while len(block) > limit:                 # one block too long for a message
+            cut = block.rfind("\n", 0, limit)
+            cut = cut if cut > 0 else limit
+            if cur:
+                parts.append(cur)
+                cur = ""
+            parts.append(block[:cut])
+            block = block[cut:].lstrip("\n")
+        joined = (cur + "\n\n" + block) if cur else block
+        if len(joined) > limit:
+            parts.append(cur)
+            cur = block
+        else:
+            cur = joined
+    if cur.strip():
+        parts.append(cur)
+    return [p for p in parts if p.strip()]
+
+
+@require_auth
+async def api_admin_message(request: web.Request):
+    """POST /admin/api/admin-message {"text": "...", "user_ids": [..]} — send a
+    message from the bot to every admin and to up to ADMIN_MESSAGE_MAX_EXTRA
+    more Telegram ids (2026-11-05: reports for the team). HTML is allowed; a
+    part Telegram cannot parse goes as plain text. Someone who never started
+    the bot cannot be reached and is counted in `failed`."""
+    try:
+        body = await request.json()
+    except Exception:
+        return _json({"error": "bad request"}, status=400)
+    text = str((body or {}).get("text") or "").strip()
+    if not text:
+        return _json({"error": "Matn bo'sh"}, status=400)
+    if len(text) > 20000:
+        return _json({"error": "Matn juda uzun (20 000 belgidan ko'p)"}, status=400)
+    try:
+        extra = [int(x) for x in (body.get("user_ids") or [])]
+    except (TypeError, ValueError):
+        return _json({"error": "user_ids — Telegram ID raqamlari ro'yxati bo'lsin"}, status=400)
+    if len(extra) > ADMIN_MESSAGE_MAX_EXTRA:
+        return _json({"error": f"Ko'pi bilan {ADMIN_MESSAGE_MAX_EXTRA} ta qo'shimcha ID"}, status=400)
+    recipients = list(dict.fromkeys([*ADMIN_IDS, *extra]))
+    parts = split_admin_message(text)
+    bot = request.app["bot"]
+    delivered, failed = [], []
+    for chat_id in recipients:
+        ok = True
+        for part in parts:
+            try:
+                await bot.send_message(chat_id, part, parse_mode="HTML", disable_web_page_preview=True)
+            except Exception as exc:
+                if "parse" in str(exc).lower() or "entit" in str(exc).lower():
+                    try:
+                        await bot.send_message(chat_id, part, disable_web_page_preview=True)
+                        continue
+                    except Exception:
+                        pass
+                logger.warning("admin-message to %s failed: %s", chat_id, exc)
+                ok = False
+                break
+        (delivered if ok else failed).append(chat_id)
+    logger.info("admin-message: %d part(s) to %d recipient(s), %d failed", len(parts), len(recipients), len(failed))
+    return _json({"ok": True, "parts": len(parts), "sent": len(delivered), "failed": failed,
+                  "extra_reached": [i for i in extra if i in delivered]})
+
+
 @require_auth
 async def api_expenses_list(request: web.Request):
     expenses = await database.get_expenses(100)
@@ -1955,6 +2030,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_post("/admin/api/reco/backfill", api_reco_backfill)
     app.router.add_get("/admin/api/expenses", api_expenses_list)
     app.router.add_post("/admin/api/expenses", api_expenses_add)
+    app.router.add_post("/admin/api/admin-message", api_admin_message)
     app.router.add_post("/admin/api/expenses/{id:\\d+}", api_expenses_update)
     app.router.add_post("/admin/api/expenses/{id:\\d+}/delete", api_expenses_delete)
     app.router.add_get("/admin/api/orders/{id:\\d+}/costs", api_order_line_costs)
