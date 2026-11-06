@@ -45,6 +45,12 @@ IDEAS = {
         "ru": "Панкейки: 100 г этой муки + 1 яйцо + 150 мл молока. Пополам "
               "с другой мукой вкус мягче.",
     },
+    "buckwheat_plain_flour": {
+        "uz": "Blinchik: 100 gr shu un + 2 tuxum + 150 ml sut. Boshqa un bilan "
+              "yarmi-yarmi qilsangiz ta'mi yumshoqroq chiqadi.",
+        "ru": "Блинчики: 100 г этой муки + 2 яйца + 150 мл молока. Пополам "
+              "с другой мукой вкус мягче.",
+    },
     "nut_flour": {
         "uz": "Bodom uni o'rniga sinab ko'ring — narxi past, ta'mi o'sha: "
               "keks va pechene uchun bug'doy unining 1/3 qismini almashtiring.",
