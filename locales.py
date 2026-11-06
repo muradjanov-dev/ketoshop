@@ -610,6 +610,10 @@ TEXTS = {
         "uz": "🔔 <b>Buyurtma #{order_id} mijoz tomonidan bekor qilindi</b>\n\n👤 {name}\n📱 {phone}",
         "ru": "🔔 <b>Заказ #{order_id} отменён покупателем</b>\n\n👤 {name}\n📱 {phone}",
     },
+    "qty_whole_packs": {
+        "uz": "Mahsulotlarimiz butun qadoqda sotiladi — 1, 2, 3 ... dona tanlang 😊",
+        "ru": "Товары продаются целыми упаковками — выберите 1, 2, 3 ... шт 😊",
+    },
     "qty_whole_only": {
         "uz": "❌ Bu mahsulot uchun butun son kiriting (masalan: 1, 2, 5):",
         "ru": "❌ Для этого товара введите целое число (например: 1, 2, 5):",

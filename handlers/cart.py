@@ -504,6 +504,10 @@ async def add_item_to_cart(callback: CallbackQuery):
     product_id = int(product_id)
     quantity = float(quantity)
     lang = await get_user_language(callback.from_user.id)
+    if not quantity.is_integer():
+        # A "0.5" button on a message sent before 2026-11-06 — whole packs only now.
+        await callback.answer(get_text("qty_whole_packs", lang), show_alert=True)
+        return
 
     product = await get_product(product_id)
     if not product:
@@ -590,7 +594,7 @@ async def process_custom_quantity(message: Message, state: FSMContext):
         )
         return
 
-    if unit in ("kg", "g") and not quantity.is_integer():
+    if not quantity.is_integer():               # every retail product is a whole pack
         await message.answer(get_text("qty_whole_only", lang))
         return
 

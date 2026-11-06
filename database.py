@@ -922,6 +922,12 @@ async def init_db():
         # nothing and are never auto-removed, so switching this on can't
         # suddenly lock stock in months-old carts or message their owners.
         await conn.execute("ALTER TABLE cart ADD COLUMN IF NOT EXISTS reserved_until TIMESTAMP")
+        # Half packs already sitting in carts (2026-11-06 fix) become whole ones,
+        # so no checkout charges half a pack. Idempotent: whole numbers stay.
+        fixed = await conn.execute("UPDATE cart SET quantity = CEIL(quantity) WHERE quantity <> FLOOR(quantity)")
+        if fixed and fixed != "UPDATE 0":
+            import logging
+            logging.getLogger(__name__).info("Half-pack cart lines rounded up: %s", fixed)
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_cart_reserved_until ON cart(reserved_until)")
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS cart_release_notices (
@@ -1814,6 +1820,11 @@ async def _line_cap(conn, product_id: int | None, set_id: int | None, cart_id: i
     return float(min(math.floor(free[p] / q + 1e-9) for p, q in comps))
 
 
+def whole_packs(quantity: float) -> float:
+    """A cart quantity as whole packs: 0.5 → 1, 2 → 2, 1.5 → 2."""
+    return float(max(0, math.ceil(float(quantity or 0) - 1e-9)))
+
+
 async def _put_cart_line(conn, user_id: int, product_id: int | None, set_id: int | None,
                          quantity: float, *, add: bool) -> float:
     """Add to (`add`) or set a cart line, capped at what is free, and hold it
@@ -1824,7 +1835,10 @@ async def _put_cart_line(conn, user_id: int, product_id: int | None, set_id: int
         f"SELECT id, quantity FROM cart WHERE user_id = $1 AND {col} = $2 FOR UPDATE", user_id, ref)
     cart_id = existing["id"] if existing else None
     want = float(quantity) + (float(existing["quantity"]) if existing and add else 0.0)
-    new = min(want, await _line_cap(conn, product_id, set_id, cart_id))
+    # Whole packs only, whichever path wrote it (owner, 2026-11-06: half a 500 g
+    # pack was carted at half price). A fraction rounds up to the next pack.
+    want = whole_packs(want)
+    new = min(want, float(math.floor(await _line_cap(conn, product_id, set_id, cart_id) + 1e-9)))
     if new <= 0:
         if existing:
             await conn.execute("DELETE FROM cart WHERE id = $1", cart_id)
