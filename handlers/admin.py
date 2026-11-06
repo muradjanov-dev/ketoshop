@@ -2164,7 +2164,7 @@ async def manual_order_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         return
     lang = await get_user_language(callback.from_user.id)
-    await state.update_data(lang=lang)
+    await state.set_data({"lang": lang})
     await state.set_state(AdminStates.manual_name)
     await callback.message.edit_text(
         get_text("manual_order_intro", lang),
@@ -2583,7 +2583,34 @@ async def manual_address(message: Message, state: FSMContext):
     address = (message.text or "").strip()
     if not address:
         return
-    await state.update_data(address=address, items=[])
+    await state.update_data(address=address, latitude=None, longitude=None, items=[])
+    await state.set_state(AdminStates.manual_pick_category)
+    await _show_manual_category_picker(message, state, lang)
+
+
+@router.message(AdminStates.manual_address, F.location)
+async def manual_address_location(message: Message, state: FSMContext):
+    """The address as a Telegram location — sent by the admin, or forwarded
+    from the buyer's chat (owner, 2026-11-06: "Ручнойда локация қабул
+    қилсин"). Kept like a buyer's own checkout: "📍 lat, lng — street" for the
+    card, and the coordinates for the courier board's map and 🧭 navigation.
+    No Tashkent / Uzbekistan check: manual orders skip the geofence."""
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return
+    data = await state.get_data()
+    lang = data.get("lang", "uz")
+    lat, lng = message.location.latitude, message.location.longitude
+    try:
+        from handlers.cart import get_location_address_text
+        readable = await get_location_address_text(lat, lng)
+    except Exception:
+        logger.warning("Manual order: reverse geocoding failed", exc_info=True)
+        readable = None
+    address = f"📍 {lat:.6f}, {lng:.6f}" + (f" — {readable}" if readable else "")
+    await state.update_data(address=address, latitude=lat, longitude=lng, items=[])
+    await message.answer(get_text("manual_location_saved", lang, address=html.escape(address)),
+                         parse_mode="HTML")
     await state.set_state(AdminStates.manual_pick_category)
     await _show_manual_category_picker(message, state, lang)
 
@@ -2607,6 +2634,34 @@ def _manual_uzpost(data: dict) -> tuple[int, float]:
     items = data.get("items") or []
     far = uzpost.is_far(regions.region_from_text(data.get("address")))
     return uzpost.buyer_fee(items, far), uzpost.parcel_kg(items)
+
+
+def _manual_items_block(items: list[dict], lang: str) -> str:
+    """One "• name — qty unit × price = line total" row per picked product."""
+    lines = []
+    for it in items:
+        qty = float(it["quantity"])
+        # :g not :.2f — a wholesale line of half a kilo should read "0.5 kg",
+        # not "0.50 kg".
+        qty_str = str(int(qty)) if qty.is_integer() else f"{qty:g}"
+        line_total = qty * float(it["price"])
+        lines.append(
+            f"• {html.escape(it['name'])} — {qty_str} {get_item_unit(it, lang)} "
+            f"× {_fmt_price(it['price'])} = <b>{_fmt_price(line_total)}</b>"
+        )
+    return "\n".join(lines) if lines else "—"
+
+
+def _with_manual_cart(text: str, data: dict, lang: str) -> str:
+    """`text` under the products picked so far and their total (owner,
+    2026-11-06: the list has to stay in sight while payment, delivery and
+    status are chosen, not only on the last "Saqlaysizmi?" screen)."""
+    items: list[dict] = data.get("items") or []
+    if not items:
+        return text
+    block = get_text("manual_cart_summary", lang, count=len(items),
+                     items=_manual_items_block(items, lang), total=_fmt_price(_items_total(items)))
+    return f"{block}\n\n{text}"
 
 
 async def _show_manual_category_picker(target, state: FSMContext, lang: str) -> None:
@@ -2637,7 +2692,7 @@ async def _show_manual_category_picker(target, state: FSMContext, lang: str) -> 
         )])
 
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
-    text = get_text("manual_pick_category", lang)
+    text = _with_manual_cart(get_text("manual_pick_category", lang), data, lang)
     if hasattr(target, "edit_text"):
         try:
             await target.edit_text(text, reply_markup=kb, parse_mode="HTML")
@@ -2990,7 +3045,7 @@ async def manual_finish_items(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text=get_text("btn_pay_online", lang), callback_data="manualpay:online")],
     ])
     await callback.message.edit_text(
-        get_text("choose_payment", lang),
+        _with_manual_cart(get_text("choose_payment", lang), data, lang),
         reply_markup=kb,
         parse_mode="HTML",
     )
@@ -3028,7 +3083,7 @@ async def manual_payment(callback: CallbackQuery, state: FSMContext):
         for code, label_key in options
     ])
     await callback.message.edit_text(
-        get_text("choose_delivery", lang),
+        _with_manual_cart(get_text("choose_delivery", lang), data, lang),
         reply_markup=kb,
         parse_mode="HTML",
     )
@@ -3055,7 +3110,7 @@ async def manual_delivery(callback: CallbackQuery, state: FSMContext):
         for code, label_key in statuses
     ])
     await callback.message.edit_text(
-        get_text("manual_choose_status", lang),
+        _with_manual_cart(get_text("manual_choose_status", lang), data, lang),
         reply_markup=kb,
         parse_mode="HTML",
     )
@@ -3075,18 +3130,7 @@ async def _show_manual_confirm(target, state: FSMContext, lang: str) -> None:
     status_label = get_order_status(data["status"], lang)
 
     items: list[dict] = data.get("items") or []
-    items_lines = []
-    for it in items:
-        qty = float(it["quantity"])
-        # :g not :.2f — a wholesale line of half a kilo should read "0.5 kg",
-        # not "0.50 kg".
-        qty_str = str(int(qty)) if qty.is_integer() else f"{qty:g}"
-        line_total = qty * float(it["price"])
-        items_lines.append(
-            f"• {html.escape(it['name'])} — {qty_str} {get_item_unit(it, lang)} "
-            f"× {_fmt_price(it['price'])} = <b>{_fmt_price(line_total)}</b>"
-        )
-    items_block = "\n".join(items_lines) if items_lines else "—"
+    items_block = _manual_items_block(items, lang)
 
     fee, kg = _manual_uzpost(data)
     if fee:
@@ -3160,6 +3204,8 @@ async def manual_save(callback: CallbackQuery, state: FSMContext):
         payment_method=data["payment"],
         delivery_method=data["delivery"],
         status=data["status"],
+        latitude=data.get("latitude"),
+        longitude=data.get("longitude"),
     )
     import order_admin_feed
     order_admin_feed.manual_created(callback.bot, order_id, callback.from_user)
