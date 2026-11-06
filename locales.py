@@ -332,8 +332,19 @@ TEXTS = {
         "ru": "📱 Введите телефон клиента (+998901234567):",
     },
     "manual_enter_address": {
-        "uz": "📍 Yetkazib berish manzilini kiriting (matn ko'rinishida):",
-        "ru": "📍 Введите адрес доставки (текстом):",
+        "uz": ("📍 Yetkazib berish manzilini yozing yoki lokatsiya yuboring "
+               "(mijozdan kelgan lokatsiyani shu yerga uzatsangiz ham bo'ladi):"),
+        "ru": ("📍 Напишите адрес доставки или отправьте локацию "
+               "(можно переслать локацию, которую прислал клиент):"),
+    },
+    "manual_location_saved": {
+        "uz": "✅ Lokatsiya qabul qilindi:\n{address}",
+        "ru": "✅ Локация принята:\n{address}",
+    },
+    # Products picked so far, above every later step of a manual order.
+    "manual_cart_summary": {
+        "uz": "<b>📦 Mahsulotlar ({count} ta):</b>\n{items}\n💰 <b>Jami: {total} so'm</b>",
+        "ru": "<b>📦 Товары ({count}):</b>\n{items}\n💰 <b>Итого: {total} сум</b>",
     },
     "manual_pick_category": {
         "uz": "📦 Mahsulot qo'shish uchun kategoriyani tanlang:",

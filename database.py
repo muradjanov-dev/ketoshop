@@ -2654,8 +2654,12 @@ async def get_user_orders(user_id: int) -> list[dict]:
 async def add_manual_order(admin_user_id: int, customer_name: str, phone: str,
                             address: str, items_data: list[dict], total: float,
                             payment_method: str, delivery_method: str | None,
-                            status: str, address_note: str | None = None) -> int:
+                            status: str, address_note: str | None = None,
+                            latitude: float | None = None, longitude: float | None = None) -> int:
     """Insert an admin-entered offline order.
+
+    latitude/longitude: when the admin gave the address as a Telegram location
+    (2026-11-06) — the courier board's map and 🧭 navigation read them.
 
     items_data is a list of {product_id, name, quantity, price, unit} dicts —
     same shape as bot/Mini App orders, so per-product analytics (top
@@ -2671,15 +2675,18 @@ async def add_manual_order(admin_user_id: int, customer_name: str, phone: str,
             order_id = await conn.fetchval(
                 """INSERT INTO orders (user_id, customer_name, phone, address, items, total,
                                         payment_method, delivery_method, address_note, status,
-                                        source, confirmed_at, shipped_at, delivered_at)
+                                        source, confirmed_at, shipped_at, delivered_at,
+                                        latitude, longitude)
                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'manual',
                            CASE WHEN $10 IN ('confirmed','shipped','delivered') THEN CURRENT_TIMESTAMP END,
                            CASE WHEN $10 IN ('shipped','delivered')             THEN CURRENT_TIMESTAMP END,
-                           CASE WHEN $10 = 'delivered'                          THEN CURRENT_TIMESTAMP END)
+                           CASE WHEN $10 = 'delivered'                          THEN CURRENT_TIMESTAMP END,
+                           $11, $12)
                    RETURNING id""",
                 admin_user_id, customer_name, phone, address,
                 json.dumps(items_data, ensure_ascii=False), total,
                 payment_method, delivery_method, address_note, status,
+                latitude, longitude,
             )
             return order_id
 

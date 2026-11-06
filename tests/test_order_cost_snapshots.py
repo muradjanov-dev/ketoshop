@@ -56,7 +56,7 @@ class SnapshotConn:
     async def fetchval(self, sql, *args):
         if "INSERT INTO orders" in sql:
             self.cost_write_events.append(("insert", self.transaction_active))
-            if "latitude" in sql:
+            if "seller_id" in sql:          # create_order — manual orders carry latitude too
                 index = 5
             elif "B2B Eritritol" in sql:
                 index = 3
