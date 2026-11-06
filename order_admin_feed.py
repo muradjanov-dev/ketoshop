@@ -47,7 +47,7 @@ from aiogram.enums import ParseMode
 
 import database
 import mystery_gift
-from config import ADMIN_IDS
+from config import ADMIN_IDS, ORDER_WATCHER_IDS
 from locales import get_order_status, line_unit
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,20 @@ _T = {
                      "ru": "📝 <b>Новый заказ вручную #{id}</b>"},
     "b2b_title": {"uz": "🏢 <b>Yangi ulgurji (B2B) buyurtma #{id}</b>",
                   "ru": "🏢 <b>Новый оптовый (B2B) заказ #{id}</b>"},
+    "open_title": {"uz": "📦 <b>Yetkazilmagan buyurtma #{id}</b>",
+                   "ru": "📦 <b>Недоставленный заказ #{id}</b>"},
+    "open_intro": {"uz": ("🧪 <b>Test:</b> hozir yetkazilmagan {n} ta buyurtma quyida.\n\n"
+                          "Bundan keyin sizga botdan faqat yangi buyurtmalar va buyurtma "
+                          "holati o'zgarishlari keladi."),
+                   "ru": ("🧪 <b>Тест:</b> ниже {n} недоставленных заказов.\n\n"
+                          "Дальше бот будет присылать вам только новые заказы и изменения "
+                          "их статуса.")},
+    "open_none": {"uz": ("🧪 <b>Test:</b> hozir yetkazilmagan buyurtma yo'q.\n\n"
+                         "Bundan keyin sizga botdan faqat yangi buyurtmalar va buyurtma "
+                         "holati o'zgarishlari keladi."),
+                  "ru": ("🧪 <b>Тест:</b> сейчас недоставленных заказов нет.\n\n"
+                         "Дальше бот будет присылать вам только новые заказы и изменения "
+                         "их статуса.")},
     "status_now": {"uz": "📌 Holati: {status}", "ru": "📌 Статус: {status}"},
     "items": {"uz": "🛒 <b>Mahsulotlar:</b>", "ru": "🛒 <b>Товары:</b>"},
     "more": {"uz": "… yana {n} ta", "ru": "… ещё {n}"},
@@ -270,36 +284,79 @@ def build_card(order: dict, lang: str, *, title: str, by: str,
     return "\n".join(lines)
 
 
+def recipients() -> list[int]:
+    """Every admin, then the order watchers (config.ORDER_WATCHER_IDS) — each
+    once. A watcher gets these cards and the new-order card, nothing else."""
+    return list(dict.fromkeys([*ADMIN_IDS, *ORDER_WATCHER_IDS]))
+
+
+async def _contact(order: dict) -> str:
+    if is_typed_by_admin(order) or not order.get("user_id"):
+        return ""
+    from handlers.cart import buyer_contact_link
+    try:
+        buyer = await database.get_user(order["user_id"])
+    except Exception:
+        buyer = None
+    return buyer_contact_link(order["user_id"], (buyer or {}).get("username"),
+                              order.get("customer_name"))
+
+
+async def _send_card(bot: Bot, chat_id: int, order: dict, contact: str, **card_kw) -> None:
+    from handlers.cart import order_history_block
+    lang = await database.get_user_language(chat_id)
+    history = ("" if is_typed_by_admin(order)
+               else await order_history_block(order.get("user_id"), order["id"], lang))
+    await bot.send_message(chat_id, build_card(order, lang, history=history,
+                                               contact=contact, **card_kw),
+                           parse_mode=ParseMode.HTML,
+                           disable_web_page_preview=True)
+
+
 async def _send_all(bot: Bot, order_id: int, **card_kw) -> None:
     try:
         order = await database.get_order(order_id)
         if not order:
             return
-        from handlers.cart import buyer_contact_link, order_history_block
-        contact = ""
-        if not is_typed_by_admin(order) and order.get("user_id"):
-            try:
-                buyer = await database.get_user(order["user_id"])
-            except Exception:
-                buyer = None
-            contact = buyer_contact_link(order["user_id"], (buyer or {}).get("username"),
-                                         order.get("customer_name"))
+        contact = await _contact(order)
 
         async def one(admin_id: int) -> None:
             try:
-                lang = await database.get_user_language(admin_id)
-                history = ("" if is_typed_by_admin(order)
-                           else await order_history_block(order.get("user_id"), order_id, lang))
-                await bot.send_message(admin_id, build_card(order, lang, history=history,
-                                                            contact=contact, **card_kw),
-                                       parse_mode=ParseMode.HTML,
-                                       disable_web_page_preview=True)
+                await _send_card(bot, admin_id, order, contact, **card_kw)
             except Exception as exc:
                 logger.warning("order feed #%s → admin %s failed: %s", order_id, admin_id, exc)
 
-        await asyncio.gather(*(one(a) for a in list(ADMIN_IDS)), return_exceptions=True)
+        await asyncio.gather(*(one(a) for a in recipients()), return_exceptions=True)
     except Exception:
         logger.exception("order feed #%s failed", order_id)
+
+
+OPEN_SEND_GAP = 1.0       # seconds between cards — one chat, keep under Telegram's limit
+
+
+async def send_open_orders(bot: Bot, chat_id: int) -> tuple[int, int]:
+    """Every undelivered order's card to one chat — the test the owner asked
+    for when the first order watcher was added (2026-11-06). The intro goes
+    first and its failure is raised (e.g. the account never pressed START),
+    so the caller can try again later; a failed card after it is only logged.
+    Returns (cards sent, open orders)."""
+    ids = await database.get_open_order_ids()
+    lang = await database.get_user_language(chat_id)
+    intro = _t("open_intro", lang, n=len(ids)) if ids else _t("open_none", lang)
+    await bot.send_message(chat_id, intro, parse_mode=ParseMode.HTML)
+    sent = 0
+    for order_id in ids:
+        await asyncio.sleep(OPEN_SEND_GAP)
+        try:
+            order = await database.get_order(order_id)
+            if not order:
+                continue
+            await _send_card(bot, chat_id, order, await _contact(order),
+                             title="open_title", by="Ketoshop bot")
+            sent += 1
+        except Exception as exc:
+            logger.warning("open orders #%s → %s failed: %s", order_id, chat_id, exc)
+    return sent, len(ids)
 
 
 def _spawn(coro) -> None:

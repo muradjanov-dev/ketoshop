@@ -386,6 +386,10 @@ async def main():
     from cart_reservations import scheduler_loop as cart_hold_loop
     cart_hold_task = asyncio.create_task(cart_hold_loop(bot))
 
+    # A new order watcher gets every undelivered order once, as a test.
+    from order_watchers import scheduler_loop as order_watchers_loop
+    asyncio.create_task(order_watchers_loop(bot))
+
     # One-off stock corrections (stock_corrections.py) — each applied once.
     from stock_corrections import run_once as stock_corrections_once
     asyncio.create_task(stock_corrections_once(bot))
