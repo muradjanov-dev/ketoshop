@@ -32,7 +32,7 @@ from keyboards import (
     persistent_menu_keyboard, skip_step_keyboard, phone_request_keyboard,
 )
 from config import (PAYMENT_PROVIDER_TOKEN, ADMIN_IDS, PAYMENT_CARD_NUMBER,
-                    PAYMENT_RECIPIENT_NAME, FREE_DELIVERY_FROM)
+                    PAYMENT_RECIPIENT_NAME, FREE_DELIVERY_FROM, ORDER_WATCHER_IDS)
 import mystery_gift
 import gift_campaign
 import regions
@@ -2642,7 +2642,7 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
     from keyboards import seller_order_keyboard
     logger = logging.getLogger(__name__)
 
-    async def _push_one(admin_id: int) -> None:
+    async def _push_one(admin_id: int, buttons: bool = True) -> None:
         admin_lang = await get_user_language(admin_id)
         items_text = ""
         saved_total = 0
@@ -2733,11 +2733,13 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
             await bot.send_message(
                 chat_id=admin_id,
                 text=text,
+                # An order watcher (config.ORDER_WATCHER_IDS) is not an admin:
+                # the status buttons would do nothing for them, so none.
                 reply_markup=seller_order_keyboard(
                     admin_lang, order_id, "pending",
                     buyer_username=data.get("username"),
-                    is_admin=True,  # _notify_sellers fans out only to ADMIN_IDS
-                ),
+                    is_admin=True,
+                ) if buttons else None,
                 parse_mode="HTML",
                 # The pin follows as its own message; a map preview of the
                 # 🗺 link on top of it would just push the card off screen.
@@ -2754,4 +2756,7 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
             # Bot blocked / chat never started → expected. Anything else worth seeing.
             logger.warning("New-order notification to admin %s failed: %s", admin_id, exc)
 
-    await asyncio.gather(*(_push_one(aid) for aid in ADMIN_IDS), return_exceptions=True)
+    watchers = [w for w in ORDER_WATCHER_IDS if w not in ADMIN_IDS]
+    await asyncio.gather(*(_push_one(aid) for aid in ADMIN_IDS),
+                         *(_push_one(w, buttons=False) for w in watchers),
+                         return_exceptions=True)

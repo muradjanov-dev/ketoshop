@@ -3253,6 +3253,17 @@ COURIER_BOARD_STATUSES = ("pending", "confirmed", "preparing", "ready", "shipped
 COURIER_DONE_STATUSES = ("delivered", "cancelled")
 
 
+async def get_open_order_ids() -> list[int]:
+    """Every order not yet delivered or cancelled — the courier board's live
+    columns — oldest first, without the 🧪 test orders (sinov_buyurtma)."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id FROM orders WHERE status = ANY($1::text[])
+                 AND COALESCE(source, '') <> 'test' ORDER BY id""",
+            list(COURIER_BOARD_STATUSES))
+    return [r["id"] for r in rows]
+
+
 async def get_courier_board_orders(delivered_hours: int = 24, scope: str = "active",
                                    done_limit: int = 400) -> list[dict]:
     """Every order the courier board needs, in one query.

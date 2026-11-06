@@ -27,6 +27,15 @@ _HARDCODED_ADMINS = {917456291, 1035429145}
 _env_admins = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()}
 ADMIN_IDS = list(_HARDCODED_ADMINS | _env_admins)
 
+# Buyurtma kuzatuvchilari (owner, 2026-11-06): these accounts get only the
+# new-order card and every order status card (order_admin_feed.recipients,
+# handlers/cart._notify_sellers) — read-only, without the admin buttons. They
+# are NOT admins: is_admin() and every other ADMIN_IDS notification leave
+# them out. ORDER_WATCHER_IDS (comma-separated) adds more without a release.
+_HARDCODED_ORDER_WATCHERS = {7112339935}
+_env_watchers = {int(x) for x in os.getenv("ORDER_WATCHER_IDS", "").split(",") if x.strip()}
+ORDER_WATCHER_IDS = sorted(_HARDCODED_ORDER_WATCHERS | _env_watchers)
+
 # ── Buyurtma chegaralari ────────────────────────────────────────────────────
 # Two standing promises the whole shop advertises, so they are defined once
 # here rather than in whichever module happened to need them first.
