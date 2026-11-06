@@ -55,7 +55,8 @@ logger = logging.getLogger(__name__)
 # zig'ir's entry IS about the ground seed; rastaropsha and psillium are sold
 # as powder anyway. Those are left alone.
 _FLOUR_OF = {
-    "buckwheat": "buckwheat_flour",
+    "buckwheat": "buckwheat_flour",               # green buckwheat flour
+    "buckwheat_plain": "buckwheat_plain_flour",   # plain grechka uni (2026-11-06)
     "nuts": "nut_flour",
     "coconut": "coconut_flour",
 }
@@ -198,6 +199,27 @@ FAMILY = {
                       "Богата железом и магнием",
                       "Низкий гликемический индекс"],
             use="панкейки, хлеб и кексы; пополам с другой мукой вкус мягче.",
+            keep="в сухом, прохладном и тёмном месте, в закрытой таре."),
+    },
+    # Plain buckwheat flour (2026-11-06) — «Grechka uni», «Кудесница». It used
+    # to get the green one above and went out as kun mahsuloti saying
+    # «Yashil grechkadan tortilgan un» under a plain grechka photo.
+    "buckwheat_plain_flour": {
+        "uz": dict(
+            intro="Oddiy grechka donidan tortilgan un — glyutensiz pishiriqqa grechkaning tanish, yong'oqsimon ta'mini beradi.",
+            benefits=["To'liq o'simlik oqsili",
+                      "Glyuten yo'q",
+                      "Temir va magniy manbai",
+                      "Tolaga boy"],
+            use="blinchik, oladi va non; boshqa un bilan yarmi-yarmi aralashtirilsa ta'mi yumshoqroq bo'ladi.",
+            keep="quruq, salqin va qorong'i joyda, og'zi yopiq idishda."),
+        "ru": dict(
+            intro="Мука из обычной гречки — знакомый ореховый вкус гречки для безглютеновой выпечки.",
+            benefits=["Полноценный растительный белок",
+                      "Без глютена",
+                      "Источник железа и магния",
+                      "Богата клетчаткой"],
+            use="блины, оладьи и хлеб; пополам с другой мукой вкус мягче.",
             keep="в сухом, прохладном и тёмном месте, в закрытой таре."),
     },
     "nut_flour": {

@@ -66,7 +66,7 @@ class FamilyMatchTest(unittest.TestCase):
         about soaking the grain overnight and sprouting it for salad —
         nonsense printed on a bag of flour.
         """
-        self.assertEqual(pd.family_key("Grechka uni"), "buckwheat_flour")
+        self.assertEqual(pd.family_key("Grechka uni"), "buckwheat_plain_flour")
         self.assertEqual(pd.family_key("Yashil grechka uni 500gr"), "buckwheat_flour")
         self.assertEqual(pd.family_key("Fistashka uni 1000gr"), "nut_flour")
         self.assertEqual(pd.family_key("Kokos uni 500gr"), "coconut_flour")
