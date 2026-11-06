@@ -2841,6 +2841,27 @@ async def manual_discount(message: Message, state: FSMContext):
                 await message.answer(get_text("b2b_invalid_price", lang),
                                      reply_markup=admin_cancel_keyboard(lang))
                 return
+        qty = float(data.get("pending_qty") or 0)
+        if _looks_swapped(qty, final_price, base_price):
+            # 2026-11-06, B2B #889: 6 000 kg × 50 so'm was saved for a
+            # 10 000 so'm/kg product — the two numbers typed into each other's
+            # box. Ask before the line goes in.
+            await state.update_data(pending_price=final_price)
+            await message.answer(
+                get_text("b2b_swap_question", lang,
+                         name=html.escape(data.get("pending_product_name") or ""),
+                         qty=_fmt_qty(qty), price=_fmt_price(final_price),
+                         total=_fmt_price(qty * final_price), base=_fmt_price(base_price),
+                         s_qty=_fmt_qty(final_price), s_price=_fmt_price(qty),
+                         s_total=_fmt_price(qty * final_price)),
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=get_text("btn_b2b_swap_fix", lang, qty=_fmt_qty(final_price),
+                                                        price=_fmt_price(qty)), callback_data="b2bswap:fix")],
+                    [InlineKeyboardButton(text=get_text("btn_b2b_swap_keep", lang), callback_data="b2bswap:keep")],
+                ]),
+                parse_mode="HTML",
+            )
+            return
         await _add_manual_item(message, state, data, lang, final_price, discount=0, bulk=True)
         return
 
@@ -2875,6 +2896,44 @@ async def manual_discount(message: Message, state: FSMContext):
             d = round((base_price - final_price) / base_price * 100) if base_price > 0 else 0
 
     await _add_manual_item(message, state, data, lang, final_price, d, bulk=False)
+
+
+def _looks_swapped(qty: float, price: float, ref_price: float) -> bool:
+    """A wholesale line whose price and quantity look typed into each other's
+    box: the price is under a fifth of the product's own price, while the
+    "quantity" is close to that price. (6 000 kg × 50 so'm for a 10 000 so'm/kg
+    product — B2B #889.)"""
+    if ref_price <= 0 or qty <= 0 or price <= 0:
+        return False
+    return price < ref_price / 5 and ref_price / 3 <= qty <= ref_price * 3
+
+
+def _fmt_qty(value: float) -> str:
+    value = float(value)
+    return str(int(value)) if value.is_integer() else f"{value:g}"
+
+
+@router.callback_query(F.data.startswith("b2bswap:"), AdminStates.manual_discount)
+async def b2b_swap_answer(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+    data = await state.get_data()
+    lang = data.get("lang", "uz")
+    price = data.get("pending_price")
+    if price is None:
+        await callback.answer("❌")
+        return
+    qty = float(data.get("pending_qty") or 0)
+    if callback.data == "b2bswap:fix":
+        data = dict(data, pending_qty=float(price))
+        price = qty
+    await state.update_data(pending_price=None)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.answer()
+    await _add_manual_item(callback.message, state, data, lang, float(price), discount=0, bulk=True)
 
 
 async def _add_manual_item(message: Message, state: FSMContext, data: dict, lang: str,

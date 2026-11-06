@@ -454,6 +454,21 @@ TEXTS = {
             "<i>Для 500 г напишите 0.5 · для 1 кг 200 г — 1.2.</i>"
         ),
     },
+    # B2B line whose price and quantity look swapped (2026-11-06, order #889).
+    "b2b_swap_question": {
+        "uz": ("⚠️ <b>Miqdor va narx almashib qolmadimi?</b>\n\n"
+               "📦 {name}\n"
+               "Siz kiritdingiz: <b>{qty} kg × {price} so'm</b> = {total} so'm\n"
+               "Bu mahsulotning odatdagi narxi: {base} so'm / 1 kg.\n\n"
+               "To'g'risi <b>{s_qty} kg × {s_price} so'm</b> (= {s_total} so'm) bo'lishi mumkin."),
+        "ru": ("⚠️ <b>Не перепутаны количество и цена?</b>\n\n"
+               "📦 {name}\n"
+               "Вы ввели: <b>{qty} кг × {price} сум</b> = {total} сум\n"
+               "Обычная цена этого товара: {base} сум / 1 кг.\n\n"
+               "Возможно, правильно <b>{s_qty} кг × {s_price} сум</b> (= {s_total} сум)."),
+    },
+    "btn_b2b_swap_fix": {"uz": "🔄 {qty} kg × {price} so'm", "ru": "🔄 {qty} кг × {price} сум"},
+    "btn_b2b_swap_keep": {"uz": "✅ Kiritganim to'g'ri", "ru": "✅ Введено верно"},
     "b2b_enter_price": {
         "uz": (
             "💰 <b>{name}</b> — 1 kg narxi\n\n"
