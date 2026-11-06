@@ -386,6 +386,10 @@ async def main():
     from cart_reservations import scheduler_loop as cart_hold_loop
     cart_hold_task = asyncio.create_task(cart_hold_loop(bot))
 
+    # One-off stock corrections (stock_corrections.py) — each applied once.
+    from stock_corrections import run_once as stock_corrections_once
+    asyncio.create_task(stock_corrections_once(bot))
+
     # Qayta sotuv — one personal message a week at most: "tugab qolmadimi?",
     # 2nd-order gift, win-back. Daily at 09:30, see retention.py.
     from retention import scheduler_loop as retention_loop

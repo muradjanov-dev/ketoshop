@@ -5634,6 +5634,38 @@ async def restore_product_quantity(product_id: int, amount: float):
         )
 
 
+# Manual and B2B orders are keyed by an admin "for the books" and never take
+# stock out (add_manual_order / add_b2b_order) — so cancelling or deleting one
+# must not put any back either. Until 2026-11-06 both did: deleting B2B #889
+# (keyed as 6 000 kg × 50 so'm instead of 50 kg × 6 000) added 38 000 kg that
+# never existed (stock_corrections.py takes it back out).
+_NO_STOCK_SOURCES = ("manual", "b2b")
+
+
+def _took_stock(order: dict) -> bool:
+    return (order.get("source") or "bot") not in _NO_STOCK_SOURCES
+
+
+async def subtract_stock(lines: list[tuple[int, float]]) -> list[dict]:
+    """Take fixed amounts back out of stock, in one transaction — for a
+    one-off correction (stock_corrections.py). A product holding less than
+    the amount is left alone and reported."""
+    done = []
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            for pid, amount in lines:
+                row = await conn.fetchrow("SELECT name, unit, quantity FROM products WHERE id = $1 FOR UPDATE", pid)
+                if row is None:
+                    continue
+                before = float(row["quantity"] or 0)
+                applied = before >= amount
+                if applied:
+                    await conn.execute("UPDATE products SET quantity = quantity - $1 WHERE id = $2", float(amount), pid)
+                done.append({"id": pid, "name": row["name"], "unit": row["unit"], "before": before,
+                             "after": before - amount if applied else before, "applied": applied})
+    return done
+
+
 async def delete_order_permanently(order_id: int) -> dict | None:
     """Hard-delete an order from the DB — restoring stock if it wasn't already
     cancelled — atomically. Returns the deleted row, or None if the order
@@ -5656,7 +5688,7 @@ async def delete_order_permanently(order_id: int) -> dict | None:
                 return None
             order = dict(row)
 
-            if order["status"] != "cancelled":
+            if order["status"] != "cancelled" and _took_stock(order):
                 items = order["items"]
                 items = json.loads(items) if isinstance(items, str) else items
                 for it in items or []:
@@ -5690,17 +5722,18 @@ async def cancel_order(order_id: int) -> dict | None:
             if order["status"] == "cancelled":
                 return order  # already cancelled — don't restore stock twice
 
-            items = order["items"]
-            items = json.loads(items) if isinstance(items, str) else items
-            for it in items or []:
-                pid = it.get("product_id")
-                qty = it.get("quantity")
-                if pid is None or qty is None:
-                    continue
-                await conn.execute(
-                    "UPDATE products SET quantity = quantity + $1 WHERE id = $2",
-                    float(qty), pid,
-                )
+            if _took_stock(order):
+                items = order["items"]
+                items = json.loads(items) if isinstance(items, str) else items
+                for it in items or []:
+                    pid = it.get("product_id")
+                    qty = it.get("quantity")
+                    if pid is None or qty is None:
+                        continue
+                    await conn.execute(
+                        "UPDATE products SET quantity = quantity + $1 WHERE id = $2",
+                        float(qty), pid,
+                    )
             await conn.execute(
                 "UPDATE orders SET status = 'cancelled' WHERE id = $1", order_id
             )
