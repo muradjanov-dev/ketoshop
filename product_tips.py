@@ -478,10 +478,10 @@ _pair("buckwheat", "peanut_paste",
        "Нужна идея для завтрака в выходной? Гречневые блинчики с арахисовой пастой 👑",
        "С арахисовой пастой гречневые блинчики полюбят даже дети 👑"])
 _pair("buckwheat", "ghee",
-      ["Yashil grechkani GHEE bilan dimlasangiz, yengil va to'yimli garnir chiqadi 🥣",
+      ["Grechkani GHEE bilan dimlasangiz, yengil va to'yimli garnir chiqadi 🥣",
        "Kechki ovqatga yengil garnir kerakmi? Grechka va bir qoshiq GHEE yetadi 🥣",
        "GHEE grechkaga yong'oqsimon ta'm beradi 🥣"],
-      ["Зелёная гречка на гхи — лёгкий и сытный гарнир 🥣",
+      ["Гречка на гхи — лёгкий и сытный гарнир 🥣",
        "Нужен лёгкий гарнир к ужину? Гречка и ложка гхи 🥣",
        "Гхи придаёт гречке ореховый вкус 🥣"])
 

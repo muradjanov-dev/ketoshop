@@ -128,7 +128,8 @@ PROFILES = [
     {
         "key": "buckwheat",
         "emoji": "🍀",
-        "match": ["grechka", "гречк", "grechixa", "grechnev"],
+        # Green buckwheat only — plain grechka is "buckwheat_plain" below.
+        "match": ["yashil grechka", "зелёная греч", "зеленая греч", "зелёной греч", "зеленой греч"],
         "name": {"uz": "Yashil grechka", "ru": "Зелёная гречка"},
         "shop": "grechka",
         "benefits": [
@@ -142,6 +143,30 @@ PROFILES = [
              "ru": "<b>Пророщенная зелёная гречка</b>\n⏱ 10 минут работы + сутки · 🍽 2 стакана\n\n🧾 <b>Ингредиенты:</b>\n• 1 стакан (200 г) зелёной гречки\n• 2 стакана (400 мл) воды для замачивания\n• Для промывания: каждый раз 1 л чистой воды\n\n👩‍🍳 <b>Приготовление:</b>\n1. Промойте гречку в сите холодной водой 2–3 раза.\n2. Переложите в миску, залейте 2 стаканами воды и замочите на 2 часа.\n3. Слейте воду и снова хорошо промойте гречку в сите — смойте слизь.\n4. Разложите гречку тонким слоем в плоской посуде и накройте влажной марлей или полотенцем.\n5. Оставьте при комнатной температуре на 12–24 часа; каждые 8–12 часов промывайте и смачивайте марлю.\n6. Появились белые ростки (1–2 мм) — готово. Добавляйте в салаты, смузи или кашу.\n\n💡 Готовую гречку храните в холодильнике в закрытой посуде до 2 дней."},
             {"uz": "<b>Grechka unidan blinchik</b>\n⏱ 20 daqiqa · 🍽 6 dona\n\n🧾 <b>Masalliqlar:</b>\n• 100 g grechka uni\n• 2 ta tuxum\n• 150 ml suv yoki sut\n• 1/4 choy qoshiq tuz\n• 1 choy qoshiq yog' (tova uchun)\n\n👩‍🍳 <b>Tayyorlash:</b>\n1. Idishda tuxum va tuzni vilka bilan ko'pirtiring.\n2. Sut (yoki suv)ni qo'shib aralashtiring.\n3. Grechka unini asta-sekin qo'shib, quyuqlashmaguncha aralashtiring — xamir suyuq qaymoqdek bo'lsin.\n4. Xamirni 10 daqiqa qo'yib qo'ying.\n5. Tovani o'rtacha olovda qizdirib, yog' surting. 1 cho'mich (taxminan 50 ml) xamir quyib, tovani aylantirib yupqa yoying.\n6. Har tomonini 1–1,5 daqiqadan pishiring.\n7. Ichiga tvorog yoki avokado solib o'rab torting.",
              "ru": "<b>Блинчики из гречневой муки</b>\n⏱ 20 минут · 🍽 6 штук\n\n🧾 <b>Ингредиенты:</b>\n• 100 г гречневой муки\n• 2 яйца\n• 150 мл воды или молока\n• 1/4 ч. ложки соли\n• 1 ч. ложка масла (для сковороды)\n\n👩‍🍳 <b>Приготовление:</b>\n1. Взбейте яйца с солью вилкой.\n2. Добавьте молоко (или воду) и перемешайте.\n3. Постепенно всыпьте гречневую муку, мешая без комков, — тесто должно быть как жидкие сливки.\n4. Оставьте тесто на 10 минут.\n5. Разогрейте сковороду на среднем огне и смажьте маслом. Налейте половник (около 50 мл) теста и, вращая сковороду, распределите тонко.\n6. Жарьте по 1–1,5 минуты с каждой стороны.\n7. Заверните творог или авокадо и подавайте."},
+        ],
+    },
+    # Oddiy grechka (2026-11-06). The profile above is GREEN buckwheat —
+    # unroasted, sprouted, "tirik don" — and used to catch every name with
+    # "grechka", so the plain «Grechka uni» went out as kun mahsuloti with the
+    # green text under its own plain photo. Green names match above; every
+    # other grechka lands here.
+    {
+        "key": "buckwheat_plain",
+        "emoji": "🌾",
+        "match": ["grechka", "гречк", "grechixa", "grechnev"],
+        "name": {"uz": "Grechka", "ru": "Гречка"},
+        "shop": "grechka",
+        "benefits": [
+            {"uz": "Grechka uni glyutensiz — bug'doy unining bir qismini almashtirsangiz, pishiriq to'yimliroq va yong'oqsimon ta'mli bo'ladi.",
+             "ru": "Гречневая мука без глютена — замените ею часть пшеничной, и выпечка станет сытнее, с ореховым вкусом."},
+            {"uz": "To'liq qiymatli o'simlik oqsili, temir va magniy manbai — go'shtni kam yesangiz ayniqsa foydali.",
+             "ru": "Источник полноценного растительного белка, железа и магния — особенно полезно, если вы едите мало мяса."},
+        ],
+        "recipes": [
+            {"uz": "<b>Grechka unidan blinchik</b>\n⏱ 20 daqiqa · 🍽 6 dona\n\n🧾 <b>Masalliqlar:</b>\n• 100 g grechka uni\n• 2 ta tuxum\n• 150 ml suv yoki sut\n• 1/4 choy qoshiq tuz\n• 1 choy qoshiq yog' (tova uchun)\n\n👩‍🍳 <b>Tayyorlash:</b>\n1. Idishda tuxum va tuzni vilka bilan ko'pirtiring.\n2. Sut (yoki suv)ni qo'shib aralashtiring.\n3. Grechka unini asta-sekin qo'shib, quyuqlashmaguncha aralashtiring — xamir suyuq qaymoqdek bo'lsin.\n4. Xamirni 10 daqiqa qo'yib qo'ying.\n5. Tovani o'rtacha olovda qizdirib, yog' surting. 1 cho'mich (taxminan 50 ml) xamir quyib, tovani aylantirib yupqa yoying.\n6. Har tomonini 1–1,5 daqiqadan pishiring.\n7. Ichiga tvorog yoki avokado solib o'rab torting.",
+             "ru": "<b>Блинчики из гречневой муки</b>\n⏱ 20 минут · 🍽 6 штук\n\n🧾 <b>Ингредиенты:</b>\n• 100 г гречневой муки\n• 2 яйца\n• 150 мл воды или молока\n• 1/4 ч. ложки соли\n• 1 ч. ложка масла (для сковороды)\n\n👩‍🍳 <b>Приготовление:</b>\n1. Взбейте яйца с солью вилкой.\n2. Добавьте молоко (или воду) и перемешайте.\n3. Постепенно всыпьте гречневую муку, мешая без комков, — тесто должно быть как жидкие сливки.\n4. Оставьте тесто на 10 минут.\n5. Разогрейте сковороду на среднем огне и смажьте маслом. Налейте половник (около 50 мл) теста и, вращая сковороду, распределите тонко.\n6. Жарьте по 1–1,5 минуты с каждой стороны.\n7. Заверните творог или авокадо и подавайте."},
+            {"uz": "<b>Grechka unidan kefirli oladi</b>\n⏱ 25 daqiqa · 🍽 10 dona\n\n🧾 <b>Masalliqlar:</b>\n• 150 g grechka uni\n• 250 ml kefir\n• 1 ta tuxum\n• 1/2 choy qoshiq soda\n• 1/4 choy qoshiq tuz\n• 1 osh qoshiq eritritol (ixtiyoriy)\n• 2 osh qoshiq yog' (qovurish uchun)\n\n👩‍🍳 <b>Tayyorlash:</b>\n1. Kefirni idishga quying, sodani qo'shib aralashtiring va 5 daqiqa qo'yib qo'ying.\n2. Tuxum, tuz va eritritolni qo'shib, vilka bilan aralashtiring.\n3. Grechka unini asta-sekin qo'shing — xamir quyuq qaymoqdek bo'lsin.\n4. Xamirni 10 daqiqa dam bering.\n5. Tovani o'rtacha olovda qizdirib, yog' quying.\n6. Osh qoshiq bilan xamir soling va har tomonini 2 daqiqadan qizartiring.\n\n💡 Smetana yoki tabiiy asal bilan torting.",
+             "ru": "<b>Гречневые оладьи на кефире</b>\n⏱ 25 минут · 🍽 10 штук\n\n🧾 <b>Ингредиенты:</b>\n• 150 г гречневой муки\n• 250 мл кефира\n• 1 яйцо\n• 1/2 ч. ложки соды\n• 1/4 ч. ложки соли\n• 1 ст. ложка эритрита (по желанию)\n• 2 ст. ложки масла (для жарки)\n\n👩‍🍳 <b>Приготовление:</b>\n1. Влейте кефир в миску, добавьте соду, перемешайте и оставьте на 5 минут.\n2. Добавьте яйцо, соль и эритрит, размешайте вилкой.\n3. Постепенно всыпьте гречневую муку — тесто должно быть как густая сметана.\n4. Дайте тесту постоять 10 минут.\n5. Разогрейте сковороду на среднем огне и налейте масло.\n6. Выкладывайте тесто столовой ложкой и обжаривайте по 2 минуты с каждой стороны.\n\n💡 Подавайте со сметаной или натуральным мёдом."},
         ],
     },
     {
@@ -884,6 +909,7 @@ PAIRINGS = {
     "flax": [_PSY, _SESAME, _SALT, _CHIA],
     "chia": [_COCO, _SWEET, _FLAX, _CACAO],
     "buckwheat": [_SWEET_BAKE, _OIL, _SALT, _SESAME],
+    "buckwheat_plain": [_SWEET_BAKE, _OIL, _SALT, _SESAME],
     "rastaropsha": [
         _s("honey", "🍯", "Tabiiy asal", "Натуральный мёд",
            "rastaropsha ta'mining achchig'ini yumshatadi",

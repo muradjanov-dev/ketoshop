@@ -103,7 +103,7 @@ class SweetenerReachTest(unittest.TestCase):
     def test_baking_families_suggest_a_sweetener(self):
         import reco_content
         for key in ("almond_flour", "coconut", "cacao", "pp_flour",
-                    "rice_flour", "buckwheat", "chickpea", "chia"):
+                    "rice_flour", "buckwheat", "buckwheat_plain", "chickpea", "chia"):
             pairs = reco_content.PAIRINGS.get(key, [])
             self.assertTrue(any(p["profile"] == "sweeteners" for p in pairs), key)
 
