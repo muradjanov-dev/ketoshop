@@ -120,6 +120,7 @@ from aiogram.utils.chat_action import ChatActionSender
 
 import ai_memory
 import ai_stats
+import pack_math
 import ai_provider
 import database
 from config import (ADMIN_IDS, BOT_USERNAME, FREE_DELIVERY_FROM, LOW_STOCK_THRESHOLD,
@@ -1033,6 +1034,27 @@ def _sales_rules() -> str:
         "saqlanadi) — mahsulot_haqida ni chaqir va o'shanga tayan.\n"
         "- Mijoz nima uchun kerakligini aytsa (masalan 'shirinlik pishirmoqchiman'), "
         "katalogdan 2-3 ta mosini narxi bilan taklif qil, ro'yxatni to'kib tashlama.\n\n"
+        "MIQDOR VA QADOQ TAHLILI (egasi, 2026-11-06: yarim narx xatosidan keyin — 'buni tahlil "
+        "qilishni o'rgansin')\n"
+        "- Har bir mahsulot QADOQDA sotiladi. Katalogdagi narx — BITTA QADOQ narxi; nomidagi "
+        "500gr / 1kg / 700ml — o'sha bitta qadoqning hajmi. Miqdor — doim qadoqlar soni, butun son.\n"
+        "- Javob berishdan oldin o'zingdan so'ra: mijoz DONA aytdimi ('2 ta', '1 pachka') yoki "
+        "OG'IRLIK/HAJM aytdimi ('yarim kilo', '1 kg', '300 gr', '2 litr')?\n"
+        "  • dona aytsa — miqdor = shu son;\n"
+        "  • og'irlik yoki hajm aytsa — O'ZING HISOBLAMA, qadoq_tanlash ni chaqir: nechta qadoq, "
+        "jami narx va 1 kg narxini kod beradi; mijozga qadoq soni bilan ayt.\n"
+        "- Narxni HECH QACHON bo'lma va o'zing ko'paytirma: 500gr li qadoqning narxi — to'liq narx, "
+        "uning yarmi emas. So'ralgan og'irlik qadoqqa to'g'ri kelmasa (300 g so'ralsa, eng kichik "
+        "qadoq 500 g) — buni ochiq ayt.\n"
+        "- 'Qaysi biri arzon / foydali?' — qadoq_tanlash dagi 1 kg narxini solishtir.\n"
+        "- Ro'yxat yoki jami kerak bo'lsa — hisob dan ko'chir; har qatorda qadoq sonini yoz "
+        "('Bodom uni 500gr - 2 dona: …'), og'irlikni emas. Qator miqdori va summasi bir-"
+        "biriga mos kelmasa, javob mijozga ketmaydi.\n"
+        "- Misollar (raqamsiz — narxni doim katalog va vositadan ol):\n"
+        "  'bodom uni 500gr 1 ta qancha' → 1 dona = katalogdagi TO'LIQ narx (yarmi EMAS);\n"
+        "  '1 kg bodom uni' → qadoq_tanlash: 1000gr × 1 yoki 500gr × 2 — arzonrog'ini tavsiya qil;\n"
+        "  'yarim kilo bodom uni' → 500gr × 1, to'liq narx;\n"
+        "  '3 kg javdar uni' (1 kg li qadoq) → 3 dona.\n\n"
         "SOTUVGA YO'NALTIRISH\n"
         "- Avval ehtiyojni bitta savol bilan aniqla (nima tayyorlamoqchi, keto'dami yoki "
         "PP, kim uchun), keyin aniq mahsulot va narx ayt va aniq so'ra: 'Savatga qo'shamizmi? 🛒' ('qo'shib qo'yaymi?' kabi noaniq so'z emas). "
@@ -1295,6 +1317,26 @@ _TOOL_SPECS = [
         "description": "Savatdagi mahsulotlar, chegirmalar, sovg'alar, yetkazish narxi va "
                        "aniq jami summa — checkout bilan bir xil hisob.",
         "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "strict": True,
+    },
+    {
+        "name": "qadoq_tanlash",
+        "description": "Mijoz og'irlik yoki hajm aytsa (yarim kilo, 1 kg, 300 gr, 2 litr) — "
+                       "qaysi qadoqdan nechta kerakligi, jami narx va 1 kg narxini KOD hisoblaydi "
+                       "(shu mahsulotning hamma qadoqlari: 500gr, 1000gr ...). Natijadagi qadoq "
+                       "sonini savatga_qoshish yoki hisob ga miqdor qilib ber.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mahsulot_id": {"type": "integer", "description": "Shu mahsulotning istalgan "
+                                                                  "qadog'i id si (katalogdan)"},
+                "miqdor": {"type": "number", "description": "Mijoz aytgan og'irlik/hajm soni: "
+                                                           "yarim kilo → 0.5, 300 gr → 300"},
+                "birlik": {"type": "string", "enum": ["gramm", "kg", "ml", "litr"]},
+            },
+            "required": ["mahsulot_id", "miqdor", "birlik"],
+            "additionalProperties": False,
+        },
         "strict": True,
     },
     {
@@ -1618,6 +1660,58 @@ async def _promo_hint(user_id: int) -> str:
     except Exception:
         logger.warning("Promo hint failed for %s", user_id, exc_info=True)
         return ""
+
+
+async def _tool_pack_options(args: dict) -> str:
+    """Og'irlik → qadoqlar (pack_math.py). Shu oiladagi (nomi gramm/ml siz bir xil)
+    sotuvdagi hamma qadoq, chegirma bilan — savat bilan bir xil narx."""
+    product = await database.get_product(int(args.get("mahsulot_id") or 0))
+    if not product or not product.get("is_active"):
+        return "Xato: bu mahsulot katalogda yo'q."
+    amount = float(args.get("miqdor") or 0)
+    unit = (args.get("birlik") or "gramm").strip().lower()
+    if amount <= 0:
+        return "Xato: miqdor 0 dan katta bo'lishi kerak."
+    family = pack_math.base_name(product["name"])
+    products, _ = await database.get_all_products_paginated(page=0, per_page=500)
+    packs = []
+    for p in products:
+        if pack_math.base_name(p.get("name")) != family or float(p.get("quantity") or 0) <= 0:
+            continue
+        discount = database.active_discount(p.get("discount_percent"), p.get("discount_until"))
+        packs.append({"id": p["id"], "name": p["name"], "unit": p.get("unit"),
+                      "price": database.effective_price(float(p["price"]), discount, p.get("discount_until"))})
+    if not packs:
+        return f"Xato: {product['name']} hozir sotuvda yo'q."
+    kind = "ml" if unit in ("ml", "litr") else "g"
+    return pack_math.options_text(packs, pack_math.requested_amount(amount, unit), kind)
+
+
+def _catalog_products(catalog: str) -> list[dict]:
+    """Katalog matnidagi mahsulotlar (nom, narx, asl narx) — javob qatorlarini
+    tekshirish uchun (pack_math.line_mismatch)."""
+    out = []
+    for m in _CATALOG_LINE.finditer(catalog or ""):
+        name = re.sub(r"\s*\(ru:[^)]*\)", "", m.group(1)).strip()
+        old = re.search(r"asl narxi (\d[\d  ]*)", m.group(3))
+        out.append({"id": 0, "name": name, "unit": None,
+                    "price": float(re.sub(r"\D", "", m.group(2))),
+                    "original_price": float(re.sub(r"\D", "", old.group(1))) if old else None})
+    return out
+
+
+_TOTAL_LINE_RE = re.compile(r"\b(?:jami|итого|всего|total)\b", re.IGNORECASE)
+
+
+def _drop_mismatched(reply: str, issues: list[dict], lang: str) -> str:
+    bad = {i["line"] for i in issues}
+    # The total of a list with a wrong line is wrong too — it goes with it.
+    kept = [line for line in (reply or "").split("\n")
+            if line.strip() not in bad and not _TOTAL_LINE_RE.search(line)]
+    note = _t("Aniq narx va jamini savatda ko'rsatamiz — savatga qo'shamizmi? 🛒",
+              "Точную цену и сумму покажем в корзине — добавить в корзину? 🛒", lang)
+    text = "\n".join(kept).strip()
+    return f"{text}\n\n{note}" if text else note
 
 
 async def _tool_quote(user_id: int, args: dict) -> str:
@@ -2458,6 +2552,8 @@ async def _run_tool(bot: Bot, message: Message, name: str, args: dict) -> str:
         return await _tool_add_set(user_id, args)
     if name == "savatni_korish":
         return await _tool_cart(user_id)
+    if name == "qadoq_tanlash":
+        return await _tool_pack_options(args)
     if name == "hisob":
         return await _tool_quote(user_id, args)
     if name == "savatdan_ochirish":
@@ -2532,6 +2628,7 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
     # Summalar shulardan bo'lishi mumkin: qoidalar, katalog (narx × miqdor bilan),
     # mijoz xabari va shu javobdagi vosita natijalari (pastda qo'shiladi).
     prices = PriceCheck(rules, catalog, user_text)
+    products = _catalog_products(catalog)          # qator miqdori ↔ summa tekshiruvi uchun
 
     turn = await _step(state, rules, catalog, TOOLS, user=user_text,
                        max_tokens=MAX_TOKENS, history_limit=HISTORY_LIMIT)
@@ -2565,6 +2662,12 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
                     bad = prices.bad(reply_text)
                     if bad:
                         fix, kind = price_fix(bad), "price"
+                # Qator miqdori va summasi bir-biriga mos (egasi, 2026-11-06): «500gr - 1 ta:
+                # 43 500» yoki «500gr - 1 kg: 87 000» — ikkalasi ham narx × qadoq emas.
+                if fix is None and "qty" not in corrected and not session.get("card"):
+                    issues = pack_math.line_mismatch(reply_text, products, prices.tools)
+                    if issues:
+                        fix, kind = pack_math.mismatch_fix(issues), "qty"
             if fix is None:
                 if (not session.get("placed") and "buyurtma_holati" not in done
                         and _ORDER_CLAIM.search(reply_text or "")):
@@ -2575,6 +2678,10 @@ async def _respond(bot: Bot, message: Message, user_text: str) -> str:
                     logger.warning("AI sales reply still had made-up amounts for user %s — lines dropped",
                                    user_id)
                     reply_text = prices.drop(reply_text, lang)
+                issues = [] if session.get("card") else pack_math.line_mismatch(reply_text, products, prices.tools)
+                if issues:
+                    logger.warning("AI sales reply still mixed up packs for user %s — lines dropped", user_id)
+                    reply_text = _drop_mismatched(reply_text, issues, lang)
                 return reply_text
             corrected.add(kind)
             logger.warning("AI sales reply needs a fix (%s, user %s) — asking again", kind, user_id)
