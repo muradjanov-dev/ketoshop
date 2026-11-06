@@ -25,16 +25,17 @@ forces it off.
 """
 import logging
 import os
+import re
 import time
 
-from aiogram import F, Router
+from aiogram import BaseMiddleware, F, Router
 from aiogram.client.session.middlewares.base import BaseRequestMiddleware
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import database
 from config import ADMIN_IDS
-from translit import to_new_latin
+from translit import to_new_latin, to_old_latin
 
 logger = logging.getLogger(__name__)
 router = Router(name="alphabet")
@@ -143,6 +144,33 @@ def convert_method(method):
     if isinstance(method, AnswerCallbackQuery) and not update.get("text"):
         update.pop("text", None)
     return method.model_copy(update=update) if update else method
+
+
+_NEW_LETTERS_RE = re.compile("[öÖğĞşŞçÇ]")
+
+
+class IncomingOldLatinMiddleware(BaseMiddleware):
+    """dp.message outer middleware — the other half of NewAlphabetMiddleware.
+
+    Reply-keyboard buttons go out in the new alphabet («🏠 Boş menyu») and a
+    tap sends exactly that text back, while every handler matches the
+    old-Latin labels the code is written in. The tap matched nothing and fell
+    through to the AI seller, which answered «Savat hozir böş» instead of
+    opening the menu (owner, 2026-11-06: "bosh menyu bosganda ai emas balki
+    bosh menyuga o'tsin"). So what buyers send is turned back to old Latin
+    before any handler sees it — every reply button at once, and the AI and
+    search read the same text the database is written in.
+
+    Private chats only, and only a message without entities: Ş → Sh changes
+    the length, which would shift entity offsets (links, mentions)."""
+
+    async def __call__(self, handler, event, data):
+        text = getattr(event, "text", None)
+        if (text and not getattr(event, "entities", None)
+                and getattr(getattr(event, "chat", None), "type", None) == "private"
+                and _NEW_LETTERS_RE.search(text)):
+            event = event.model_copy(update={"text": to_old_latin(text)})
+        return await handler(event, data)
 
 
 class NewAlphabetMiddleware(BaseRequestMiddleware):

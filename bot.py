@@ -167,6 +167,10 @@ async def main():
     storage = PostgresStorage()
     dp = Dispatcher(storage=storage)
     dp.update.outer_middleware(admin_mood.CurrentUserMiddleware())
+    # Buyers' own text back to old Latin before any handler matches it:
+    # reply buttons are sent in the new alphabet («🏠 Boş menyu»), handlers
+    # know the old labels (owner, 2026-11-06). First, so everything after sees it.
+    dp.message.outer_middleware(alphabet.IncomingOldLatinMiddleware())
 
     # In groups the bot is not a menu: members' commands get no reply and
     # its buttons answer only admins (owner, 2026-10-04) — see group_quiet.py.
