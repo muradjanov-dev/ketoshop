@@ -24,6 +24,12 @@ from config import ADMIN_IDS, ORDER_WATCHER_IDS
 logger = logging.getLogger(__name__)
 
 RETRY_EVERY = 600          # seconds
+
+# Order watchers who also work as couriers (owner, 2026-11-06: "kuryerda bor
+# imkoniyat va tugmalarni qo'shib ber") — /courier, the 🚚 Kuryer paneli board
+# with its statistics, pickup / delivered buttons. Registered once (claimed),
+# so an admin's later /rmcourier is not undone by a restart.
+COURIERS = (7112339935,)
 ATTEMPTS = 6 * 24 * 3      # ~3 days of tries for someone who hasn't pressed START yet
 
 
@@ -54,7 +60,24 @@ async def _try(bot: Bot, user_id: int) -> bool:
     return True
 
 
+async def register_couriers() -> None:
+    for user_id in COURIERS:
+        key = f"courier-add:{user_id}"
+        try:
+            if not await database.claim_release_notes(key):
+                continue
+            await database.add_courier_db(user_id, None)
+            logger.info("Order watcher %s registered as a courier", user_id)
+        except Exception:
+            logger.exception("Courier registration for %s failed", user_id)
+            try:
+                await database.release_release_notes(key)
+            except Exception:
+                pass
+
+
 async def scheduler_loop(bot: Bot) -> None:
+    await register_couriers()
     pending = [w for w in ORDER_WATCHER_IDS if w not in ADMIN_IDS]
     for _ in range(ATTEMPTS):
         if not pending:

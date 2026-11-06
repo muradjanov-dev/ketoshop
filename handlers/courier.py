@@ -7,8 +7,27 @@ from aiogram.fsm.context import FSMContext
 import database
 from config import ADMIN_IDS
 
+# The bot menu works on the same statuses as the Kuryer board (courier_board
+# .COLUMNS): an order waiting for a courier is confirmed / preparing / ready,
+# one a courier took is 'shipped' («Yo'lda»). Until 2026-11-06 a pickup here
+# wrote 'delivering', which no board column shows — the order vanished from
+# the board while the courier carried it. 'delivering' stays readable for
+# orders taken before that.
+_WAITING = ("confirmed", "preparing", "ready")
+_CARRYING = ("shipped", "delivering")
+
 router = Router()
 logger = logging.getLogger(__name__)
+
+def _feed(bot: Bot, order_id: int, old: str | None, new: str, by) -> None:
+    """The status card every admin and order watcher gets — the same one the
+    board and the seller buttons send (order_admin_feed)."""
+    try:
+        import order_admin_feed
+        order_admin_feed.status_changed(bot, order_id, old, new, by)
+    except Exception:
+        logger.exception("order feed for courier move #%s failed", order_id)
+
 
 async def is_courier(user_id: int) -> bool:
     couriers = await database.get_courier_ids()
@@ -75,11 +94,11 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
     
     async def get_new_orders():
         async with database.pool.acquire() as conn:
-            return await conn.fetch("SELECT * FROM orders WHERE status = 'confirmed' AND delivery_method IS DISTINCT FROM 'pickup' AND courier_id IS NULL ORDER BY created_at ASC")
+            return await conn.fetch("SELECT * FROM orders WHERE status = ANY($1::text[]) AND delivery_method IS DISTINCT FROM 'pickup' AND courier_id IS NULL ORDER BY created_at ASC", list(_WAITING))
             
     async def get_my_orders():
         async with database.pool.acquire() as conn:
-            return await conn.fetch("SELECT * FROM orders WHERE courier_id = $1 AND status = 'delivering' ORDER BY created_at ASC", callback.from_user.id)
+            return await conn.fetch("SELECT * FROM orders WHERE courier_id = $1 AND status = ANY($2::text[]) ORDER BY created_at ASC", callback.from_user.id, list(_CARRYING))
             
     def build_text(row, total_count, current_idx, title="Yangi buyurtma"):
         return (
@@ -190,10 +209,14 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
         
         async with database.pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM orders WHERE id = $1", order_id)
-            if not row or row["courier_id"] is not None or row.get("delivery_method") == "pickup" or row.get("status") != "confirmed":
+            if not row or row["courier_id"] is not None or row.get("delivery_method") == "pickup" or row.get("status") not in _WAITING:
                 await callback.answer("Bu buyurtma allaqachon boshqa kuryer tomonidan olingan yoki topilmadi!", show_alert=True)
             else:
-                await conn.execute("UPDATE orders SET courier_id = $1, status = 'delivering' WHERE id = $2", callback.from_user.id, order_id)
+                await conn.execute(
+                    "UPDATE orders SET courier_id = $1, status = 'shipped', "
+                    "shipped_at = COALESCE(shipped_at, CURRENT_TIMESTAMP) WHERE id = $2",
+                    callback.from_user.id, order_id)
+                _feed(bot, order_id, row["status"], "shipped", callback.from_user)
                 await callback.answer("Buyurtmani olib ketdingiz!", show_alert=True)
                 # Notify user
                 user_lang = await database.get_user_language(row["user_id"])
@@ -227,6 +250,7 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
                         "UPDATE orders SET status = 'delivered', "
                         "delivered_at = COALESCE(delivered_at, CURRENT_TIMESTAMP) WHERE id = $1",
                         order_id)
+                    _feed(bot, order_id, row["status"], "delivered", callback.from_user)
                     await callback.answer("Yetkazib berildi!", show_alert=True)
                     user_lang = await database.get_user_language(row["user_id"])
                     try:
@@ -238,6 +262,7 @@ async def courier_callback_handler(callback: CallbackQuery, bot: Bot):
                     delivered_order["status"] = "delivered"
                 else: # cancel
                     await conn.execute("UPDATE orders SET status = 'confirmed', courier_id = NULL WHERE id = $1", order_id)
+                    _feed(bot, order_id, row["status"], "confirmed", callback.from_user)
                     await callback.answer("Buyurtma qaytarildi.", show_alert=True)
 
         # An order closed out by the courier reaches 'delivered' without ever
