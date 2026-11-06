@@ -1,6 +1,7 @@
 """30-day TOP-10 to the channel every three days at 10:00 Tashkent.
 
-Starts 23 October 2026. Only names are public: no sales or stock counts.
+Starts 23 October 2026. Names and the amount sold in those 30 days are
+public (owner, 2026-11-06: "Количествасиниям ёзиш керак"); stock is not.
 Each date is claimed atomically in the existing release_notes_sent table
 before sending, so restarts/overlapping workers cannot duplicate a post.
 Definite Telegram rejections release the claim for a retry. An ambiguous
@@ -32,6 +33,21 @@ def _now_tk() -> datetime:
     return datetime.now(timezone(timedelta(hours=5)))
 
 
+def _amount(value: float) -> str:
+    value = round(float(value), 1)
+    if value.is_integer():
+        return f"{int(value):,}".replace(",", " ")
+    return f"{value:.1f}".replace(".", ",")
+
+
+def sold_text(sold: dict) -> str:
+    """ "37 та", "50 кг", or "12 та + 50 кг" — packs first, weights after."""
+    parts = [f"{_amount(qty)} {unit or 'та'}"
+             for unit, qty in sorted((sold or {}).items(), key=lambda kv: (kv[0] != "", kv[0]))
+             if qty > 0]
+    return " + ".join(parts)
+
+
 def build_text(products: list[dict]) -> str:
     lines = ["🏆 <b>Охирги 30 кунда энг кўп сотилган маҳсулотлар</b>", "",
              "Харидорларимиз энг кўп танлаган маҳсулотлар:", ""]
@@ -42,7 +58,8 @@ def build_text(products: list[dict]) -> str:
         name = lat_to_cyr(name[:119] + "…" if len(name) > 120 else name)
         while len(html.escape(name, quote=False)) > 300:
             name = name[:-2] + "…"
-        lines.append(f"{rank}. {html.escape(name, quote=False)}")
+        amount = sold_text(product.get("sold"))
+        lines.append(f"{rank}. {html.escape(name, quote=False)}" + (f" — <b>{amount}</b>" if amount else ""))
     lines += ["", "🌿 Ўзингизга мос маҳсулотларни дўконимиздан танланг!", "@ketoshop_uz"]
     return "\n".join(lines)
 

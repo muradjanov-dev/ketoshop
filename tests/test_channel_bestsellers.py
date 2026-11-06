@@ -35,6 +35,7 @@ class RankingTest(unittest.IsolatedAsyncioTestCase):
         with patch.object(database, "pool", pool):
             result = await database.get_channel_bestsellers(limit=2)
         self.assertEqual([p["id"] for p in result], [2, 3])
+        self.assertEqual([p["sold"] for p in result], [{"": 4.0}, {"": 3.0}])
         # Query contracts: current 30-day sales only; unavailable products
         # must be removed before the top ten is cut, without all-time fallback.
         sales_sql, *args = conn.fetch.await_args_list[0].args
@@ -49,6 +50,30 @@ class RankingTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("is_active = 1", product_sql)
         self.assertIn("quantity > 0", product_sql)
         self.assertIn("b2b_only IS NOT TRUE", product_sql)
+
+    async def test_packs_and_weights_are_counted_apart(self):
+        orders = [{"items": [
+            {"product_id": 7, "quantity": 3, "price": 10000, "unit": "kg"},               # 3 packs
+            {"product_id": 7, "quantity": 50, "price": 6000, "unit": "kg", "bulk": True},  # 50 kg wholesale
+            {"product_id": 7, "quantity": 1.5, "price": 10000, "unit": "kg"},             # a real 1.5 kg
+            {"product_id": 8, "quantity": 2, "price": 9000},                              # no unit: packs
+            {"product_id": 9, "quantity": 2, "price": 9000, "unit": "jar"},
+        ]}]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(side_effect=[orders, [
+            {"id": 7, "name": "Kepak"}, {"id": 8, "name": "Chia"}, {"id": 9, "name": "Asal"},
+        ]])
+        pool = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        with patch.object(database, "pool", pool):
+            result = await database.get_channel_bestsellers()
+        by_id = {p["id"]: p["sold"] for p in result}
+        self.assertEqual(by_id[7], {"": 3.0, "кг": 51.5})
+        self.assertEqual(by_id[8], {"": 2.0})
+        self.assertEqual(by_id[9], {"банка": 2.0})
+        self.assertEqual(channel_bestsellers.sold_text(by_id[7]), "3 та + 51,5 кг")
+        self.assertEqual(channel_bestsellers.sold_text({"": 1250.0}), "1 250 та")
+        self.assertEqual(channel_bestsellers.sold_text({}), "")
 
     async def test_empty_month_does_not_fall_back_to_old_sales(self):
         conn = MagicMock()
@@ -81,7 +106,8 @@ class PostTest(unittest.IsolatedAsyncioTestCase):
              patch.object(self.posts, "REQUIRED_CHANNEL_ID", -100), \
              patch.object(database, "get_channel_bestsellers", AsyncMock(
                  return_value=products if products is not None else [
-                     {"id": 2, "name": "Bodom uni", "qty": 987654, "quantity": 123456}
+                     {"id": 2, "name": "Bodom uni", "qty": 987654, "quantity": 123456,
+                      "sold": {"": 37.0}}
                  ])), \
              patch.object(database, "claim_release_notes", side_effect=claim), \
              patch.object(database, "release_release_notes", side_effect=release):
@@ -101,12 +127,12 @@ class PostTest(unittest.IsolatedAsyncioTestCase):
         await self.tick(datetime(2026, 10, 29, 22))  # no late-night catch-up
         self.assertEqual(self.bot.send_message.await_count, 2)
 
-    async def test_channel_payload_hides_sales_and_stock_but_opens_shop(self):
+    async def test_channel_payload_shows_amount_sold_hides_stock_and_opens_shop(self):
         await self.tick(datetime(2026, 10, 23, 10))
         call = self.bot.send_message.await_args
         self.assertEqual(call.args[0], -100)
         text = call.args[1]
-        self.assertIn("Бодом уни", text)
+        self.assertIn("1. Бодом уни — <b>37 та</b>", text)
         self.assertIn("30 кун", text)
         self.assertNotIn("987654", text)
         self.assertNotIn("123456", text)

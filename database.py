@@ -5291,7 +5291,13 @@ async def get_channel_bestsellers(limit: int = 10) -> list[dict]:
     Include retail, manual and wholesale sales, excluding cancellations,
     internal test purchases and free gifts/bonuses. No all-time fallback or
     daily rotation: the channel explicitly promises a 30-day sales ranking.
+
+    Each product carries `sold`: the amount sold per unit, the way an order
+    line prints it — "" for a count of packs, "кг" (etc.) for a real weight
+    such as a wholesale line — so the post never adds kilos to packs
+    (owner, 2026-11-06: the top ten shows quantities).
     """
+    import locales
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             f"""SELECT items FROM orders
@@ -5303,6 +5309,7 @@ async def get_channel_bestsellers(limit: int = 10) -> list[dict]:
             "30", _activity_excluded_ids(),
         )
         quantities: dict[int, float] = {}
+        sold: dict[int, dict[str, float]] = {}
         for row in rows:
             raw = row["items"]
             items = json.loads(raw) if isinstance(raw, str) else raw
@@ -5318,6 +5325,9 @@ async def get_channel_bestsellers(limit: int = 10) -> list[dict]:
                 if qty <= 0 or price <= 0 or not math.isfinite(qty) or not math.isfinite(price):
                     continue
                 quantities[pid] = quantities.get(pid, 0.0) + qty
+                per_unit = sold.setdefault(pid, {})
+                label = locales.line_unit(item, "uz_cyr")
+                per_unit[label] = per_unit.get(label, 0.0) + qty
         if not quantities:
             return []
         products = await conn.fetch(
@@ -5326,7 +5336,7 @@ async def get_channel_bestsellers(limit: int = 10) -> list[dict]:
                   AND b2b_only IS NOT TRUE AND id = ANY($1::int[])""",
             list(quantities),
         )
-    by_id = {p["id"]: dict(p) for p in products}
+    by_id = {p["id"]: dict(p, sold=sold.get(p["id"], {})) for p in products}
     ranked = sorted(quantities, key=lambda pid: (-quantities[pid], pid))
     return [by_id[pid] for pid in ranked if pid in by_id][:limit]
 
