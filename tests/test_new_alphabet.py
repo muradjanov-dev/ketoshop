@@ -211,5 +211,75 @@ class PagesTest(unittest.TestCase):
         alphabet._state["on"] = True
 
 
+class IncomingButtonTextTest(unittest.TestCase):
+    """Owner, 2026-11-06: «🏠 Boş menyu» bosilganda bosh menyu emas, AI javob berdi —
+    the button went out in the new alphabet, the handler knew only the old label."""
+
+    @staticmethod
+    def _message(text, chat_type="private", entities=None):
+        import datetime
+        from aiogram.types import Chat, Message, User
+        return Message(message_id=1, date=datetime.datetime(2026, 11, 6), text=text,
+                       chat=Chat(id=7, type=chat_type), from_user=User(id=7, is_bot=False, first_name="A"),
+                       entities=entities)
+
+    def _through(self, message):
+        seen = {}
+
+        async def handler(event, data):
+            seen["text"] = event.text
+            return "handled"
+        out = asyncio.run(alphabet.IncomingOldLatinMiddleware()(handler, message, {}))
+        self.assertEqual(out, "handled")
+        return seen["text"]
+
+    def test_private_text_comes_back_to_old_latin(self):
+        self.assertEqual(self._through(self._message("🏠 Boş menyu")), "🏠 Bosh menyu")
+        self.assertEqual(self._through(self._message("Ötkazib yuborish, çoy")), "O'tkazib yuborish, choy")
+
+    def test_groups_entities_and_plain_text_are_left_alone(self):
+        self.assertEqual(self._through(self._message("Boş menyu", chat_type="supergroup")), "Boş menyu")
+        link = [MessageEntity(type="url", offset=4, length=10)]
+        self.assertEqual(self._through(self._message("Boş example.uz", entities=link)), "Boş example.uz")
+        self.assertEqual(self._through(self._message("🛒 Savat")), "🛒 Savat")
+
+    def test_every_button_label_survives_the_round_trip(self):
+        from locales import TEXTS
+        for key, value in TEXTS.items():
+            label = value.get("uz") if isinstance(value, dict) else None
+            if key.startswith("btn_") and isinstance(label, str):
+                self.assertEqual(to_old_latin(to_new_latin(label)), label, key)
+
+    def test_a_tap_on_the_new_alphabet_menu_button_reaches_the_menu_handler(self):
+        # A real aiogram Dispatcher: the middleware runs before the router's filters.
+        from aiogram import Bot, Dispatcher, F, Router
+        from aiogram.types import Update
+        from handlers.start import _MENU_BTN_TEXTS
+        from locales import get_text
+        hits = []
+        router = Router()
+
+        @router.message(F.text.in_(_MENU_BTN_TEXTS))
+        async def menu(message):
+            hits.append("menu")
+
+        @router.message()
+        async def everything_else(message):          # where the AI seller sits in bot.py
+            hits.append("ai")
+
+        dp = Dispatcher()
+        dp.message.outer_middleware(alphabet.IncomingOldLatinMiddleware())
+        dp.include_router(router)
+        label = to_new_latin(get_text("btn_kb_menu", "uz"))
+        self.assertNotEqual(label, get_text("btn_kb_menu", "uz"))      # «🏠 Boş menyu»
+        update = Update(update_id=1, message=self._message(label))
+        asyncio.run(dp.feed_update(Bot("1:test"), update))
+        self.assertEqual(hits, ["menu"])
+
+    def test_bot_registers_it_before_the_other_message_middlewares(self):
+        src = (ROOT / "bot.py").read_text(encoding="utf-8")
+        self.assertLess(src.index("IncomingOldLatinMiddleware()"), src.index("dp.message.outer_middleware(quiet_mw)"))
+
+
 if __name__ == "__main__":
     unittest.main()
