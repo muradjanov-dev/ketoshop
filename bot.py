@@ -457,6 +457,11 @@ async def main():
 
     from release_notes import scheduler_loop as release_notes_loop
     release_notes_task = asyncio.create_task(release_notes_loop(bot))
+
+    # One-off: admins get the list of orders that came in with half packs
+    # (the 2026-11-06 fix), once, in daytime — pack_audit.py.
+    from pack_audit import scheduler_loop as pack_audit_loop
+    asyncio.create_task(pack_audit_loop(bot))
     # 🧪 One test order on the courier board after this deploy (sinov_buyurtma.py).
     from sinov_buyurtma import ensure_once as test_order_once
     asyncio.create_task(test_order_once(bot))

@@ -245,11 +245,10 @@ def product_keyboard(lang: str, product_id: int, page: int, category: str, total
 
 
 def quantity_keyboard(lang: str, product_id: int, unit: str = "", available: float | None = None) -> InlineKeyboardMarkup:
-    # Weight-priced products (kg/g) are treated as pre-packaged — whole counts only.
-    if unit in ("kg", "g"):
-        options = [1, 2, 3, 5, 10, 20]
-    else:
-        options = [0.5, 1, 2, 3, 5, 10]
+    # Every retail product is a pack — whole counts only. A "0.5" button for
+    # dona/litr/banka goods put half a pack in the cart at half the price
+    # (owner, 2026-11-06: "yarim kgni yarmini hisoblayapti").
+    options = [1, 2, 3, 5, 10, 20]
 
     # Drop options that exceed available stock
     if available is not None:

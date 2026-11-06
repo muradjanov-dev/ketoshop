@@ -187,6 +187,23 @@ class FirstComeTest(_Base):
         self.assertFalse(self.conn.cart)
 
 
+class WholePackTest(_Base):
+    """Owner, 2026-11-06: "yarim kgni yarmini hisoblayapti" — a 500 g pack was
+    carted as 0.5 at half the price. Every path rounds a fraction up to a pack."""
+
+    def test_a_half_becomes_one_pack_and_a_fraction_the_next_pack(self):
+        self.assertEqual(run(database.add_to_cart(ALI, 1, 0.5)), 1)
+        line = next(r["id"] for r in self.conn.cart if r["user_id"] == ALI)
+        self.assertEqual(run(database.set_cart_quantity(line, 1.5)), 2)
+        self.assertEqual(database.whole_packs(3), 3)
+        self.assertEqual(database.whole_packs(0), 0)
+
+    def test_a_legacy_half_line_is_made_whole_when_touched(self):
+        run(database.add_to_cart(ALI, 1, 1))
+        self.conn.cart[0]["quantity"] = 0.5            # written before the fix
+        self.assertEqual(run(database.add_to_cart(ALI, 1, 1)), 2)
+
+
 class CheckoutTest(_Base):
     def test_order_never_takes_another_buyers_hold(self):
         run(database.add_to_cart(ALI, 1, 4))

@@ -736,7 +736,7 @@ async def _catalog_text() -> str:
         name_ru = (p.get("name_ru") or "").strip()
         ru = f" (ru: {name_ru})" if name_ru and name_ru != p["name"] and _CYR_CHAR.search(name_ru) else ""
         by_category.setdefault(category, []).append(
-            f"{p['id']} | {p['name']}{ru} | {_fmt(price)} so'm / {p.get('unit') or 'dona'}{badge}"
+            f"{p['id']} | {p['name']}{ru} | {_fmt(price)} so'm / {_pack_label(p.get('unit'))}{badge}"
             f"{family}{low}"
         )
 
@@ -759,7 +759,10 @@ async def _catalog_text() -> str:
             set_lines.append(f"S{s['id']} | {s['name']} | {_fmt(s['set_price'])} so'm{extra} | tarkibi: {items}")
         blocks.append("SETLAR (set_qoshish bilan, S harfidan keyingi raqam):\n" + "\n".join(set_lines))
     products_text = "\n".join(f"# {cat}\n" + "\n".join(lines) for cat, lines in by_category.items())
-    blocks.append("MAHSULOTLAR (id | nomi | narxi | [oila]); ro'yxatda faqat bor mahsulotlar:\n"
+    blocks.append("MAHSULOTLAR (id | nomi | narxi | [oila]); ro'yxatda faqat bor mahsulotlar. "
+                  "NARX — BIR QADOQ (dona) narxi. Nomidagi 500gr / 1kg / 700ml — qadoq hajmi: "
+                  "«Bodom uni 500gr» ning 1 tasi = 500 g = miqdor 1, narxi to'liq. Miqdor — doim "
+                  "qadoqlar soni, butun son (mijoz 1 kg desa — 500gr dan 2 ta):\n"
                   + (products_text or "(katalog bo'sh)"))
     text = "\n\n".join(blocks)
     _catalog_cache = (now, text)
@@ -1259,13 +1262,13 @@ _TOOL_SPECS = [
     {
         "name": "savatga_qoshish",
         "description": "Mahsulotni mijozning savatiga soladi. Savatda bo'lsa — miqdorni shu "
-                       "songa almashtiradi. Katalogdagi id ni ishlat. Miqdor — kg uchun "
-                       "0.5/1/2 kabi, dona uchun butun son.",
+                       "songa almashtiradi. Katalogdagi id ni ishlat. Miqdor — QADOQLAR SONI, "
+                       "butun son: «Bodom uni 500gr» 1 ta = 1 (0.5 emas).",
         "input_schema": {
             "type": "object",
             "properties": {
                 "mahsulot_id": {"type": "integer", "description": "Katalogdagi mahsulot id"},
-                "miqdor": {"type": "number", "description": "Necha kg yoki dona"},
+                "miqdor": {"type": "integer", "description": "Necha qadoq (dona), butun son"},
             },
             "required": ["mahsulot_id", "miqdor"],
             "additionalProperties": False,
@@ -1308,7 +1311,8 @@ _TOOL_SPECS = [
                         "type": "object",
                         "properties": {
                             "mahsulot_id": {"type": "integer", "description": "Katalogdagi id"},
-                            "miqdor": {"type": "number", "description": "Necha kg yoki dona"},
+                            "miqdor": {"type": "integer",
+                                       "description": "Necha qadoq (dona), butun son"},
                         },
                         "required": ["mahsulot_id", "miqdor"],
                         "additionalProperties": False,
@@ -1506,6 +1510,22 @@ _NEXT_STEP = ("\nKEYINGI QADAM (bir marta): mijoz tilida 'Yana nima olamiz? 😊
               "qilib ber, keyin raqam va lokatsiya, keyin buyurtma_kartasi.")
 
 
+# Egasi, 2026-11-06: «Bodom uni 500gr - 1 ta: 43 500 so'm» — "yarim kgni yarmini
+# hisoblayapti degan shikoyatlar keldi". Model 500 g li qadoqni "0.5 kg" deb
+# miqdor 0.5 berardi (katalogda "so'm / kg", tavsifda "kg uchun 0.5/1/2" edi),
+# kod esa narx × 0.5 ni hisoblardi. Do'kon faqat butun qadoq sotadi.
+def _pack_label(unit: str | None) -> str:
+    return "dona" if (unit or "dona") in ("kg", "g", "liter", "l", "ml", "piece", "dona") else unit
+
+
+def _whole_pack_error(name: str, qty: float) -> str | None:
+    if float(qty).is_integer():
+        return None
+    return (f"Xato: miqdor {qty:g} — {name} faqat butun qadoq bilan sotiladi. Miqdor — qadoqlar "
+            "soni (butun son): nomidagi 500gr/1kg — bitta qadoqning hajmi, 1 ta = miqdor 1, narxi "
+            "to'liq. Mijoz yarim kilo desa — 500gr li qadoqni 1 ta, 1 kg desa — 2 ta ber.")
+
+
 async def _tool_add(user_id: int, args: dict) -> str:
     product_id = int(args.get("mahsulot_id") or 0)
     qty = float(args.get("miqdor") or 0)
@@ -1514,10 +1534,13 @@ async def _tool_add(user_id: int, args: dict) -> str:
     product = await database.get_product(product_id)
     if not product or not product.get("is_active"):
         return f"Xato: {product_id} raqamli mahsulot katalogda yo'q."
+    whole = _whole_pack_error(product["name"], qty)
+    if whole:
+        return whole
     stock = float(product.get("quantity") or 0)
     if qty > stock:
         return (f"Xato: omborda {product['name']} dan atigi {stock:g} "
-                f"{product.get('unit') or 'dona'} qolgan. Mijozga shuni ayt.")
+                f"dona qolgan. Mijozga shuni ayt.")
     # Miqdorni almashtiramiz: database.add_to_cart mavjud qatorga QO'SHADI, model
     # esa "3 emas, 2 ta bo'lsin" deganda qayta chaqiradi — ustma-ust 5 bo'lmasin.
     cart_id, _ = await database.get_cart_line_for_product(user_id, product_id)
@@ -1537,7 +1560,7 @@ async def _tool_add(user_id: int, args: dict) -> str:
     _cart_changed(user_id)
     short = (f" Faqat {got:g} bo'sh edi — qolgani boshqa mijoz savatida band, mijozga ayt."
              if got < qty else "")
-    return (f"OK: savatda {product['name']} — {got:g} {product.get('unit') or 'dona'}." + short
+    return (f"OK: savatda {product['name']} — {got:g} {_pack_label(product.get('unit'))}." + short
             ) + await _promo_hint(user_id) + _NEXT_STEP
 
 
@@ -1616,11 +1639,15 @@ async def _tool_quote(user_id: int, args: dict) -> str:
         if qty <= 0:
             notes.append(f"{product['name']}: miqdor 0 dan katta bo'lishi kerak")
             continue
+        whole = _whole_pack_error(product["name"], qty)
+        if whole:
+            notes.append(whole.removeprefix("Xato: "))
+            continue
         discount = database.active_discount(product.get("discount_percent"), product.get("discount_until"))
         price = database.effective_price(float(product["price"]), discount, product.get("discount_until"))
         line_total = price * qty
         total += line_total
-        unit = product.get("unit") or "dona"
+        unit = _pack_label(product.get("unit"))
         lines.append(f"- {product['name']} — {qty:g} {unit} × {_fmt(price)} = {_fmt(line_total)} so'm"
                      + (f" (chegirma -{discount}%, asl narxi {_fmt(product['price'])})" if discount else ""))
         stock = float(product.get("quantity") or 0)
@@ -1664,7 +1691,7 @@ async def _tool_cart(user_id: int) -> str:
             kind = "botdan buyurtma chegirmasi" if item.get("bot_discount") else "chegirma"
             badge = f" ({kind} -{item['discount_percent']}%, asl narxi {_fmt(item.get('original_price'))})"
         ref = f"set S{item['set_id']}" if item.get("is_set") else f"id {item.get('product_id')}"
-        lines.append(f"- {item['name']}: {float(item['quantity']):g} {item.get('unit') or ''} × "
+        lines.append(f"- {item['name']}: {float(item['quantity']):g} {_pack_label(item.get('unit'))} × "
                      f"{_fmt(item['price'])}{badge} = {_fmt(line_total)} so'm ({ref})")
     for gift in gifts:
         lines.append(f"- SOVG'A: {gift['name']} {float(gift.get('quantity') or 0):g} "
@@ -2192,7 +2219,8 @@ _MONEY = re.compile(
 _NUMBER = re.compile(r"\d{1,3}(?:[   .,]\d{3})+(?!\d)|\d+")
 _CATALOG_PRICE = re.compile(r"\|\s*(\d{1,3}(?:[  ]\d{3})+|\d+)\s*so'm")
 # Miqdorlar: 0.5 kg qadam bilan 10 gacha, keyin butun son 30 gacha.
-_QUANTITIES = [q / 2 for q in range(1, 21)] + list(range(11, 31))
+# Faqat butun qadoqlar (egasi, 2026-11-06) — yarim narx endi "to'g'ri summa" emas.
+_QUANTITIES = list(range(1, 31))
 
 
 def money_values(text: str) -> list[int]:
