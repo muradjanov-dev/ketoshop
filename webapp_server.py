@@ -1743,6 +1743,16 @@ async def api_recipe_to_cart(request: web.Request):
     return _json({"ok": True, **result})
 
 
+async def _welcome_promo(request: web.Request, lang: str):
+    try:
+        import welcome_promo
+        user_id = request.get("user_id")
+        return await welcome_promo.site_payload(user_id, lang) if user_id else None
+    except Exception:
+        logger.warning("YANGI5 site payload failed", exc_info=True)
+        return None
+
+
 async def api_promo(request: web.Request):
     """The running aksiya, or {"active": false}.
 
@@ -1760,6 +1770,8 @@ async def api_promo(request: web.Request):
         "bot_discount": await bot_discount.reminder(lang),
         # The home page's announcement card (None while the discount is off).
         "bot_discount_banner": await bot_discount.site_banner(lang),
+        # YANGI5 countdown for a new member (welcome_promo.py); None otherwise.
+        "welcome_promo": await _welcome_promo(request, lang),
         "mystery": re.sub(r"<[^>]+>", "", mystery_gift.card_line(lang)),
         "delivery": re.sub(r"<[^>]+>", "", mystery_gift.free_delivery_card_line(lang)),
     }

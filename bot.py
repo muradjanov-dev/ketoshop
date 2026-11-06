@@ -381,6 +381,9 @@ async def main():
     # every buyer, answer + "continue on the site" (daily_quiz.py).
     from daily_quiz import scheduler_loop as daily_quiz_loop
     daily_quiz_task = asyncio.create_task(daily_quiz_loop(bot))
+    # YANGI5: new members' 8-hour 5% — timer message, 2/4/6 h reminders (welcome_promo.py).
+    from welcome_promo import scheduler_loop as welcome_promo_loop
+    welcome_promo_task = asyncio.create_task(welcome_promo_loop(bot))
     # Savat broni: a cart line's 6 h hold ends → back on sale + a note to the
     # buyer, and whoever waited for it hears (cart_reservations.py, restock_notify.py).
     from cart_reservations import scheduler_loop as cart_hold_loop
