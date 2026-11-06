@@ -309,11 +309,29 @@ async def relay_text(message: Message, bot: Bot, text: str) -> None:
         get_text("freeform_received", lang),
         reply_markup=main_menu_keyboard(lang),
     )
+    await _to_admins(bot, message.from_user, text)
 
+
+async def relay_media(bot: Bot, user, kind: str, file_id: str, caption: str = "") -> None:
+    """A buyer's picture or file that is NOT a payment cheque (cheque_confirm.py,
+    «❌ Yo'q, boshqa rasm») — to the admins like a typed question: the picture
+    itself, then the usual card with «↩️ Javob berish». The caller answers the buyer."""
+    text = "🖼 Rasm yubordi (to'lov cheki emas)" + (f": {caption}" if caption else "")
+    try:
+        import ai_sales
+        await ai_sales.log_customer_message(bot, user, text)
+    except Exception:
+        logger.exception("Could not log the buyer picture of %s", user.id)
+    await _to_admins(bot, user, text, media=(kind, file_id))
+
+
+async def _to_admins(bot: Bot, user, text: str, media: tuple[str, str] | None = None) -> None:
+    """Log the question and put it in front of every admin with the reply
+    button. `media` — ("photo" | "document", file_id) sent just before the card."""
     from handlers.cart import buyer_contact_link
-    buyer_id = message.from_user.id
-    name = message.from_user.full_name or "—"
-    contact = buyer_contact_link(buyer_id, message.from_user.username, name)
+    buyer_id = user.id
+    name = user.full_name or "—"
+    contact = buyer_contact_link(buyer_id, user.username, name)
 
     # Keep the question itself, not just the relay — the admins' copy scrolls
     # away in their chat, and until now nothing was left to review.
@@ -351,6 +369,14 @@ async def relay_text(message: Message, bot: Bot, text: str) -> None:
 
     for admin_id in ADMIN_IDS:
         admin_lang = await get_user_language(admin_id)
+        if media:
+            try:
+                if media[0] == "photo":
+                    await bot.send_photo(admin_id, media[1])
+                else:
+                    await bot.send_document(admin_id, media[1])
+            except Exception:
+                logger.warning("Could not send the buyer's picture to admin %s", admin_id, exc_info=True)
         try:
             waiting = f"\n\n⏳ Javobsiz xabarlar: <b>{open_count}</b> ta" if open_count > 1 else ""
             # The card is sent as HTML, so the buyer's own words have to be

@@ -120,6 +120,7 @@ from aiogram.utils.chat_action import ChatActionSender
 
 import ai_memory
 import ai_stats
+import cheque_confirm
 import pack_math
 import ai_provider
 import database
@@ -4094,17 +4095,63 @@ async def on_contact(message: Message, bot: Bot, state: FSMContext | None = None
 
 
 @router.message(_cheque_filter)
-async def on_cheque(message: Message, bot: Bot, cheque_order: int | None = None):
-    """To'lov cheki. AI uni KO'RMAYDI va tasdiqlamaydi. Buyurtma topilsa —
-    tugmali checkout bilan bir xil: chek buyurtmaga biriktiriladi (kartochkada
-    ko'rinadi) va adminlarga "🧾 Buyurtma #X uchun to'lov cheki" bo'lib boradi.
-    Buyurtma 'cash' bo'lib qoladi — to'lov holatini admin o'zgartiradi."""
-    user = message.from_user
+async def on_cheque(message: Message, bot: Bot, state: FSMContext, cheque_order: int | None = None):
+    """Rasm yoki PDF — to'lov cheki BO'LISHI mumkin, lekin o'z-o'zidan chek emas
+    (egasi, 2026-11-06: "har qanday rasmni tolov rasmi deb qabul qilmasin, bu
+    tolov cheki yoki yoqligini tizim so'rasin"). Avval so'raymiz — javob
+    on_cheque_answer da (cheque_confirm.py)."""
+    await cheque_confirm.ask(message, state, "ai", await _lang(message.from_user.id))
+
+
+@router.callback_query(F.data.startswith("chek:ai:"))
+async def on_cheque_answer(callback: CallbackQuery, bot: Bot, state: FSMContext):
+    """«✅ Ha» — chek: buyurtmaga biriktiriladi (buyurtma shu payt qayta topiladi).
+    «❌ Yo'q» — rasm operatorga oddiy xabar bo'lib boradi."""
+    from locales import get_text
+    parsed = cheque_confirm.parse(callback.data)
+    user = callback.from_user
+    lang = await _lang(user.id)
+    if parsed is None:
+        await callback.answer()
+        return
+    if not cheque_confirm.begin(user.id):
+        await callback.answer(get_text("cheque_confirm_busy", lang))
+        return
+    try:
+        found = await cheque_confirm.take(state, parsed[2])
+        if found is None:
+            await callback.answer(get_text("cheque_confirm_expired", lang), show_alert=True)
+            await cheque_confirm.close_question(callback)
+            return
+        await callback.answer()
+        buyer = cheque_confirm.Buyer(bot, user)
+        if parsed[1] == "ha":
+            await cheque_confirm.close_question(callback, get_text("cheque_confirm_yes_done", lang))
+            try:
+                order_id = await _open_order_for_cheque(user.id)
+            except Exception:
+                logger.warning("Open order lookup for a cheque failed for %s", user.id, exc_info=True)
+                order_id = None
+            await _accept_cheque(buyer, bot, found["kind"], found["file_id"], order_id)
+            return
+        await cheque_confirm.close_question(callback, get_text("cheque_confirm_no_done", lang))
+        from handlers.support_relay import relay_media
+        await relay_media(bot, user, found["kind"], found["file_id"], found.get("caption") or "")
+        await buyer.answer(get_text("cheque_not_cheque_relayed", lang))
+    finally:
+        cheque_confirm.end(user.id)
+
+
+async def _accept_cheque(buyer, bot: Bot, kind: str, file_id: str, cheque_order: int | None) -> None:
+    """Mijoz «Ha, to'lov cheki» dedi. AI chekni KO'RMAYDI va tasdiqlamaydi.
+    Buyurtma topilsa — tugmali checkout bilan bir xil: chek buyurtmaga
+    biriktiriladi (kartochkada ko'rinadi) va adminlarga "🧾 Buyurtma #X uchun
+    to'lov cheki" bo'lib boradi. Buyurtma 'cash' bo'lib qoladi — to'lov holatini
+    admin o'zgartiradi. `buyer` — from_user va answer (cheque_confirm.Buyer)."""
+    user = buyer.from_user
     lang = await _lang(user.id)
     session = _sessions.get(user.id)
     if cheque_order:
-        kind, file_id = (("photo", message.photo[-1].file_id) if message.photo
-                         else ("document", message.document.file_id))
         try:
             await database.set_order_cheque(cheque_order, file_id, kind)
         except Exception:
@@ -4118,34 +4165,33 @@ async def on_cheque(message: Message, bot: Bot, cheque_order: int | None = None)
         if session:
             session["awaiting_cheque"] = None
         await log_conversation(bot, user, f"🧾 To'lov cheki yuborildi — buyurtma #{cheque_order}")
-        await message.answer(_t(f"✅ Sizga rahmat! Buyurtma #{cheque_order} uchun chekingiz qabul qilindi — "
-                                "operatorimiz to'lovni tekshirib tasdiqlaydi 🌿",
-                                f"✅ Спасибо! Чек по заказу #{cheque_order} получен — оператор "
-                                "проверит оплату и подтвердит 🌿", lang))
+        await buyer.answer(_t(f"✅ Sizga rahmat! Buyurtma #{cheque_order} uchun chekingiz qabul qilindi — "
+                              "operatorimiz to'lovni tekshirib tasdiqlaydi 🌿",
+                              f"✅ Спасибо! Чек по заказу #{cheque_order} получен — оператор "
+                              "проверит оплату и подтвердит 🌿", lang))
         return
-    order_id = None
     caption = (f"🧾 <b>AI suhbatidan to'lov cheki</b>\n"
                f"👤 {html.escape(user.full_name or '')}"
                + (f" (@{html.escape(user.username)})" if user.username else "")
-               + f"\n🆔 <code>{user.id}</code>"
-               + (f"\n📦 Buyurtma: <b>#{order_id}</b>" if order_id else
-                  "\n⚠️ Buyurtmaga bog'lanmagan"))
+               + f"\n🆔 <code>{user.id}</code>\n⚠️ Buyurtmaga bog'lanmagan")
     sent = 0
     for admin_id in ADMIN_IDS:
         try:
-            await message.forward(admin_id)
-            await bot.send_message(admin_id, caption, parse_mode="HTML")
+            if kind == "photo":
+                await bot.send_photo(admin_id, file_id, caption=caption, parse_mode="HTML")
+            else:
+                await bot.send_document(admin_id, file_id, caption=caption, parse_mode="HTML")
             sent += 1
         except Exception:
             logger.warning("Cheque forward to admin %s failed", admin_id, exc_info=True)
 
     if not sent:
-        await message.answer(_t("Sizga rahmat! Chekni oldik, operatorimiz tez orada bog'lanadi.",
-                                "Спасибо! Чек получили, оператор скоро свяжется с вами.", lang))
+        await buyer.answer(_t("Sizga rahmat! Chekni oldik, operatorimiz tez orada bog'lanadi.",
+                              "Спасибо! Чек получили, оператор скоро свяжется с вами.", lang))
         return
     await log_conversation(bot, user, "🧾 Rasm/chek yubordi (buyurtmaga bog'lanmagan)")
-    await message.answer(_t("✅ Sizga rahmat! Chek qabul qilindi — operatorimiz to'lovni tekshirib tasdiqlaydi.",
-                            "✅ Спасибо! Чек принят — оператор проверит оплату и подтвердит.", lang))
+    await buyer.answer(_t("✅ Sizga rahmat! Chek qabul qilindi — operatorimiz to'lovni tekshirib tasdiqlaydi.",
+                          "✅ Спасибо! Чек принят — оператор проверит оплату и подтвердит.", lang))
 
 
 # ────────────────────────────── guruh rejimi ────────────────────────────────
