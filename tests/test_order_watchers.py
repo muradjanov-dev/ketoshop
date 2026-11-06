@@ -148,7 +148,8 @@ class OneOffTest(unittest.TestCase):
         tried = AsyncMock(return_value=True)
         with patch.object(order_watchers, "ORDER_WATCHER_IDS", [1, 3]), \
              patch.object(order_watchers, "ADMIN_IDS", [1]), \
-             patch.object(order_watchers, "_try", tried):
+             patch.object(order_watchers, "_try", tried), \
+             patch.object(order_watchers, "register_couriers", AsyncMock()):
             run(order_watchers.scheduler_loop(MagicMock()))
         self.assertEqual([c.args[1] for c in tried.await_args_list], [3])
 
