@@ -640,6 +640,20 @@ class AiChatLogTopicTest(unittest.TestCase):
         self.assertEqual(bot.send_message.await_args.kwargs["message_thread_id"], 4242)
 
 
+class _FakeFSM:
+    def __init__(self):
+        self.data = {}
+
+    async def get_state(self):
+        return None
+
+    async def get_data(self):
+        return dict(self.data)
+
+    async def update_data(self, **kwargs):
+        self.data.update(kwargs)
+
+
 class AiChequeTest(unittest.TestCase):
     """Chek AI sessiyasiga bog'liq emas: bot qayta ishga tushsa ham karta
     buyurtmasiga biriktiriladi (egasi, 2026-10-13: "chekni qabul qilmadi")."""
@@ -674,21 +688,46 @@ class AiChequeTest(unittest.TestCase):
         message = _FakeMessage(None, user_id=user_id)
         message.photo = [NS(file_id="small"), NS(file_id="big")]
         message.document = None
-        message.forward = AsyncMock()
+        message.message_id, message.media_group_id, message.caption = 50, None, None
+        message.reply = AsyncMock()
         return message
+
+    def _ask_then_tap(self, message, answer, bot):
+        """Rasm → "Bu to'lov chekimi?" (hech narsa biriktirilmaydi) → tugma."""
+        state = _FakeFSM()
+        _run(ai_sales.on_cheque(message, bot, state, **_run(ai_sales._cheque_filter(message))))
+        self.attach.assert_not_awaited()
+        self.assertIn("chekimi", message.reply.await_args.args[0])
+        callback = NS(data=f"chek:ai:{answer}:50", from_user=message.from_user, answer=AsyncMock(),
+                      message=NS(edit_text=AsyncMock(), edit_reply_markup=AsyncMock()))
+        _run(ai_sales.on_cheque_answer(callback, bot, state))
 
     def test_card_order_cheque_is_attached_even_after_a_restart(self):
         self.orders = [self._order()]
         message = self._photo()                              # sessiya yo'q — bot qayta ishga tushgan
-        data = _run(ai_sales._cheque_filter(message))
-        self.assertEqual(data, {"cheque_order": 4242})
+        self.assertEqual(_run(ai_sales._cheque_filter(message)), {"cheque_order": 4242})
+        bot = NS(send_message=AsyncMock())
 
-        _run(ai_sales.on_cheque(message, None, **data))
+        self._ask_then_tap(message, "ha", bot)
 
         self.attach.assert_awaited_once_with(4242, "big", "photo")
         self.forward.assert_awaited_once()
         self.assertEqual(self.forward.await_args.args[1], 4242)
-        self.assertIn("#4242", message.answer.await_args.args[0])
+        self.assertIn("#4242", bot.send_message.await_args.args[1])
+
+    def test_not_a_cheque_goes_to_the_operators_and_is_not_attached(self):
+        self.orders = [self._order()]
+        import handlers.support_relay as support_relay
+        relay = AsyncMock()
+        _patch(self, support_relay, "relay_media", relay)
+        bot = NS(send_message=AsyncMock())
+
+        self._ask_then_tap(self._photo(), "yoq", bot)
+
+        self.attach.assert_not_awaited()
+        self.forward.assert_not_awaited()
+        self.assertEqual(relay.await_args.args[2:4], ("photo", "big"))
+        self.assertIn("operatorimizga", bot.send_message.await_args.args[1])
 
     def test_a_photo_sent_inside_a_bot_form_belongs_to_that_form(self):
         self.orders = [self._order()]
@@ -729,12 +768,11 @@ class AiChequeTest(unittest.TestCase):
     def test_unlinked_receipt_in_an_open_conversation_goes_to_the_admins(self):
         ai_sales._session(777)
         message = self._photo()
-        data = _run(ai_sales._cheque_filter(message))
-        self.assertEqual(data, {"cheque_order": None})
-        bot = NS(send_message=AsyncMock())
-        _run(ai_sales.on_cheque(message, bot, **data))
-        message.forward.assert_awaited_once_with(1)
-        self.assertIn("bog'lanmagan", bot.send_message.await_args.args[1])
+        self.assertEqual(_run(ai_sales._cheque_filter(message)), {"cheque_order": None})
+        bot = NS(send_message=AsyncMock(), send_photo=AsyncMock())
+        self._ask_then_tap(message, "ha", bot)
+        self.assertEqual(bot.send_photo.await_args.args, (1, "big"))
+        self.assertIn("bog'lanmagan", bot.send_photo.await_args.kwargs["caption"])
         self.attach.assert_not_awaited()
 
 

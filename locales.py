@@ -1058,6 +1058,47 @@ TEXTS = {
         "uz": "✅ Chek qabul qilindi! Buyurtma #{order_id} tekshirilmoqda.",
         "ru": "✅ Чек получен! Заказ #{order_id} проверяется.",
     },
+    # cheque_confirm.py — rasm o'z-o'zidan chek emas, avval so'raladi (2026-11-06)
+    "cheque_confirm_question": {
+        "uz": "🧾 <b>Bu rasm to'lov chekimi?</b>\n\n«Ha» desangiz — buyurtmangizga biriktiramiz "
+              "va operatorimiz to'lovni tekshiradi.",
+        "ru": "🧾 <b>Это чек об оплате?</b>\n\nЕсли «Да» — прикрепим к заказу, и оператор "
+              "проверит оплату.",
+    },
+    "btn_cheque_yes": {
+        "uz": "✅ Ha, to'lov cheki",
+        "ru": "✅ Да, это чек",
+    },
+    "btn_cheque_no": {
+        "uz": "❌ Yo'q, boshqa rasm",
+        "ru": "❌ Нет, другое фото",
+    },
+    "cheque_confirm_yes_done": {
+        "uz": "🧾 To'lov cheki — qabul qilinmoqda…",
+        "ru": "🧾 Чек об оплате — принимаем…",
+    },
+    "cheque_confirm_no_done": {
+        "uz": "🖼 Bu rasm chek emas — operatorimizga yubordik.",
+        "ru": "🖼 Это не чек — передали оператору.",
+    },
+    "cheque_still_waiting": {
+        "uz": "⏳ Buyurtmangiz hali <b>to'lov chekini</b> kutyapti. To'lovni qilgach, chek rasmini "
+              "shu yerga yuboring.",
+        "ru": "⏳ Ваш заказ всё ещё ждёт <b>чек об оплате</b>. После оплаты отправьте фото чека сюда.",
+    },
+    "cheque_not_cheque_relayed": {
+        "uz": "✅ Rasmingizni operatorimizga yubordik — tez orada javob beradi. Savolingiz bo'lsa, "
+              "yozib qoldiring 🙂",
+        "ru": "✅ Передали ваше фото оператору — скоро ответит. Если есть вопрос, напишите его 🙂",
+    },
+    "cheque_confirm_expired": {
+        "uz": "Bu savol endi amal qilmaydi.",
+        "ru": "Этот вопрос уже неактуален.",
+    },
+    "cheque_confirm_busy": {
+        "uz": "⏳ Chek qabul qilinmoqda…",
+        "ru": "⏳ Чек принимается…",
+    },
     "btn_delete_order": {
         "uz": "🗑 Buyurtmani o'chirish",
         "ru": "🗑 Удалить заказ",

@@ -37,6 +37,7 @@ import mystery_gift
 import gift_campaign
 import regions
 import uzpost
+import cheque_confirm
 
 router = Router()
 
@@ -2417,19 +2418,19 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
 
 
 @router.message(CheckoutStates.waiting_cheque, F.photo)
-async def process_cheque_photo(message: Message, state: FSMContext, bot: Bot):
-    """Cheque arrived as a photo → create the order, attach the cheque."""
-    await _finalize_online_order(
-        message, state, bot, message.photo[-1].file_id, "photo",
-    )
+async def process_cheque_photo(message: Message, state: FSMContext):
+    """A photo is not a cheque by itself (owner, 2026-11-06: "har qanday rasmni
+    tolov rasmi deb qabul qilmasin") — ask first; the order is created only
+    after «✅ Ha, to'lov cheki» (confirm_cheque)."""
+    lang = (await state.get_data()).get("lang", "uz")
+    await cheque_confirm.ask(message, state, "co", lang)
 
 
 @router.message(CheckoutStates.waiting_cheque, F.document)
-async def process_cheque_document(message: Message, state: FSMContext, bot: Bot):
-    """Cheque arrived as a document (PDF/screenshot) → create the order."""
-    await _finalize_online_order(
-        message, state, bot, message.document.file_id, "document",
-    )
+async def process_cheque_document(message: Message, state: FSMContext):
+    """A file (PDF/screenshot) — asked about exactly like a photo."""
+    lang = (await state.get_data()).get("lang", "uz")
+    await cheque_confirm.ask(message, state, "co", lang)
 
 
 @router.message(CheckoutStates.waiting_cheque)
@@ -2441,12 +2442,59 @@ async def process_cheque_invalid(message: Message, state: FSMContext):
     lang = (await state.get_data()).get("lang", "uz")
     await message.answer(
         get_text("cheque_must_be_photo_or_doc", lang),
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=get_text("btn_cancel_checkout", lang),
-                                   callback_data="checkout_cancel")],
-        ]),
+        reply_markup=_cancel_checkout_kb(lang),
         parse_mode="HTML",
     )
+
+
+def _cancel_checkout_kb(lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text("btn_cancel_checkout", lang),
+                               callback_data="checkout_cancel")],
+    ])
+
+
+@router.callback_query(F.data.startswith("chek:co:"), CheckoutStates.waiting_cheque)
+async def confirm_cheque(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    """«✅ Ha, to'lov cheki» → the old flow: the order is created and the cheque
+    attached. «❌ Yo'q» → the picture goes to the operators as an ordinary
+    message and the order keeps waiting for its cheque."""
+    parsed = cheque_confirm.parse(callback.data)
+    lang = (await state.get_data()).get("lang", "uz")
+    user = callback.from_user
+    if parsed is None:
+        await callback.answer()
+        return
+    if not cheque_confirm.begin(user.id):
+        await callback.answer(get_text("cheque_confirm_busy", lang))
+        return
+    try:
+        found = await cheque_confirm.take(state, parsed[2])
+        if found is None:
+            await callback.answer(get_text("cheque_confirm_expired", lang), show_alert=True)
+            await cheque_confirm.close_question(callback)
+            return
+        await callback.answer()
+        if parsed[1] == "ha":
+            await cheque_confirm.close_question(callback, get_text("cheque_confirm_yes_done", lang))
+            await _finalize_online_order(cheque_confirm.Buyer(bot, user), state, bot,
+                                         found["file_id"], found["kind"])
+            return
+        await cheque_confirm.close_question(callback, get_text("cheque_confirm_no_done", lang))
+        from handlers.support_relay import relay_media
+        await relay_media(bot, user, found["kind"], found["file_id"], found.get("caption") or "")
+        await bot.send_message(user.id, get_text("cheque_still_waiting", lang),
+                               reply_markup=_cancel_checkout_kb(lang), parse_mode="HTML")
+    finally:
+        cheque_confirm.end(user.id)
+
+
+@router.callback_query(F.data.startswith("chek:co:"))
+async def stale_cheque_question(callback: CallbackQuery):
+    """No cheque is awaited any more — the order was cancelled or already placed."""
+    lang = await get_user_language(callback.from_user.id)
+    await callback.answer(get_text("cheque_confirm_expired", lang), show_alert=True)
+    await cheque_confirm.close_question(callback)
 
 
 @router.callback_query(F.data == "checkout_cancel", CheckoutStates.waiting_cheque)
