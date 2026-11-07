@@ -806,6 +806,11 @@ async def build_cart_view(user_id: int, lang: str):
     if bot_saved > 0:
         text += ("\n" + bot_discount.saving_line(lang, bot_pct, bot_saved)
                  + "\n" + bot_discount.cart_pay_line(lang, pay_total))
+        # YANGI5 — how long the new member's 5% still lasts (welcome_promo.py).
+        import welcome_promo
+        welcome_left = await welcome_promo.timer_line(user_id, lang)
+        if welcome_left:
+            text += "\n" + welcome_left
     elif preview_pct := await bot_discount.preview_percent_for(user_id):
         # An admin sees the cart exactly as a customer does; only their own
         # order, at checkout, stays full price.
@@ -1851,6 +1856,10 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
         items_text += (f"  {keto_tag}\n" if keto_tag else "\n")
     if bot_saved:
         items_text += bot_discount.saving_line(lang, bot_pct, bot_saved) + "\n"
+        import welcome_promo
+        welcome_left = await welcome_promo.timer_line(user_id, lang)
+        if welcome_left:
+            items_text += welcome_left + "\n"
     elif preview_pct := await bot_discount.preview_percent_for(user_id):
         # The end of an admin's checkout: the cart showed −10%, the order doesn't get it.
         items_text += bot_discount.admin_checkout_note(lang, preview_pct) + "\n"

@@ -230,7 +230,12 @@ def eligible(user_id: int) -> bool:
 async def percent_for(user_id: int) -> int:
     if not eligible(user_id):
         return 0
-    return PERCENT if await is_active() else 0
+    if await is_active():
+        return PERCENT
+    # YANGI5 — a new member's 5% on the first order for 8 hours (owner,
+    # 2026-11-06). Rides on the same price rule and checkout code.
+    import welcome_promo
+    return await welcome_promo.percent_for(user_id)
 
 
 async def preview_percent_for(user_id: int) -> int:
@@ -530,6 +535,9 @@ async def site_banner(lang: str) -> dict | None:
 
 
 def saving_label(lang: str, percent: int) -> str:
+    import welcome_promo
+    if percent == welcome_promo.PERCENT and percent != PERCENT:
+        return welcome_promo.label(lang)
     return _pick(_TEXT["label"], lang).replace("{p}", str(percent))
 
 

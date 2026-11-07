@@ -3412,6 +3412,27 @@
   }
   #site-fb-comment:focus { border-color: var(--link); }
   .site-fb-send { margin-top: 12px; }
+
+  /* YANGI5 countdown pill — left of the birdsong button, above the dock. */
+  .welcome-timer {
+    position: fixed;
+    z-index: 9998;
+    left: 12px;
+    bottom: calc(var(--dock-h) + var(--dock-gap) * 2 + var(--safe-b));
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100% - 84px);
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 999px;
+    background: linear-gradient(115deg, #E5484D 0%, #F76B15 100%);
+    color: #fff;
+    font: 700 13px/1.2 var(--font-body);
+    box-shadow: 0 6px 18px rgba(229, 72, 77, .35);
+    cursor: pointer;
+  }
+  .welcome-timer .wt-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -3419,6 +3440,13 @@
 <!-- Decorative drifting leaves — populated once by initOrganicLeaves() in
      JS and run behind every theme (night/day/organic). -->
 <div class="organic-leaves" id="organic-leaves" aria-hidden="true"></div>
+
+<!-- YANGI5 — a new member's 5% on the first order, counting down over every
+     page above the dock (welcome_promo.py, owner 2026-11-06). -->
+<button class="welcome-timer" id="welcome-timer" type="button" style="display:none" onclick="switchPage('catalog')">
+  <span class="wt-code" id="welcome-timer-code"></span>
+  <span class="wt-time" id="welcome-timer-time"></span>
+</button>
 
 <!-- ===== PAGE: HOME ===== -->
 <div class="page" id="page-home">
@@ -6302,6 +6330,35 @@ async function loadPromo() {
   renderPromoBanners();
   renderPerks();
   renderBotDiscountBanner();
+  renderWelcomeTimer();
+}
+
+// YANGI5: counts down from the server's seconds_left on this phone's own
+// clock, so a phone set to the wrong time can't shorten or stretch it.
+// Out of the way on the cart and checkout, which show the −5% line itself.
+let welcomeTimerTick = null;
+function renderWelcomeTimer() {
+  const el = document.getElementById('welcome-timer');
+  if (!el) return;
+  if (welcomeTimerTick) { clearInterval(welcomeTimerTick); welcomeTimerTick = null; }
+  const w = promo && promo.perks && promo.perks.welcome_promo;
+  if (!w || !(w.seconds_left > 0)) { el.style.display = 'none'; return; }
+  const endsAt = Date.now() + w.seconds_left * 1000;
+  document.getElementById('welcome-timer-code').textContent = w.label;
+  const tick = () => {
+    const left = Math.floor((endsAt - Date.now()) / 1000);
+    if (left <= 0) {
+      el.style.display = 'none';
+      clearInterval(welcomeTimerTick); welcomeTimerTick = null;
+      return;
+    }
+    const h = Math.floor(left / 3600), m = Math.floor(left % 3600 / 60), s = left % 60;
+    document.getElementById('welcome-timer-time').textContent =
+      '⏳ ' + h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    el.style.display = (activePage === 'cart' || activePage === 'checkout') ? 'none' : 'flex';
+  };
+  tick();
+  welcomeTimerTick = setInterval(tick, 1000);
 }
 
 // "Bot orqali buyurtmaga 10% chegirma" card on the home page. Worded and

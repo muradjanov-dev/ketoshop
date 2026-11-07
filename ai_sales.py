@@ -1812,6 +1812,13 @@ async def _tool_cart(user_id: int) -> str:
     keto_line = await _keto_line(user_id)
     if keto_line:
         lines.append(keto_line)
+    try:
+        import welcome_promo
+        welcome = await welcome_promo.ai_line(user_id)
+    except Exception:
+        welcome = ""
+    if welcome:
+        lines.append(welcome)
     return "\n".join(lines) + await _promo_hint(user_id)
 
 

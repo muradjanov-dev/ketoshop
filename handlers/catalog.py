@@ -114,6 +114,11 @@ async def _render_product_detail(callback: CallbackQuery, product_id: int,
     import product_tips
     tip = await product_tips.tip_for(callback.from_user.id, product, lang, advance=track_view)
     text = mark_held(await build_caption(product, lang, rate, tip=tip), product, lang)
+    # YANGI5 — this new member's own price and the time left (welcome_promo.py).
+    import welcome_promo
+    welcome = await welcome_promo.card_line(callback.from_user.id, product, lang)
+    if welcome:
+        text += "\n\n" + welcome
     out_of_stock = product["quantity"] <= 0
 
     keyboard = await _detail_keyboard(callback.from_user.id, product_id, back_category, back_page, lang, out_of_stock)

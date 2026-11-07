@@ -315,6 +315,10 @@ async def _process_new_user(bot, tg_user, referrer_id: int | None,
     # (welcome_recipe.py, owner 2026-10-14). Never raises.
     import welcome_recipe
     await welcome_recipe.mark_pending(tg_user.id)
+    # YANGI5: 5% on the first order for 8 hours from the language pick
+    # (welcome_promo.py, owner 2026-11-06). Never raises.
+    import welcome_promo
+    await welcome_promo.mark_pending(tg_user.id)
 
 
 async def _resend_menu_keyboard(bot, user_id: int, lang: str) -> None:
@@ -366,6 +370,9 @@ async def set_language(callback: CallbackQuery):
     import referral_program
     await referral_program.celebrate(callback.bot, callback.from_user.id, lang,
                                      callback.from_user.first_name)
+    # …then the YANGI5 timer: its 8 hours start now. Brand-new users only.
+    import welcome_promo
+    await welcome_promo.maybe_start(callback.bot, callback.from_user.id, lang)
     # How-to-order videos (owner, 2026-10-11) — in the language just picked,
     # once per user ever; a no-op until the admin uploads them or if they
     # switched auto-send off. Never raises.
