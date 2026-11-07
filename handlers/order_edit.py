@@ -174,7 +174,8 @@ async def open_editor(callback: CallbackQuery, state: FSMContext):
     lang = await database.get_user_language(callback.from_user.id)
     order = await database.get_order(order_id)
     if not order:
-        await callback.answer("❌", show_alert=True)
+        from handlers.seller import answer_order_gone
+        await answer_order_gone(callback, order_id, lang, parse_order_ret(parts, 2))
         return
     if order.get("source") == "b2b":
         # Wholesale sales use their own accounting flow.
