@@ -58,6 +58,8 @@ _tasks: set[asyncio.Task] = set()
 _T = {
     "status_title": {"uz": "🔄 <b>Buyurtma #{id} — holat o'zgardi</b>",
                      "ru": "🔄 <b>Заказ #{id} — статус изменён</b>"},
+    "deleted_title": {"uz": "🗑 <b>Buyurtma #{id} o'chirildi</b> — bazada endi yo'q",
+                      "ru": "🗑 <b>Заказ #{id} удалён</b> — в базе его больше нет"},
     "manual_title": {"uz": "📝 <b>Qo'lda yangi buyurtma #{id}</b>",
                      "ru": "📝 <b>Новый заказ вручную #{id}</b>"},
     "b2b_title": {"uz": "🏢 <b>Yangi ulgurji (B2B) buyurtma #{id}</b>",
@@ -318,17 +320,29 @@ async def _send_all(bot: Bot, order_id: int, **card_kw) -> None:
         order = await database.get_order(order_id)
         if not order:
             return
-        contact = await _contact(order)
-
-        async def one(admin_id: int) -> None:
-            try:
-                await _send_card(bot, admin_id, order, contact, **card_kw)
-            except Exception as exc:
-                logger.warning("order feed #%s → admin %s failed: %s", order_id, admin_id, exc)
-
-        await asyncio.gather(*(one(a) for a in recipients()), return_exceptions=True)
+        await _send_order(bot, order, **card_kw)
     except Exception:
         logger.exception("order feed #%s failed", order_id)
+
+
+async def _send_order(bot: Bot, order: dict, *, skip=(), **card_kw) -> None:
+    contact = await _contact(order)
+
+    async def one(admin_id: int) -> None:
+        try:
+            await _send_card(bot, admin_id, order, contact, **card_kw)
+        except Exception as exc:
+            logger.warning("order feed #%s → admin %s failed: %s", order["id"], admin_id, exc)
+
+    await asyncio.gather(*(one(a) for a in recipients() if a not in skip),
+                         return_exceptions=True)
+
+
+async def _send_deleted(bot: Bot, order: dict, by, skip) -> None:
+    try:
+        await _send_order(bot, order, skip=skip, title="deleted_title", by=actor(by))
+    except Exception:
+        logger.exception("order feed: deleted #%s failed", order.get("id"))
 
 
 OPEN_SEND_GAP = 1.0       # seconds between cards — one chat, keep under Telegram's limit
@@ -372,6 +386,18 @@ def status_changed(bot: Bot | None, order_id: int, old_status: str | None,
         return
     _spawn(_send_all(bot, order_id, title="status_title", by=actor(by),
                      old_status=old_status, new_status=new_status))
+
+
+def deleted(bot: Bot | None, order: dict | None, by) -> None:
+    """An admin deleted the order for good (🗑). The row is gone, so the card
+    is built from what the delete returned. Everyone else's new-order card
+    for it still has live buttons — this tells them before they tap one
+    (owner, 2026-11-06). The admin who deleted it already knows; a 🧪 test
+    order is nobody's news."""
+    if bot is None or not order or (order.get("source") or "") == "test":
+        return
+    me = getattr(by, "id", None)
+    _spawn(_send_deleted(bot, order, by, skip=(me,) if me is not None else ()))
 
 
 def manual_created(bot: Bot | None, order_id: int, by, *, b2b: bool = False) -> None:

@@ -1377,6 +1377,27 @@ async def drop_card_extras(message) -> None:
             pass
 
 
+async def answer_order_gone(callback: CallbackQuery, order_id: int, lang: str,
+                            ret: str = "") -> None:
+    """The order behind this button was deleted for good (🗑, by another
+    admin). Say so — a bare «❌» read as a broken button (owner, 2026-11-06,
+    «✅ Qabul qilish» on a deleted order's card) — and take the dead buttons
+    away: a card loses its keyboard, an admin list is drawn again without it."""
+    await callback.answer(get_text("order_gone_alert", lang, order_id=order_id),
+                          show_alert=True)
+    try:
+        if ret and callback.from_user.id in ADMIN_IDS:
+            from handlers.admin import render_orders_list
+            _, _, status_filter, page = ret.split(":")
+            await drop_card_extras(callback.message)
+            await render_orders_list(callback, status_filter, int(page), lang)
+        else:
+            await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        logging.getLogger(__name__).debug("stale card of deleted order #%s left as is",
+                                          order_id, exc_info=True)
+
+
 def _remember_card_extras(card, sent: list) -> None:
     ids = [m.message_id for m in sent if m is not None]
     if not ids or getattr(card, "chat", None) is None:
@@ -1461,7 +1482,11 @@ async def view_seller_order(callback: CallbackQuery):
     from keyboards import parse_order_ret
     parts = callback.data.split(":")
     if not await render_order_card(callback, int(parts[1]), parse_order_ret(parts, 2)):
-        await callback.answer("❌")
+        if await get_order(int(parts[1])) is None:
+            lang = await get_user_language(callback.from_user.id)
+            await answer_order_gone(callback, int(parts[1]), lang, parse_order_ret(parts, 2))
+        else:
+            await callback.answer("❌")
         return
     await callback.answer()
 
@@ -1644,7 +1669,13 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
 
     order = await get_order(order_id)
     is_admin = callback.from_user.id in ADMIN_IDS
-    if not order or (order["seller_id"] != callback.from_user.id and not is_admin):
+    if not order:
+        # Deleted (🗑) after this card went out — other admins' copies of the
+        # new-order card still carry «✅ Qabul qilish».
+        from keyboards import parse_order_ret
+        await answer_order_gone(callback, order_id, lang, parse_order_ret(parts, 3))
+        return
+    if order["seller_id"] != callback.from_user.id and not is_admin:
         await callback.answer("❌", show_alert=True)
         return
 
@@ -1861,10 +1892,13 @@ async def message_client_start(callback: CallbackQuery, state: FSMContext):
     order_id = int(parts[1])
     order = await get_order(order_id)
     is_admin = callback.from_user.id in ADMIN_IDS
-    if not order or (order["seller_id"] != callback.from_user.id and not is_admin):
+    lang = await get_user_language(callback.from_user.id)
+    if not order:
+        await answer_order_gone(callback, order_id, lang, parse_order_ret(parts, 2))
+        return
+    if order["seller_id"] != callback.from_user.id and not is_admin:
         await callback.answer("❌", show_alert=True)
         return
-    lang = await get_user_language(callback.from_user.id)
     await state.set_state(MessageClientStates.waiting_message)
     await state.update_data(mc_order_id=order_id, mc_target=order["user_id"], lang=lang,
                             mc_ret=parse_order_ret(parts, 2))

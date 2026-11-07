@@ -1206,6 +1206,12 @@ TEXTS = {
         "uz": "❌ Buyurtma topilmadi.",
         "ru": "❌ Заказ не найден.",
     },
+    # A button on the card of an order an admin already deleted (🗑) —
+    # shown as an alert, so it stays under Telegram's 200 characters.
+    "order_gone_alert": {
+        "uz": "🗑 Buyurtma #{order_id} o'chirilgan — u bazada yo'q, bu kartadagi tugmalar endi ishlamaydi.",
+        "ru": "🗑 Заказ #{order_id} удалён — его нет в базе, кнопки этой карточки больше не работают.",
+    },
     "cheque_from_customer": {
         "uz": "🧾 Buyurtma #{order_id} uchun to'lov cheki\nMijoz: {name}",
         "ru": "🧾 Чек оплаты для заказа #{order_id}\nКлиент: {name}",

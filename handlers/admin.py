@@ -1133,6 +1133,10 @@ async def admin_delete_order_do(callback: CallbackQuery):
     lang = await get_user_language(callback.from_user.id)
 
     deleted = await delete_order_permanently(order_id)
+    if deleted is not None:
+        # The other admins (and order watchers) still hold its new-order card.
+        import order_admin_feed
+        order_admin_feed.deleted(callback.bot, deleted, callback.from_user)
     if deleted is not None and ret:
         # Opened from the order list → back to that same list, result as a toast.
         _, _, status_filter, page = ret.split(":")
