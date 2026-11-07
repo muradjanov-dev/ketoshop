@@ -49,6 +49,8 @@ ADMIN_COMMANDS = [
     BotCommand(command="reklama", description="📣 Reklama statistikasi"),
     BotCommand(command="reklama_manba", description="🔗 Reklama manbalari (kim keldi)"),
     BotCommand(command="reklama_havola", description="🔗 Reklama havolasi yasash"),
+    BotCommand(command="sayt_havola", description="🔗 Sayt (do'kon) havolasi yasash — trafikni kuzatish"),
+    BotCommand(command="sayt_havolalar", description="📊 Sayt havolalari: kim ochdi, kim sotib oldi"),
     BotCommand(command="reklama_token", description="🔑 Meta reklama tokeni"),
     BotCommand(command="leads", description="📋 Yangi leadlar"),
     BotCommand(command="ai_holat", description="🤖 AI sotuvchi: holat, yoqish/o'chirish, model"),

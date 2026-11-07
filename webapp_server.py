@@ -173,6 +173,12 @@ async def api_bot_access(request: web.Request):
     """The Mini App's gate check — open even while the gate is shut."""
     from config import BOT_USERNAME
     ok = await bot_can_write(request.app.get("bot"), request["user_id"])
+    # The Mini App's first call on every launch — START pressed or not — so a
+    # tracked link (t.me/<bot>/shop?startapp=<kod>, shop_links.py) is counted
+    # here. The code comes from the signed initData, never from the client.
+    import shop_links
+    await shop_links.record_open(request["user_id"], request.get("start_param"),
+                                 request.get("auth_date"))
     return _json({"ok": ok, "bot": BOT_USERNAME})
 
 
@@ -200,6 +206,10 @@ async def auth_middleware(request: web.Request, handler):
     if not isinstance(user_id, int) or isinstance(user_id, bool):
         return _json({"error": "invalid initData"}, status=403)
     request["user_id"] = user_id
+    # ?startapp=<kod> of the link that launched the Mini App, and the launch's
+    # own time — one launch counts once however often the page reloads.
+    request["start_param"] = parsed.get("start_param") or ""
+    request["auth_date"] = parsed.get("auth_date")
     # Keep only the Telegram profile carried by successfully verified initData.
     # Mutating routes may use this data to create a missing user row.
     request["telegram_user"] = user
