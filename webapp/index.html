@@ -4603,11 +4603,16 @@ let lang = localStorage.getItem('ketoshop_lang') || ((tg.initDataUnsafe?.user?.l
 
 const L = {
   uz: {
-    startGateTitle: 'Avval botni ishga tushiring',
-    startGateText: 'Buyurtmangiz holati, to\'lov cheki, sovg\'alar va chegirmalar shu bot orqali keladi. Botni oching va pastdagi «START» tugmasini bosing — keyin shu yerga qayting.',
+    startGateTitle: 'Do\'konga kirish — 2 qadam',
+    startGateText: 'Yangi mahsulotlar, sovg\'alar va chegirmalar kanalda, buyurtmangiz holati va to\'lov cheki botda keladi.',
+    gateChannelStep: 'Kanalimizga a\'zo bo\'ling',
+    gateChannelOpen: '📢 Kanalga o\'tish',
+    gateBotStep: 'Botda «START» tugmasini bosing',
     startGateOpen: '▶️ Botni ochish',
-    startGateCheck: '✅ Bosdim — davom etish',
-    startGateWaiting: 'Hali START bosilmagan. Botni oching va «START» ni bosing.',
+    gateDone: 'Bajarildi',
+    gateChannelFirst: 'Avval 1-qadam: kanalga a\'zo bo\'ling.',
+    startGateCheck: '✅ Tekshirish',
+    startGateWaiting: 'Hali tayyor emas — ikkala qadamni bajaring.',
     all: 'Hammasi',
     sectionBestsellers: 'Top mahsulotlar',
     sectionTopCustomers: 'Eng faol xaridorlar',
@@ -4820,11 +4825,16 @@ const L = {
     cartNudgeAdd: '+ Qo\'shish',
   },
   ru: {
-    startGateTitle: 'Сначала запустите бота',
-    startGateText: 'Статус заказа, чек об оплате, подарки и скидки приходят через этого бота. Откройте бота и нажмите «START» внизу — затем вернитесь сюда.',
+    startGateTitle: 'Вход в магазин — 2 шага',
+    startGateText: 'Новинки, подарки и скидки — в канале, статус заказа и чек об оплате — в боте.',
+    gateChannelStep: 'Подпишитесь на наш канал',
+    gateChannelOpen: '📢 Перейти в канал',
+    gateBotStep: 'Нажмите «START» в боте',
     startGateOpen: '▶️ Открыть бота',
-    startGateCheck: '✅ Нажал — продолжить',
-    startGateWaiting: 'Бот ещё не запущен. Откройте бота и нажмите «START».',
+    gateDone: 'Готово',
+    gateChannelFirst: 'Сначала шаг 1: подпишитесь на канал.',
+    startGateCheck: '✅ Проверить',
+    startGateWaiting: 'Ещё не готово — выполните оба шага.',
     all: 'Все',
     sectionBestsellers: 'Топ товаров',
     sectionTopCustomers: 'Самые активные покупатели',
@@ -5314,9 +5324,9 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     let body = null;
     try { body = await res.json(); } catch(_) {}
-    // The server refuses buyers the bot can't reach (never pressed START,
-    // or blocked it) — show the "start the bot" screen instead of an error.
-    if (res.status === 403 && body && body.error === 'start_bot') showStartGate(body.bot);
+    // The server refuses buyers outside the channel or whom the bot can't
+    // reach — show the entry screen instead of an error.
+    if (res.status === 403 && body && body.error === 'start_bot') showStartGate(body);
     const err = new Error(res.status);
     err.status = res.status;
     err.body = body;
@@ -6136,50 +6146,92 @@ document.getElementById('site-fb-modal').addEventListener('click', function (e) 
 })();
 
 // ===== INIT =====
-// ===== START THE BOT FIRST (owner, 2026-10-14: "Mini appni yoki saytni
-// ishlatish uchun botni ishga tushurish shart bo'lsin") =====
-// A full-screen card over the shop until the bot can write to this buyer.
-// It re-checks every few seconds, so pressing START in the chat and coming
-// back opens the shop by itself; "✅" re-checks at once.
+// ===== DO'KONGA KIRISH: KANAL, KEYIN BOT (owner, 2026-10-14: "Mini appni
+// yoki saytni ishlatish uchun botni ishga tushurish shart bo'lsin";
+// 2026-11-08: "sayt uchun ham kanal obunasini talab qil, keyin bot
+// obunasini ham keyin ularni yana saytga yo'naltir") =====
+// A full-screen card over the shop with two steps: join the channel, then
+// press START in the bot (opened with ?start=sayt, which answers with a
+// «Do'konga qaytish» button). It re-checks every few seconds, so coming back
+// from the channel or the chat moves it on by itself; "✅" re-checks at once.
+// `info` is /api/bot-access's answer (or a refused call's body): bot,
+// channel, subscribed, started. An old answer carried only the bot's name.
 let _startGateTimer = null;
-function showStartGate(botName) {
+function showStartGate(info) {
+  info = (info && typeof info === 'object') ? info : { bot: info };
+  const subscribed = info.subscribed !== false;
+  const started = !!info.started;
+  const bot = info.bot || 'ketoshopbot';
+  const channel = info.channel || 'ketoshop_uz';
   let gate = document.getElementById('start-gate');
   if (!gate) {
     gate = document.createElement('div');
     gate.id = 'start-gate';
     gate.setAttribute('role', 'dialog');
     gate.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;'
-      + 'padding:24px;background:var(--bg,#FFF8EC);color:var(--text,#2B2116);font-family:inherit';
+      + 'padding:24px;background:var(--bg,#FFF8EC);color:var(--text,#2B2116);font-family:inherit;overflow-y:auto';
+    const step = (n, id, label, btn) =>
+      '<div class="gate-step" id="gate-step-' + id + '" style="display:flex;align-items:center;gap:12px;text-align:left;'
+        + 'padding:12px;margin-bottom:10px;border:1px solid var(--hairline,#E5DAC6);border-radius:16px;background:var(--surface,#fff)">' +
+        '<span class="gate-num" style="flex:none;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;'
+          + 'font-weight:800;background:var(--btn,#2E7D32);color:var(--btn-text,#fff)">' + n + '</span>' +
+        '<span style="flex:1;min-width:0">' +
+          '<span style="display:block;font-size:15px;font-weight:700;line-height:1.3">' + escapeHtml(label) + '</span>' +
+          '<span class="gate-sub" style="display:block;font-size:13px;color:var(--hint,#7A6A55);margin-top:2px"></span>' +
+        '</span>' +
+        '<button class="gate-go" type="button" style="flex:none;border:0;border-radius:12px;padding:10px 12px;font-size:14px;font-weight:800;'
+          + 'background:var(--btn,#2E7D32);color:var(--btn-text,#fff);cursor:pointer">' + escapeHtml(btn) + '</button>' +
+      '</div>';
     gate.innerHTML =
-      '<div style="max-width:380px;width:100%;text-align:center">' +
-        '<div style="font-size:64px;line-height:1;margin-bottom:14px">🤖</div>' +
-        '<h2 style="font-size:22px;font-weight:800;margin:0 0 10px">' + escapeHtml(t.startGateTitle) + '</h2>' +
-        '<p style="font-size:15px;line-height:1.5;margin:0 0 22px;color:var(--hint,#7A6A55)">' + escapeHtml(t.startGateText) + '</p>' +
-        '<button id="start-gate-open" type="button" style="width:100%;border:0;border-radius:14px;padding:15px;font-size:16px;font-weight:800;'
-          + 'background:var(--btn,#2E7D32);color:var(--btn-text,#fff);margin-bottom:10px;cursor:pointer">' + escapeHtml(t.startGateOpen) + '</button>' +
+      '<div style="max-width:400px;width:100%;text-align:center">' +
+        '<div style="font-size:56px;line-height:1;margin-bottom:12px">🛍</div>' +
+        '<h2 style="font-size:22px;font-weight:800;margin:0 0 8px">' + escapeHtml(t.startGateTitle) + '</h2>' +
+        '<p style="font-size:15px;line-height:1.5;margin:0 0 18px;color:var(--hint,#7A6A55)">' + escapeHtml(t.startGateText) + '</p>' +
+        step(1, 'channel', t.gateChannelStep, t.gateChannelOpen) +
+        step(2, 'bot', t.gateBotStep, t.startGateOpen) +
         '<button id="start-gate-check" type="button" style="width:100%;border:1px solid var(--hairline,#E5DAC6);border-radius:14px;padding:13px;'
-          + 'font-size:15px;font-weight:700;background:transparent;color:inherit;cursor:pointer">' + escapeHtml(t.startGateCheck) + '</button>' +
+          + 'margin-top:6px;font-size:15px;font-weight:700;background:transparent;color:inherit;cursor:pointer">' + escapeHtml(t.startGateCheck) + '</button>' +
         '<div id="start-gate-note" style="font-size:13px;margin-top:12px;min-height:18px;color:var(--berry,#B3261E)"></div>' +
       '</div>';
     document.body.appendChild(gate);
     gate.querySelector('#start-gate-check').onclick = () => checkStartGate(true);
   }
-  const url = 'https://t.me/' + (botName || 'ketoshopbot');
-  gate.querySelector('#start-gate-open').onclick = () => {
-    try { tg.openTelegramLink(url); } catch (_) { window.open(url, '_blank'); }
+  const open = url => { try { tg.openTelegramLink(url); } catch (_) { window.open(url, '_blank'); } };
+  const mark = (id, done, sub, enabled, go) => {
+    const row = gate.querySelector('#gate-step-' + id);
+    row.querySelector('.gate-num').textContent = done ? '✓' : (id === 'channel' ? '1' : '2');
+    row.querySelector('.gate-sub').textContent = done ? t.gateDone : sub;
+    const b = row.querySelector('.gate-go');
+    b.style.display = done ? 'none' : '';
+    b.style.opacity = enabled ? '1' : '.45';
+    b.onclick = go;
+    row.style.opacity = done ? '.7' : '1';
   };
+  mark('channel', subscribed, '@' + channel, true, () => open('https://t.me/' + channel));
+  mark('bot', started, '@' + bot, subscribed, () => {
+    if (!subscribed) {
+      const note = document.getElementById('start-gate-note');
+      if (note) note.textContent = t.gateChannelFirst;
+      return;
+    }
+    open('https://t.me/' + bot + '?start=sayt');
+  });
+  const note = document.getElementById('start-gate-note');
+  if (subscribed && note && note.textContent === t.gateChannelFirst) note.textContent = '';
   gate.style.display = 'flex';
   if (!_startGateTimer) _startGateTimer = setInterval(() => checkStartGate(false), 3000);
 }
 async function checkStartGate(manual) {
-  let ok = false;
-  try { ok = !!(await fetch('/api/bot-access', { headers: apiHeaders() }).then(r => r.json())).ok; } catch (_) {}
+  let info = null;
+  try { info = await fetch('/api/bot-access', { headers: apiHeaders() }).then(r => r.json()); } catch (_) {}
+  const ok = !!(info && info.ok);
   if (ok) {
     clearInterval(_startGateTimer); _startGateTimer = null;
     location.reload();   // boot the shop from scratch now that it may load
-  } else if (manual) {
+  } else {
+    if (info) showStartGate(info);
     const note = document.getElementById('start-gate-note');
-    if (note) note.textContent = t.startGateWaiting;
+    if (manual && note) note.textContent = t.startGateWaiting;
   }
   return ok;
 }
@@ -6195,7 +6247,7 @@ async function checkStartGate(manual) {
   // Nothing loads for a buyer the bot can't reach — they get the START card.
   try {
     const access = await fetch('/api/bot-access', { headers: apiHeaders() }).then(r => r.json());
-    if (access && access.ok === false) { showStartGate(access.bot); return; }
+    if (access && access.ok === false) { showStartGate(access); return; }
   } catch (_) { /* network trouble — carry on; the server still guards every call */ }
   trk(() => {
     const sp = (tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '';

@@ -169,17 +169,79 @@ async def bot_can_write(bot, user_id: int) -> bool:
     return ok
 
 
+async def site_gate(bot, user_id: int) -> dict:
+    """Kanal, keyin bot (owner, 2026-11-08: "sayt uchun ham kanal obunasini
+    talab qil, keyin bot obunasini ham"). The shop opens once the buyer is
+    in the channel AND the bot can write to them. Both checks are cached and
+    fail open; admins pass."""
+    from config import BOT_USERNAME, REQUIRED_CHANNEL_USERNAME
+    if bot is None or user_id in ADMIN_IDS:
+        subscribed = True
+    else:
+        import subscription_gate
+        subscribed = await subscription_gate.is_subscribed_for_site(bot, user_id)
+    started = await bot_can_write(bot, user_id)
+    return {"ok": subscribed and started, "bot": BOT_USERNAME,
+            "channel": REQUIRED_CHANNEL_USERNAME.lstrip("@"),
+            "subscribed": subscribed, "started": started}
+
+
+async def ensure_site_user(request: web.Request, user_id: int) -> bool | None:
+    """Create the users row for a Telegram-verified Mini App buyer who has
+    none yet — they reached the shop without the bot's /start (Telegram lets
+    a Mini App launch allow the bot to write) — and run the new-joiner steps
+    a /start would: the admins' note, the 100 Keto, YANGI5
+    (handlers/start._process_new_user). True when the row is new, False when
+    it existed, None for initData without a usable profile."""
+    telegram_user = request.get("telegram_user")
+    if not isinstance(telegram_user, dict) or telegram_user.get("id") != user_id:
+        return None
+    name_parts = [
+        value.strip()
+        for value in (telegram_user.get("first_name"), telegram_user.get("last_name"))
+        if isinstance(value, str) and value.strip()
+    ]
+    is_new = await get_user(user_id) is None
+    # create_user uses INSERT ... ON CONFLICT DO NOTHING to preserve existing
+    # profile, contact and language fields.
+    inserted = await create_user(
+        user_id,
+        username=telegram_user.get("username"),
+        full_name=" ".join(name_parts) or None,
+        language=request.get("user_lang", "uz"),
+    )
+    # False: the bot's /start registered them a moment ago — it greets them.
+    if not is_new or inserted is False:
+        return False
+    # The gift's ceremony waits for their first language pick in the bot.
+    # Best-effort, off the hot path.
+    import asyncio
+    from types import SimpleNamespace
+    from handlers.start import _process_new_user
+    tg_user = SimpleNamespace(id=user_id, username=telegram_user.get("username"),
+                              full_name=" ".join(name_parts) or None)
+    asyncio.create_task(_process_new_user(request.app["bot"], tg_user, None))
+    return True
+
+
 async def api_bot_access(request: web.Request):
     """The Mini App's gate check — open even while the gate is shut."""
-    from config import BOT_USERNAME
-    ok = await bot_can_write(request.app.get("bot"), request["user_id"])
+    gate = await site_gate(request.app.get("bot"), request["user_id"])
     # The Mini App's first call on every launch — START pressed or not — so a
     # tracked link (t.me/<bot>/shop?startapp=<kod>, shop_links.py) is counted
     # here. The code comes from the signed initData, never from the client.
     import shop_links
     await shop_links.record_open(request["user_id"], request.get("start_param"),
                                  request.get("auth_date"))
-    return _json({"ok": ok, "bot": BOT_USERNAME})
+    # Through the gate without ever pressing START in the bot — registered
+    # here, so they too are members (2026-11-08: 12 of 15 people who came in
+    # through a link had no users row).
+    if gate["ok"]:
+        try:
+            await ensure_site_user(request, request["user_id"])
+        except Exception:
+            logger.exception("Site registration failed for %s", request["user_id"])
+    return _json(gate)
 
 
 @web.middleware
@@ -222,10 +284,11 @@ async def auth_middleware(request: web.Request, handler):
         if request["user_lang"] not in ("uz", "uz_cyr", "ru"):
             request["user_lang"] = "uz"
 
-    # The shop is for buyers the bot can reach — see "botni ishga tushirish".
-    if path != BOT_ACCESS_PATH and not await bot_can_write(request.app.get("bot"), user_id):
-        from config import BOT_USERNAME
-        return _json({"error": "start_bot", "bot": BOT_USERNAME}, status=403)
+    # The shop is for channel members the bot can reach — see site_gate.
+    if path != BOT_ACCESS_PATH:
+        gate = await site_gate(request.app.get("bot"), user_id)
+        if not gate["ok"]:
+            return _json({"error": "start_bot", **gate}, status=403)
 
     response = await handler(request)
     try:
@@ -747,35 +810,10 @@ async def api_cart_add(request: web.Request):
         _line, before = await get_cart_line_for_set(user_id, set_id) if set_id else (None, 0)
 
     # Cart rows reference users(user_id). Telegram-verified Mini App users may
-    # arrive here before sending /start to the bot, so ensure their row exists.
-    # create_user uses INSERT ... ON CONFLICT DO NOTHING to preserve existing
-    # profile, contact and language fields.
-    telegram_user = request.get("telegram_user")
-    if not isinstance(telegram_user, dict) or telegram_user.get("id") != user_id:
+    # arrive here before sending /start to the bot, so ensure their row exists
+    # — a new one is a new joiner too (ensure_site_user).
+    if await ensure_site_user(request, user_id) is None:
         return _json({"error": "invalid initData"}, status=403)
-    name_parts = [
-        value.strip()
-        for value in (telegram_user.get("first_name"), telegram_user.get("last_name"))
-        if isinstance(value, str) and value.strip()
-    ]
-    is_new = await get_user(user_id) is None
-    await create_user(
-        user_id,
-        username=telegram_user.get("username"),
-        full_name=" ".join(name_parts) or None,
-        language=request.get("user_lang", "uz"),
-    )
-    if is_new:
-        # A Mini App-first buyer is a new joiner too: the admins' "who
-        # joined" note and the 100 Keto start gift, the same as a /start
-        # (handlers/start._process_new_user). The gift's ceremony waits for
-        # their first language pick in the bot. Best-effort, off the hot path.
-        import asyncio
-        from types import SimpleNamespace
-        from handlers.start import _process_new_user
-        tg_user = SimpleNamespace(id=user_id, username=telegram_user.get("username"),
-                                  full_name=" ".join(name_parts) or None)
-        asyncio.create_task(_process_new_user(request.app["bot"], tg_user, None))
     added = await add_to_cart(user_id, product_id=product_id, quantity=quantity, set_id=set_id) - float(before or 0)
     if added <= 0:
         reason = await _limit_reason(user_id, product_id, set_id)

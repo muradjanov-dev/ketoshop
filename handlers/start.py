@@ -169,11 +169,14 @@ async def cmd_start_deep_link(message: Message, command: CommandObject, state: F
     referrer_id = referral_contest.parse_ref_payload(command.args)
     # ?start=retsept[_<slug>] — the channel's recipe link (recipe_channel.py)
     recipe_link = recipe_channel.parse_payload(command.args)
-    blogger_code = None if recipe_link else bloggers.parse_payload(command.args)
+    # ?start=sayt — the site's entry screen sent them to press START.
+    site_return = is_site_payload(command.args)
+    blogger_code = None if (recipe_link or site_return) else bloggers.parse_payload(command.args)
     ad_source = ad_sources.parse_payload(command.args)
     product_id = product_card.parse_product_payload(command.args)
     await _handle_start(message, referrer_id, blogger_code, ad_source,
-                        product_id=product_id, recipe_link=recipe_link)
+                        product_id=product_id, recipe_link=recipe_link,
+                        site_return=site_return)
     await _remind_pending_cheque(message, state)
 
 
@@ -188,7 +191,8 @@ async def _handle_start(message: Message, referrer_id: int | None,
                         blogger_code: str | None = None,
                         ad_source: str | None = None,
                         product_id: int | None = None,
-                        recipe_link: str | None = None):
+                        recipe_link: str | None = None,
+                        site_return: bool = False):
     if not _is_private_chat(message):
         return
 
@@ -230,6 +234,16 @@ async def _handle_start(message: Message, referrer_id: int | None,
         if opened and not is_new:
             return
 
+    # Came from the site's entry screen: a returning buyer goes straight back
+    # to the shop; a new one picks a language first and gets the button after
+    # the welcome (set_language).
+    if site_return:
+        if not is_new:
+            await send_back_to_site(message.bot, message.from_user.id,
+                                    await get_user_language(message.from_user.id))
+            return
+        remember_site_return(message.from_user.id)
+
     await message.answer(
         get_text("choose_language", "uz"),
         reply_markup=language_keyboard()
@@ -251,14 +265,56 @@ async def ensure_registered(bot, tg_user, referrer_id: int | None = None,
     user = await get_user(tg_user.id)
     if user:
         return False
-    await create_user(
+    if not await create_user(
         user_id=tg_user.id,
         username=tg_user.username,
         full_name=tg_user.full_name,
         language="uz",
-    )
+    ):
+        return False   # the Mini App registered them a moment ago (webapp_server.ensure_site_user)
     await _process_new_user(bot, tg_user, referrer_id, blogger_code, ad_source)
     return True
+
+
+# ───── back to the site (owner, 2026-11-08: "kanal obunasini talab qil,
+# keyin bot obunasini ham keyin ularni yana saytga yo'naltir") ─────
+# The site's entry screen opens the bot with ?start=sayt. A new member is
+# remembered until their language pick (in-process, like the subscription
+# gate's pending payloads), then handed a button back to the shop.
+SITE_PAYLOAD = "sayt"
+_site_return: set[int] = set()
+_BACK_TO_SITE = {
+    "uz": ("✅ <b>Tayyor!</b> Endi do'konga qayting va xaridni davom ettiring 👇",
+           "🛍 Do'konga qaytish"),
+    "ru": ("✅ <b>Готово!</b> Возвращайтесь в магазин и продолжайте покупки 👇",
+           "🛍 Вернуться в магазин"),
+}
+
+
+def is_site_payload(payload: str | None) -> bool:
+    return (payload or "").strip().lower() == SITE_PAYLOAD
+
+
+def remember_site_return(user_id: int) -> None:
+    _site_return.add(user_id)
+
+
+async def send_back_to_site(bot, user_id: int, lang: str) -> None:
+    """«🛍 Do'konga qaytish» — opens the Mini App. Never raises."""
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+    from config import WEBAPP_URL
+    text, button = _BACK_TO_SITE["ru" if lang == "ru" else "uz"]
+    if lang == "uz_cyr":
+        from translit import lat_to_cyr
+        text, button = lat_to_cyr(text), lat_to_cyr(button)
+    try:
+        await bot.send_message(
+            user_id, text, parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text=button, web_app=WebAppInfo(url=WEBAPP_URL))]]))
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("Back-to-site button to %s failed", user_id, exc_info=True)
 
 
 async def _process_new_user(bot, tg_user, referrer_id: int | None,
@@ -386,6 +442,10 @@ async def set_language(callback: CallbackQuery):
     # reason to stay (owner, 2026-10-14). Brand-new users only, once.
     import welcome_recipe
     await welcome_recipe.maybe_send(callback.bot, callback.from_user.id, lang)
+    # Came from the site's entry screen — last of all, the way back to it.
+    if callback.from_user.id in _site_return:
+        _site_return.discard(callback.from_user.id)
+        await send_back_to_site(callback.bot, callback.from_user.id, lang)
 
 
 @router.callback_query(F.data == "change_lang")
