@@ -157,6 +157,7 @@ class SubscriptionGateMiddleware(BaseMiddleware):
                 # ran, so they have no users row yet and any referral
                 # payload was never processed) — see _pending_start_payload.
                 product_id = None
+                shop_code = None
                 is_new = False
                 try:
                     import referral_contest
@@ -171,9 +172,14 @@ class SubscriptionGateMiddleware(BaseMiddleware):
                     site_return = is_site_payload(payload)
                     if site_return:
                         remember_site_return(user.id)
-                    blogger_code = None if site_return else bloggers.parse_payload(payload)
                     ad_source = ad_sources.parse_payload(payload)
                     product_id = product_card.parse_product_payload(payload)
+                    # ?start=<kod> — a tracked ad link, already counted when the
+                    # gate first stopped them; now it only brings the shop button.
+                    if not (site_return or referrer_id or ad_source or product_id is not None):
+                        import shop_links
+                        shop_code = await shop_links.code_for_start(payload)
+                    blogger_code = None if (site_return or shop_code) else bloggers.parse_payload(payload)
                     is_new = await ensure_registered(bot, user, referrer_id, blogger_code, ad_source)
                 except Exception:
                     logger.warning("Deferred registration failed for user %s", user.id, exc_info=True)
@@ -194,6 +200,12 @@ class SubscriptionGateMiddleware(BaseMiddleware):
                 except Exception:
                     pass
                 await event.answer()
+                if shop_code:
+                    from handlers.start import send_open_shop
+                    if not is_new:
+                        import database
+                        lang = await database.get_user_language(user.id)
+                    await send_open_shop(bot, user.id, lang)
                 # They came from the channel's «Kun mahsuloti» post and were
                 # stopped here to subscribe first — now show them the product
                 # they actually tapped, not an empty menu.
@@ -220,6 +232,10 @@ class SubscriptionGateMiddleware(BaseMiddleware):
                 parts = event.text.split(maxsplit=1)
                 if len(parts) > 1:
                     _pending_start_payload[user.id] = parts[1].strip()
+                    # A tracked ad link (?start=kepak) is counted now — whether
+                    # or not they go on to join the channel.
+                    import shop_links
+                    await shop_links.note_start(user.id, parts[1].strip())
             if isinstance(event, CallbackQuery):
                 await event.answer()
                 try:

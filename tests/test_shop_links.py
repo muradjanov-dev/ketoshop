@@ -11,7 +11,7 @@ import json
 import os
 import time
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from urllib.parse import urlencode
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test/test")
@@ -236,6 +236,159 @@ class AdminApiTest(unittest.TestCase):
         admin_web.setup_admin_routes(app)
         methods = {r.method for r in app.router.routes() if r.resource.canonical == "/admin/api/shop-links"}
         self.assertEqual(methods - {"HEAD"}, {"GET"})
+
+
+class BotLinkTest(unittest.TestCase):
+    """t.me/<bot>?start=<kod> (owner, 2026-11-08): the bot counts every
+    arrival and answers with «🛍 Do'konni ochish»."""
+
+    def test_links(self):
+        self.assertTrue(shop_links.bot_link("kepak").endswith("?start=kepak"))
+        self.assertNotIn("/shop", shop_links.bot_link("kepak"))
+
+    def test_other_readers_payloads_are_never_link_codes(self):
+        with patch.object(database, "pool", None):                       # no DB touched
+            for bad in (None, "", "sayt", "retsept", "retsept_pitsa", "fb_x", "ig_x", "ad_x",
+                        "prod_5", "ref123", "a b"):
+                self.assertIsNone(run(shop_links.code_for_start(bad)), bad)
+            self.assertIsNone(run(shop_links.create("Sayt", 1)))          # can't be created either
+
+    def test_known_code_is_counted_as_a_bot_arrival(self):
+        sql = []
+
+        class Conn:
+            async def fetchval(self, q, *a):
+                return "kepak" if a == ("kepak",) else None
+
+            async def execute(self, q, *a):
+                sql.append((q, a))
+
+        class Pool:
+            def acquire(self):
+                class C:
+                    async def __aenter__(s):
+                        return Conn()
+
+                    async def __aexit__(s, *e):
+                        return False
+                return C()
+
+        with patch.object(database, "pool", Pool()), patch.object(shop_links, "_ready", True):
+            self.assertEqual(run(shop_links.note_start(BUYER, " Kepak ")), "kepak")
+            self.assertIsNone(run(shop_links.note_start(BUYER, "nomalum")))
+        self.assertEqual(len(sql), 1)
+        q, args = sql[0]
+        self.assertIn("'bot'", q)
+        self.assertEqual(args[:2], ("kepak", BUYER))
+
+    def start(self, args, chat="private"):
+        from handlers import start
+        msg = Mock()
+        msg.chat.type = chat
+        msg.from_user.id = BUYER
+        command = Mock(args=args)
+        handle = AsyncMock()
+        note = AsyncMock(return_value="kepak" if args == "kepak" else None)
+        parse = Mock(return_value=None)
+        with patch.object(start, "_handle_start", handle), \
+             patch.object(start, "_remind_pending_cheque", AsyncMock()), \
+             patch.object(shop_links, "note_start", note), \
+             patch("bloggers.parse_payload", parse):
+            run(start.cmd_start_deep_link(msg, command, Mock()))
+        return handle, note, parse
+
+    def test_start_kepak_is_counted_and_never_a_blogger(self):
+        handle, note, parse = self.start("kepak")
+        note.assert_awaited_once_with(BUYER, "kepak")
+        parse.assert_not_called()
+        self.assertEqual(handle.await_args.kwargs["shop_code"], "kepak")
+
+    def test_other_payloads_skip_the_lookup(self):
+        for args in ("fb_eritritol", "prod_5", "sayt", "ref42"):
+            handle, note, _ = self.start(args)
+            note.assert_not_awaited()
+            self.assertIsNone(handle.await_args.kwargs["shop_code"], args)
+
+    def handle(self, is_new, language_code="uz"):
+        from handlers import start
+        msg = Mock()
+        msg.chat.type = "private"
+        msg.from_user.id = BUYER
+        msg.from_user.language_code = language_code
+        msg.answer = AsyncMock()
+        shop = AsyncMock()
+        with patch.object(start, "is_user_banned", AsyncMock(return_value=False)), \
+             patch.object(start, "ensure_registered", AsyncMock(return_value=is_new)), \
+             patch.object(start, "get_user_language", AsyncMock(return_value="uz_cyr")), \
+             patch.object(start, "ensure_menu_keyboard", AsyncMock()), \
+             patch.object(start, "send_open_shop", shop):
+            run(start._handle_start(msg, None, shop_code="kepak"))
+        return msg, shop
+
+    def test_returning_buyer_gets_just_the_button(self):
+        msg, shop = self.handle(is_new=False)
+        msg.answer.assert_not_awaited()
+        self.assertEqual(shop.await_args.args[1:], (BUYER, "uz_cyr"))
+
+    def test_new_member_gets_the_picker_and_the_button(self):
+        msg, shop = self.handle(is_new=True, language_code="ru")
+        msg.answer.assert_awaited_once()                                  # the language picker
+        self.assertEqual(shop.await_args.args[1:], (BUYER, "ru"))
+
+    def test_the_button_opens_the_shop(self):
+        from handlers import start
+        for lang, word in (("uz", "Do'konni ochish"), ("ru", "Открыть магазин"), ("uz_cyr", "Дўконни очиш")):
+            b = Mock()
+            b.send_message = AsyncMock()
+            run(start.send_open_shop(b, BUYER, lang))
+            button = b.send_message.await_args.kwargs["reply_markup"].inline_keyboard[0][0]
+            self.assertIn(word, button.text, lang)
+            self.assertIsNotNone(button.web_app)
+
+    def test_counted_even_if_they_never_join_the_channel(self):
+        import subscription_gate
+        from aiogram.types import Message
+        event = MagicMock(spec=Message)
+        event.text = "/start kepak"
+        event.from_user = MagicMock(id=BUYER, language_code="uz")
+        event.chat = MagicMock(type="private", id=BUYER)
+        note = AsyncMock(return_value="kepak")
+        bot = AsyncMock()
+        with patch.object(subscription_gate, "_is_subscribed", AsyncMock(return_value=False)), \
+             patch.object(subscription_gate, "_awaiting_cheque", AsyncMock(return_value=False)), \
+             patch.object(shop_links, "note_start", note):
+            run(subscription_gate.SubscriptionGateMiddleware()(AsyncMock(), event, {"bot": bot}))
+        subscription_gate._pending_start_payload.pop(BUYER, None)
+        note.assert_awaited_once_with(BUYER, "kepak")
+        bot.send_message.assert_awaited()                                 # the «join the channel» card
+
+    def test_after_joining_the_channel_the_shop_button_comes(self):
+        import subscription_gate
+        from aiogram.types import CallbackQuery
+        subscription_gate._pending_start_payload[BUYER] = "kepak"
+        event = MagicMock(spec=CallbackQuery)
+        event.data = subscription_gate.CHECK_CALLBACK
+        event.from_user = MagicMock(id=BUYER, language_code="ru")
+        event.message = AsyncMock()
+        event.answer = AsyncMock()
+        shop = AsyncMock()
+        with patch.object(subscription_gate, "_is_subscribed", AsyncMock(return_value=True)), \
+             patch("handlers.start.ensure_registered", AsyncMock(return_value=True)), \
+             patch.object(shop_links, "code_for_start", AsyncMock(return_value="kepak")), \
+             patch.object(shop_links, "note_start", AsyncMock()) as note, \
+             patch("handlers.start.send_open_shop", shop):
+            run(subscription_gate.SubscriptionGateMiddleware()(AsyncMock(), event, {"bot": AsyncMock()}))
+        note.assert_not_awaited()                                         # counted once, at the first /start
+        self.assertEqual(shop.await_args.args[1:], (BUYER, "ru"))
+
+    def test_report_shows_both_links_and_the_split(self):
+        row = {"code": "kepak", "name": "Kepak", "opens": 5, "people": 4, "people_bot": 3, "people_app": 2,
+               "new_users": 3, "no_start": 1, "buyers": 0, "orders": 0, "revenue": 0}
+        with patch.object(shop_links, "stats", AsyncMock(return_value=[row])):
+            text = run(shop_links.build_report("all"))
+        self.assertIn("?start=kepak", text)
+        self.assertIn("/shop?startapp=kepak", text)
+        self.assertIn("🤖 botga 3 · 🛍 do'konga 2", text)
 
 
 if __name__ == "__main__":
