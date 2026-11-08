@@ -564,7 +564,7 @@ class ReportTest(unittest.TestCase):
              patch.object(ads_impact, "account_tz_hours", AsyncMock(return_value=5.0)), \
              patch.object(database, "get_sales_daily", AsyncMock(side_effect=RuntimeError("db"))):
             with self.assertLogs("meta_ads", "ERROR"):
-                text = asyncio.run(meta_ads.build_report("today"))
+                text = asyncio.run(meta_ads.build_account_report("today"))
         self.assertIn("Sarflandi", text)
         self.assertNotIn("Sotuvga ta'siri", text)
 
@@ -577,9 +577,38 @@ class ReportTest(unittest.TestCase):
              patch.object(ads_impact, "account_tz_hours", AsyncMock(return_value=5.0)), \
              patch.object(database, "get_sales_daily", AsyncMock(return_value=sales)), \
              patch.object(ads_impact, "_usd_rate", AsyncMock(return_value=12_000.0)):
-            text = asyncio.run(meta_ads.build_report("last_7d"))
+            text = asyncio.run(meta_ads.build_account_report("last_7d"))
         self.assertIn("Sotuvga ta'siri</b> · 05.10–11.10", text)
         self.assertIn("Buyurtmalar: <b>3</b>", text)
+
+    # /reklama is the campaign report now (ad_campaigns.py) — the same sales block under it.
+    def campaign_data(self):
+        from datetime import date
+        return {"preset": "last_7d", "label": "oxirgi 7 kun", "first": date(2026, 10, 5), "last": date(2026, 10, 11),
+                "tz_hours": 5.0, "day_starts": 0, "items": [],
+                "totals": {"spend": 10.0, "bot": 0, "app": 0, "cost": None, "cost_label": "1 START narxi"}}
+
+    def test_campaign_report_includes_sales_block(self):
+        import ad_campaigns
+        sales = {"days": {"2026-10-06": {"orders": 3, "revenue": 300_000.0, "new_users": 4,
+                                         "ad_users": 0, "products": {}}}, "catalog": {}}
+        with patch.object(ad_campaigns, "collect", AsyncMock(return_value=self.campaign_data())), \
+             patch.object(ads_impact, "account_tz_hours", AsyncMock(return_value=5.0)), \
+             patch.object(database, "get_sales_daily", AsyncMock(return_value=sales)), \
+             patch.object(ads_impact, "_usd_rate", AsyncMock(return_value=12_000.0)):
+            text = asyncio.run(meta_ads.build_report("last_7d"))
+        self.assertIn("📊 <b>Reklama — oxirgi 7 kun (05.10–11.10)</b>", text)
+        self.assertIn("Sotuvga ta'siri</b> · 05.10–11.10", text)
+
+    def test_campaign_report_survives_a_database_failure(self):
+        import ad_campaigns
+        with patch.object(ad_campaigns, "collect", AsyncMock(return_value=self.campaign_data())), \
+             patch.object(ads_impact, "account_tz_hours", AsyncMock(return_value=5.0)), \
+             patch.object(database, "get_sales_daily", AsyncMock(side_effect=RuntimeError("db"))):
+            with self.assertLogs("meta_ads", "ERROR"):
+                text = asyncio.run(meta_ads.build_report("last_7d"))
+        self.assertIn("Reklama — oxirgi 7 kun", text)
+        self.assertNotIn("Sotuvga ta'siri", text)
 
 
 if __name__ == "__main__":

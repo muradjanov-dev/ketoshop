@@ -778,6 +778,15 @@ body.kuryer-mode .kb-admin-only{display:none!important}
 
     <div class="dash-card" style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h3 style="margin:0">📣 Reklama — bugun (Meta + bot)</h3>
+        <button class="btn btn-o btn-sm" type="button" id="adStripBtn">Batafsil →</button>
+      </div>
+      <div class="kpi-grid" id="adStripKpis" style="margin:12px 0 0"></div>
+      <div class="hint" id="adStripNote" style="margin-top:8px"></div>
+    </div>
+
+    <div class="dash-card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <h3 style="margin:0">💬 Izoh va baholar</h3>
         <button class="btn btn-o btn-sm" type="button" id="izStripBtn">Hammasi →</button>
       </div>
@@ -1397,6 +1406,26 @@ body.kuryer-mode .kb-admin-only{display:none!important}
       <div class="dash-card" id="adsError" style="display:none;border-color:var(--red);background:var(--red-wash);margin-bottom:16px">
         <h3 style="color:var(--red);margin-bottom:8px">⚠️ Meta bilan bog'lanishda xato</h3>
         <div style="font-size:13.5px;color:var(--ink)" id="adsErrorMsg"></div>
+      </div>
+
+      <div class="dash-card" style="margin-bottom:16px">
+        <h3>🤖 Kampaniyalar ↔ bot (START va do'kon)</h3>
+        <div class="hint" id="adsCampNote"></div>
+        <div class="tbl-wrap" style="margin-top:10px">
+          <table>
+            <thead><tr>
+              <th>Kampaniya</th>
+              <th style="text-align:right">Sarf</th>
+              <th style="text-align:right">Ko'rsatish</th>
+              <th style="text-align:right">Bosish (CPC)</th>
+              <th style="text-align:right">🤖 Botga</th>
+              <th style="text-align:right">🛍 Do'konga</th>
+              <th style="text-align:right">1 kelgan narxi</th>
+            </tr></thead>
+            <tbody id="adsCampRows"></tbody>
+          </table>
+          <div class="empty" id="adsCampEmpty" style="display:none">Bu davrda reklama yurmagan</div>
+        </div>
       </div>
 
       <div class="kpi-grid" id="adsKpi" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr))"></div>
@@ -2252,7 +2281,7 @@ function switchView(v){
   // the Kanban needs the full width; every other tab keeps the 1200px column
   $('#shell').classList.toggle('wide',v==='courier');
   if(v==='courier'){loadCourier();kbPollOn();}else{kbPollOff();}
-  if(v==='dashboard'){loadDashboard();loadFaStrip();loadIzohStrip();}
+  if(v==='dashboard'){loadDashboard();loadFaStrip();loadIzohStrip();loadAdStrip();}
   if(v==='faollik')loadFaollik();
   if(v==='izohlar')loadIzohlar();
   if(v==='order-costs')$('#orderCostId').focus();
@@ -2906,8 +2935,66 @@ function adsTime(iso){
 }
 
 async function loadAds(){
-  await Promise.all([loadAdsMain(),loadAdsStatus(),loadAdsLeads()]);
+  await Promise.all([loadAdsCampaigns(),loadAdsMain(),loadAdsStatus(),loadAdsLeads()]);
 }
+
+/* Kampaniyalar ↔ bot (owner's TZ, 2026-11-08): Meta's spend / clicks per
+   campaign beside the bot's own count for its start code — the people who
+   pressed START («botga») and who opened the shop («do'konga») through the
+   campaign's link, over Meta's own day. Asked afresh on every load. */
+function adsCampLine(c){
+  const cpc=c.cpc?` <span class="hint">(${adsUsd3(c.cpc)})</span>`:'';
+  const cost=c.cost==null?'—':adsUsd3(c.cost);
+  const linked=c.start_code!=null;
+  return `<tr>
+    <td><b>${esc(c.emoji||'📣')} ${esc(c.name)}</b>${linked?` <span class="hint">?start=${esc(c.start_code)}</span>`
+      :` <span class="hint">· bot havolasi yo'q</span>`}</td>
+    <td class="tnum" style="text-align:right;font-weight:700">${adsUsd(c.spend)}</td>
+    <td class="tnum" style="text-align:right">${adsInt(c.impressions)}</td>
+    <td class="tnum" style="text-align:right">${adsInt(c.clicks)}${cpc}</td>
+    <td class="tnum" style="text-align:right">${linked?adsInt(c.bot):'—'}</td>
+    <td class="tnum" style="text-align:right">${linked?adsInt(c.app):'—'}</td>
+    <td class="tnum" style="text-align:right" title="${esc(c.cost_label||'')}">${linked?cost:'—'}</td>
+  </tr>`;
+}
+const adsUsd3=v=>(v==null||v==='')?'—':'$'+Number(v).toFixed(3);
+async function loadAdsCampaigns(){
+  let d;
+  try{d=await api('/admin/api/ads/campaigns?period='+ADS_PERIOD);}catch(err){return;}
+  if(!d.enabled)return;
+  if(d.error){$('#adsCampNote').textContent='⚠️ '+d.error;$('#adsCampRows').innerHTML='';return;}
+  const items=d.items||[], t=d.totals||{};
+  $('#adsCampNote').textContent=`Meta kuni Toshkent vaqti bilan ${String(d.day_starts).padStart(2,'0')}:00 da boshlanadi · `
+    +`«botga» — havola orqali START bosganlar, «do'konga» — do'konni havola orqali ochganlar`;
+  $('#adsCampEmpty').style.display=items.length?'none':'block';
+  $('#adsCampRows').innerHTML=items.map(adsCampLine).join('')+(items.length?`<tr>
+    <td><b>Jami</b></td><td class="tnum" style="text-align:right;font-weight:800">${adsUsd(t.spend)}</td>
+    <td class="tnum" style="text-align:right">${adsInt(t.impressions)}</td><td class="tnum" style="text-align:right">${adsInt(t.clicks)}</td>
+    <td class="tnum" style="text-align:right;font-weight:700">${adsInt(t.bot)}</td>
+    <td class="tnum" style="text-align:right;font-weight:700">${adsInt(t.app)}</td>
+    <td class="tnum" style="text-align:right">${t.cost==null?'—':adsUsd3(t.cost)}</td></tr>`:'');
+}
+
+/* Dashboard strip — today's ads at a glance, «Batafsil →» opens the tab. */
+async function loadAdStrip(){
+  const box=$('#adStripKpis');
+  try{
+    const d=await api('/admin/api/ads/campaigns?period=today');
+    if(!d.enabled){box.innerHTML='<p class="hint">Meta tokeni o\'rnatilmagan — botda <code>/reklama_token</code>.</p>';return;}
+    if(d.error){box.innerHTML='<p class="hint">⚠️ '+esc(d.error)+'</p>';return;}
+    const t=d.totals||{};
+    box.innerHTML=[
+      ['Sarf (bugun)',adsUsd(t.spend)],
+      ['Bosishlar',adsInt(t.clicks)],
+      ['🤖 Botga (START)',adsInt(t.bot)],
+      ["🛍 Do'konga",adsInt(t.app)],
+      [esc(t.cost_label||'1 START narxi'),t.cost==null?'—':adsUsd3(t.cost)],
+    ].map(([l,v])=>`<div class="kpi-card"><div class="lab">${l}</div><div class="val" style="font-size:18px">${v}</div></div>`).join('');
+    $('#adStripNote').textContent=`Meta kuni ${String(d.day_starts).padStart(2,'0')}:00 dan (Toshkent) · `
+      +(d.items||[]).map(c=>`${c.emoji||'📣'} ${c.name}: ${adsUsd(c.spend)}`).join(' · ');
+  }catch(e){box.innerHTML='<p class="hint">⚠️ '+esc(e.message)+'</p>';}
+}
+$('#adStripBtn').addEventListener('click',()=>switchView('reklama'));
 
 async function loadAdsMain(){
   try{
@@ -3080,6 +3167,7 @@ window.adsMarkLead=async function(btn){
 $$('#adsPeriod button').forEach(b=>b.addEventListener('click',()=>{
   $$('#adsPeriod button').forEach(x=>x.classList.toggle('active',x===b));
   ADS_PERIOD=b.dataset.period;
+  loadAdsCampaigns();
   loadAdsMain();   // status and leads don't depend on the period
 }));
 $('#adsRefreshBtn').addEventListener('click',()=>{adsLoaded=true;loadAds();});

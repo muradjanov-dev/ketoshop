@@ -52,6 +52,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="sayt_havola", description="🔗 Sayt (do'kon) havolasi yasash — trafikni kuzatish"),
     BotCommand(command="sayt_havolalar", description="📊 Sayt havolalari: kim ochdi, kim sotib oldi"),
     BotCommand(command="reklama_token", description="🔑 Meta reklama tokeni"),
+    BotCommand(command="reklama_bog", description="🔗 Reklama kampaniyasi ↔ bot havolasi"),
     BotCommand(command="leads", description="📋 Yangi leadlar"),
     BotCommand(command="ai_holat", description="🤖 AI sotuvchi: holat, yoqish/o'chirish, model"),
     BotCommand(command="ai_kalit", description="🔑 OpenAI (GPT) kaliti — serverga kirmasdan"),
@@ -688,6 +689,8 @@ def admin_panel_keyboard(lang: str) -> InlineKeyboardMarkup:
 def admin_stats_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=get_text("btn_admin_website", lang), url=f"{WEBAPP_URL}/admin")],
+        # Meta kampaniyalari + botning o'z START hisobi (meta_ads / ad_campaigns).
+        [InlineKeyboardButton(text="📣 Reklama natijalari (bugun)", callback_data="ads:today")],
         [InlineKeyboardButton(text="📦 Mahsulot savdosi — 15/30 kun", callback_data="admin:product_sales")],
         [
             InlineKeyboardButton(text=get_text("btn_admin_stats", lang), callback_data="admin:stats"),
