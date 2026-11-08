@@ -103,7 +103,11 @@ class MiddlewareTest(unittest.TestCase):
         handler.assert_awaited_once()
 
     def test_started_buyer_goes_through(self):
-        resp, handler = self.go("/api/products", AsyncMock())
+        import subscription_gate
+        subscription_gate._cache.clear()
+        member = AsyncMock()
+        member.get_chat_member.return_value = Mock(status="member")   # in the channel (2026-11-08)
+        resp, handler = self.go("/api/products", member)
         self.assertEqual(resp.status, 200)
         handler.assert_awaited_once()
 

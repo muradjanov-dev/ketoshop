@@ -1427,12 +1427,17 @@ async def get_user(user_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-async def create_user(user_id: int, username: str = None, full_name: str = None, language: str = "uz"):
+async def create_user(user_id: int, username: str = None, full_name: str = None, language: str = "uz") -> bool:
+    """True when this call created the row — the bot's /start and the Mini
+    App can register the same person at the same moment, and only the side
+    that really inserted runs the new-joiner steps."""
     async with pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO users (user_id, username, full_name, language) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        inserted = await conn.fetchval(
+            "INSERT INTO users (user_id, username, full_name, language) VALUES ($1, $2, $3, $4) "
+            "ON CONFLICT DO NOTHING RETURNING user_id",
             user_id, username, full_name, language
         )
+    return inserted is not None
 
 
 async def update_user_language(user_id: int, language: str):

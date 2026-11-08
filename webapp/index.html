@@ -3440,6 +3440,71 @@
     cursor: pointer;
   }
   .welcome-timer .wt-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* YANGI5 tantanasi (owner, 2026-11-08): fireworks and the clock, once. */
+  #welcome-party {
+    position: fixed;
+    inset: 0;
+    z-index: 99990;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: radial-gradient(circle at 50% 35%, rgba(43, 22, 46, .82), rgba(12, 8, 20, .94));
+    animation: wp-in .35s var(--ease) both;
+  }
+  #welcome-party canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #welcome-party .wp-card {
+    position: relative;
+    width: 100%;
+    max-width: 360px;
+    padding: 26px 22px 22px;
+    border-radius: 28px;
+    background: var(--surface, #fff);
+    color: var(--text, #2B2116);
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .45);
+    animation: wp-pop .55s var(--ease-spring) .1s both;
+  }
+  #welcome-party .wp-emoji { font-size: 54px; line-height: 1; }
+  #welcome-party h2 { margin: 10px 0 4px; font: 800 26px/1.15 var(--font-display); }
+  #welcome-party .wp-sub { margin: 0 0 16px; font-size: 14.5px; line-height: 1.45; color: var(--hint, #7A6A55); }
+  #welcome-party .wp-gift {
+    padding: 14px 12px;
+    border-radius: 20px;
+    background: linear-gradient(115deg, #E5484D 0%, #F76B15 100%);
+    color: #fff;
+  }
+  #welcome-party .wp-pct { display: block; font: 900 46px/1 var(--font-display); letter-spacing: -1px; }
+  #welcome-party .wp-gift-text { display: block; margin-top: 4px; font: 700 14px/1.3 var(--font-body); }
+  #welcome-party .wp-code {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 3px 12px;
+    border: 1.5px dashed rgba(255, 255, 255, .85);
+    border-radius: 999px;
+    font: 800 13px/1.4 var(--font-body);
+    letter-spacing: 1px;
+  }
+  #welcome-party .wp-left { margin: 16px 0 2px; font-size: 13px; font-weight: 700; color: var(--hint, #7A6A55); }
+  #welcome-party .wp-clock {
+    font: 900 40px/1.1 var(--font-display);
+    font-variant-numeric: tabular-nums;
+    color: #E5484D;
+  }
+  #welcome-party .wp-note { margin: 10px 0 16px; font-size: 13px; line-height: 1.45; color: var(--hint, #7A6A55); }
+  #welcome-party .wp-go {
+    width: 100%;
+    border: 0;
+    border-radius: 16px;
+    padding: 15px;
+    font: 800 16px var(--font-body);
+    background: var(--btn, #2E7D32);
+    color: var(--btn-text, #fff);
+    cursor: pointer;
+  }
+  @keyframes wp-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes wp-pop { from { opacity: 0; transform: scale(.7) translateY(20px); } to { opacity: 1; transform: none; } }
 </style>
 </head>
 <body>
@@ -4603,11 +4668,22 @@ let lang = localStorage.getItem('ketoshop_lang') || ((tg.initDataUnsafe?.user?.l
 
 const L = {
   uz: {
-    startGateTitle: 'Avval botni ishga tushiring',
-    startGateText: 'Buyurtmangiz holati, to\'lov cheki, sovg\'alar va chegirmalar shu bot orqali keladi. Botni oching va pastdagi «START» tugmasini bosing — keyin shu yerga qayting.',
+    wpTitle: 'Tabriklaymiz!',
+    wpSub: 'Siz Ketoshop a\'zosi bo\'ldingiz — sizga sovg\'a bor',
+    wpGift: 'birinchi buyurtmangizga chegirma',
+    wpLeft: 'Chegirma tugashiga qoldi',
+    wpNote: 'Promokod kiritish shart emas — chegirma savatda o\'zi hisoblanadi.',
+    wpGo: '🛍 Xaridni boshlash',
+    startGateTitle: 'Do\'konga kirish — 2 qadam',
+    startGateText: 'Yangi mahsulotlar, sovg\'alar va chegirmalar kanalda, buyurtmangiz holati va to\'lov cheki botda keladi.',
+    gateChannelStep: 'Kanalimizga a\'zo bo\'ling',
+    gateChannelOpen: '📢 Kanalga o\'tish',
+    gateBotStep: 'Botda «START» tugmasini bosing',
     startGateOpen: '▶️ Botni ochish',
-    startGateCheck: '✅ Bosdim — davom etish',
-    startGateWaiting: 'Hali START bosilmagan. Botni oching va «START» ni bosing.',
+    gateDone: 'Bajarildi',
+    gateChannelFirst: 'Avval 1-qadam: kanalga a\'zo bo\'ling.',
+    startGateCheck: '✅ Tekshirish',
+    startGateWaiting: 'Hali tayyor emas — ikkala qadamni bajaring.',
     all: 'Hammasi',
     sectionBestsellers: 'Top mahsulotlar',
     sectionTopCustomers: 'Eng faol xaridorlar',
@@ -4820,11 +4896,22 @@ const L = {
     cartNudgeAdd: '+ Qo\'shish',
   },
   ru: {
-    startGateTitle: 'Сначала запустите бота',
-    startGateText: 'Статус заказа, чек об оплате, подарки и скидки приходят через этого бота. Откройте бота и нажмите «START» внизу — затем вернитесь сюда.',
+    wpTitle: 'Поздравляем!',
+    wpSub: 'Вы стали участником Ketoshop — для вас подарок',
+    wpGift: 'скидка на первый заказ',
+    wpLeft: 'До конца скидки осталось',
+    wpNote: 'Промокод вводить не нужно — скидка посчитается в корзине сама.',
+    wpGo: '🛍 Начать покупки',
+    startGateTitle: 'Вход в магазин — 2 шага',
+    startGateText: 'Новинки, подарки и скидки — в канале, статус заказа и чек об оплате — в боте.',
+    gateChannelStep: 'Подпишитесь на наш канал',
+    gateChannelOpen: '📢 Перейти в канал',
+    gateBotStep: 'Нажмите «START» в боте',
     startGateOpen: '▶️ Открыть бота',
-    startGateCheck: '✅ Нажал — продолжить',
-    startGateWaiting: 'Бот ещё не запущен. Откройте бота и нажмите «START».',
+    gateDone: 'Готово',
+    gateChannelFirst: 'Сначала шаг 1: подпишитесь на канал.',
+    startGateCheck: '✅ Проверить',
+    startGateWaiting: 'Ещё не готово — выполните оба шага.',
     all: 'Все',
     sectionBestsellers: 'Топ товаров',
     sectionTopCustomers: 'Самые активные покупатели',
@@ -5314,9 +5401,9 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     let body = null;
     try { body = await res.json(); } catch(_) {}
-    // The server refuses buyers the bot can't reach (never pressed START,
-    // or blocked it) — show the "start the bot" screen instead of an error.
-    if (res.status === 403 && body && body.error === 'start_bot') showStartGate(body.bot);
+    // The server refuses buyers outside the channel or whom the bot can't
+    // reach — show the entry screen instead of an error.
+    if (res.status === 403 && body && body.error === 'start_bot') showStartGate(body);
     const err = new Error(res.status);
     err.status = res.status;
     err.body = body;
@@ -6136,50 +6223,92 @@ document.getElementById('site-fb-modal').addEventListener('click', function (e) 
 })();
 
 // ===== INIT =====
-// ===== START THE BOT FIRST (owner, 2026-10-14: "Mini appni yoki saytni
-// ishlatish uchun botni ishga tushurish shart bo'lsin") =====
-// A full-screen card over the shop until the bot can write to this buyer.
-// It re-checks every few seconds, so pressing START in the chat and coming
-// back opens the shop by itself; "✅" re-checks at once.
+// ===== DO'KONGA KIRISH: KANAL, KEYIN BOT (owner, 2026-10-14: "Mini appni
+// yoki saytni ishlatish uchun botni ishga tushurish shart bo'lsin";
+// 2026-11-08: "sayt uchun ham kanal obunasini talab qil, keyin bot
+// obunasini ham keyin ularni yana saytga yo'naltir") =====
+// A full-screen card over the shop with two steps: join the channel, then
+// press START in the bot (opened with ?start=sayt, which answers with a
+// «Do'konga qaytish» button). It re-checks every few seconds, so coming back
+// from the channel or the chat moves it on by itself; "✅" re-checks at once.
+// `info` is /api/bot-access's answer (or a refused call's body): bot,
+// channel, subscribed, started. An old answer carried only the bot's name.
 let _startGateTimer = null;
-function showStartGate(botName) {
+function showStartGate(info) {
+  info = (info && typeof info === 'object') ? info : { bot: info };
+  const subscribed = info.subscribed !== false;
+  const started = !!info.started;
+  const bot = info.bot || 'ketoshopbot';
+  const channel = info.channel || 'ketoshop_uz';
   let gate = document.getElementById('start-gate');
   if (!gate) {
     gate = document.createElement('div');
     gate.id = 'start-gate';
     gate.setAttribute('role', 'dialog');
     gate.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;'
-      + 'padding:24px;background:var(--bg,#FFF8EC);color:var(--text,#2B2116);font-family:inherit';
+      + 'padding:24px;background:var(--bg,#FFF8EC);color:var(--text,#2B2116);font-family:inherit;overflow-y:auto';
+    const step = (n, id, label, btn) =>
+      '<div class="gate-step" id="gate-step-' + id + '" style="display:flex;align-items:center;gap:12px;text-align:left;'
+        + 'padding:12px;margin-bottom:10px;border:1px solid var(--hairline,#E5DAC6);border-radius:16px;background:var(--surface,#fff)">' +
+        '<span class="gate-num" style="flex:none;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;'
+          + 'font-weight:800;background:var(--btn,#2E7D32);color:var(--btn-text,#fff)">' + n + '</span>' +
+        '<span style="flex:1;min-width:0">' +
+          '<span style="display:block;font-size:15px;font-weight:700;line-height:1.3">' + escapeHtml(label) + '</span>' +
+          '<span class="gate-sub" style="display:block;font-size:13px;color:var(--hint,#7A6A55);margin-top:2px"></span>' +
+        '</span>' +
+        '<button class="gate-go" type="button" style="flex:none;border:0;border-radius:12px;padding:10px 12px;font-size:14px;font-weight:800;'
+          + 'background:var(--btn,#2E7D32);color:var(--btn-text,#fff);cursor:pointer">' + escapeHtml(btn) + '</button>' +
+      '</div>';
     gate.innerHTML =
-      '<div style="max-width:380px;width:100%;text-align:center">' +
-        '<div style="font-size:64px;line-height:1;margin-bottom:14px">🤖</div>' +
-        '<h2 style="font-size:22px;font-weight:800;margin:0 0 10px">' + escapeHtml(t.startGateTitle) + '</h2>' +
-        '<p style="font-size:15px;line-height:1.5;margin:0 0 22px;color:var(--hint,#7A6A55)">' + escapeHtml(t.startGateText) + '</p>' +
-        '<button id="start-gate-open" type="button" style="width:100%;border:0;border-radius:14px;padding:15px;font-size:16px;font-weight:800;'
-          + 'background:var(--btn,#2E7D32);color:var(--btn-text,#fff);margin-bottom:10px;cursor:pointer">' + escapeHtml(t.startGateOpen) + '</button>' +
+      '<div style="max-width:400px;width:100%;text-align:center">' +
+        '<div style="font-size:56px;line-height:1;margin-bottom:12px">🛍</div>' +
+        '<h2 style="font-size:22px;font-weight:800;margin:0 0 8px">' + escapeHtml(t.startGateTitle) + '</h2>' +
+        '<p style="font-size:15px;line-height:1.5;margin:0 0 18px;color:var(--hint,#7A6A55)">' + escapeHtml(t.startGateText) + '</p>' +
+        step(1, 'channel', t.gateChannelStep, t.gateChannelOpen) +
+        step(2, 'bot', t.gateBotStep, t.startGateOpen) +
         '<button id="start-gate-check" type="button" style="width:100%;border:1px solid var(--hairline,#E5DAC6);border-radius:14px;padding:13px;'
-          + 'font-size:15px;font-weight:700;background:transparent;color:inherit;cursor:pointer">' + escapeHtml(t.startGateCheck) + '</button>' +
+          + 'margin-top:6px;font-size:15px;font-weight:700;background:transparent;color:inherit;cursor:pointer">' + escapeHtml(t.startGateCheck) + '</button>' +
         '<div id="start-gate-note" style="font-size:13px;margin-top:12px;min-height:18px;color:var(--berry,#B3261E)"></div>' +
       '</div>';
     document.body.appendChild(gate);
     gate.querySelector('#start-gate-check').onclick = () => checkStartGate(true);
   }
-  const url = 'https://t.me/' + (botName || 'ketoshopbot');
-  gate.querySelector('#start-gate-open').onclick = () => {
-    try { tg.openTelegramLink(url); } catch (_) { window.open(url, '_blank'); }
+  const open = url => { try { tg.openTelegramLink(url); } catch (_) { window.open(url, '_blank'); } };
+  const mark = (id, done, sub, enabled, go) => {
+    const row = gate.querySelector('#gate-step-' + id);
+    row.querySelector('.gate-num').textContent = done ? '✓' : (id === 'channel' ? '1' : '2');
+    row.querySelector('.gate-sub').textContent = done ? t.gateDone : sub;
+    const b = row.querySelector('.gate-go');
+    b.style.display = done ? 'none' : '';
+    b.style.opacity = enabled ? '1' : '.45';
+    b.onclick = go;
+    row.style.opacity = done ? '.7' : '1';
   };
+  mark('channel', subscribed, '@' + channel, true, () => open('https://t.me/' + channel));
+  mark('bot', started, '@' + bot, subscribed, () => {
+    if (!subscribed) {
+      const note = document.getElementById('start-gate-note');
+      if (note) note.textContent = t.gateChannelFirst;
+      return;
+    }
+    open('https://t.me/' + bot + '?start=sayt');
+  });
+  const note = document.getElementById('start-gate-note');
+  if (subscribed && note && note.textContent === t.gateChannelFirst) note.textContent = '';
   gate.style.display = 'flex';
   if (!_startGateTimer) _startGateTimer = setInterval(() => checkStartGate(false), 3000);
 }
 async function checkStartGate(manual) {
-  let ok = false;
-  try { ok = !!(await fetch('/api/bot-access', { headers: apiHeaders() }).then(r => r.json())).ok; } catch (_) {}
+  let info = null;
+  try { info = await fetch('/api/bot-access', { headers: apiHeaders() }).then(r => r.json()); } catch (_) {}
+  const ok = !!(info && info.ok);
   if (ok) {
     clearInterval(_startGateTimer); _startGateTimer = null;
     location.reload();   // boot the shop from scratch now that it may load
-  } else if (manual) {
+  } else {
+    if (info) showStartGate(info);
     const note = document.getElementById('start-gate-note');
-    if (note) note.textContent = t.startGateWaiting;
+    if (manual && note) note.textContent = t.startGateWaiting;
   }
   return ok;
 }
@@ -6195,7 +6324,7 @@ async function checkStartGate(manual) {
   // Nothing loads for a buyer the bot can't reach — they get the START card.
   try {
     const access = await fetch('/api/bot-access', { headers: apiHeaders() }).then(r => r.json());
-    if (access && access.ok === false) { showStartGate(access.bot); return; }
+    if (access && access.ok === false) { showStartGate(access); return; }
   } catch (_) { /* network trouble — carry on; the server still guards every call */ }
   trk(() => {
     const sp = (tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '';
@@ -6352,6 +6481,7 @@ function renderWelcomeTimer() {
   if (!w || !(w.seconds_left > 0)) { el.style.display = 'none'; return; }
   const endsAt = Date.now() + w.seconds_left * 1000;
   document.getElementById('welcome-timer-code').textContent = w.label;
+  celebrateWelcome(w, endsAt);
   const tick = () => {
     const left = Math.floor((endsAt - Date.now()) / 1000);
     if (left <= 0) {
@@ -6366,6 +6496,107 @@ function renderWelcomeTimer() {
   };
   tick();
   welcomeTimerTick = setInterval(tick, 1000);
+}
+
+// ===== YANGI5 TANTANASI (owner, 2026-11-08: "8 soatlik 5% lik chegirmani
+// tabriklab tantana bilan e'lon qil, saytda ham salyutlar va counter bilan") =====
+// The first time a new member's YANGI5 reaches this phone: a full-screen
+// card with fireworks behind it, the gift and a live clock. Once per member
+// per phone (localStorage; without it, once per launch). The pill stays.
+let welcomePartyShown = false;
+function hmsLeft(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  return Math.floor(s / 3600) + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+function celebrateWelcome(w, endsAt) {
+  if (welcomePartyShown || document.getElementById('welcome-party')) return;
+  welcomePartyShown = true;
+  const me = (tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) || 'x';
+  const key = 'ketoshop_yangi5_party_' + me;
+  try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (_) { /* once per launch */ }
+  const box = document.createElement('div');
+  box.id = 'welcome-party';
+  box.setAttribute('role', 'dialog');
+  box.innerHTML =
+    '<canvas></canvas>' +
+    '<div class="wp-card">' +
+      '<div class="wp-emoji">🎉</div>' +
+      '<h2>' + escapeHtml(t.wpTitle) + '</h2>' +
+      '<p class="wp-sub">' + escapeHtml(t.wpSub) + '</p>' +
+      '<div class="wp-gift"><span class="wp-pct">−' + escapeHtml(String(w.percent)) + '%</span>' +
+        '<span class="wp-gift-text">' + escapeHtml(t.wpGift) + '</span>' +
+        '<span class="wp-code">' + escapeHtml(w.code) + '</span></div>' +
+      '<div class="wp-left">⏳ ' + escapeHtml(t.wpLeft) + '</div>' +
+      '<div class="wp-clock"></div>' +
+      '<p class="wp-note">' + escapeHtml(t.wpNote) + '</p>' +
+      '<button class="wp-go" type="button">' + escapeHtml(t.wpGo) + '</button>' +
+    '</div>';
+  document.body.appendChild(box);
+  const clock = box.querySelector('.wp-clock');
+  const tick = () => { clock.textContent = hmsLeft((endsAt - Date.now()) / 1000); };
+  tick();
+  const clockTimer = setInterval(tick, 1000);
+  const stopFireworks = launchFireworks(box.querySelector('canvas'));
+  box.querySelector('.wp-go').onclick = () => {
+    clearInterval(clockTimer);
+    stopFireworks();
+    box.remove();
+  };
+  try { tg.HapticFeedback.notificationOccurred('success'); } catch (_) {}
+}
+
+// Salyut: bursts of sparks that rise, open and fall, for about six seconds.
+// Returns a stop function. Canvas 2D, no library.
+function launchFireworks(canvas) {
+  const ctx = canvas.getContext && canvas.getContext('2d');
+  if (!ctx) return () => {};
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const size = () => { canvas.width = canvas.clientWidth * dpr; canvas.height = canvas.clientHeight * dpr; };
+  size();
+  const colors = ['#FFC94D', '#E8637F', '#9BC25B', '#5AC8FA', '#F76B15', '#C9A0FF', '#FFFFFF'];
+  const sparks = [];
+  let raf = 0, bursts = 0, stopped = false;
+  const burst = () => {
+    const x = canvas.width * (0.15 + Math.random() * 0.7);
+    const y = canvas.height * (0.12 + Math.random() * 0.33);
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const n = 70;
+    for (let i = 0; i < n; i++) {
+      const a = (Math.PI * 2 * i) / n + Math.random() * 0.2;
+      const v = (1.6 + Math.random() * 3.2) * dpr;
+      sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, color });
+    }
+  };
+  const frame = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const s = sparks[i];
+      s.x += s.vx; s.y += s.vy;
+      s.vx *= 0.985; s.vy = s.vy * 0.985 + 0.045 * dpr;
+      s.life -= 0.012;
+      if (s.life <= 0) { sparks.splice(i, 1); continue; }
+      ctx.globalAlpha = s.life;
+      ctx.fillStyle = s.color;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 2.2 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    if (!stopped && (sparks.length || bursts < 12)) raf = requestAnimationFrame(frame);
+  };
+  const timer = setInterval(() => {
+    if (++bursts >= 12) clearInterval(timer);
+    burst();
+  }, 480);
+  burst();
+  raf = requestAnimationFrame(frame);
+  window.addEventListener('resize', size);
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+    cancelAnimationFrame(raf);
+    window.removeEventListener('resize', size);
+  };
 }
 
 // "Bot orqali buyurtmaga 10% chegirma" card on the home page. Worded and
