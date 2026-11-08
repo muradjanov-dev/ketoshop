@@ -3442,6 +3442,61 @@
   }
   .welcome-timer .wt-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+  /* Pastki menyu ko'rsatmasi (DockHint): a hand taps each dock button. */
+  .dock-hand {
+    position: fixed;
+    z-index: 10001;
+    left: 50%;
+    top: 100%;
+    font-size: 34px;
+    line-height: 1;
+    pointer-events: none;
+    opacity: 0;
+    filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .3));
+    transition: left .38s var(--ease), top .38s var(--ease), opacity .25s var(--ease), transform .14s var(--ease);
+  }
+  .dock-hand.on { opacity: 1; }
+  .dock-hand.press { transform: scale(.8) translateY(-4px); }
+  .dock-tip {
+    position: fixed;
+    z-index: 10001;
+    pointer-events: none;
+    padding: 7px 13px;
+    border-radius: 12px;
+    background: var(--ink, #2B2116);
+    color: #fff;
+    font: 800 14px/1.2 var(--font-body);
+    white-space: nowrap;
+    transform: translate(-50%, -100%);
+    opacity: 0;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .25);
+    transition: opacity .2s var(--ease), left .38s var(--ease);
+  }
+  .dock-tip.on { opacity: 1; }
+  .tab-item.dock-wiggle svg { animation: dock-wiggle .6s ease; }
+  @keyframes dock-wiggle {
+    0%, 100% { transform: rotate(0) scale(1); }
+    20% { transform: rotate(-14deg) scale(1.2); }
+    40% { transform: rotate(12deg) scale(1.2); }
+    60% { transform: rotate(-8deg) scale(1.1); }
+    80% { transform: rotate(5deg) scale(1.04); }
+  }
+  .dock-ripple {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 46px;
+    height: 46px;
+    margin: -23px 0 0 -23px;
+    border-radius: 50%;
+    background: var(--c-orange, #E8892E);
+    opacity: .45;
+    transform: scale(.3);
+    pointer-events: none;
+    animation: dock-ripple .6s ease-out forwards;
+  }
+  @keyframes dock-ripple { to { transform: scale(1.6); opacity: 0; } }
+
   /* YANGI5 tantanasi (owner, 2026-11-08): fireworks and the clock, once. */
   #welcome-party {
     position: fixed;
@@ -6370,6 +6425,7 @@ async function checkStartGate(manual) {
     loadCatalogTiles();
     await loadProducts();
     await loadCart();
+    DockHint.maybe();
 
     // Deep link: ?product=<id> on the Mini App URL (used by admin broadcasts —
     // e.g. a low-stock alert with a "tap here" button) opens straight into
@@ -6608,6 +6664,92 @@ function launchFireworks(canvas) {
     window.removeEventListener('resize', size);
   };
 }
+
+// ===== PASTKI MENYU KO'RSATMASI (owner, 2026-11-08: "boshqa bo'lim tugmalari
+// ham pastda sezilmayapti katta yoshlilar buni bosish mumkin ekanini ham
+// bilishmayapti, shuni birinchi kirganda 3 safar ... qisqa qimirlaydigan va
+// click qiladigan animatsiya ko'rsat 4-marotaba kirganda bo'ldi ko'rsatma") =====
+// On a buyer's first three launches a hand taps each of the other dock
+// buttons in turn: the button wiggles, a ripple marks the tap and its name
+// shows above it — about four seconds. Counted per buyer on this phone (a
+// launch counts even if the buyer stops it); from the fourth launch, never.
+// It waits for the entry screen and the YANGI5 card to be gone; any touch
+// stops it. Without storage it is not shown at all — it could not stop.
+const DockHint = (() => {
+  const SHOWS = 3;
+  const STEP_MS = 900;
+  let stopFn = null;
+  const key = () => 'ketoshop_dock_hint_' +
+    ((tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) || 'x');
+  function seen() {
+    try { return parseInt(localStorage.getItem(key()) || '0', 10) || 0; } catch (_) { return SHOWS; }
+  }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  function blocked() {
+    const gate = document.getElementById('start-gate');
+    return document.getElementById('welcome-party') || (gate && gate.style.display !== 'none')
+      || document.querySelector('.modal-overlay.show, #detail-modal.show');
+  }
+  async function play() {
+    const tabs = [...document.querySelectorAll('#tab-bar .tab-item:not(.active)')];
+    if (!tabs.length) return;
+    const hand = document.createElement('div');
+    hand.className = 'dock-hand';
+    hand.textContent = '👆';
+    const tip = document.createElement('div');
+    tip.className = 'dock-tip';
+    document.body.append(hand, tip);
+    let stopped = false;
+    const stop = () => {
+      stopped = true;
+      hand.remove();
+      tip.remove();
+      tabs.forEach(t => t.classList.remove('dock-wiggle'));
+      document.removeEventListener('pointerdown', stop, true);
+      stopFn = null;
+    };
+    stopFn = stop;
+    document.addEventListener('pointerdown', stop, true);
+    for (const tab of tabs) {
+      if (stopped) return;
+      const r = tab.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      hand.style.left = (x - 12) + 'px';                  // the fingertip on the icon
+      hand.style.top = (r.top + r.height / 2 - 4) + 'px';
+      hand.classList.add('on');
+      tip.textContent = (tab.querySelector('span') || {}).textContent || '';
+      tip.style.left = x + 'px';
+      tip.style.top = (r.top - 10) + 'px';
+      await sleep(380);
+      if (stopped) return;
+      hand.classList.add('press');
+      tip.classList.add('on');
+      tab.classList.remove('dock-wiggle');
+      void tab.offsetWidth;                               // restart the wiggle
+      tab.classList.add('dock-wiggle');
+      const ripple = document.createElement('span');
+      ripple.className = 'dock-ripple';
+      tab.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 650);
+      await sleep(160);
+      hand.classList.remove('press');
+      await sleep(STEP_MS - 540);
+      tip.classList.remove('on');
+    }
+    if (!stopped) { hand.classList.remove('on'); await sleep(300); stop(); }
+  }
+  return {
+    async maybe() {
+      const n = seen();
+      if (n >= SHOWS) return;
+      try { localStorage.setItem(key(), String(n + 1)); } catch (_) { return; }
+      await sleep(1500);
+      for (let i = 0; i < 40 && blocked(); i++) await sleep(500);
+      if (!blocked()) play();
+    },
+    stop() { if (stopFn) stopFn(); },
+  };
+})();
 
 // "Bot orqali buyurtmaga 10% chegirma" card on the home page. Worded and
 // translated server-side; absent (null) while the discount is off.
