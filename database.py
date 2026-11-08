@@ -1527,12 +1527,14 @@ async def get_products_by_category(category: str, page: int = 0, per_page: int =
             f"""SELECT p.*, u.full_name as seller_name, u.username as seller_username
                FROM products p
                JOIN users u ON p.seller_id = u.user_id
-               WHERE p.category = $1 AND p.is_active = 1{b2b_filter}
-               ORDER BY LOWER(p.name) ASC, p.id ASC
-               LIMIT $2 OFFSET $3""",
-            category, per_page, page * per_page
+               WHERE p.category = $1 AND p.is_active = 1{b2b_filter}""",
+            category
         )
-        return [dict(r) for r in rows], total
+    # Same-named packs side by side, smallest first (catalog_order.py) — a
+    # category holds a few dozen products, so the page is cut here.
+    from catalog_order import sort_key
+    ordered = sorted((dict(r) for r in rows), key=lambda r: sort_key(r.get("name"), r.get("id") or 0))
+    return ordered[page * per_page:(page + 1) * per_page], total
 
 
 async def get_category_tiles() -> dict:

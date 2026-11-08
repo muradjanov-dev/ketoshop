@@ -28,6 +28,13 @@ class WiringTest(unittest.TestCase):
         self.assertIn("document.addEventListener('pointerdown', stop, true)", hint)   # a touch stops it
         self.assertIn("#tab-bar .tab-item:not(.active)", hint)
 
+    def test_slow_enough_to_follow(self):
+        # Owner, 2026-11-08: "sekinroq chiqsin odam tushunmay qoldi" — measured
+        # in Edge: the line at 1.1 s, then a button every ~2.4 s, done at ~13 s.
+        hint = PAGE[PAGE.index("const DockHint = (() => {"):PAGE.index('// "Bot orqali buyurtmaga 10% chegirma"')]
+        self.assertIn("const INTRO_MS = 2200, MOVE_MS = 700, PRESS_MS = 250, HOLD_MS = 1400;", hint)
+        self.assertIn("Pastdagi tugmalar — boshqa bo'limlar", hint)
+
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
 class CountTest(unittest.TestCase):
