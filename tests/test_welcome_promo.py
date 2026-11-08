@@ -252,8 +252,10 @@ class ShownTest(unittest.TestCase):
         with a, b, c:
             site = run(wp.site_payload(USER, "uz"))
             card = run(wp.card_line(USER, {"price": 10000, "discount_percent": 0, "discount_until": None}, "uz"))
+            # A real-clock future: effective_price checks discount_until
+            # against the actual time, not the frozen NOW.
             deeper = run(wp.card_line(USER, {"price": 10000, "discount_percent": 20,
-                                             "discount_until": NOW + timedelta(days=1)}, "uz"))
+                                             "discount_until": datetime.utcnow() + timedelta(days=1)}, "uz"))
             line = run(wp.timer_line(USER, "ru"))
             ai = run(wp.ai_line(USER))
         self.assertEqual((site["code"], site["percent"], site["seconds_left"]), ("YANGI5", 5, 7 * 3600))

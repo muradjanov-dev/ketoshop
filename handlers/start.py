@@ -293,10 +293,15 @@ async def _process_new_user(bot, tg_user, referrer_id: int | None,
         import ad_sources
         source = await ad_sources.attach_new_user(ad_source, tg_user.id, ad_source)
 
+    # Tracked shop link (shop_links.py): they opened the Mini App through
+    # t.me/<bot>/shop?startapp=<kod> first — named in the notice. Never raises.
+    import shop_links
+    shop_link = await shop_links.last_open(tg_user.id)
+
     try:
         await referral_contest.notify_admins_new_user(
             bot, tg_user.id, tg_user.username, tg_user.full_name, valid_referrer,
-            blogger, source,
+            blogger, source, shop_link=shop_link,
         )
     except Exception:
         pass

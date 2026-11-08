@@ -51,6 +51,7 @@ DEFAULTS = (("kepak", "Kepak"), ("gluten_1_qism", "Gluten 1-qism"))
 ORDER_WINDOW_DAYS = 30        # havoladan keyin shu kun ichidagi buyurtma sanaladi
 NEW_USER_SLACK = timedelta(minutes=10)
 REPORT_LIMIT = 25             # Telegram xabari 4096 belgidan oshmasin
+NOTICE_WINDOW = timedelta(days=7)   # yangi a'zo xabarida — shu muddatdagi oxirgi havola
 
 PERIODS = {
     "7":   ("7 kun", 7),
@@ -135,6 +136,26 @@ async def record_open(user_id: int | None, start_param: str | None, auth_date) -
         return False
 
 
+async def last_open(user_id: int) -> dict | None:
+    """The link this person last opened the shop through (within
+    NOTICE_WINDOW) — for the admins' «Yangi foydalanuvchi» notice. The bot
+    is reached from the site's START screen without the code, so it is
+    looked up by user id. Never raises."""
+    try:
+        await ensure()
+        async with database.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """SELECT o.code, l.name
+                     FROM shop_link_opens o JOIN shop_links l ON l.code = o.code
+                    WHERE o.user_id = $1 AND o.opened_at >= LOCALTIMESTAMP - $2::interval
+                    ORDER BY o.opened_at DESC LIMIT 1""",
+                int(user_id), NOTICE_WINDOW)
+        return dict(row) if row else None
+    except Exception:
+        logger.warning("shop link lookup for %s failed", user_id, exc_info=True)
+        return None
+
+
 async def create(name: str, by: int | None) -> tuple[str, str, bool] | None:
     """(code, name, created). An existing code keeps its first name."""
     code = slugify(name)
@@ -215,7 +236,7 @@ async def build_report(period: str = "30") -> str:
         else:
             rate = buyers / people * 100
             lines.append(f"   👁 Ochildi: {_fmt(r['opens'])} marta · {_fmt(people)} kishi")
-            lines.append(f"   🆕 Yangi a'zo: {_fmt(r['new_users'])} · 🚪 START bosmagan: {_fmt(r['no_start'])}")
+            lines.append(f"   🆕 Yangi a'zo: {_fmt(r['new_users'])} · 🚪 Ro'yxatdan o'tmagan: {_fmt(r['no_start'])}")
             lines.append(f"   🛒 Buyurtma: {_fmt(r['orders'])} ta · {_fmt(buyers)} kishi ({rate:.0f}%)"
                          f" · 💰 {_fmt(r['revenue'])} so'm")
         lines.append("")
@@ -224,7 +245,8 @@ async def build_report(period: str = "30") -> str:
         lines.append("")
     lines.append("<i>Adminlar va ichki akkauntlar sanalmaydi. Buyurtma — havola orqali "
                  f"kirgandan keyin {ORDER_WINDOW_DAYS} kun ichida berilgan, bekor qilinmagan "
-                 "buyurtmalar (qo'lda kiritilganlarsiz).</i>")
+                 "buyurtmalar (qo'lda kiritilganlarsiz). Ro'yxatdan o'tmagan — saytni ochgan, "
+                 "lekin botda START bosmagan yoki kanalga a'zo bo'lmagan.</i>")
     lines.append("Yangi havola: <code>/sayt_havola Nomi</code>")
     return "\n".join(lines)
 

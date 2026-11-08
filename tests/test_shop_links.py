@@ -154,5 +154,48 @@ class BotTest(unittest.TestCase):
         create.assert_not_awaited()
 
 
+class NewUserNoticeTest(unittest.TestCase):
+    """«Yangi foydalanuvchi qo'shildi» names the shop link (owner, 2026-11-08)."""
+
+    def notice(self, **kw):
+        import referral_contest
+        bot = Mock()
+        bot.send_message = AsyncMock()
+        with patch.object(referral_contest, "ADMIN_IDS", [1]):
+            run(referral_contest.notify_admins_new_user(bot, BUYER, "ali", "Ali", None, **kw))
+        return bot.send_message.await_args.args[1]
+
+    def test_link_is_the_source_when_nothing_else(self):
+        text = self.notice(shop_link={"code": "kepak", "name": "Kepak"})
+        self.assertIn("🔗 Keldi: 🛍 Sayt havolasi: <b>Kepak</b>", text)
+        self.assertIn("?startapp=kepak", text)
+        self.assertNotIn("to'g'ridan-to'g'ri", text)
+
+    def test_link_added_under_another_source(self):
+        text = self.notice(ad_source="fb_eritritol", shop_link={"code": "kepak", "name": "Kepak"})
+        self.assertIn("manba: <code>fb_eritritol</code>", text)
+        self.assertTrue(text.rstrip().endswith("?startapp=kepak</code>"))
+
+    def test_name_is_escaped_and_plain_join_unchanged(self):
+        self.assertIn("&lt;b&gt;", self.notice(shop_link={"code": "x", "name": "<b>"}))
+        self.assertIn("to'g'ridan-to'g'ri qo'shildi", self.notice())
+
+    def test_registration_looks_the_link_up(self):
+        import referral_contest
+        from types import SimpleNamespace
+        from handlers import start
+        notify = AsyncMock()
+        with patch.object(shop_links, "last_open", AsyncMock(return_value={"code": "kepak", "name": "Kepak"})) as look,              patch.object(referral_contest, "notify_admins_new_user", notify),              patch("referral_program.grant_welcome_bonus", AsyncMock()),              patch("welcome_recipe.mark_pending", AsyncMock()),              patch("welcome_promo.mark_pending", AsyncMock()):
+            run(start._process_new_user(Mock(), SimpleNamespace(id=BUYER, username=None, full_name="A"), None))
+        look.assert_awaited_once_with(BUYER)
+        self.assertEqual(notify.await_args.kwargs["shop_link"], {"code": "kepak", "name": "Kepak"})
+
+    def test_lookup_trouble_never_breaks_registration(self):
+        broken = Mock()
+        broken.acquire.side_effect = RuntimeError("db down")
+        with patch.object(database, "pool", broken), patch.object(shop_links, "_ready", False):
+            self.assertIsNone(run(shop_links.last_open(BUYER)))
+
+
 if __name__ == "__main__":
     unittest.main()
