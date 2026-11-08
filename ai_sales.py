@@ -120,6 +120,7 @@ from aiogram.utils.chat_action import ChatActionSender
 
 import ai_memory
 import ai_stats
+import ai_tone
 import cheque_confirm
 import pack_math
 import ai_provider
@@ -976,7 +977,23 @@ def _sales_rules() -> str:
         "- Har xabarda rahmat aytma: xarid, buyurtma yoki chin yordam uchun bir marta yetadi.\n"
         "- Umumiy, ensiklopedik gaplar ('odatda', 'ko'pchilik uchun', 'bu individual') o'rniga "
         "aniq, amaliy javob — o'z mahsuloting bilan.\n"
-        "- Tinish belgilari oddiy, odam yozgandek: uzun tire (—) o'rniga vergul yoki chiziqcha (-).\n\n"
+        "- Tinish belgilari oddiy, odam yozgandek: uzun tire (—) o'rniga vergul yoki chiziqcha (-).\n"
+        "- 'HA, ...' DEB TASDIQLAYVERMA (egasi, 2026-11-08: \"robotga o'xshab faqat "
+        "tasdiqlayvermasin, sezilib qolyapti va noqulay bo'lyapti\"). Mijoz savolini 'Ha, ...' / "
+        "'Albatta, ...' / 'Да, ...' bilan qaytarib tasdiqlama. Birinchi gap darrov foydali bo'lsin: "
+        "qanday ishlatiladi, nimaga e'tibor berish kerak, qaysi biri mos. 'Ha' ekani javobdan "
+        "bilinib turadi.\n"
+        "  Mijoz: 'kompot uchun ham mumkinmi'. YOMON: 'Ha, kompot uchun ham mumkin. Faqat oz-ozdan "
+        "solinadi.' YAXSHI: 'Kompotga ham bemalol solsa bo'ladi 😊 Shakardan ancha shirin, shuning "
+        "uchun ozdan solib, tatib ko'ring.'\n"
+        "  Mijoz: 'uzoq saqlanadimi'. YOMON: 'Ha, to'g'ri saqlansa uzoq turadi.' YAXSHI: 'Og'zi "
+        "yopiq qadoqda, quruq joyda bemalol turadi, muddati qadoqda yozilgan. Faqat nam tegmasin.'\n"
+        "  Mijoz: 'А для выпечки подойдёт?'. YOMON: 'Да, для выпечки подойдёт.' YAXSHI: 'В выпечке "
+        "ведёт себя почти как сахар: печенье, кексы, кремы.'\n"
+        "- Aytsa bo'ladigan narsani keyinga qoldirma: 'Agar xohlasangiz, ... ham aytib beramiz' "
+        "o'rniga o'sha narsani shu javobning o'zida ayt.\n"
+        "- Suhbatda aytilgan narx ro'yxatini keyingi javobda qaytarma — mijoz endi boshqa narsani "
+        "so'rayapti (ishlatish, saqlash, ta'm). Kerak bo'lsa bitta mosini nomi bilan esla.\n\n"
         "GAPIRISH USLUBI\n"
         "- QISQA, lekin QURUQ EMAS: odatda 2-3 jumla, ortiqcha muqaddimasiz va takrorsiz. "
         "Bu Telegram chat, maqola emas. Ro'yxat kerak bo'lsa — 3 qatordan oshmasin.\n"
@@ -1004,7 +1021,7 @@ def _sales_rules() -> str:
         "- Misol. Mijoz: 'psillium bormi'.\n"
         "  YOMON: 'Ha, bor — Psillium sheluxa va Psillium uni bor. Qaysi birini kerak?'\n"
         "  YAXSHI (qatorlarga bo'lingan):\n"
-        "  Ha, albatta bor 😊 Bizda ikki xil:\n"
+        "  Bizda ikki xil psillium bor 😊\n"
         "\n"
         "  • Psillium sheluxa — (narxi): suv yoki kefirga qo'shib ichishga qulay\n"
         "  • Psillium uni — (narxi): keto non va pishiriqda xamirni bog'laydi\n"
@@ -1059,6 +1076,9 @@ def _sales_rules() -> str:
         "SOTUVGA YO'NALTIRISH\n"
         "- Avval ehtiyojni bitta savol bilan aniqla (nima tayyorlamoqchi, keto'dami yoki "
         "PP, kim uchun), keyin aniq mahsulot va narx ayt va aniq so'ra: 'Savatga qo'shamizmi? 🛒' ('qo'shib qo'yaymi?' kabi noaniq so'z emas). "
+        "Bu savol har javobda EMAS: mijoz mahsulotni tanlaganda yoki olishga tayyor bo'lganda, "
+        "ketma-ket ikki javobda emas. Saqlash, ishlatish yoki ta'm haqidagi savolga oddiy javob "
+        "ber, taklif qo'shma. "
         "Boshqa tilda: kirill — 'Саватга қўшамизми? 🛒', rus — 'Добавим в корзину? 🛒', ingliz — "
         "'Shall we add it to your cart? 🛒'.\n"
         "- Mahsulot savatga tushgach — BIR MARTA: 'Yana nima olamiz? 😊' deb so'ra va "
@@ -2804,9 +2824,14 @@ async def _answer(bot: Bot, message: Message, user_text: str) -> None:
         names = customer_names(message.from_user, user_text, session.get("names", ()))
         session.setdefault("names", set()).update(names)
         reply = naturalize(thank_politely(strip_name_address(reply, names)))
+        # Ketma-ket "Ha, ..." va har safar "Savatga qo'shamizmi?" — robotning
+        # belgisi (egasi, 2026-11-08). Oldingi javobdagi qolip qaytarilmaydi.
+        reply = ai_tone.vary(reply, session.get("last_reply"))
     if not reply:
         return
     session = _sessions.get(user_id)
+    if session is not None:
+        session["last_reply"] = reply
     if session and session.get("keyboard") == "location" and SHOP_ADDRESS_URL in reply:
         session.pop("keyboard", None)   # do'kon manzili haqida — mijoz lokatsiyasi kerak emas
     await message.answer(reply, reply_markup=await _reply_keyboard(user_id))
