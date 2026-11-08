@@ -26,6 +26,7 @@ Public API:
                                                  -> dormant, kept for a future relaunch
 """
 import asyncio
+import html
 import logging
 from datetime import datetime, timedelta
 from urllib.parse import quote
@@ -208,7 +209,8 @@ async def award_referral(referrer_id: int, referred_id: int, bot: Bot) -> None:
 async def notify_admins_new_user(bot: Bot, new_user_id: int, username: str | None,
                                   full_name: str | None, referrer_id: int | None,
                                   blogger: dict | None = None,
-                                  ad_source: str | None = None) -> None:
+                                  ad_source: str | None = None,
+                                  shop_link: dict | None = None) -> None:
     """Fired for every brand-new registration, referred or not (owner
     request 2026-07-30: wants to see who joins and who invited them).
 
@@ -216,8 +218,16 @@ async def notify_admins_new_user(bot: Bot, new_user_id: int, username: str | Non
     (bloggers.py) and `ad_source` when they came from a Facebook/Instagram ad
     link (ad_sources.py) — both are paid acquisition and beat the plain
     user-to-user referral below. They are mutually exclusive by construction:
-    one /start payload can only parse as one of the two."""
+    one /start payload can only parse as one of the two.
+
+    `shop_link` is the tracked shop link (shop_links.py, «Kepak») they opened
+    the Mini App through before joining: the source line when nothing else
+    brought them, an extra line otherwise."""
     who = _display_name(username, full_name, new_user_id)
+    shop_line = None
+    if shop_link:
+        shop_line = (f"🛍 Sayt havolasi: <b>{html.escape(shop_link['name'])}</b>\n"
+                     f"   havola: <code>?startapp={html.escape(shop_link['code'])}</code>")
     if ad_source:
         ref_line = (f"🔗 Keldi: 📣 <b>reklama</b>\n"
                     f"   manba: <code>{ad_source}</code>")
@@ -232,9 +242,14 @@ async def notify_admins_new_user(bot: Bot, new_user_id: int, username: str | Non
             referrer_id,
         )
         ref_line = f"🔗 Taklif qilgan: {ref_who} (ID {referrer_id})"
+    elif shop_line:
+        ref_line = "🔗 Keldi: " + shop_line
+        shop_line = None
     else:
         ref_line = "🔗 Taklif qilgan: — (to'g'ridan-to'g'ri qo'shildi)"
     text = f"🆕 <b>Yangi foydalanuvchi qo'shildi!</b>\n👤 {who} (ID {new_user_id})\n{ref_line}"
+    if shop_line:
+        text += "\n" + shop_line
     for admin_id in ADMIN_IDS:
         try:
             await bot.send_message(admin_id, text, parse_mode=ParseMode.HTML)
