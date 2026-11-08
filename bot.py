@@ -399,6 +399,9 @@ async def main():
     # One-off stock corrections (stock_corrections.py) — each applied once.
     from stock_corrections import run_once as stock_corrections_once
     asyncio.create_task(stock_corrections_once(bot))
+    # One-off category name fixes (category_corrections.py) — each applied once.
+    from category_corrections import run_once as category_corrections_once
+    asyncio.create_task(category_corrections_once())
 
     # Qayta sotuv — one personal message a week at most: "tugab qolmadimi?",
     # 2nd-order gift, win-back. Daily at 09:30, see retention.py.

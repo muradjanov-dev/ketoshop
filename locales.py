@@ -77,7 +77,7 @@ TEXTS = {
         "uz": "📂 Kategoriyani tanlang:",
         "ru": "📂 Выберите категорию:",
     },
-    "cat_keto_flour": {"uz": "🥣 Keto & Glutensiz unlar", "ru": "🥣 Кето и безглютеновые муки"},
+    "cat_keto_flour": {"uz": "🥣 Keto & glyutensiz unlar", "ru": "🥣 Кето и безглютеновые муки"},
     "cat_coconut": {"uz": "🥥 Kokos mahsulotlari", "ru": "🥥 Кокосовые продукты"},
     "cat_pp_flour": {"uz": "🥗 PP unlar", "ru": "🥗 ПП мука"},
     "cat_supplements": {"uz": "💊 Oziq-ovqat qo'shimchalari", "ru": "💊 Пищевые добавки"},
