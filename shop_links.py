@@ -208,6 +208,20 @@ async def last_open(user_id: int) -> dict | None:
         return None
 
 
+async def ensure_code(code: str, name: str) -> bool:
+    """Make `code` a tracked link if it is not one — an ad's button already
+    carries it (ad_campaigns.py), and an unknown code is never counted.
+    An existing link keeps its name. True when it was created."""
+    if not CODE_RE.match(code) or _reserved(code):
+        return False
+    await ensure()
+    async with database.pool.acquire() as conn:
+        made = await conn.fetchval(
+            "INSERT INTO shop_links (code, name) VALUES ($1, $2) ON CONFLICT (code) DO NOTHING RETURNING code",
+            code, (name or code).strip()[:80])
+    return made is not None
+
+
 async def create(name: str, by: int | None) -> tuple[str, str, bool] | None:
     """(code, name, created). An existing code keeps its first name."""
     code = slugify(name)
@@ -223,6 +237,33 @@ async def create(name: str, by: int | None) -> tuple[str, str, bool] | None:
             return code, name.strip()[:80], True
         old = await conn.fetchval("SELECT name FROM shop_links WHERE code = $1", code)
     return code, old or name.strip(), False
+
+
+async def people_between(codes: list[str], start: datetime | None,
+                         end: datetime | None) -> dict[str, dict]:
+    """{code: {"bot": n, "app": m}} — distinct people who came through each
+    link in [start, end): by pressing START (?start=) and by opening the shop
+    (?startapp=). The same people as /sayt_havolalar counts, for a window —
+    ad_campaigns.py sets it beside Meta's numbers for the same day."""
+    out = {c: {"bot": 0, "app": 0} for c in codes}
+    if not codes:
+        return out
+    await ensure()
+    async with database.pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT code,
+                      COUNT(DISTINCT user_id) FILTER (WHERE via = 'bot')  AS bot,
+                      COUNT(DISTINCT user_id) FILTER (WHERE via <> 'bot') AS app
+                 FROM shop_link_opens
+                WHERE code = ANY($1::text[])
+                  AND ($2::timestamp IS NULL OR opened_at >= $2)
+                  AND ($3::timestamp IS NULL OR opened_at < $3)
+                  AND user_id <> ALL($4::bigint[])
+                GROUP BY code""",
+            list(codes), start, end, _internal())
+    for r in rows:
+        out[r["code"]] = {"bot": int(r["bot"]), "app": int(r["app"])}
+    return out
 
 
 async def stats(since: datetime | None) -> list[dict]:

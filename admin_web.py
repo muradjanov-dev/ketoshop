@@ -1472,6 +1472,30 @@ def _cents(v):
 
 
 @require_auth
+async def api_ads_campaigns(request: web.Request):
+    """GET /admin/api/ads/campaigns?period=… — every Meta campaign next to the
+    bot's own START / shop count (ad_campaigns.collect). Fresh from Meta and the
+    database on every call — no cache (owner, 2026-11-08: "har safar kirganda
+    up to date raqamlar chiqishi kerak"). A Graph failure comes back as 200
+    with `error`, like /admin/api/ads."""
+    import ad_campaigns
+    import meta_ads
+    period = request.query.get("period", "today")
+    if period not in meta_ads.PRESETS:
+        period = "today"
+    if not meta_ads.is_enabled():
+        await meta_ads.load_token()
+    if not meta_ads.is_enabled():
+        return _json({"enabled": False, "period": period})
+    try:
+        data = await ad_campaigns.collect(period)
+    except Exception as exc:
+        logger.warning("Campaign report for the admin site failed", exc_info=True)
+        return _json({"enabled": True, "period": period, "error": str(exc)})
+    return _json(dict(data, enabled=True, first=data["first"].isoformat(), last=data["last"].isoformat()))
+
+
+@require_auth
 async def api_ads(request: web.Request):
     """KPIs plus per-ad and per-campaign breakdown for the Reklama tab.
 
@@ -2180,6 +2204,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/keto/status", api_keto_status)
     app.router.add_post("/admin/api/keto/redemption", api_keto_redemption_toggle)
     app.router.add_get("/admin/api/ads", api_ads)
+    app.router.add_get("/admin/api/ads/campaigns", api_ads_campaigns)
     app.router.add_get("/admin/api/ads/status", api_ads_status)
     app.router.add_get("/admin/api/ads/leads", api_ads_leads)
     app.router.add_post("/admin/api/ads/leads/{lead_id}/handled", api_ads_lead_handled)

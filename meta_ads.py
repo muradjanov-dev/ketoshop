@@ -28,8 +28,11 @@ META_AD_ACCOUNT_ID    ixtiyoriy; reklama hisobi ID(lari), vergul bilan (act_ siz
                       Berilmasa — token ko'radigan HAMMA hisob (me/adaccounts):
                       Instagram ilovasidan "Boost" qilinganlar ko'pincha alohida
                       hisobda turadi, ular shu yo'l bilan o'zi qo'shiladi.
-META_ADS_DAILY_HOUR   kunlik xulosa soati, Toshkent vaqti (default 10).
-META_ADS_WATCHDOG     "0" desangiz "sarf yo'q" ogohlantirishi o'chadi.
+META_ADS_WATCHDOG     "0" desangiz "3 soat sarf yo'q" ogohlantirishi o'chadi.
+META_START_COST_MAX   1 START narxi chegarasi, $ (default 0.10) — ad_campaigns.py.
+
+Kunlik hisobot (kampaniyalar + bot START) Meta kuni yopilgandan 5 daqiqa
+keyin ketadi — qishda 13:05 Toshkent (ad_campaigns.tick).
 META_API_VERSION      meta_leads.py dagi bilan bir xil.
 """
 import asyncio
@@ -57,13 +60,18 @@ ENV_AD_ACCOUNTS = [a.strip().replace("act_", "")
                    for a in os.getenv("META_AD_ACCOUNT_ID", "").split(",") if a.strip()]
 AD_ACCOUNT_ID = (ENV_AD_ACCOUNTS or [DEFAULT_AD_ACCOUNT])[0]
 ACCOUNTS_TTL = 3600
-DAILY_HOUR = int(os.getenv("META_ADS_DAILY_HOUR", "10"))
 WATCHDOG_ON = os.getenv("META_ADS_WATCHDOG", "1") != "0"
-API_VERSION = os.getenv("META_API_VERSION", "").strip().strip("/")
+# An unversioned Graph call runs on the app's default version, and Meta
+# refuses that one once it ages out — 2026-11-08: "(#2635) You are calling a
+# deprecated version of the Ads API". A pinned version keeps working until
+# Meta retires it (about two years); META_API_VERSION still overrides.
+API_VERSION = (os.getenv("META_API_VERSION", "").strip().strip("/") or "v23.0")
 
 GRAPH = "https://graph.facebook.com/" + (f"{API_VERSION}/" if API_VERSION else "")
 TZ = timezone(timedelta(hours=5))  # Asia/Tashkent
-CHECK_EVERY = 3600  # soatiga bir marta
+# Kunlik hisobot Meta kuni yopilgach 5 daqiqada, ogohlantirishlar tez — shuning
+# uchun har 5 daqiqada (ad_campaigns.tick). Graph so'rovlari soni kichik.
+CHECK_EVERY = 300
 
 # Graph qaytaradigan account_status kodlari. Faqat 1 (ACTIVE) sog'lom;
 # 7 (PENDING_RISK_REVIEW) — aynan "hammasi yashil, lekin yetkazish yo'q"
@@ -87,8 +95,6 @@ PRESETS = {
     "maximum": ("Butun davr", "maximum"),
 }
 
-# Bitta ogohlantirish kuniga — qorovul har soatda ishlaydi, spam bo'lmasin.
-_last_watchdog_date = None
 _accounts_cache: tuple[float, list[str]] = (0.0, [])
 # Oxirgi fetch_insights'da o'qib bo'lmagan hisoblar — hisobotda ogohlantirish uchun.
 last_failed: list[str] = []
@@ -405,12 +411,30 @@ def _period_keyboard(preset: str = "today") -> InlineKeyboardMarkup:
             for k in ("last_7d", "last_30d", "maximum")]
     # 🎬 Videolar / 📦 Mahsulotlar / 📈 Bog'liqlik — ads_impact.py
     import ads_impact
-    return InlineKeyboardMarkup(inline_keyboard=[row1, row2] + ads_impact.view_rows(preset))
+    detail = [InlineKeyboardButton(text="📋 Hisob tafsiloti (leadlar, CPM)", callback_data=f"adsacct:{preset}")]
+    return InlineKeyboardMarkup(inline_keyboard=[row1, row2, detail] + ads_impact.view_rows(preset))
 
 
 # ---------------------------------------------------------------- core
 
 async def build_report(date_preset: str) -> str:
+    """/reklama: every campaign next to the bot's own START / shop count
+    (ad_campaigns.py, owner's TZ 2026-11-08), then what the shop sold."""
+    import ad_campaigns
+    data = await ad_campaigns.collect(date_preset)
+    text = ad_campaigns.format_report(data)
+    try:
+        import ads_impact
+        row = {"spend": str(data["totals"]["spend"]),
+               "date_start": data["first"].isoformat(), "date_stop": data["last"].isoformat()}
+        text += "\n" + await ads_impact.sales_block(date_preset, row)
+    except Exception:
+        logger.exception("Ads sales block failed")
+    return text
+
+
+async def build_account_report(date_preset: str) -> str:
+    """The account-level detail — leads, CPM, per-ad lines (📋 Hisob tafsiloti)."""
     label = PRESETS.get(date_preset, (date_preset, date_preset))[0]
     async with aiohttp.ClientSession() as session:
         account_rows = await fetch_insights(session, date_preset, "account")
@@ -448,48 +472,13 @@ async def scheduler_loop(bot: Bot):
         await asyncio.sleep(TOKEN_POLL)
         await load_token()
 
-    logger.info("Meta ads reporting started (daily at %02d:00 Asia/Tashkent)", DAILY_HOUR)
-    global _last_watchdog_date
-    last_daily_date = None
-
+    logger.info("Meta ads reporting started (campaign report after the account's day closes)")
+    import ad_campaigns
     while True:
-        try:
-            now = _now_tk()
-            today = now.date()
-
-            # Kunlik xulosa — kechagi kun bo'yicha, chunki u to'liq yopilgan.
-            if last_daily_date != today and now.hour >= DAILY_HOUR:
-                await _notify_admins(bot, await build_report("yesterday"),
-                                     _period_keyboard("yesterday"))
-                last_daily_date = today
-                logger.info("Daily ads summary sent")
-
-            # Qorovul: reklama faol, lekin tushdan keyin ham sarf 0 bo'lsa —
-            # bu "sekin start" emas, biror narsa to'sib turibdi.
-            if WATCHDOG_ON and _last_watchdog_date != today and now.hour >= 12:
-                async with aiohttp.ClientSession() as session:
-                    rows = await fetch_insights(session, "today", "account")
-                    spend = float(rows[0].get("spend") or 0) if rows else 0.0
-                    if spend == 0:
-                        ads = await fetch_ads_status(session)
-                        if any(a.get("effective_status") == "ACTIVE" for a in ads):
-                            account = await fetch_account(session)
-                            await _notify_admins(
-                                bot,
-                                "🚨 <b>Reklama pul sarflamayapti</b>\n\n"
-                                f"Bugun soat {now.hour}:00 ga qadar sarf <b>$0.00</b>, "
-                                "lekin reklama holati ACTIVE.\n\n"
-                                + format_status(account, ads),
-                            )
-                            _last_watchdog_date = today
-                            logger.warning("Zero-spend watchdog fired")
-                    else:
-                        _last_watchdog_date = today  # sarf bor — bugun tekshirish shart emas
-        except GraphError as e:
-            logger.error("Ads insights error: %s", e)
-        except Exception:
-            logger.exception("Ads scheduler tick failed")
-
+        # Kunlik kampaniya hisoboti (kechagi to'liq Meta kuni, 13:05 Toshkent
+        # qishda) va ogohlantirishlar: rad etilgan reklama, 3 soat sarf yo'q,
+        # qimmat START — hammasi ad_campaigns.tick ichida, u xato tashlamaydi.
+        await ad_campaigns.tick(bot)
         await asyncio.sleep(CHECK_EVERY)
 
 
@@ -590,9 +579,25 @@ async def cmd_token(message: Message):
         lines += ["", "⚠️ Tokenli xabaringizni o'chira olmadim — uni qo'lda o'chiring."]
     await message.answer("\n".join(lines), parse_mode="HTML")
 
+# /reklama kecha · /reklama 7 · /reklama 30 · /reklama hammasi (TZ, 2026-11-08)
+ARG_PRESETS = {"": "today", "bugun": "today", "today": "today",
+               "kecha": "yesterday", "yesterday": "yesterday",
+               "7": "last_7d", "30": "last_30d", "hammasi": "maximum", "all": "maximum"}
+
+
+def preset_from_args(text: str | None) -> str | None:
+    parts = (text or "").split(maxsplit=1)
+    return ARG_PRESETS.get(parts[1].strip().lower() if len(parts) > 1 else "")
+
+
 @router.message(Command("reklama"))
 async def cmd_report(message: Message):
     if message.from_user.id not in ADMIN_IDS:
+        return
+    preset = preset_from_args(message.text)
+    if preset is None:
+        await message.answer("Davr: <code>/reklama</code> (bugun), <code>/reklama kecha</code>, "
+                             "<code>/reklama 7</code>, <code>/reklama 30</code>", parse_mode="HTML")
         return
     if not is_enabled():
         await load_token()
@@ -601,10 +606,28 @@ async def cmd_report(message: Message):
         return
     await message.answer("⏳ Meta'dan olinmoqda…")
     try:
-        await message.answer(await build_report("today"), parse_mode="HTML",
-                             reply_markup=_period_keyboard())
+        await message.answer(await build_report(preset), parse_mode="HTML",
+                             reply_markup=_period_keyboard(preset))
     except GraphError as e:
         await message.answer(f"❌ <code>{html.escape(str(e))}</code>", parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("adsacct:"))
+async def cb_account_detail(callback: CallbackQuery):
+    """📋 Hisob tafsiloti — the account-level report /reklama used to show."""
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("Faqat adminlar uchun", show_alert=True)
+        return
+    preset = callback.data.split(":", 1)[1]
+    if preset not in PRESETS:
+        await callback.answer()
+        return
+    await callback.answer("Yuklanmoqda…")
+    try:
+        text = await build_account_report(preset)
+    except GraphError as e:
+        text = f"❌ <code>{html.escape(str(e))}</code>"
+    await callback.message.answer(text, parse_mode="HTML", reply_markup=_period_keyboard(preset))
 
 
 @router.callback_query(F.data.startswith("ads:"))
@@ -615,6 +638,12 @@ async def cb_period(callback: CallbackQuery):
     preset = callback.data.split(":", 1)[1]
     if preset not in PRESETS:
         await callback.answer()
+        return
+    if not is_enabled():
+        await load_token()
+    if not is_enabled():
+        await callback.answer()
+        await callback.message.answer(NO_TOKEN_TEXT, parse_mode="HTML")
         return
     await callback.answer("Yuklanmoqda…")
     try:

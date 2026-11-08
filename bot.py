@@ -41,6 +41,7 @@ from handlers.courier import router as courier_router
 from bloggers import router as bloggers_router
 from meta_leads import router as meta_leads_router
 from meta_ads import router as meta_ads_router
+from ad_campaigns import router as ad_campaigns_router
 from ads_impact import router as ads_impact_router
 from ad_sources import router as ad_sources_router
 from shop_links import router as shop_links_router
@@ -266,6 +267,8 @@ async def main():
     # brauzerdagi FB profiliga bog'liq; bu esa token bilan ishlaydi,
     # shuning uchun statistika har doim qo'l ostida bo'ladi.
     dp.include_router(meta_ads_router)
+    # /reklama_bog — Meta kampaniyasi ↔ bot start kodi (ad_campaigns.py).
+    dp.include_router(ad_campaigns_router)
     # /reklama ichidagi 🎬 Videolar / 📦 Mahsulotlar / 📈 Bog'liqlik tugmalari.
     dp.include_router(ads_impact_router)
     dp.include_router(ad_sources_router)
