@@ -673,6 +673,21 @@ body.kuryer-mode .kb-admin-only{display:none!important}
 .kuryer-denied{min-height:100dvh;display:grid;place-items:center;padding:24px;text-align:center;
   font-size:16px;line-height:1.5;color:var(--ink-2)}
   #view-expenses .exp-name{overflow-wrap:anywhere}
+  #view-expenses .exp-cat{display:inline-block;font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px;
+    background:var(--chip-bg);color:var(--ink-2);white-space:nowrap}
+  #view-expenses .exp-cat.none{opacity:.6;font-weight:600}
+  .exp-totals{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
+  .exp-totals .seg{display:flex;gap:4px;margin-right:6px}
+  .exp-totals .seg button{border:1px solid var(--line);background:transparent;border-radius:20px;padding:5px 11px;
+    font-size:12.5px;font-weight:700;color:var(--ink-2);cursor:pointer}
+  .exp-totals .seg button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  .exp-total{display:inline-flex;gap:6px;align-items:baseline;padding:6px 12px;border-radius:14px;
+    background:var(--chip-bg);font-size:13px}
+  .exp-total b{font-variant-numeric:tabular-nums}
+  .exp-cat-row{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+  .exp-cat-row .grow{flex:1;min-width:0;overflow-wrap:anywhere}
+  .exp-cat-pick{display:flex;gap:8px}
+  .exp-cat-pick select{flex:1;min-width:0}
   #view-expenses .exp-actions .hint{font-size:12px;color:var(--ink-2);white-space:nowrap}
   @media(max-width:600px){
     #view-expenses table{width:100%;min-width:0}
@@ -680,6 +695,7 @@ body.kuryer-mode .kb-admin-only{display:none!important}
     #view-expenses tr{display:grid;grid-template-columns:minmax(0,1fr) auto;padding:12px;border-bottom:1px solid var(--line);gap:8px}
     #view-expenses td{padding:0;border:0;min-width:0}
     #view-expenses .exp-date{grid-column:1/-1;font-size:12px;color:var(--ink-2)}
+    #view-expenses .exp-cat-cell{grid-column:1/-1}
     #view-expenses .exp-amount{white-space:nowrap}
     #view-expenses .exp-actions{grid-column:1/-1}
     #view-expenses .row-actions{flex-wrap:wrap}
@@ -1450,13 +1466,16 @@ body.kuryer-mode .kb-admin-only{display:none!important}
   <section class="view" id="view-expenses">
     <div class="toolbar">
       <span class="count-pill" id="expCount"></span>
+      <select id="expCatFilter" aria-label="Kategoriya bo'yicha"></select>
       <div class="spacer" style="margin-left:auto"></div>
+      <button class="btn btn-o" id="expCatsBtn" type="button">🏷 Kategoriyalar</button>
       <button class="btn btn-p" id="newExpBtn">＋ Yangi chiqim</button>
     </div>
+    <div class="exp-totals" id="expTotals"></div>
     <div class="tbl-wrap">
       <table>
         <thead><tr>
-          <th>Vaqt</th><th>Chiqim nomi</th><th style="text-align:right">Miqdor (so'm)</th><th style="text-align:right">Amallar</th>
+          <th>Vaqt</th><th>Kategoriya</th><th>Chiqim nomi</th><th style="text-align:right">Miqdor (so'm)</th><th style="text-align:right">Amallar</th>
         </tr></thead>
         <tbody id="expRows"></tbody>
       </table>
@@ -1484,12 +1503,30 @@ body.kuryer-mode .kb-admin-only{display:none!important}
       <div class="full"><label for="expName">Chiqim nomi *</label><input id="expName" name="name" required maxlength="200" placeholder="Masalan: Yandex yetkazib berish"></div>
       <div class="full"><label for="expAmount">Miqdor (so'm) *</label><input id="expAmount" name="amount" type="number" min="0" step="any" required></div>
       <div class="full hint tnum" id="expAmountPreview" aria-live="polite"></div>
+      <div class="full"><label for="expCategory">Kategoriya</label>
+        <div class="exp-cat-pick"><select id="expCategory" name="category_id"></select>
+          <button type="button" class="btn btn-o btn-sm" id="expCatQuickAdd" title="Yangi kategoriya">＋ Yangi</button></div></div>
     </div>
     <div class="modal-actions">
       <button type="button" class="btn btn-o" data-close>Bekor qilish</button>
       <button type="submit" class="btn btn-p" id="expSaveBtn">Saqlash</button>
     </div>
   </form>
+</div>
+
+<!-- Chiqim kategoriyalari: qo'shish, nomini o'zgartirish, o'chirish -->
+<div class="modal-bg" id="expCatModal">
+  <div class="modal" style="max-width:520px">
+    <h2>🏷 Chiqim kategoriyalari</h2>
+    <div class="exp-cat-pick" style="margin-bottom:10px">
+      <input id="expCatNew" maxlength="60" placeholder="Masalan: Reklama, Ijara, Qadoqlash">
+      <button type="button" class="btn btn-p" id="expCatNewBtn">＋ Qo'shish</button>
+    </div>
+    <div id="expCatList"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-o" data-close>Yopish</button>
+    </div>
+  </div>
 </div>
 
 <!-- ===== PRODUCT MODAL ===== -->
@@ -3191,21 +3228,111 @@ $$('#retSort button').forEach(b=>b.addEventListener('click',()=>{
 $('#retRefreshBtn').addEventListener('click',loadRetention);
 
 /* ===== expenses ===== */
+/* Kategoriyalar (owner, 2026-11-08: "xarajatlar bo'limiga kategoriya qo'shish
+   imkoniyatini qo'sh, shunda xarajatlarni ham kategoriya bo'yicha belgilab
+   boramiz"): admins keep their own list; a manual expense picks one (or adds
+   a new one right in the form); order-linked ones carry their kind. The
+   filter narrows the list, the strip on top sums each category. */
 let EXPENSES=[];
 let editingExpenseId=null;
+let EXP_CATS=[];
+let EXP_FILTER='';
+let EXP_PERIOD='30d';
+const EXP_AUTO_FILTERS=[['auto:kuryer','🚚 Kuryer (avtomatik)'],['auto:sovga',"🎁 Sovg'a (avtomatik)"],
+  ['auto:aksiya','🎁 Aksiya bonusi (avtomatik)']];
 async function loadExpenses(){
-  const d=await api('/admin/api/expenses');
+  const q=EXP_FILTER?'?category='+encodeURIComponent(EXP_FILTER):'';
+  const [d,c]=await Promise.all([api('/admin/api/expenses'+q),api('/admin/api/expense-categories')]);
   EXPENSES=d.expenses||[];
+  EXP_CATS=c.categories||[];
+  renderExpCatOptions();
   renderExpenses();
+  loadExpenseTotals();
 }
+function renderExpCatOptions(){
+  const opt=(v,t,sel)=>`<option value="${esc(v)}"${sel?' selected':''}>${esc(t)}</option>`;
+  $('#expCatFilter').innerHTML=opt('','Barcha kategoriyalar',!EXP_FILTER)
+    +EXP_CATS.map(c=>opt(String(c.id),c.name,EXP_FILTER===String(c.id))).join('')
+    +opt('none','Kategoriyasiz',EXP_FILTER==='none')
+    +EXP_AUTO_FILTERS.map(([k,t])=>opt(k,t,EXP_FILTER===k)).join('');
+  const pick=$('#expCategory'), keep=pick.value;
+  pick.innerHTML=opt('','— Kategoriyasiz —',false)+EXP_CATS.map(c=>opt(String(c.id),c.name,false)).join('');
+  pick.value=keep;
+  $('#expCatList').innerHTML=EXP_CATS.length?EXP_CATS.map(c=>`<div class="exp-cat-row">
+      <span class="grow"><b>${esc(c.name)}</b> <span class="hint">· ${c.uses} ta chiqim</span></span>
+      <button type="button" class="btn btn-o btn-sm" onclick="renameExpenseCategory(${c.id})">Nomini o'zgartirish</button>
+      <button type="button" class="btn btn-danger btn-sm" onclick="deleteExpenseCategory(${c.id})">O'chirish</button>
+    </div>`).join(''):'<div class="hint">Hali kategoriya yo\'q — yuqorida qo\'shing.</div>';
+}
+async function loadExpenseTotals(){
+  let d;
+  try{d=await api('/admin/api/expenses/by-category?period='+EXP_PERIOD);}catch(_){return;}
+  const totals=d.totals||[];
+  const seg=[['7d','7 kun'],['30d','30 kun'],['all','Hammasi']].map(([k,t])=>
+    `<button type="button" data-period="${k}" class="${EXP_PERIOD===k?'on':''}">${t}</button>`).join('');
+  $('#expTotals').innerHTML=`<span class="seg">${seg}</span>`+(totals.length?totals.map(t=>
+    `<span class="exp-total">${esc(t.name)} <b>${fmt(t.total)}</b> <span class="hint">(${t.count})</span></span>`).join('')
+    :'<span class="hint">Bu davrda chiqim yo\'q</span>');
+  $('#expTotals').querySelectorAll('[data-period]').forEach(b=>b.onclick=()=>{EXP_PERIOD=b.dataset.period;loadExpenseTotals();});
+}
+async function addExpenseCategory(name){
+  const r=await api('/admin/api/expense-categories',{method:'POST',body:JSON.stringify({name})});
+  const c=await api('/admin/api/expense-categories');
+  EXP_CATS=c.categories||[];
+  renderExpCatOptions();
+  return r;
+}
+window.renameExpenseCategory=async function(id){
+  const cat=EXP_CATS.find(c=>c.id===id);
+  if(!cat)return;
+  const name=(window.prompt('Yangi nom:',cat.name)||'').trim();
+  if(!name||name===cat.name)return;
+  try{
+    await api(`/admin/api/expense-categories/${id}`,{method:'POST',body:JSON.stringify({name})});
+    toast('✅ Kategoriya yangilandi');
+    await loadExpenses();
+  }catch(err){toast('⚠️ '+err.message);}
+};
+window.deleteExpenseCategory=async function(id){
+  const cat=EXP_CATS.find(c=>c.id===id);
+  if(!cat)return;
+  if(!window.confirm(`«${cat.name}» kategoriyasi o'chirilsinmi? Uning ${cat.uses} ta chiqimi qoladi, faqat kategoriyasiz bo'ladi.`))return;
+  try{
+    await api(`/admin/api/expense-categories/${id}/delete`,{method:'POST'});
+    if(EXP_FILTER===String(id))EXP_FILTER='';
+    toast("✅ Kategoriya o'chirildi");
+    await loadExpenses();
+  }catch(err){toast('⚠️ '+err.message);}
+};
+$('#expCatFilter').addEventListener('change',e=>{EXP_FILTER=e.target.value;loadExpenses();});
+$('#expCatsBtn').addEventListener('click',()=>{$('#expCatModal').classList.add('open');});
+$('#expCatNewBtn').addEventListener('click',async()=>{
+  const input=$('#expCatNew'), name=input.value.trim();
+  if(!name){toast('⚠️ Kategoriya nomini yozing');return;}
+  try{
+    const r=await addExpenseCategory(name);
+    input.value='';
+    toast(r.created?"✅ Kategoriya qo'shildi":'ℹ️ Bunday kategoriya bor edi');
+  }catch(err){toast('⚠️ '+err.message);}
+});
+$('#expCatQuickAdd').addEventListener('click',async()=>{
+  const name=(window.prompt('Yangi kategoriya nomi:')||'').trim();
+  if(!name)return;
+  try{
+    const r=await addExpenseCategory(name);
+    $('#expCategory').value=String(r.id);
+  }catch(err){toast('⚠️ '+err.message);}
+});
 function renderExpenses(){
   $('#expCount').textContent=EXPENSES.length+" ta chiqim";
   $('#expEmpty').style.display=EXPENSES.length?'none':'block';
   $('#expRows').innerHTML=EXPENSES.map(e=>{
     let dt = new Date(e.created_at);
     let dstr = isNaN(dt.getTime()) ? e.created_at : dt.toLocaleString('uz-UZ');
+    const cat=e.category_name?`<span class="exp-cat">${esc(e.category_name)}</span>`:'<span class="exp-cat none">Kategoriyasiz</span>';
     return `<tr>
       <td class="exp-date">${esc(dstr)}</td>
+      <td class="exp-cat-cell">${cat}</td>
       <td class="exp-name">${esc(e.name)}</td>
       <td class="tnum exp-amount" style="text-align:right;font-weight:700">${fmt(e.amount)}</td>
       <td class="exp-actions">${e.editable?`<div class="row-actions">
@@ -3232,6 +3359,9 @@ window.openExpenseModal=function(id=null){
     form.elements.namedItem('name').value=expense.name;
     form.elements.namedItem('amount').value=expense.amount;
   }
+  // A new expense starts in the category the list is filtered to.
+  $('#expCategory').value=expense?(expense.category_id==null?'':String(expense.category_id))
+    :(/^\d+$/.test(EXP_FILTER)?EXP_FILTER:'');
   previewExpenseAmount();
   $('#expModal').classList.add('open');
 };
@@ -3256,9 +3386,11 @@ $('#expForm').addEventListener('submit', async e => {
   const f=e.target, btn=$('#expSaveBtn');
   if(btn.disabled)return;
   const expenseId=editingExpenseId;
+  const cat=$('#expCategory').value;
   const body = {
     name: f.elements.namedItem('name').value.trim(),
-    amount: Number(f.elements.namedItem('amount').value)
+    amount: Number(f.elements.namedItem('amount').value),
+    category_id: cat?Number(cat):null
   };
   if(!body.name||!Number.isFinite(body.amount)||body.amount<=0){
     toast("⚠️ Chiqim nomi va noldan katta summani kiriting");return;
