@@ -1129,6 +1129,22 @@ TEXTS = {
         "ru": "Товары: <b>{goods}</b> сум (было {old_goods})\nИтого к оплате: <b>{total}</b> сум (было {old_total})",
     },
     "oe_btn_add": {"uz": "➕ Mahsulot qo'shish", "ru": "➕ Добавить товар"},
+    "oe_btn_price": {"uz": "💰 {name}: {price} so'm — narxini o'zgartirish",
+                     "ru": "💰 {name}: {price} сум — изменить цену"},
+    "oe_ask_price": {
+        "uz": ("💰 <b>{name}</b> — yangi narx (1 dona uchun).\n\n"
+               "Hozir: {price} so'm · katalogda: {base} so'm\n\n"
+               "Narxni yozing (masalan <code>92000</code>) yoki chegirma foizini "
+               "(masalan <code>10%</code>). <code>0</code> — chegirmasiz narx."),
+        "ru": ("💰 <b>{name}</b> — новая цена (за 1 шт.).\n\n"
+               "Сейчас: {price} сум · в каталоге: {base} сум\n\n"
+               "Напишите цену (например <code>92000</code>) или процент скидки "
+               "(например <code>10%</code>). <code>0</code> — цена без скидки."),
+    },
+    "oe_bad_price": {
+        "uz": "Narxni tushunmadim. Masalan: 92000 yoki 10%",
+        "ru": "Не понял цену. Например: 92000 или 10%",
+    },
     "oe_btn_save": {"uz": "💾 Saqlash", "ru": "💾 Сохранить"},
     "oe_btn_cancel": {"uz": "✖️ Bekor qilish", "ru": "✖️ Отмена"},
     "oe_not_editable": {

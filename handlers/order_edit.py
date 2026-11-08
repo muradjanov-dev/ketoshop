@@ -22,6 +22,13 @@ Aksiya bonus / gift lines are shown but never edited: their eligibility and
 expense booking are computed elsewhere (promotions.py, gift_campaign.py).
 Buyer pack quantities are whole numbers, like the cart. Manual lines also
 accept fractional quantities, matching manual entry, and never move stock.
+
+Manual orders (owner, 2026-11-08: "bazida sonida yoki qiymatida yoki yana
+mahsulot qo'shadigan bo'lib xato ketgan bo'lishi mumkin"): editable after
+shipping and delivery too (database.MANUAL_EDITABLE_STATUSES) — before, a
+correction could only be keyed in as a second order — and each line's price
+can be changed (oe:price:{i}), as a so'm amount or a percent off, the same
+way manual entry reads it. A buyer's own order keeps the price it was sold at.
 """
 import html
 import json
@@ -45,6 +52,7 @@ class OrderEditStates(StatesGroup):
     editing = State()
     waiting_qty = State()
     waiting_search = State()
+    waiting_price = State()
 
 
 def _money(v: float) -> str:
@@ -101,6 +109,11 @@ async def _render(target, state: FSMContext, *, edit: bool):
             InlineKeyboardButton(text="➕", callback_data=f"oe:inc:{i}"),
             InlineKeyboardButton(text="🗑", callback_data=f"oe:rm:{i}"),
         ])
+        if data.get("oe_source") == "manual":
+            rows.append([InlineKeyboardButton(
+                text=get_text("oe_btn_price", lang, name=(it.get("name") or "?")[:18],
+                              price=_money(float(it.get("price") or 0))),
+                callback_data=f"oe:price:{i}")])
     rows.append([InlineKeyboardButton(text=get_text("oe_btn_add", lang), callback_data="oe:add")])
     rows.append([
         InlineKeyboardButton(text=get_text("oe_btn_save", lang), callback_data="oe:save"),
@@ -181,7 +194,7 @@ async def open_editor(callback: CallbackQuery, state: FSMContext):
         # Wholesale sales use their own accounting flow.
         await callback.answer("❌", show_alert=True)
         return
-    if order["status"] not in database.ORDER_EDITABLE_STATUSES:
+    if not database.order_editable(order["status"], order.get("source")):
         await callback.answer(
             get_text("oe_not_editable", lang, status=get_order_status(order["status"], lang)),
             show_alert=True)
@@ -276,6 +289,79 @@ async def got_qty(message: Message, state: FSMContext):
             draft.pop(idx)
         else:
             draft[idx]["quantity"] = float(qty)
+    await state.set_state(OrderEditStates.editing)
+    await state.update_data(oe_items=draft)
+    await _render(message, state, edit=False)
+
+
+def parse_line_price(raw: str, base: float) -> float | None:
+    """A manual line's new unit price, read the way manual entry reads it:
+    "92000" is the price itself, "10%" — or a plain number up to 100 — a
+    percent off `base`, "0" / "-" the base price. None when unreadable."""
+    raw = (raw or "").strip().lower().replace(" ", "").replace(",", ".")
+    if raw in ("0", "-", "0%"):
+        return base
+    is_percent = raw.endswith("%")
+    try:
+        num = float(raw.rstrip("%"))
+    except ValueError:
+        return None
+    if not math.isfinite(num) or num <= 0:
+        return None
+    if is_percent or num <= 100:
+        return None if num >= 100 else round(base * (100 - num) / 100)
+    return num
+
+
+@router.callback_query(F.data.regexp(r"^oe:price:\d+$"))
+async def ask_price(callback: CallbackQuery, state: FSMContext):
+    data = await _draft_or_alert(callback, state)
+    if data is None:
+        return
+    idx = int(callback.data.split(":")[2])
+    draft = data["oe_items"]
+    if data.get("oe_source") != "manual" or idx >= len(draft) or _is_fixed(draft[idx]):
+        await callback.answer()
+        return
+    it = draft[idx]
+    await state.set_state(OrderEditStates.waiting_price)
+    await state.update_data(oe_price_idx=idx)
+    await _junk(state, await callback.message.answer(get_text(
+        "oe_ask_price", data["lang"], name=html.escape(it.get("name") or "?"),
+        price=_money(float(it.get("price") or 0)),
+        base=_money(float(it.get("original_price") or it.get("price") or 0))), parse_mode="HTML"))
+    await callback.answer()
+
+
+@router.message(OrderEditStates.waiting_price, F.text)
+async def got_price(message: Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("lang", "uz")
+    raw = (message.text or "").strip()
+    if raw.lower() in ("/cancel", "cancel", "bekor"):
+        await state.set_state(OrderEditStates.editing)
+        await _render(message, state, edit=False)
+        return
+    draft = data["oe_items"]
+    idx = data.get("oe_price_idx", -1)
+    if not (0 <= idx < len(draft)) or _is_fixed(draft[idx]):
+        await state.set_state(OrderEditStates.editing)
+        await _render(message, state, edit=False)
+        return
+    it = draft[idx]
+    base = float(it.get("original_price") or it.get("price") or 0)
+    price = parse_line_price(raw, base)
+    if price is None:
+        await _junk(state, await message.answer(get_text("oe_bad_price", lang)))
+        return
+    it["price"] = float(price)
+    # The order card's 🔥 line reads original_price + discount_percent.
+    if base > 0 and price < base:
+        it["original_price"] = base
+        it["discount_percent"] = round((1 - price / base) * 100)
+    else:
+        it.pop("original_price", None)
+        it.pop("discount_percent", None)
     await state.set_state(OrderEditStates.editing)
     await state.update_data(oe_items=draft)
     await _render(message, state, edit=False)
@@ -452,7 +538,7 @@ async def notify_buyer(callback: CallbackQuery, bot: Bot):
         # The card stays; only its «📨» button goes (sent once is enough).
         try:
             await callback.message.edit_reply_markup(reply_markup=seller_order_keyboard(
-                lang, order_id, order["status"], is_admin=True, ret=ret))
+                lang, order_id, order["status"], is_admin=True, ret=ret, source=order.get("source")))
         except Exception:
             pass
     except Exception as exc:
