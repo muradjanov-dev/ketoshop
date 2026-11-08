@@ -5778,6 +5778,17 @@ async def cancel_order(order_id: int) -> dict | None:
 # Admin order editing (2026-09-30): an order can have its lines changed until
 # it leaves for delivery. After "shipped" the box is packed and on the road.
 ORDER_EDITABLE_STATUSES = ("pending", "confirmed", "preparing", "ready")
+# A manual order never moves stock, so a typo in it — the amount, the price,
+# a forgotten product — can be fixed after the goods went out too (owner,
+# 2026-11-08: "qo'lda buyurtma kiritishda buyurtmani o'zgartirish imkonini
+# ham ishlatib ber"). Only a cancelled one stays shut; B2B has its own books.
+MANUAL_EDITABLE_STATUSES = ORDER_EDITABLE_STATUSES + ("shipped", "delivered")
+
+
+def order_editable(status: str | None, source: str | None) -> bool:
+    if source == "b2b":
+        return False
+    return status in (MANUAL_EDITABLE_STATUSES if source == "manual" else ORDER_EDITABLE_STATUSES)
 
 
 class OrderChangedError(Exception):
@@ -5854,8 +5865,7 @@ async def admin_update_order_items(order_id: int, original_items: list[dict],
                 raise OrderChangedError("order not found")
             stored = row["items"]
             stored = json.loads(stored) if isinstance(stored, str) else (stored or [])
-            if (row["status"] not in ORDER_EDITABLE_STATUSES or stored != original_items
-                    or row.get("source") == "b2b"):
+            if not order_editable(row["status"], row.get("source")) or stored != original_items:
                 raise OrderChangedError("order changed since the editor opened")
 
             deltas = {} if row.get("source") == "manual" else order_edit_deltas(stored, new_items)

@@ -499,7 +499,7 @@ def order_ret_back(ret: str) -> str:
 def seller_order_keyboard(lang: str, order_id: int, status: str,
                            buyer_username: str | None = None,
                            is_admin: bool = False, ret: str = "",
-                           notify: bool = False) -> InlineKeyboardMarkup:
+                           notify: bool = False, source: str | None = None) -> InlineKeyboardMarkup:
     """Order card buttons. `ret` is the order_list_ret() suffix (or "");
     `notify` adds the order editor's «📨 Mijozga xabar berish» on top, right
     after a saved edit."""
@@ -535,8 +535,10 @@ def seller_order_keyboard(lang: str, order_id: int, status: str,
     buttons.append([
         InlineKeyboardButton(text=get_text("btn_message_client", lang), callback_data=f"msgclient:{order_id}{ret}"),
     ])
-    # Admin-only line editor (handlers/order_edit.py) — until the box ships.
-    if is_admin and status in ("pending", "confirmed", "preparing", "ready"):
+    # Admin-only line editor (handlers/order_edit.py) — until the box ships;
+    # a manual order (`source`) until it is cancelled, B2B never.
+    from database import order_editable
+    if is_admin and order_editable(status, source):
         buttons.append([
             InlineKeyboardButton(text=get_text("btn_edit_order", lang), callback_data=f"oedit:{order_id}{ret}"),
         ])

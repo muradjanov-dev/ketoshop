@@ -1608,7 +1608,7 @@ async def render_order_card(callback: CallbackQuery, order_id: int, ret: str = "
 
     is_admin = callback.from_user.id in ADMIN_IDS
     kb = seller_order_keyboard(lang, order_id, order["status"], is_admin=is_admin,
-                               ret=ret, notify=notify)
+                               ret=ret, notify=notify, source=order.get("source"))
     # Pin/cheque from an earlier draw of this same card go; fresh ones follow.
     await drop_card_extras(callback.message)
     # Never bare-edit a photo/cheque message into text — send the card instead.
