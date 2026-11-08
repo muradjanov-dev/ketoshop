@@ -971,7 +971,10 @@ async def api_admin_message(request: web.Request):
     message from the bot to every admin and to up to ADMIN_MESSAGE_MAX_EXTRA
     more Telegram ids (2026-11-05: reports for the team). HTML is allowed; a
     part Telegram cannot parse goes as plain text. Someone who never started
-    the bot cannot be reached and is counted in `failed`."""
+    the bot cannot be reached and is counted in `failed`.
+
+    "only": true sends to the listed user_ids alone, not to every admin
+    (2026-11-08: a pay calculation meant for two people, not the whole team)."""
     try:
         body = await request.json()
     except Exception:
@@ -987,7 +990,10 @@ async def api_admin_message(request: web.Request):
         return _json({"error": "user_ids — Telegram ID raqamlari ro'yxati bo'lsin"}, status=400)
     if len(extra) > ADMIN_MESSAGE_MAX_EXTRA:
         return _json({"error": f"Ko'pi bilan {ADMIN_MESSAGE_MAX_EXTRA} ta qo'shimcha ID"}, status=400)
-    recipients = list(dict.fromkeys([*ADMIN_IDS, *extra]))
+    only = (body or {}).get("only") is True
+    if only and not extra:
+        return _json({"error": "only: true uchun user_ids kerak"}, status=400)
+    recipients = list(dict.fromkeys(extra if only else [*ADMIN_IDS, *extra]))
     parts = split_admin_message(text)
     bot = request.app["bot"]
     delivered, failed = [], []

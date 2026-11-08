@@ -75,6 +75,18 @@ class EndpointTest(unittest.TestCase):
         status, d, _ = self.call({"text": "x", "user_ids": [333]}, send=AsyncMock(side_effect=send))
         self.assertEqual((d["sent"], d["failed"], d["extra_reached"]), (2, [333], []))
 
+    def test_only_the_listed_people(self):
+        # A pay calculation for two people must not reach every admin.
+        status, d, send = self.call({"text": "KPI", "user_ids": [222, 444], "only": True})
+        self.assertEqual(status, 200)
+        self.assertEqual([c.args[0] for c in send.await_args_list], [222, 444])
+        self.assertEqual((d["sent"], d["extra_reached"]), (2, [222, 444]))
+
+    def test_only_needs_ids_and_must_be_a_real_true(self):
+        self.assertEqual(self.call({"text": "x", "only": True})[0], 400)
+        _, _, send = self.call({"text": "x", "user_ids": [444], "only": "yes"})
+        self.assertEqual([c.args[0] for c in send.await_args_list], [111, 222, 444])
+
     def test_bad_requests(self):
         self.assertEqual(self.call({"text": "  "})[0], 400)
         self.assertEqual(self.call({"text": "x", "user_ids": ["abc"]})[0], 400)
