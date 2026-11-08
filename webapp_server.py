@@ -213,6 +213,10 @@ async def ensure_site_user(request: web.Request, user_id: int) -> bool | None:
     # False: the bot's /start registered them a moment ago — it greets them.
     if not is_new or inserted is False:
         return False
+    # YANGI5 waits for them before the shop's first /api/promo, which starts
+    # it; the rest of the welcome runs in the background below.
+    import welcome_promo
+    await welcome_promo.mark_pending(user_id)
     # The gift's ceremony waits for their first language pick in the bot.
     # Best-effort, off the hot path.
     import asyncio
@@ -1795,7 +1799,15 @@ async def _welcome_promo(request: web.Request, lang: str):
     try:
         import welcome_promo
         user_id = request.get("user_id")
-        return await welcome_promo.site_payload(user_id, lang) if user_id else None
+        if not user_id:
+            return None
+        # A new member who came to the site without picking a language in the
+        # bot (owner, 2026-11-08: "ularga ham 8 soatlik 5%") — their 8 hours
+        # start here; the site greets them with fireworks. No-op otherwise.
+        bot = request.app.get("bot")
+        if bot is not None:
+            await welcome_promo.maybe_start(bot, user_id, lang)
+        return await welcome_promo.site_payload(user_id, lang)
     except Exception:
         logger.warning("YANGI5 site payload failed", exc_info=True)
         return None
