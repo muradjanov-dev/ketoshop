@@ -2547,17 +2547,20 @@
   }
   #page-order-success .checkout-submit-btn { margin-left: auto; margin-right: auto; }
 
-  .scroll-loader { padding: 16px; text-align: center; font-size: 13px; color: var(--hint); }
-  .scroll-loader .spinner {
-    display: inline-block;
-    width: 22px;
-    height: 22px;
-    border: 2.5px solid var(--surface-hi);
-    border-top-color: var(--link);
-    border-radius: 50%;
-    animation: spin .7s linear infinite;
-    vertical-align: middle;
+  /* Under the catalog grid: "more follow" with a button, or "that's all". */
+  .catalog-more { padding: 6px 14px 22px; text-align: center; }
+  .catalog-more-btn {
+    width: 100%;
+    max-width: 420px;
+    border: 1.5px solid var(--hairline);
+    border-radius: 16px;
+    padding: 13px;
+    background: var(--surface);
+    color: var(--text);
+    font: 800 15px var(--font-body);
+    cursor: pointer;
   }
+  .catalog-end { font-size: 13px; font-weight: 700; color: var(--hint); }
   @keyframes spin { to { transform: rotate(360deg); } }
   .skeleton { position: relative; overflow: hidden; border-radius: 16px; background: var(--surface-hi); }
 
@@ -3598,7 +3601,7 @@
     <div class="emoji">😔</div>
     <div id="catalog-empty-text"></div>
   </div>
-  <div class="scroll-loader" id="scroll-loader" style="display:none"><span class="spinner"></span></div>
+  <div class="catalog-more" id="catalog-more" style="display:none"></div>
 </div>
 
 <!-- ===== PAGE: CART ===== -->
@@ -4695,6 +4698,9 @@ const L = {
     birdsOff: "🔇 Musiqa va qushlar o'chirildi",
     search: 'Mahsulot qidirish...',
     loading: 'Yuklanmoqda...',
+    catalogMore: '⬇️ Yana {n} ta mahsulot',
+    catalogEnd: '✓ Hammasi shu — {n} ta mahsulot',
+    catalogRetry: '🔄 Qayta urinish',
     empty: 'Mahsulotlar topilmadi',
     addToCart: "Savatga qo'shish",
     cart: 'Savat',
@@ -4923,6 +4929,9 @@ const L = {
     birdsOff: '🔇 Музыка и птицы выключены',
     search: 'Поиск товаров...',
     loading: 'Загрузка...',
+    catalogMore: '⬇️ Показать ещё ({n})',
+    catalogEnd: '✓ Это все товары ({n})',
+    catalogRetry: '🔄 Повторить',
     empty: 'Товары не найдены',
     addToCart: 'В корзину',
     cart: 'Корзина',
@@ -5379,6 +5388,7 @@ async function switchLanguage(newLang) {
     renderViewSwitch();
     renderCatalogTiles();
     loadPromo();
+    clearCatalogCache();
     loadProducts();
     if (homeRendered) renderHomePage();
     if (activePage === 'cart') renderCartPage();
@@ -5415,8 +5425,6 @@ async function api(path, opts = {}) {
 // ===== STATE =====
 let categories = [];
 let currentCat = 'all';
-let currentPage = 0;
-let totalPages = 1;
 let currentProduct = null;
 let qty = 1;
 let cartData = { items: [], total: 0 };
@@ -6350,6 +6358,10 @@ async function checkStartGate(manual) {
   const ketoRatePromise = api('/api/keto/status')
     .then(s => { ketoRate = (s && s.rate) || 0; })
     .catch(() => { /* no badges */ });
+
+  // The whole catalog, asked for now so it comes alongside the categories
+  // and the promo instead of after them (loadProducts picks it up).
+  fetchCatalogList('all').catch(() => {});
 
   try {
     categories = await api('/api/categories');
@@ -7525,7 +7537,6 @@ function renderCatalogCategories() {
 
 function selectCategory(key) {
   currentCat = key;
-  currentPage = 0;
   document.querySelectorAll('#categories .cat-tab').forEach(el => {
     el.classList.toggle('active', el.dataset.cat === key);
   });
@@ -7539,85 +7550,141 @@ function selectCategory(key) {
   loadProducts();
 }
 
-let isLoadingMore = false;
-// The catalog asks for 30 a page; the bot keeps its own 5 (ITEMS_PER_PAGE).
-// Five was far too few here: on a wide screen five tiles fit without any
-// scrolling, the scroll that loads the next page never came, and the catalog
-// stopped at five products (owner, 2026-10-22: "katalogda hamma
-// mahsulotlarni ko'rib bo'lmayapti").
-const CATALOG_PAGE_SIZE = 30;
-let catalogSeq = 0;      // a newer category, search or language wins
+// ===== KATALOG: BITTA SO'ROV, TEZ ALMASHISH (owner, 2026-11-08: "kategoriyani
+// bosgach ham sekin yuklanyapti ... pastga tushsa bazida hamma mahsulot
+// chiqmayapti odamlar shu ekan faqat deb o'ylab qolishyapti") =====
+// The whole active catalog (~110 products) comes in ONE request and is kept
+// for a few minutes. A category is that list filtered here — the server
+// sorts both ways the same (LOWER(name), id) — so a tap draws at once, with
+// no trip to the server. Sets and «Chegirmalar» have their own lists, each
+// fetched once. Cards are drawn 30 at a time from memory as the buyer
+// scrolls, and the line under the grid always tells whether more follow
+// («Yana 24 ta mahsulot», a button) or that this is all. Before, every 30
+// were a request fired 300 px from the bottom: a failed one was skipped for
+// good, and a slow one looked like the end of the shop.
+const CATALOG_FETCH = 200;            // the server's cap per request
+const CATALOG_CHUNK = 30;             // cards drawn per step
+const CATALOG_TTL = 3 * 60 * 1000;    // a kept list is asked for again after this
+const catalogCache = {};              // list key -> {at, promise}
+let catalogSeq = 0;                   // a newer category, search or language wins
+let catalogList = [];                 // what the current tab shows
+let catalogShown = 0;                 // how many of them are drawn
 
-async function loadProducts(append = false) {
+function fetchCatalogList(key) {
+  const hit = catalogCache[key];
+  if (hit && Date.now() - hit.at < CATALOG_TTL) return hit.promise;
+  const url = (key === 'all' ? '/api/products?page=0' : '/api/products?category=' + key + '&page=0')
+    + '&per_page=' + CATALOG_FETCH;
+  const entry = { at: Date.now() };
+  entry.promise = api(url).then(d => ({
+    products: d.products || [],
+    total: d.total != null ? d.total : (d.products || []).length,
+  })).catch(e => {
+    if (catalogCache[key] === entry) delete catalogCache[key];   // a failure is never kept
+    throw e;
+  });
+  catalogCache[key] = entry;
+  return entry.promise;
+}
+function clearCatalogCache() {
+  Object.keys(catalogCache).forEach(k => delete catalogCache[k]);
+}
+
+// {products, total} for a tab: sets and discounts are their own lists; any
+// other category is the full list filtered — unless the shop ever outgrows
+// one request, then the category is asked for by itself.
+async function catalogListFor(cat) {
+  if (cat === 'sets' || cat === 'discounts') return fetchCatalogList(cat);
+  const all = await fetchCatalogList('all');
+  if (cat === 'all') return all;
+  if (all.products.length >= all.total) {
+    const products = all.products.filter(p => p.category === cat);
+    return { products, total: products.length };
+  }
+  return fetchCatalogList(cat);
+}
+
+async function loadProducts() {
   const grid = document.getElementById('product-grid');
   const loading = document.getElementById('catalog-loading');
   const empty = document.getElementById('catalog-empty');
-  const scrollLoader = document.getElementById('scroll-loader');
-
-  if (!append) {
-    // A fresh list always starts at page 0 — a language switch or a cleared
-    // search used to reload only the page the buyer had scrolled to.
-    currentPage = 0;
-    grid.innerHTML = '';
+  const seq = ++catalogSeq;
+  grid.innerHTML = '';
+  catalogList = [];
+  catalogShown = 0;
+  empty.style.display = 'none';
+  renderCatalogMore();
+  // A kept list draws at once; "Yuklanmoqda" only when it takes a moment.
+  const slow = setTimeout(() => {
+    if (seq !== catalogSeq) return;
     loading.style.display = 'block';
     loading.textContent = t.loading;
-    empty.style.display = 'none';
-  }
-  scrollLoader.style.display = 'none';
-  isLoadingMore = true;
-  const seq = ++catalogSeq;
+  }, 150);
 
   try {
-    const url = (currentCat === 'all'
-      ? '/api/products?page=' + currentPage
-      : '/api/products?category=' + currentCat + '&page=' + currentPage) + '&per_page=' + CATALOG_PAGE_SIZE;
-    const data = await api(url);
+    const data = await catalogListFor(currentCat);
     if (seq !== catalogSeq) return;
-    const products = data.products || [];
-    totalPages = data.pages || 1;
-    if (!append) setCatalogHeading(data.total != null ? data.total : products.length);
-
+    clearTimeout(slow);
     loading.style.display = 'none';
-
-    if (!append && products.length === 0) {
+    catalogList = data.products;
+    setCatalogHeading(data.total);
+    if (!catalogList.length) {
       empty.style.display = 'block';
       document.getElementById('catalog-empty-text').textContent = t.empty;
-      isLoadingMore = false;
       return;
     }
-
-    products.forEach(p => {
-      grid.appendChild(createProductCard(p));
-    });
-
-    isLoadingMore = false;
-    requestAnimationFrame(catalogLoadMore);
+    catalogDrawMore();
   } catch(e) {
     if (seq !== catalogSeq) return;
+    clearTimeout(slow);
     loading.style.display = 'none';
-    isLoadingMore = false;
     console.error('Load products error:', e);
     showToast(t.errorLoad, true);
+    renderCatalogMore(true);
   }
 }
 
-// Infinite scroll: the next page when the buyer nears the end — or at once
-// when the grid doesn't even fill the screen, since then nothing scrolls.
+// The next 30 cards, from memory — no request, so nothing can be skipped.
+function catalogDrawMore() {
+  const grid = document.getElementById('product-grid');
+  const next = catalogList.slice(catalogShown, catalogShown + CATALOG_CHUNK);
+  const frag = document.createDocumentFragment();
+  next.forEach(p => frag.appendChild(createProductCard(p)));
+  grid.appendChild(frag);
+  catalogShown += next.length;
+  renderCatalogMore();
+  requestAnimationFrame(catalogLoadMore);   // a short grid fills the screen
+}
+
+// Under the grid: «⬇️ Yana N ta mahsulot» while more follow, «✓ Hammasi
+// shu» at the end, «🔄 Qayta urinish» after a failed load.
+function renderCatalogMore(failed) {
+  const box = document.getElementById('catalog-more');
+  if (!box) return;
+  const left = catalogList.length - catalogShown;
+  if (failed) {
+    box.innerHTML = '<button type="button" class="catalog-more-btn">' + escapeHtml(t.catalogRetry) + '</button>';
+    box.firstChild.onclick = () => loadProducts();
+  } else if (!catalogList.length) {
+    box.innerHTML = '';
+  } else if (left > 0) {
+    box.innerHTML = '<button type="button" class="catalog-more-btn">'
+      + escapeHtml(t.catalogMore.replace('{n}', left)) + '</button>';
+    box.firstChild.onclick = catalogDrawMore;
+  } else {
+    box.innerHTML = '<div class="catalog-end">' + escapeHtml(t.catalogEnd.replace('{n}', catalogList.length)) + '</div>';
+  }
+  box.style.display = box.innerHTML ? 'block' : 'none';
+}
+
+// Draw more well before the bottom (1200 px), so scrolling never meets an
+// empty end while cards are still to come.
 function catalogLoadMore() {
-  if (activePage !== 'catalog' || isLoadingMore) return;
-  if (currentPage + 1 >= totalPages) return;
-
-  const scrollY = window.scrollY + window.innerHeight;
-  const docHeight = document.documentElement.scrollHeight;
-
-  if (scrollY >= docHeight - 300) {
-    currentPage++;
-    isLoadingMore = true;
-    document.getElementById('scroll-loader').style.display = 'block';
-    loadProducts(true);
-  }
+  if (activePage !== 'catalog' || catalogShown >= catalogList.length) return;
+  const bottom = window.scrollY + window.innerHeight;
+  if (bottom >= document.documentElement.scrollHeight - 1200) catalogDrawMore();
 }
-window.addEventListener('scroll', catalogLoadMore);
+window.addEventListener('scroll', catalogLoadMore, { passive: true });
 
 // Sold out stays in the shop (owner, 2026-10-14): a tilted "Yo'lda 🚚"
 // stamp on the photo (was "Tugab qoldi" until 2026-10-17), and "Tez orada qaytadi" takes the description's line.
@@ -7680,14 +7747,14 @@ document.getElementById('catalog-search').addEventListener('input', function(e) 
     return;
   }
   searchTimeout = setTimeout(async () => {
-    // Search results are one list: no catalog page may land under them.
+    // Search results are one list: no catalog cards may land under them.
     catalogSeq++;
-    totalPages = 0;
-    isLoadingMore = false;
+    catalogList = [];
+    catalogShown = 0;
+    renderCatalogMore();
     const grid = document.getElementById('product-grid');
     const loading = document.getElementById('catalog-loading');
     const empty = document.getElementById('catalog-empty');
-    document.getElementById('scroll-loader').style.display = 'none';
     grid.innerHTML = '';
     loading.style.display = 'block';
     loading.textContent = t.loading;
