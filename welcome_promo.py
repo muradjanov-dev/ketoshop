@@ -44,6 +44,10 @@ QUIET_FROM, QUIET_TO = 22, 8  # Tashkent hours: no reminders
 TICK = 60                     # seconds between scheduler passes (and timer edits)
 CACHE_TTL = 20
 TZ = timedelta(hours=5)       # Asia/Tashkent, no DST
+# Telegram's 🎉 message effect (confetti over the chat) on the timer message —
+# "tabriklab tantana bilan e'lon qil" (owner, 2026-11-08). Private chats only;
+# if Telegram ever refuses it, the message goes out without it.
+PARTY_EFFECT = "5046509860389126442"
 EXAMPLE_ORDER = 300_000       # "masalan" sum when the cart is empty
 
 _table_ready = False
@@ -59,12 +63,14 @@ def _now() -> datetime:
 
 _T = {
     "timer": {
-        "uz": ("🎁 <b>Sizga sovg'a — {code}</b>\n\n"
+        "uz": ("🎉 <b>Tabriklaymiz!</b> Siz endi Ketoshop oilasidasiz.\n\n"
+               "🎁 <b>Sizga sovg'a — {code}</b>\n\n"
                "<b>Birinchi buyurtmangizga {p}% chegirma</b>. Promokod kiritish "
                "shart emas — chegirma savatda o'zi hisoblanadi.\n\n"
                "⏳ <b>Qoldi: {left}</b>\n"
                "🕐 {until}"),
-        "ru": ("🎁 <b>Вам подарок — {code}</b>\n\n"
+        "ru": ("🎉 <b>Поздравляем!</b> Теперь вы в семье Ketoshop.\n\n"
+               "🎁 <b>Вам подарок — {code}</b>\n\n"
                "<b>Скидка {p}% на первый заказ</b>. Промокод вводить не нужно — "
                "скидка считается в корзине сама.\n\n"
                "⏳ <b>Осталось: {left}</b>\n"
@@ -351,9 +357,11 @@ async def reminder_text(user_id: int, lang: str, seconds_left: float) -> str:
 # ───────────────────────────── start ─────────────────────────────
 
 async def maybe_start(bot: Bot, user_id: int, lang: str) -> bool:
-    """On the language pick (handlers/start.set_language): a pending new
-    member's 8 hours start now and the timer message goes out. A no-op for
-    anyone else, including a returning user switching language. Never raises."""
+    """On the language pick (handlers/start.set_language) — or on their first
+    visit to the site, for a new member who went there without picking one
+    (webapp_server._welcome_promo, 2026-11-08): a pending new member's 8 hours
+    start now and the timer message goes out. A no-op for anyone else,
+    including a returning user switching language. Never raises."""
     try:
         async with database.pool.acquire() as conn:
             await _ensure_table(conn)
@@ -365,7 +373,12 @@ async def maybe_start(bot: Bot, user_id: int, lang: str) -> bool:
         _cache.pop(user_id, None)
         end = started + timedelta(hours=HOURS)
         text = timer_text(lang, (end - _now()).total_seconds(), end)
-        msg = await bot.send_message(user_id, text, parse_mode=ParseMode.HTML, reply_markup=keyboard(lang))
+        try:
+            msg = await bot.send_message(user_id, text, parse_mode=ParseMode.HTML, reply_markup=keyboard(lang),
+                                         message_effect_id=PARTY_EFFECT)
+        except Exception:
+            logger.info("YANGI5 timer for %s: no 🎉 effect, sent plain", user_id, exc_info=True)
+            msg = await bot.send_message(user_id, text, parse_mode=ParseMode.HTML, reply_markup=keyboard(lang))
         _shown[user_id] = text
         async with database.pool.acquire() as conn:
             await conn.execute("UPDATE welcome_promo SET timer_message_id = $2 WHERE user_id = $1",
