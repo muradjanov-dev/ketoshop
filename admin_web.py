@@ -1201,6 +1201,7 @@ async def api_shop_links(request: web.Request):
     rows = await shop_links.stats(since)
     for r in rows:
         r["link"] = shop_links.link(r["code"])
+        r["bot_link"] = shop_links.bot_link(r["code"])
     return _json({"period": period if period in shop_links.PERIODS else "30", "links": rows})
 
 
