@@ -57,6 +57,28 @@ async def _is_subscribed(bot, user_id: int, force: bool = False) -> bool:
     return subscribed
 
 
+_site_recheck_at: dict[int, float] = {}
+SITE_RECHECK = 5   # s — the site's join screen polls; a "not yet" is re-asked this often
+
+
+async def is_subscribed_for_site(bot, user_id: int) -> bool:
+    """The Mini App's channel check (webapp_server.site_gate, owner
+    2026-11-08). Shares the bot's cache, but a "not yet" is asked again every
+    few seconds: the site's entry screen waits while the buyer goes to join.
+    Fails open like the bot's."""
+    now = time.monotonic()
+    cached = _cache.get(user_id)
+    if cached and not cached[0]:
+        if now - _site_recheck_at.get(user_id, 0) < SITE_RECHECK:
+            return False
+        subscribed = await _is_subscribed(bot, user_id, force=True)
+    else:
+        subscribed = await _is_subscribed(bot, user_id)
+    if not subscribed:
+        _site_recheck_at[user_id] = now
+    return subscribed
+
+
 async def _awaiting_cheque(data: dict) -> bool:
     """True while the user owes the bot a payment cheque for an order they
     already placed (CheckoutStates.waiting_cheque) — never block that."""
@@ -141,11 +163,15 @@ class SubscriptionGateMiddleware(BaseMiddleware):
                     import bloggers
                     import ad_sources
                     import product_card
-                    from handlers.start import ensure_registered
+                    from handlers.start import ensure_registered, is_site_payload, remember_site_return
 
                     payload = _pending_start_payload.pop(user.id, None)
                     referrer_id = referral_contest.parse_ref_payload(payload)
-                    blogger_code = bloggers.parse_payload(payload)
+                    # ?start=sayt — sent here by the site's entry screen.
+                    site_return = is_site_payload(payload)
+                    if site_return:
+                        remember_site_return(user.id)
+                    blogger_code = None if site_return else bloggers.parse_payload(payload)
                     ad_source = ad_sources.parse_payload(payload)
                     product_id = product_card.parse_product_payload(payload)
                     is_new = await ensure_registered(bot, user, referrer_id, blogger_code, ad_source)
