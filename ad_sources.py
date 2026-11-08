@@ -181,7 +181,8 @@ def _period_keyboard(active: str = "30") -> InlineKeyboardMarkup:
         )
         for key, (label, _) in PERIODS.items()
     ]
-    return InlineKeyboardMarkup(inline_keyboard=[row])
+    return InlineKeyboardMarkup(inline_keyboard=[row, [InlineKeyboardButton(
+        text="🔙 Reklama menyusi", callback_data="admin_menu:ads")]])
 
 
 @router.message(Command("reklama_manba"))

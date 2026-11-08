@@ -412,7 +412,8 @@ def _period_keyboard(preset: str = "today") -> InlineKeyboardMarkup:
     # 🎬 Videolar / 📦 Mahsulotlar / 📈 Bog'liqlik — ads_impact.py
     import ads_impact
     detail = [InlineKeyboardButton(text="📋 Hisob tafsiloti (leadlar, CPM)", callback_data=f"adsacct:{preset}")]
-    return InlineKeyboardMarkup(inline_keyboard=[row1, row2, detail] + ads_impact.view_rows(preset))
+    back = [InlineKeyboardButton(text="🔙 Reklama menyusi", callback_data="admin_menu:ads")]
+    return InlineKeyboardMarkup(inline_keyboard=[row1, row2, detail] + ads_impact.view_rows(preset) + [back])
 
 
 # ---------------------------------------------------------------- core
@@ -520,21 +521,7 @@ async def cmd_token(message: Message):
         return
 
     if not arg:
-        await load_token()
-        if not is_enabled():
-            await message.answer(NO_TOKEN_TEXT, parse_mode="HTML")
-            return
-        source = "bot orqali berilgan" if _db_token else "serverdagi env"
-        lines = [f"🔑 <b>Token:</b> {source} (…{html.escape(token()[-4:])})", "",
-                 "<b>Ko'rinayotgan reklama hisoblari:</b>"]
-        try:
-            async with aiohttp.ClientSession() as session:
-                data = await _get(session, "me/adaccounts",
-                                  fields="account_id,name,account_status", limit=50)
-            lines += _accounts_text(data.get("data", []))
-        except GraphError as e:
-            lines.append(f"❌ <code>{html.escape(str(e))}</code>")
-        await message.answer("\n".join(lines), parse_mode="HTML")
+        await message.answer(await token_status_text(), parse_mode="HTML")
         return
 
     if arg.lower() in OFF_WORDS:
@@ -542,6 +529,30 @@ async def cmd_token(message: Message):
         await message.answer("🗑 Bot orqali berilgan token o'chirildi.")
         return
 
+    await apply_token(message, arg)
+
+
+async def token_status_text() -> str:
+    """Which token is in use and which ad accounts it sees."""
+    await load_token()
+    if not is_enabled():
+        return NO_TOKEN_TEXT
+    source = "bot orqali berilgan" if _db_token else "serverdagi env"
+    lines = [f"🔑 <b>Token:</b> {source} (…{html.escape(token()[-4:])})", "",
+             "<b>Ko'rinayotgan reklama hisoblari:</b>"]
+    try:
+        async with aiohttp.ClientSession() as session:
+            data = await _get(session, "me/adaccounts",
+                              fields="account_id,name,account_status", limit=50)
+        lines += _accounts_text(data.get("data", []))
+    except GraphError as e:
+        lines.append(f"❌ <code>{html.escape(str(e))}</code>")
+    return "\n".join(lines)
+
+
+async def apply_token(message: Message, arg: str) -> None:
+    """Check a token with Meta, store it, and delete the message carrying it.
+    /reklama_token <token> and the «🔑 Meta tokeni → Tokenni yuborish» flow."""
     # Avval xabarni o'chiramiz — token chat tarixida qolmasin.
     try:
         await message.delete()
@@ -668,15 +679,19 @@ async def cmd_status(message: Message):
         await message.answer(NO_TOKEN_TEXT, parse_mode="HTML")
         return
     await message.answer("⏳ Hisob holati tekshirilmoqda…")
-    # Har bir reklama hisobi alohida xabar: Instagram boost'lari turgan hisobda
-    # "To'lov qarzi bor" bo'lsa, aynan shu yerda ko'rinadi.
+    for text in await status_texts():
+        await message.answer(text, parse_mode="HTML")
+
+
+async def status_texts() -> list[str]:
+    """One message per ad account: Instagram boosts sitting in an account
+    with a payment problem show exactly there. /reklama_holat and the
+    «🔍 Reklamalar holati» button."""
+    out = []
     async with aiohttp.ClientSession() as session:
-        ids = await account_ids(session)
-        for acc in ids:
+        for acc in await account_ids(session):
             try:
-                account = await fetch_account(session, acc)
-                ads = await fetch_ads_status(session, acc)
-                text = format_status(account, ads)
+                out.append(format_status(await fetch_account(session, acc), await fetch_ads_status(session, acc)))
             except GraphError as e:
-                text = f"❌ act_{acc}: <code>{html.escape(str(e))}</code>"
-            await message.answer(text, parse_mode="HTML")
+                out.append(f"❌ act_{acc}: <code>{html.escape(str(e))}</code>")
+    return out

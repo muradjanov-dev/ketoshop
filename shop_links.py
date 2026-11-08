@@ -356,7 +356,8 @@ def _period_keyboard(active: str = "30") -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=("• " if key == active else "") + label,
                              callback_data=f"shoplnk:{key}")
         for key, (label, _) in PERIODS.items()
-    ]])
+    ], [InlineKeyboardButton(text="➕ Yangi havola", callback_data="adm_ads:newlink"),
+        InlineKeyboardButton(text="🔙 Reklama menyusi", callback_data="admin_menu:ads")]])
 
 
 @router.message(Command("sayt_havola"), F.chat.type == "private")
@@ -383,17 +384,21 @@ async def cmd_make(message: Message):
     if not made:
         await message.answer("❌ Bu nomdan havola chiqmadi — harf yoki raqam bilan yozing.")
         return
+    await message.answer(made_text(made), parse_mode="HTML", disable_web_page_preview=True)
+
+
+def made_text(made: tuple[str, str, bool]) -> str:
+    """The reply to a new link — /sayt_havola and «➕ Yangi havola yasash»."""
     code, name, created = made
     head = "✅ Havola tayyor" if created else "ℹ️ Bu havola avval yaratilgan"
-    await message.answer(
+    return (
         f"{head}: <b>{html.escape(name)}</b>\n\n"
         "🤖 <b>Reklama uchun (bot orqali)</b> — har bir kelgan sanaladi va botga "
         "obuna bo'lib qoladi, keyin «🛍 Do'konni ochish» tugmasi chiqadi:\n"
         f"<code>{html.escape(bot_link(code))}</code>\n\n"
         "🛍 To'g'ridan-to'g'ri do'kon:\n"
         f"<code>{html.escape(link(code))}</code>\n\n"
-        "Natijani <code>/sayt_havolalar</code> dan kuzatasiz.",
-        parse_mode="HTML", disable_web_page_preview=True)
+        "Natijani <code>/sayt_havolalar</code> dan kuzatasiz.")
 
 
 @router.message(Command("sayt_havolalar"), F.chat.type == "private")
