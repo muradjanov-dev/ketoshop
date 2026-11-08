@@ -1182,29 +1182,16 @@
 
   /* ── Catalog first (2026-11-04): category tiles, the view switch, and
      the three-column and list views of the product grid ─────────────── */
-  /* Kategoriyalar karuseli (owner, 2026-11-07): the tiles drift slowly
-     on their own and loop (TileDrift) — the set of two-tile columns is
-     drawn twice, side by side. No scroll-snap: it would pull the slow
-     drift back to the nearest tile. --ct-col is 30% of the row (96–150 px),
-     set from JS because a set sizes to its own content. */
+  /* Kategoriyalar — pastga qarab (owner, 2026-11-08: "kategoriyalarni
+     karuselini o'chir va ularni yonga emas pastga qarab tahla"): every tile
+     is on the page at once, three across on a phone and more on a wider
+     screen; nothing scrolls sideways or moves by itself. */
   .cat-tiles {
-    display: flex;
-    gap: 10px;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    padding: 6px 14px 12px;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-  .cat-tiles .ct-set {
-    flex: none;
     display: grid;
-    grid-auto-flow: column;
-    grid-template-rows: repeat(2, auto);
-    grid-auto-columns: var(--ct-col, 124px);
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
     gap: 10px;
+    padding: 6px 14px 12px;
   }
-  .cat-tiles::-webkit-scrollbar { display: none; }
   .cat-tiles[hidden] { display: none; }
   .cat-tile {
     --cc: var(--c-orange);
@@ -7332,10 +7319,6 @@ function renderCatalogTiles() {
   });
   box.innerHTML = '';
   box.hidden = false;
-  const row = (box.clientWidth || document.documentElement.clientWidth) - 28;
-  box.style.setProperty('--ct-col', Math.round(Math.min(150, Math.max(96, row * 0.3))) + 'px');
-  const set = document.createElement('div');
-  set.className = 'ct-set';
   tiles.forEach(tl => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -7350,114 +7333,20 @@ function renderCatalogTiles() {
     b.innerHTML = art + (tl.badge ? '<span class="ct-badge">' + tl.badge + '</span>' : '') +
       '<span class="ct-name">' + escapeHtml(tl.name) + '</span>' +
       '<span class="ct-count">' + escapeHtml(tileCountText(tl.count || 0)) + '</span>';
-    set.appendChild(b);
+    box.appendChild(b);
   });
-  box.appendChild(set);
-  // One handler for both sets — the moving copy's tiles work the same.
   box.onclick = e => {
     const b = e.target.closest('.cat-tile');
     if (b) { selectCategory(b.dataset.cat); scrollToCatalogList(false); }
   };
-  TileDrift.attach(box, set);
   if (window.IntersectionObserver) {
     chips.classList.add('cat-float');
     if (!tilesWatch) {
-      tilesWatch = new IntersectionObserver(es => es.forEach(e => {
-        chips.classList.toggle('show', !e.isIntersecting);
-        TileDrift.visible(e.isIntersecting);
-      }));
+      tilesWatch = new IntersectionObserver(es => es.forEach(e => chips.classList.toggle('show', !e.isIntersecting)));
       tilesWatch.observe(box);
     }
   }
 }
-
-// ── Kategoriyalar karuseli (owner, 2026-11-07: "katalog qismidagi
-// kategoriyalar ham karusel bo'lib sekin aylanib turadigan bo'lsin") ──
-// The tile row moves left by itself, slowly, and never ends: the tiles are
-// drawn twice, and once the copy has slid into the place of the original the
-// scroll steps back by one set's width — the same picture, so no jump shows.
-// A finger (or mouse, or wheel) stops it; it goes on 4 s after the buyer
-// lets go, from wherever they left it. It runs only while the row is on
-// screen and the app is in front. Phones that ask for reduced motion keep
-// it too: battery saver asks for that, and the owner wants the shop alive
-// there (see the 2026-10-22 note at the reduced-motion rules).
-function tileDriftStep(pos, ms, loopW, speed) {
-  const next = pos + speed * Math.min(Math.max(ms, 0), 100) / 1000;
-  return loopW > 0 && next >= loopW ? next - loopW : next;
-}
-const TileDrift = (() => {
-  const SPEED = 20;            // px a second — about one column every 6–7 s
-  const RESUME_MS = 4000;
-  let box = null, set = null, loopW = 0, pos = 0, last = 0, raf = 0, resizeT = 0;
-  let onScreen = true, down = false, heldUntil = 0, sync = true, mine = -1;
-
-  function measure() {
-    if (!box || !set) return;
-    const old = box.querySelector('.ct-copy');
-    if (old) old.remove();
-    loopW = 0;
-    const room = box.clientWidth - 28;
-    if (room <= 0 || set.offsetWidth <= room) return;   // every tile fits — nothing to turn
-    const copy = set.cloneNode(true);
-    copy.classList.add('ct-copy');
-    copy.setAttribute('aria-hidden', 'true');
-    copy.querySelectorAll('button').forEach(b => { b.tabIndex = -1; });
-    box.appendChild(copy);
-    loopW = copy.offsetLeft - set.offsetLeft;
-    sync = true;
-  }
-  function frame(ts) {
-    raf = 0;
-    if (!loopW || !onScreen || document.hidden) { last = 0; return; }
-    if (last && !down && Date.now() >= heldUntil) {
-      if (sync) { pos = box.scrollLeft; sync = false; }
-      pos = tileDriftStep(pos, ts - last, loopW, SPEED);
-      box.scrollLeft = pos;
-      mine = box.scrollLeft;
-    }
-    last = ts;
-    raf = requestAnimationFrame(frame);
-  }
-  function run() {
-    if (!raf && loopW && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
-  }
-  function hold() { heldUntil = Date.now() + RESUME_MS; sync = true; mine = -1; }
-  function grab() { down = true; hold(); }
-  function free() { down = false; hold(); }
-
-  document.addEventListener('visibilitychange', run);
-  window.addEventListener('resize', () => {
-    clearTimeout(resizeT);
-    resizeT = setTimeout(() => { if (box) { measure(); run(); } }, 250);
-  });
-
-  return {
-    attach(el, s) {
-      if (box !== el) {
-        el.addEventListener('touchstart', grab, { passive: true });
-        el.addEventListener('touchend', free, { passive: true });
-        el.addEventListener('touchcancel', free, { passive: true });
-        el.addEventListener('pointerdown', e => { if (e.pointerType !== 'touch') grab(); });
-        el.addEventListener('pointerup', e => { if (e.pointerType !== 'touch') free(); });
-        el.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && down) free(); });
-        el.addEventListener('wheel', hold, { passive: true });
-        // Moved by hand (momentum, keyboard, a scrollbar) — wait, then carry on from there.
-        el.addEventListener('scroll', () => {
-          if (mine < 0 || Math.abs(el.scrollLeft - mine) > 2) hold();
-        }, { passive: true });
-      }
-      box = el; set = s; pos = 0; last = 0;
-      el.scrollLeft = 0;
-      measure();
-      run();
-    },
-    visible(v) {
-      onScreen = v;
-      if (v && !loopW) measure();      // drawn while the catalog was hidden
-      run();
-    },
-  };
-})();
 
 // Bring the start of the product list up under the floating chip row —
 // after a tile is tapped always, after a chip only when the buyer is below it.
