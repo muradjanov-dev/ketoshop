@@ -148,6 +148,9 @@ async def show_admin_submenu(callback: CallbackQuery, state: FSMContext):
         kb = admin_users_menu_keyboard(lang)
     elif menu_type == "marketing":
         kb = admin_marketing_menu_keyboard(lang)
+    elif menu_type == "ads":
+        from keyboards import admin_ads_menu_keyboard
+        kb = admin_ads_menu_keyboard(lang)
     else:
         await callback.answer()
         return

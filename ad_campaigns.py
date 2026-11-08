@@ -461,6 +461,19 @@ async def tick(bot: Bot) -> None:
 
 # ───────────────────────────── /reklama_bog ─────────────────────────────
 
+async def links_text() -> str:
+    """The table — /reklama_bog and «🔗 Kampaniya ↔ bot havolasi»."""
+    rows = await links()
+    lines = ["🔗 <b>Kampaniya ↔ bot havolasi</b>",
+             "<i>Yangi reklama tugmasida t.me/ketoshopbot?start=kod bo'lsa — o'zi bog'lanadi.</i>", ""]
+    lines += [f"{r['emoji'] or '📣'} {html.escape(r['name'])} — <code>{r['campaign_id']}</code> → "
+              f"<code>?start={html.escape(r['start_code'])}</code>"
+              + ("" if r["manual"] else " <i>(avtomatik)</i>") for r in rows] or ["<i>Bo'sh</i>"]
+    lines += ["", "Qo'lda: <code>/reklama_bog 1202… kod Nomi</code>",
+              "O'chirish: <code>/reklama_bog 1202… off</code>"]
+    return "\n".join(lines)
+
+
 @router.message(Command("reklama_bog"))
 async def cmd_link(message: Message):
     """/reklama_bog — the table; /reklama_bog <campaign_id> <kod> [nomi] — link
@@ -469,15 +482,7 @@ async def cmd_link(message: Message):
         return
     parts = (message.text or "").split(maxsplit=3)
     if len(parts) == 1:
-        rows = await links()
-        lines = ["🔗 <b>Kampaniya ↔ bot havolasi</b>",
-                 "<i>Yangi reklama tugmasida t.me/ketoshopbot?start=kod bo'lsa — o'zi bog'lanadi.</i>", ""]
-        lines += [f"{r['emoji'] or '📣'} {html.escape(r['name'])} — <code>{r['campaign_id']}</code> → "
-                  f"<code>?start={html.escape(r['start_code'])}</code>"
-                  + ("" if r["manual"] else " <i>(avtomatik)</i>") for r in rows] or ["<i>Bo'sh</i>"]
-        lines += ["", "Qo'lda: <code>/reklama_bog 1202… kod Nomi</code>",
-                  "O'chirish: <code>/reklama_bog 1202… off</code>"]
-        await message.answer("\n".join(lines), parse_mode="HTML")
+        await message.answer(await links_text(), parse_mode="HTML")
         return
     cid = parts[1].strip()
     if not cid.isdigit():

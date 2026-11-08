@@ -355,10 +355,14 @@ async def mark_handled(callback: CallbackQuery):
 async def recent_leads(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
+    await message.answer(await recent_text(), parse_mode="HTML")
+
+
+async def recent_text() -> str:
+    """The last 10 leads — /leads and «📋 Leadlar»."""
     rows = await database.get_recent_meta_leads(10)
     if not rows:
-        await message.answer("Hozircha lead yo'q.")
-        return
+        return "Hozircha lead yo'q."
 
     total = await database.count_meta_leads()
     lines = [f"📋 <b>Oxirgi {len(rows)} ta lead</b> (jami {total})", ""]
@@ -368,7 +372,7 @@ async def recent_leads(message: Message):
         name = html.escape(r.get("full_name") or "—")
         phone = html.escape(r.get("phone") or "—")
         lines.append(f"{mark} {when} · {name} · <code>{phone}</code>")
-    await message.answer("\n".join(lines), parse_mode="HTML")
+    return "\n".join(lines)
 
 
 @router.message(Command("leads_test"))

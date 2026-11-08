@@ -674,6 +674,7 @@ def admin_panel_keyboard(lang: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="👥 Foydalanuvchilar", callback_data="admin_menu:users"),
             InlineKeyboardButton(text="🚀 Marketing va Aksiya", callback_data="admin_menu:marketing")
         ],
+        [InlineKeyboardButton(text="📣 Reklama va havolalar", callback_data="admin_menu:ads")],
     ]
     # The browser panel (Kanban board, products, stats) — one tap from the
     # main admin menu instead of two levels down under Statistika. Skipped
@@ -690,7 +691,8 @@ def admin_stats_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=get_text("btn_admin_website", lang), url=f"{WEBAPP_URL}/admin")],
         # Meta kampaniyalari + botning o'z START hisobi (meta_ads / ad_campaigns).
-        [InlineKeyboardButton(text="📣 Reklama natijalari (bugun)", callback_data="ads:today")],
+        # Not «(bugun)»: Meta's day runs 13:00–13:00 Tashkent; the report says which.
+        [InlineKeyboardButton(text="📣 Reklama natijalari", callback_data="ads:today")],
         [InlineKeyboardButton(text="📦 Mahsulot savdosi — 15/30 kun", callback_data="admin:product_sales")],
         [
             InlineKeyboardButton(text=get_text("btn_admin_stats", lang), callback_data="admin:stats"),
@@ -706,6 +708,26 @@ def admin_stats_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
         ],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")],
     ])
+
+def admin_ads_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Every ad and tracked-link command as a button (owner, 2026-11-08:
+    "/reklama bunday yozishni bilmaydiganlar uchun admin panelda tushunarli
+    qilib tugmalar ham qo'sh"). Handlers: meta_ads (ads:*), shop_links
+    (shoplnk:*), ad_sources (adsrc:*), admin_ads_menu (adm_ads:*)."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Bugun", callback_data="ads:today"),
+         InlineKeyboardButton(text="📊 Kecha", callback_data="ads:yesterday"),
+         InlineKeyboardButton(text="📊 7 kun", callback_data="ads:last_7d")],
+        [InlineKeyboardButton(text="🔍 Reklamalar holati (to'xtadimi, muammo bormi)", callback_data="adm_ads:holat")],
+        [InlineKeyboardButton(text="🔗 Kampaniya ↔ bot havolasi", callback_data="adm_ads:bog")],
+        [InlineKeyboardButton(text="🌐 Havolalar natijasi (kim keldi, kim oldi)", callback_data="shoplnk:30")],
+        [InlineKeyboardButton(text="➕ Yangi havola yasash", callback_data="adm_ads:newlink")],
+        [InlineKeyboardButton(text="📣 Facebook/Instagram manbalari (fb_…)", callback_data="adsrc:30")],
+        [InlineKeyboardButton(text="📋 Leadlar (forma to'ldirganlar)", callback_data="adm_ads:leads")],
+        [InlineKeyboardButton(text="🔑 Meta tokeni", callback_data="adm_ads:token")],
+        [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")],
+    ])
+
 
 def admin_products_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     rows = [
