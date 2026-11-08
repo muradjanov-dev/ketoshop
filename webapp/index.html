@@ -136,7 +136,14 @@
     --dock-h: 64px;
     --dock-gap: 10px;
     --tab-bar-h: 64px;
-    --safe-b: env(safe-area-inset-bottom, 0px);
+    /* The bottom inset: the browser's, or what Telegram reports — Android's
+       WebView says 0 for env() even where the system bar or Telegram's own
+       bottom UI covers the page (telegram-web-app.js sets the --tg-* ones,
+       Bot API 8.0). Taken whichever is larger. */
+    --safe-b: max(env(safe-area-inset-bottom, 0px),
+                  calc(var(--tg-safe-area-inset-bottom, 0px) + var(--tg-content-safe-area-inset-bottom, 0px)));
+    /* Room above the dock for what floats there (🔇, the YANGI5 timer). */
+    --float-h: 52px;
     color-scheme: light;
   }
 
@@ -242,7 +249,11 @@
     -webkit-user-select: none;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
-    padding-bottom: calc(var(--dock-h) + var(--dock-gap) * 2 + var(--safe-b) + 8px);
+    /* The page ends above the dock AND the buttons floating over it, so the
+       last row — price included — can always be scrolled into view (owner,
+       2026-11-08: a buyer's screenshot of «Tuz», the last home row, with the
+       names and prices under the dock). */
+    padding-bottom: calc(var(--dock-h) + var(--dock-gap) * 2 + var(--safe-b) + var(--float-h) + 8px);
     overflow-x: hidden;
   }
   input, textarea { -webkit-user-select: text; user-select: text; }
