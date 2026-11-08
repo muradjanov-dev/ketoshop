@@ -197,5 +197,46 @@ class NewUserNoticeTest(unittest.TestCase):
             self.assertIsNone(run(shop_links.last_open(BUYER)))
 
 
+class AdminApiTest(unittest.TestCase):
+    """GET /admin/api/shop-links — /sayt_havolalar's numbers on the admin site."""
+
+    def setUp(self):
+        import admin_web
+        p = patch.object(admin_web, "ADMIN_WEB_PASSWORD", "test")       # the panel is switched on
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_closed_without_the_admin_session(self):
+        import admin_web
+        from aiohttp.test_utils import make_mocked_request
+        with patch.object(shop_links, "stats", AsyncMock()) as stats:
+            resp = run(admin_web.api_shop_links(make_mocked_request("GET", "/admin/api/shop-links")))
+        self.assertEqual(resp.status, 401)
+        stats.assert_not_awaited()
+
+    def test_numbers_and_links(self):
+        import admin_web
+        from decimal import Decimal
+        from aiohttp.test_utils import make_mocked_request
+        row = {"code": "kepak", "name": "Kepak", "opens": Decimal("3"), "people": 2, "revenue": Decimal("2.0E+5")}
+        with patch.object(admin_web, "_authed", return_value=True),              patch.object(shop_links, "stats", AsyncMock(return_value=[row])) as stats:
+            resp = run(admin_web.api_shop_links(make_mocked_request("GET", "/admin/api/shop-links?period=7")))
+        body = json.loads(resp.text)
+        self.assertEqual(body["period"], "7")
+        self.assertTrue(body["links"][0]["link"].endswith("/shop?startapp=kepak"))
+        self.assertIsNotNone(stats.await_args.args[0])                  # 7 days back
+        with patch.object(admin_web, "_authed", return_value=True),              patch.object(shop_links, "stats", AsyncMock(return_value=[])) as stats:
+            run(admin_web.api_shop_links(make_mocked_request("GET", "/admin/api/shop-links?period=all")))
+        self.assertIsNone(stats.await_args.args[0])
+
+    def test_registered_as_get_only(self):
+        import admin_web
+        from aiohttp import web
+        app = web.Application()
+        admin_web.setup_admin_routes(app)
+        methods = {r.method for r in app.router.routes() if r.resource.canonical == "/admin/api/shop-links"}
+        self.assertEqual(methods - {"HEAD"}, {"GET"})
+
+
 if __name__ == "__main__":
     unittest.main()

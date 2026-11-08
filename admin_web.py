@@ -1181,6 +1181,23 @@ async def api_site_user(request: web.Request):
                                               request.query.get("period", "90d")))
 
 
+@require_auth
+async def api_shop_links(request: web.Request):
+    """GET /admin/api/shop-links?period=7|30|all — read-only: the tracked
+    shop links (t.me/<bot>/shop?startapp=<kod>, shop_links.py) with who
+    opened them, joined, stayed outside and bought — the same numbers as the
+    bot's /sayt_havolalar (owner, 2026-11-08: "statistikani shu yerda ayt")."""
+    import shop_links
+    from datetime import datetime, timedelta
+    period = request.query.get("period", "30")
+    _, days = shop_links.PERIODS.get(period, shop_links.PERIODS["30"])
+    since = datetime.utcnow() - timedelta(days=days) if days else None
+    rows = await shop_links.stats(since)
+    for r in rows:
+        r["link"] = shop_links.link(r["code"])
+    return _json({"period": period if period in shop_links.PERIODS else "30", "links": rows})
+
+
 def _dashboard_period(request: web.Request) -> str | dict:
     """The dashboard's period switch: today / 7d / 30d / all, or two dates."""
     period = request.query.get("period", "30d")
@@ -2041,6 +2058,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/reviews", api_reviews)
     app.router.add_get("/admin/api/activity", api_activity)
     app.router.add_get("/admin/api/site-analytics", api_site_analytics)
+    app.router.add_get("/admin/api/shop-links", api_shop_links)
     app.router.add_get("/admin/api/feedback", api_feedback)
     app.router.add_get("/admin/api/site-analytics/user/{user_id:\\d+}", api_site_user)
     app.router.add_get("/admin/api/promos", api_promos_list)
