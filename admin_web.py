@@ -67,6 +67,7 @@ import hmac
 import json
 import logging
 import math
+import re
 import time
 from pathlib import Path
 
@@ -924,7 +925,7 @@ async def api_promos_announce(request: web.Request):
 
 # ───────────────────────────── expenses ──────────────────────────────────────
 
-def _expense_fields(body) -> tuple[str, float]:
+def _expense_fields(body) -> tuple[str, float, int | None]:
     if not isinstance(body, dict) or not isinstance(body.get("name"), str):
         raise ValueError
     name = body["name"].strip()
@@ -934,7 +935,25 @@ def _expense_fields(body) -> tuple[str, float]:
     amount = float(raw_amount)
     if not name or len(name) > 200 or not math.isfinite(amount) or amount <= 0:
         raise ValueError
-    return name, amount
+    raw_cat = body.get("category_id")
+    if raw_cat in (None, "", 0, "0"):
+        category_id = None
+    elif isinstance(raw_cat, bool):
+        raise ValueError
+    else:
+        category_id = int(raw_cat)
+        if category_id <= 0:
+            raise ValueError
+    return name, amount, category_id
+
+
+def _category_name(body) -> str:
+    if not isinstance(body, dict) or not isinstance(body.get("name"), str):
+        raise ValueError
+    name = " ".join(body["name"].split())
+    if not name or len(name) > 60:
+        raise ValueError
+    return name
 
 
 ADMIN_MESSAGE_PART = 3900      # under Telegram's 4096-character limit
@@ -1018,18 +1037,35 @@ async def api_admin_message(request: web.Request):
                   "extra_reached": [i for i in extra if i in delivered]})
 
 
+_EXPENSE_FILTER = re.compile(r"^(?:none|auto:[a-z]+|\d{1,9})$")
+
+
 @require_auth
 async def api_expenses_list(request: web.Request):
-    expenses = await database.get_expenses(100)
+    """GET /admin/api/expenses?category=<id|none|auto:…> — the newest 100."""
+    category = request.query.get("category") or None
+    if category and not _EXPENSE_FILTER.match(category):
+        return _json({"error": "Kategoriya noto'g'ri"}, status=400)
+    expenses = await database.get_expenses(100, category)
     return _json({"expenses": expenses})
+
+
+async def _category_problem(category_id: int | None):
+    if category_id is not None and not await database.expense_category_exists(category_id):
+        return _json({"error": "Kategoriya topilmadi"}, status=400)
+    return None
+
 
 @require_auth
 async def api_expenses_add(request: web.Request):
     try:
-        name, amount = _expense_fields(await request.json())
+        name, amount, category_id = _expense_fields(await request.json())
     except (TypeError, ValueError, OverflowError):
         return _json({"error": "Chiqim nomi va noldan katta, to'g'ri summani kiriting"}, status=400)
-    eid = await database.add_expense(name, amount)
+    problem = await _category_problem(category_id)
+    if problem is not None:      # a Response is falsy when empty (it is a MutableMapping)
+        return problem
+    eid = await database.add_expense(name, amount, category_id)
     return _json({"ok": True, "id": eid})
 
 
@@ -1037,16 +1073,77 @@ async def api_expenses_add(request: web.Request):
 async def api_expenses_update(request: web.Request):
     try:
         expense_id = int(request.match_info["id"])
-        name, amount = _expense_fields(await request.json())
+        name, amount, category_id = _expense_fields(await request.json())
     except (TypeError, ValueError, OverflowError):
         return _json({"error": "Chiqim nomi va noldan katta, to'g'ri summani kiriting"}, status=400)
+    problem = await _category_problem(category_id)
+    if problem is not None:      # a Response is falsy when empty (it is a MutableMapping)
+        return problem
     try:
-        changed = await database.update_expense(expense_id, name, amount)
+        changed = await database.update_expense(expense_id, name, amount, category_id)
     except ValueError as exc:
         return _json({"error": str(exc)}, status=409)
     if not changed:
         return _json({"error": "Chiqim topilmadi"}, status=404)
     return _json({"ok": True})
+
+
+# ── Chiqim kategoriyalari (owner, 2026-11-08: "xarajatlar bo'limiga
+# kategoriya qo'shish imkoniyatini qo'sh, shunda xarajatlarni ham kategoriya
+# bo'yicha belgilab boramiz") ──
+
+@require_auth
+async def api_expense_categories(request: web.Request):
+    """GET /admin/api/expense-categories — the admins' own list."""
+    return _json({"categories": await database.get_expense_categories()})
+
+
+@require_auth
+async def api_expense_category_add(request: web.Request):
+    """POST {name} — a new category; an existing name (any case) is returned as is."""
+    try:
+        name = _category_name(await request.json())
+    except (TypeError, ValueError):
+        return _json({"error": "Kategoriya nomini yozing (60 belgigacha)"}, status=400)
+    cid, created = await database.add_expense_category(name)
+    return _json({"ok": True, "id": cid, "created": created})
+
+
+@require_auth
+async def api_expense_category_rename(request: web.Request):
+    try:
+        cid = int(request.match_info["id"])
+        name = _category_name(await request.json())
+    except (TypeError, ValueError):
+        return _json({"error": "Kategoriya nomini yozing (60 belgigacha)"}, status=400)
+    try:
+        changed = await database.rename_expense_category(cid, name)
+    except ValueError as exc:
+        return _json({"error": str(exc)}, status=409)
+    if not changed:
+        return _json({"error": "Kategoriya topilmadi"}, status=404)
+    return _json({"ok": True})
+
+
+@require_auth
+async def api_expense_category_delete(request: web.Request):
+    """Its expenses stay, without a category."""
+    try:
+        cid = int(request.match_info["id"])
+    except (TypeError, ValueError):
+        return _json({"error": "Kategoriya raqami noto'g'ri"}, status=400)
+    if not await database.delete_expense_category(cid):
+        return _json({"error": "Kategoriya topilmadi"}, status=404)
+    return _json({"ok": True})
+
+
+@require_auth
+async def api_expense_totals(request: web.Request):
+    """GET /admin/api/expenses/by-category?period=7d|30d|all — where the money went."""
+    period = request.query.get("period", "30d")
+    if period not in ("today", "7d", "30d", "all"):
+        period = "30d"
+    return _json({"period": period, "totals": await database.get_expense_totals_by_category(period)})
 
 
 @require_auth
@@ -2053,6 +2150,11 @@ def setup_admin_routes(app: web.Application):
     app.router.add_post("/admin/api/reco/now", api_reco_send_now)
     app.router.add_post("/admin/api/reco/backfill", api_reco_backfill)
     app.router.add_get("/admin/api/expenses", api_expenses_list)
+    app.router.add_get("/admin/api/expenses/by-category", api_expense_totals)
+    app.router.add_get("/admin/api/expense-categories", api_expense_categories)
+    app.router.add_post("/admin/api/expense-categories", api_expense_category_add)
+    app.router.add_post("/admin/api/expense-categories/{id:\\d+}", api_expense_category_rename)
+    app.router.add_post("/admin/api/expense-categories/{id:\\d+}/delete", api_expense_category_delete)
     app.router.add_post("/admin/api/expenses", api_expenses_add)
     app.router.add_post("/admin/api/admin-message", api_admin_message)
     app.router.add_post("/admin/api/expenses/{id:\\d+}", api_expenses_update)

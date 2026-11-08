@@ -816,6 +816,21 @@ async def init_db():
             "ON expenses(delivery_order_id) WHERE delivery_order_id IS NOT NULL"
         )
 
+        # Chiqim kategoriyalari (owner, 2026-11-08: "xarajatlar bo'limiga
+        # kategoriya qo'shish imkoniyatini qo'sh"). Admins make their own
+        # list; a manual expense may carry one. Order-linked expenses are
+        # labelled by their kind instead (EXPENSE_AUTO_CATEGORIES).
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS expense_categories (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute(
+            "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS category_id INTEGER "
+            "REFERENCES expense_categories(id) ON DELETE SET NULL")
+
         # ===== Sovg'a kampaniyasi (2026-09-17) =====
         # One row per campaign key. started_at is stamped the first time the
         # bot boots with the campaign in the code, so a restart or redeploy
@@ -4086,23 +4101,40 @@ async def get_target_month_summary(first_day) -> dict:
         return dict(row) if row else {"days": 0, "orders": 0, "days_hit": 0, "best_day": 0}
 
 
-async def add_expense(name: str, amount: float) -> int:
+async def add_expense(name: str, amount: float, category_id: int | None = None) -> int:
     async with pool.acquire() as conn:
         return await conn.fetchval(
-            "INSERT INTO expenses (name, amount) VALUES ($1, $2) RETURNING id",
-            name, amount
+            "INSERT INTO expenses (name, amount, category_id) VALUES ($1, $2, $3) RETURNING id",
+            name, amount, category_id
         )
 
 
 _MANUAL_EXPENSE = "bonus_order_id IS NULL AND gift_order_id IS NULL AND delivery_order_id IS NULL"
 
+# Order-linked expenses have no category of their own — their kind is it.
+EXPENSE_AUTO_CATEGORIES = (
+    ("delivery_order_id", "auto:kuryer", "🚚 Kuryer (avtomatik)"),
+    ("gift_order_id", "auto:sovga", "🎁 Sovg'a (avtomatik)"),
+    ("bonus_order_id", "auto:aksiya", "🎁 Aksiya bonusi (avtomatik)"),
+)
 
-async def update_expense(expense_id: int, name: str, amount: float) -> bool:
+
+def expense_category_key(row: dict) -> str:
+    """'12' for a chosen category, 'auto:…' for an order-linked expense,
+    'none' for a manual one without a category."""
+    for column, key, _ in EXPENSE_AUTO_CATEGORIES:
+        if row.get(column) is not None:
+            return key
+    return str(row["category_id"]) if row.get("category_id") is not None else "none"
+
+
+async def update_expense(expense_id: int, name: str, amount: float,
+                         category_id: int | None = None) -> bool:
     """Edit only a manual expense, preserving its original booking date."""
     async with pool.acquire() as conn:
         changed = await conn.fetchval(
-            f"UPDATE expenses SET name=$2, amount=$3 WHERE id=$1 AND {_MANUAL_EXPENSE} RETURNING id",
-            expense_id, name, amount,
+            f"UPDATE expenses SET name=$2, amount=$3, category_id=$4 WHERE id=$1 AND {_MANUAL_EXPENSE} RETURNING id",
+            expense_id, name, amount, category_id,
         )
         if changed is not None:
             return True
@@ -4673,13 +4705,112 @@ async def get_cart_reminder_stats(days: int) -> dict:
         return {k: (float(v) if "value" in k else int(v)) for k, v in dict(row).items()}
 
 
-async def get_expenses(limit: int = 50) -> list[dict]:
+_AUTO_COLUMNS = {key: column for column, key, _ in EXPENSE_AUTO_CATEGORIES}
+
+
+async def get_expenses(limit: int = 50, category: str | None = None) -> list[dict]:
+    """Newest first. `category`: a category id, 'none' (manual, no category)
+    or an 'auto:…' kind — see expense_category_key."""
+    where, args = "", [limit]
+    if category == "none":
+        where = ("WHERE e.category_id IS NULL AND e.bonus_order_id IS NULL "
+                 "AND e.gift_order_id IS NULL AND e.delivery_order_id IS NULL")
+    elif category in _AUTO_COLUMNS:
+        where = f"WHERE e.{_AUTO_COLUMNS[category]} IS NOT NULL"
+    elif category:
+        args.append(int(category))
+        where = ("WHERE e.category_id = $2 AND e.bonus_order_id IS NULL "
+                 "AND e.gift_order_id IS NULL AND e.delivery_order_id IS NULL")
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT id, name, amount, created_at, bonus_order_id, gift_order_id, delivery_order_id "
-            "FROM expenses ORDER BY created_at DESC, id DESC LIMIT $1", limit)
-        return [dict(r, editable=all(r[key] is None for key in
-                    ("bonus_order_id", "gift_order_id", "delivery_order_id"))) for r in rows]
+            "SELECT e.id, e.name, e.amount, e.created_at, e.bonus_order_id, e.gift_order_id, "
+            "e.delivery_order_id, e.category_id, c.name AS category_name "
+            "FROM expenses e LEFT JOIN expense_categories c ON c.id = e.category_id "
+            f"{where} ORDER BY e.created_at DESC, e.id DESC LIMIT $1", *args)
+    out = []
+    for r in rows:
+        r = dict(r)
+        r["editable"] = all(r[key] is None for key in ("bonus_order_id", "gift_order_id", "delivery_order_id"))
+        r["category_key"] = expense_category_key(r)
+        if not r["editable"]:
+            r["category_name"] = next(label for _, key, label in EXPENSE_AUTO_CATEGORIES
+                                      if key == r["category_key"])
+        out.append(r)
+    return out
+
+
+# ===== Chiqim kategoriyalari =====
+
+async def get_expense_categories() -> list[dict]:
+    """Every category the admins made, with how many expenses carry it."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT c.id, c.name, COUNT(e.id) AS uses FROM expense_categories c "
+            "LEFT JOIN expenses e ON e.category_id = c.id "
+            "GROUP BY c.id, c.name ORDER BY LOWER(c.name), c.id")
+    return [dict(r, uses=int(r["uses"] or 0)) for r in rows]
+
+
+async def expense_category_exists(category_id: int) -> bool:
+    async with pool.acquire() as conn:
+        return await conn.fetchval("SELECT id FROM expense_categories WHERE id = $1", category_id) is not None
+
+
+async def add_expense_category(name: str) -> tuple[int, bool]:
+    """(id, created). The same name in another case is the same category."""
+    async with pool.acquire() as conn:
+        found = await conn.fetchval(
+            "SELECT id FROM expense_categories WHERE LOWER(name) = LOWER($1)", name)
+        if found is not None:
+            return found, False
+        return await conn.fetchval(
+            "INSERT INTO expense_categories (name) VALUES ($1) RETURNING id", name), True
+
+
+async def rename_expense_category(category_id: int, name: str) -> bool:
+    async with pool.acquire() as conn:
+        clash = await conn.fetchval(
+            "SELECT id FROM expense_categories WHERE LOWER(name) = LOWER($1) AND id <> $2", name, category_id)
+        if clash is not None:
+            raise ValueError("Bunday nomli kategoriya bor")
+        return await conn.fetchval(
+            "UPDATE expense_categories SET name = $2 WHERE id = $1 RETURNING id", category_id, name) is not None
+
+
+async def delete_expense_category(category_id: int) -> bool:
+    """The category goes; its expenses stay, without a category."""
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE expenses SET category_id = NULL WHERE category_id = $1", category_id)
+        return await conn.fetchval(
+            "DELETE FROM expense_categories WHERE id = $1 RETURNING id", category_id) is not None
+
+
+async def get_expense_totals_by_category(period: str | dict = "30d") -> list[dict]:
+    """How much went where in the period, biggest first: {key, name, total, count}."""
+    start_time, end_time = _period_range(period)
+    conds, args = [], []
+    if start_time:
+        args.append(start_time)
+        conds.append(f"e.created_at >= ${len(args)}")
+    if end_time:
+        args.append(end_time)
+        conds.append(f"e.created_at <= ${len(args)}")
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT e.amount, e.bonus_order_id, e.gift_order_id, e.delivery_order_id, e.category_id, "
+            "c.name AS category_name FROM expenses e "
+            "LEFT JOIN expense_categories c ON c.id = e.category_id" + where, *args)
+    labels = {key: label for _, key, label in EXPENSE_AUTO_CATEGORIES}
+    totals: dict[str, dict] = {}
+    for r in rows:
+        r = dict(r)
+        key = expense_category_key(r)
+        name = labels.get(key) or r.get("category_name") or "Kategoriyasiz"
+        t = totals.setdefault(key, {"key": key, "name": name, "total": 0.0, "count": 0})
+        t["total"] += float(r["amount"] or 0)
+        t["count"] += 1
+    return sorted(totals.values(), key=lambda t: -t["total"])
 
 
 def _month_window_utc(year: int, month: int, cap_at_now: bool = False):

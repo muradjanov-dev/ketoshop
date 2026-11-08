@@ -25,8 +25,13 @@ class ExpenseConnection:
             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
             amount DOUBLE PRECISION NOT NULL,
             created_at TEXT DEFAULT '2026-10-26T10:00:00',
-            bonus_order_id INTEGER, gift_order_id INTEGER, delivery_order_id INTEGER)""")
-        self.db.executemany("INSERT INTO expenses VALUES (?,?,?,?,?,?,?)", [
+            bonus_order_id INTEGER, gift_order_id INTEGER, delivery_order_id INTEGER,
+            category_id INTEGER)""")
+        self.db.execute("""CREATE TABLE expense_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+            created_at TEXT DEFAULT '2026-11-08T10:00:00')""")
+        self.db.executemany("INSERT INTO expenses (id, name, amount, created_at, bonus_order_id, gift_order_id, "
+                            "delivery_order_id) VALUES (?,?,?,?,?,?,?)", [
             (325, "Bonus", 1250000, "2026-10-25T11:07:31", None, None, None),
             (326, "Sovg'a", 5000, "2026-10-25T12:00:00", None, 753, None),
             (327, "Kuryer", 25000, "2026-10-25T13:00:00", None, None, 749),
@@ -47,6 +52,9 @@ class ExpenseConnection:
 
     async def fetch(self, sql, *args):
         return [dict(row) for row in self.query(sql, args).fetchall()]
+
+    async def execute(self, sql, *args):
+        self.query(sql, args)
 
 
 class ExpensePool:
@@ -140,6 +148,102 @@ class ExpenseCrudTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 401, await response.text())
         response = await self.client.get("/admin/api/expenses")
         self.assertEqual(response.status, 401)
+
+
+
+class ExpenseCategoryTest(unittest.IsolatedAsyncioTestCase):
+    """Chiqim kategoriyalari (egasi, 2026-11-08: "xarajatlar bo'limiga kategoriya
+    qo'shish imkoniyatini qo'sh")."""
+    asyncSetUp = ExpenseCrudTest.asyncSetUp
+
+    async def add_category(self, name):
+        response = await self.client.post("/admin/api/expense-categories", json={"name": name})
+        self.assertEqual(response.status, 200, await response.text())
+        return await response.json()
+
+    async def listed(self, query=""):
+        response = await self.client.get("/admin/api/expenses" + query)
+        self.assertEqual(response.status, 200, await response.text())
+        return (await response.json())["expenses"]
+
+    async def test_add_pick_filter_and_sum(self):
+        first = await self.add_category("  Reklama ")
+        self.assertTrue(first["created"])
+        again = await self.add_category("REKLAMA")                   # the same category, any case
+        self.assertEqual((again["id"], again["created"]), (first["id"], False))
+        response = await self.client.post("/admin/api/expenses",
+                                          json={"name": "Instagram", "amount": 300000, "category_id": first["id"]})
+        self.assertEqual(response.status, 200, await response.text())
+        response = await self.client.get("/admin/api/expense-categories")
+        cats = (await response.json())["categories"]
+        self.assertEqual([(c["name"], c["uses"]) for c in cats], [("Reklama", 1)])
+
+        rows = {r["name"]: r for r in await self.listed()}
+        self.assertEqual(rows["Instagram"]["category_name"], "Reklama")
+        self.assertIsNone(rows["Bonus"]["category_name"])
+        self.assertEqual(rows["Kuryer"]["category_name"], "🚚 Kuryer (avtomatik)")
+        self.assertEqual([r["name"] for r in await self.listed(f"?category={first['id']}")], ["Instagram"])
+        self.assertEqual([r["name"] for r in await self.listed("?category=none")], ["Bonus"])
+        self.assertEqual([r["id"] for r in await self.listed("?category=auto:kuryer")], [327])
+        response = await self.client.get("/admin/api/expenses?category=drop%20table")
+        self.assertEqual(response.status, 400)
+
+        response = await self.client.get("/admin/api/expenses/by-category?period=all")
+        totals = {t["name"]: (t["total"], t["count"]) for t in (await response.json())["totals"]}
+        self.assertEqual(totals["Reklama"], (300000, 1))
+        self.assertEqual(totals["Kategoriyasiz"], (1250000, 1))
+        self.assertEqual(totals["🚚 Kuryer (avtomatik)"], (25000, 1))
+        self.assertEqual(totals["🎁 Sovg'a (avtomatik)"], (5000, 1))
+        self.assertEqual(totals["🎁 Aksiya bonusi (avtomatik)"], (5000, 1))
+
+    async def test_editing_an_expense_changes_its_category(self):
+        cid = (await self.add_category("Ijara"))["id"]
+        response = await self.client.post("/admin/api/expenses/325",
+                                          json={"name": "Bonus", "amount": 1250000, "category_id": cid})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertEqual(next(r for r in await self.listed() if r["id"] == 325)["category_id"], cid)
+        response = await self.client.post("/admin/api/expenses/325",
+                                          json={"name": "Bonus", "amount": 1250000, "category_id": None})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertIsNone(next(r for r in await self.listed() if r["id"] == 325)["category_id"])
+
+    async def test_unknown_or_bad_category_is_refused_without_writing(self):
+        for cat in (999, -1, True, "abc"):
+            with self.subTest(cat=cat):
+                response = await self.client.post("/admin/api/expenses",
+                                                  json={"name": "X", "amount": 1000, "category_id": cat})
+                self.assertEqual(response.status, 400, await response.text())
+        self.assertEqual(len(await self.listed()), 4)
+
+    async def test_rename_and_delete(self):
+        a = (await self.add_category("Reklama"))["id"]
+        b = (await self.add_category("Ijara"))["id"]
+        response = await self.client.post(f"/admin/api/expense-categories/{a}", json={"name": "ijara"})
+        self.assertEqual(response.status, 409)                     # the name is taken
+        response = await self.client.post(f"/admin/api/expense-categories/{a}", json={"name": "Marketing"})
+        self.assertEqual(response.status, 200, await response.text())
+        await self.client.post("/admin/api/expenses", json={"name": "Ofis", "amount": 5000000, "category_id": b})
+        response = await self.client.post(f"/admin/api/expense-categories/{b}/delete")
+        self.assertEqual(response.status, 200, await response.text())
+        ofis = next(r for r in await self.listed() if r["name"] == "Ofis")
+        self.assertIsNone(ofis["category_id"])                     # the expense stays, uncategorised
+        self.assertEqual(ofis["amount"], 5000000)
+        for path in (f"/admin/api/expense-categories/{b}", f"/admin/api/expense-categories/{b}/delete"):
+            response = await self.client.post(path, json={"name": "Yangi"})
+            self.assertEqual(response.status, 404)
+        for bad in ("", "   ", "x" * 61, 5):
+            response = await self.client.post("/admin/api/expense-categories", json={"name": bad})
+            self.assertEqual(response.status, 400)
+
+    async def test_category_endpoints_need_the_admin_session(self):
+        self.client.session.cookie_jar.clear()
+        for path in ("/admin/api/expense-categories", "/admin/api/expense-categories/1",
+                     "/admin/api/expense-categories/1/delete"):
+            response = await self.client.post(path, json={"name": "X"})
+            self.assertEqual(response.status, 401)
+        for path in ("/admin/api/expense-categories", "/admin/api/expenses/by-category"):
+            response = await self.client.get(path)
+            self.assertEqual(response.status, 401)
 
 
 if __name__ == "__main__":
