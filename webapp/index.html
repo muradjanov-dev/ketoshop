@@ -2547,6 +2547,26 @@
 
   /* Under the catalog grid: "more follow" with a button, or "that's all". */
   .catalog-more { padding: 6px 14px 22px; text-align: center; }
+  /* A category's heading inside «Hammasi» / «Chegirmalar» — a full row of
+     the grid in every view (2 / 3 columns, list). Tapping opens the category. */
+  #product-grid .catalog-group-head {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    margin: 14px 0 0;
+    padding: 0 2px;
+    border: 0;
+    background: none;
+    color: var(--text);
+    text-align: left;
+    font: 800 17px/1.25 var(--font-display);
+    cursor: pointer;
+  }
+  #product-grid .catalog-group-head:first-child { margin-top: 0; }
+  #product-grid .catalog-group-head .cnt { font: 700 13px var(--font-body); color: var(--hint); white-space: nowrap; }
+  #product-grid .catalog-group-head .go { margin-left: auto; font: 700 13px var(--font-body); color: var(--link); white-space: nowrap; }
   .catalog-more-btn {
     width: 100%;
     max-width: 420px;
@@ -3453,7 +3473,7 @@
     pointer-events: none;
     opacity: 0;
     filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .3));
-    transition: left .38s var(--ease), top .38s var(--ease), opacity .25s var(--ease), transform .14s var(--ease);
+    transition: left .7s var(--ease), top .7s var(--ease), opacity .3s var(--ease), transform .2s var(--ease);
   }
   .dock-hand.on { opacity: 1; }
   .dock-hand.press { transform: scale(.8) translateY(-4px); }
@@ -3470,10 +3490,10 @@
     transform: translate(-50%, -100%);
     opacity: 0;
     box-shadow: 0 6px 18px rgba(0, 0, 0, .25);
-    transition: opacity .2s var(--ease), left .38s var(--ease);
+    transition: opacity .3s var(--ease), left .7s var(--ease);
   }
   .dock-tip.on { opacity: 1; }
-  .tab-item.dock-wiggle svg { animation: dock-wiggle .6s ease; }
+  .tab-item.dock-wiggle svg { animation: dock-wiggle .9s ease; }
   @keyframes dock-wiggle {
     0%, 100% { transform: rotate(0) scale(1); }
     20% { transform: rotate(-14deg) scale(1.2); }
@@ -3493,7 +3513,7 @@
     opacity: .45;
     transform: scale(.3);
     pointer-events: none;
-    animation: dock-ripple .6s ease-out forwards;
+    animation: dock-ripple .9s ease-out forwards;
   }
   @keyframes dock-ripple { to { transform: scale(1.6); opacity: 0; } }
 
@@ -6677,7 +6697,10 @@ function launchFireworks(canvas) {
 // stops it. Without storage it is not shown at all — it could not stop.
 const DockHint = (() => {
   const SHOWS = 3;
-  const STEP_MS = 900;
+  // Slow enough to follow (owner, 2026-11-08: "sekinroq chiqsin odam
+  // tushunmay qoldi"): a line saying what the buttons are, then each one
+  // reached in 0.7 s, pressed, its name held for 1.4 s — about 12 s in all.
+  const INTRO_MS = 2200, MOVE_MS = 700, PRESS_MS = 250, HOLD_MS = 1400;
   let stopFn = null;
   const key = () => 'ketoshop_dock_hint_' +
     ((tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) || 'x');
@@ -6710,6 +6733,16 @@ const DockHint = (() => {
     };
     stopFn = stop;
     document.addEventListener('pointerdown', stop, true);
+    // First, what these are — above the middle of the dock.
+    const bar = document.getElementById('tab-bar').getBoundingClientRect();
+    tip.textContent = gx("👇 Pastdagi tugmalar — boshqa bo'limlar", '👇 Кнопки внизу — другие разделы');
+    tip.style.left = (bar.left + bar.width / 2) + 'px';
+    tip.style.top = (bar.top - 10) + 'px';
+    tip.classList.add('on');
+    await sleep(INTRO_MS);
+    if (stopped) return;
+    tip.classList.remove('on');
+    await sleep(300);
     for (const tab of tabs) {
       if (stopped) return;
       const r = tab.getBoundingClientRect();
@@ -6720,7 +6753,7 @@ const DockHint = (() => {
       tip.textContent = (tab.querySelector('span') || {}).textContent || '';
       tip.style.left = x + 'px';
       tip.style.top = (r.top - 10) + 'px';
-      await sleep(380);
+      await sleep(MOVE_MS);
       if (stopped) return;
       hand.classList.add('press');
       tip.classList.add('on');
@@ -6730,10 +6763,10 @@ const DockHint = (() => {
       const ripple = document.createElement('span');
       ripple.className = 'dock-ripple';
       tab.appendChild(ripple);
-      setTimeout(() => ripple.remove(), 650);
-      await sleep(160);
+      setTimeout(() => ripple.remove(), 950);
+      await sleep(PRESS_MS);
       hand.classList.remove('press');
-      await sleep(STEP_MS - 540);
+      await sleep(HOLD_MS);
       tip.classList.remove('on');
     }
     if (!stopped) { hand.classList.remove('on'); await sleep(300); stop(); }
@@ -7611,6 +7644,50 @@ const catalogCache = {};              // list key -> {at, promise}
 let catalogSeq = 0;                   // a newer category, search or language wins
 let catalogList = [];                 // what the current tab shows
 let catalogShown = 0;                 // how many of them are drawn
+let catalogGrouped = false;           // «Hammasi» / «Chegirmalar»: headed by category
+let catalogLastCat = null;            // the category of the last card drawn
+let catalogGroupCounts = {};
+
+// ===== KATALOG TARTIBI (owner, 2026-11-08: "saytda chiqayotgan mahsulotlarni
+// ham kategoriyalab ko'rsat"; "birxil kategoriyada bir xil nomlilar yonma yon
+// chiqsin") =====
+// Products whose names differ only by the pack size — «Stevia 200gr»,
+// «Stevia 1000g» — stand next to each other, smallest first; alphabetical
+// order split them. Mixed lists («Hammasi», «Chegirmalar») go category by
+// category, in the tiles' order, each under its own heading.
+// catalog_order.py reads names the same way for the bot.
+const PACK_SIZE_RE = /(\d+(?:[.,]\d+)?)\s*(kg|кг|gr|гр|g|г|ml|мл|l|л)(?![a-zа-яё])/i;
+function packSize(name) {
+  const m = PACK_SIZE_RE.exec(name || '');
+  if (!m) return null;
+  const v = parseFloat(m[1].replace(',', '.'));
+  return /^(kg|кг|l|л)$/i.test(m[2]) ? v * 1000 : v;
+}
+function packBase(name) {
+  return (name || '').replace(PACK_SIZE_RE, ' ').toLowerCase().replace(/[\s\-–—_.,()]+/g, ' ').trim();
+}
+function orderCatalog(list, grouped) {
+  const at = new Map((categories || []).map((c, i) => [c.key, i]));
+  return list.map((p, i) => ({
+    p, i,
+    c: grouped ? (at.has(p.category) ? at.get(p.category) : 1e6) : 0,
+    b: packBase(p.name),
+    s: packSize(p.name),
+  })).sort((x, y) => x.c - y.c || (x.b < y.b ? -1 : x.b > y.b ? 1 : 0) || (x.s === null) - (y.s === null)
+    || (x.s || 0) - (y.s || 0) || x.i - y.i).map(x => x.p);
+}
+function catalogGroupHead(cat) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'catalog-group-head';
+  b.dataset.cat = cat;
+  const name = (categories.find(c => c.key === cat) || {}).name || cat;
+  b.innerHTML = '<span>' + escapeHtml(name) + '</span>'
+    + '<span class="cnt">· ' + escapeHtml(tileCountText(catalogGroupCounts[cat] || 0)) + '</span>'
+    + '<span class="go">' + escapeHtml(gx('Hammasi →', 'Все →')) + '</span>';
+  b.onclick = () => { selectCategory(cat); scrollToCatalogList(false); };
+  return b;
+}
 
 function fetchCatalogList(key) {
   const hit = catalogCache[key];
@@ -7654,6 +7731,7 @@ async function loadProducts() {
   grid.innerHTML = '';
   catalogList = [];
   catalogShown = 0;
+  catalogLastCat = null;
   empty.style.display = 'none';
   renderCatalogMore();
   // A kept list draws at once; "Yuklanmoqda" only when it takes a moment.
@@ -7668,7 +7746,10 @@ async function loadProducts() {
     if (seq !== catalogSeq) return;
     clearTimeout(slow);
     loading.style.display = 'none';
-    catalogList = data.products;
+    catalogGrouped = currentCat === 'all' || currentCat === 'discounts';
+    catalogList = orderCatalog(data.products, catalogGrouped);
+    catalogGroupCounts = {};
+    catalogList.forEach(p => { catalogGroupCounts[p.category] = (catalogGroupCounts[p.category] || 0) + 1; });
     setCatalogHeading(data.total);
     if (!catalogList.length) {
       empty.style.display = 'block';
@@ -7691,7 +7772,13 @@ function catalogDrawMore() {
   const grid = document.getElementById('product-grid');
   const next = catalogList.slice(catalogShown, catalogShown + CATALOG_CHUNK);
   const frag = document.createDocumentFragment();
-  next.forEach(p => frag.appendChild(createProductCard(p)));
+  next.forEach(p => {
+    if (catalogGrouped && p.category !== catalogLastCat) {
+      catalogLastCat = p.category;
+      frag.appendChild(catalogGroupHead(p.category));
+    }
+    frag.appendChild(createProductCard(p));
+  });
   grid.appendChild(frag);
   catalogShown += next.length;
   renderCatalogMore();
@@ -7793,6 +7880,7 @@ document.getElementById('catalog-search').addEventListener('input', function(e) 
     catalogSeq++;
     catalogList = [];
     catalogShown = 0;
+    catalogGrouped = false;
     renderCatalogMore();
     const grid = document.getElementById('product-grid');
     const loading = document.getElementById('catalog-loading');
