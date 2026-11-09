@@ -6526,14 +6526,18 @@ async def bump_product_of_day_cycle() -> int:
 async def get_product_of_day_candidates(cycle: int) -> list[dict]:
     """Products that may be today's spotlight: in stock, retail, and not yet
     shown in this cycle. `views_30d` rides along so the picker can rank by
-    how much attention each one is actually getting."""
+    how much attention each one is actually getting; `in_channel` says
+    whether the channel has ever carried it as kun mahsuloti — the picker
+    puts those that never made it there first."""
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT p.*, u.full_name AS seller_name, u.username AS seller_username,
                    (SELECT COUNT(*) FROM product_views v
                      WHERE v.product_id = p.id
                        AND v.viewed_at > (now() AT TIME ZONE 'utc') - INTERVAL '30 days'
-                   ) AS views_30d
+                   ) AS views_30d,
+                   EXISTS (SELECT 1 FROM product_of_day_log c
+                            WHERE c.product_id = p.id AND c.channel_ok) AS in_channel
               FROM products p
               JOIN users u ON p.seller_id = u.user_id
              WHERE p.is_active = 1
@@ -6566,6 +6570,23 @@ async def record_product_of_day(product_id: int, cycle: int, sent: int, failed: 
             await conn.execute(
                 "UPDATE product_of_day_state SET last_product_id = $1 WHERE id = 1",
                 product_id)
+
+
+async def get_product_of_day_channel_gap() -> dict:
+    """Retail products the channel has never carried as kun mahsuloti:
+    `in_stock` are next in line, `out_of_stock` wait for a restock."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT COUNT(*) FILTER (WHERE p.quantity > 0)       AS in_stock,
+                   COUNT(*) FILTER (WHERE NOT (p.quantity > 0)) AS out_of_stock
+              FROM products p
+              JOIN users u ON p.seller_id = u.user_id
+             WHERE p.is_active = 1
+               AND COALESCE(p.b2b_only, FALSE) = FALSE
+               AND NOT EXISTS (SELECT 1 FROM product_of_day_log c
+                                WHERE c.product_id = p.id AND c.channel_ok)
+        """)
+        return {"in_stock": int(row["in_stock"] or 0), "out_of_stock": int(row["out_of_stock"] or 0)}
 
 
 async def get_product_of_day_history(limit: int = 7) -> list[dict]:
