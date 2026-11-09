@@ -1037,6 +1037,72 @@ async def api_admin_message(request: web.Request):
                   "extra_reached": [i for i in extra if i in delivered]})
 
 
+MANUAL_ORDER_BY = "🖥 Admin sayt"
+
+
+@require_auth
+async def api_manual_order(request: web.Request):
+    """POST /admin/api/manual-order — the bot's «📝 Qo'lda buyurtma» from the
+    dashboard (owner, 2026-11-09). Body: {name, phone, address, items:
+    [{product_id, quantity, price?}], payment, delivery, status}. Checked by
+    manual_order.parse — the bot's rules — and saved with add_manual_order,
+    so stock is untouched and the order is source='manual' like the bot's.
+    Every admin gets the same «Qo'lda buyurtma» card the bot sends.
+
+    "preview": true prices the order (UzPost fee included) without saving —
+    the form's running total; with "full": true it also checks the customer
+    fields, for the «Saqlansinmi?» summary shown before the real save."""
+    import manual_order
+    import order_admin_feed
+
+    try:
+        body = await request.json()
+    except Exception:
+        return _json({"error": "bad request"}, status=400)
+    if not isinstance(body, dict):
+        return _json({"error": "bad request"}, status=400)
+    preview = body.get("preview") is True
+
+    products: dict[int, dict] = {}
+    for raw in body.get("items") or []:
+        try:
+            pid = int((raw or {}).get("product_id"))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if pid not in products:
+            product = await database.get_product(pid)
+            if product:
+                products[pid] = product
+    try:
+        order = manual_order.parse(body, products,
+                                   need_customer=not preview or body.get("full") is True)
+    except manual_order.Invalid as exc:
+        return _json({"error": str(exc)}, status=400)
+
+    summary = {"name": order["customer_name"], "phone": order["phone"], "address": order["address"],
+               "items": order["items"], "subtotal": order["subtotal"],
+               "uzpost_fee": order["uzpost_fee"], "uzpost_kg": order["uzpost_kg"],
+               "total": order["total"]}
+    if preview:
+        return _json({"ok": True, "preview": True, **summary})
+
+    order_id = await database.add_manual_order(
+        admin_user_id=WEB_SELLER_ID,
+        customer_name=order["customer_name"],
+        phone=order["phone"],
+        address=order["address"],
+        items_data=order["items"],
+        total=order["total"],
+        payment_method=order["payment_method"],
+        delivery_method=order["delivery_method"],
+        status=order["status"],
+    )
+    logger.info("Manual order #%s saved from the admin site (%d line(s), %s so'm)",
+                order_id, len(order["items"]), order["total"])
+    order_admin_feed.manual_created(request.app.get("bot"), order_id, MANUAL_ORDER_BY)
+    return _json({"ok": True, "id": order_id, **summary})
+
+
 _EXPENSE_FILTER = re.compile(r"^(?:none|auto:[a-z]+|\d{1,9})$")
 
 
@@ -2181,6 +2247,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_post("/admin/api/expense-categories/{id:\\d+}/delete", api_expense_category_delete)
     app.router.add_post("/admin/api/expenses", api_expenses_add)
     app.router.add_post("/admin/api/admin-message", api_admin_message)
+    app.router.add_post("/admin/api/manual-order", api_manual_order)
     app.router.add_post("/admin/api/expenses/{id:\\d+}", api_expenses_update)
     app.router.add_post("/admin/api/expenses/{id:\\d+}/delete", api_expenses_delete)
     app.router.add_get("/admin/api/orders/{id:\\d+}/costs", api_order_line_costs)

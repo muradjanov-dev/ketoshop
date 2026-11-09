@@ -181,6 +181,31 @@
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1F1B14;color:#fff;font-size:13.5px;font-weight:600;border-radius:12px;padding:11px 20px;z-index:200;opacity:0;transition:.25s;pointer-events:none}
   .toast.show{opacity:1}
 
+  /* ===== Qo'lda buyurtma (dashboard) ===== */
+  .mo-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .mo-bar .mo-note{font-size:12.5px;color:var(--ink-2)}
+  .mo-pick{position:relative}
+  .mo-results{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);max-height:320px;overflow-y:auto;display:none}
+  .mo-results.open{display:block}
+  .mo-results button{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;border:none;background:none;padding:9px 12px;font:inherit;font-size:13.5px;color:var(--ink);cursor:pointer}
+  .mo-results button.on,.mo-results button:hover{background:var(--surface-2)}
+  .mo-results .sub{color:var(--ink-3);font-size:12px;white-space:nowrap}
+  .mo-results .mo-none{padding:12px;color:var(--ink-3);font-size:13px}
+  .mo-lines{display:flex;flex-direction:column;gap:8px}
+  .mo-head,.mo-line{display:grid;grid-template-columns:1fr 78px 118px 112px 34px;gap:8px;align-items:center}
+  .mo-head{font-size:11px;color:var(--ink-3);font-weight:700;margin-top:12px}
+  .mo-line .nm{font-size:13.5px;font-weight:600;line-height:1.3}
+  .mo-line .nm small{display:block;font-weight:500;color:var(--ink-3);font-size:11.5px}
+  .mo-line .sum{text-align:right;font-weight:700;font-size:13.5px}
+  .mo-line .del{border:none;background:var(--red-wash);color:var(--red);border-radius:9px;height:34px;font-weight:800;cursor:pointer}
+  .mo-empty{margin-top:10px;padding:14px;text-align:center;color:var(--ink-3);font-size:13px;border:1.5px dashed var(--line);border-radius:10px}
+  @media(max-width:640px){
+    .mo-head{display:none}
+    .mo-line{grid-template-columns:1fr 1fr 34px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+    .mo-line .nm{grid-column:1/-1}
+    .mo-line .sum{grid-column:1/3;text-align:left}
+  }
+
   @media (max-width:640px){
     .form-grid{grid-template-columns:1fr}
     .top .sub{display:none}
@@ -748,6 +773,10 @@ body.kuryer-mode .kb-admin-only{display:none!important}
 
   <!-- ===== DASHBOARD VIEW ===== -->
   <section class="view active" id="view-dashboard">
+    <div class="mo-bar">
+      <button class="btn btn-p" type="button" id="moOpenBtn">📝 Qo'lda buyurtma kiritish</button>
+      <span class="mo-note">Telefon, do'kon yoki tanish orqali kelgan buyurtma — botdagi «📝 Qo'lda buyurtma» bilan bir xil</span>
+    </div>
     <div class="period-switch" id="dashPeriod" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
       <button data-period="today">Bugun</button>
       <button data-period="7d">7 kun</button>
@@ -1556,6 +1585,57 @@ body.kuryer-mode .kb-admin-only{display:none!important}
       <button type="button" class="btn btn-o" data-close>Yopish</button>
     </div>
   </div>
+</div>
+
+<!-- ===== QO'LDA BUYURTMA (dashboard) ===== -->
+<div class="modal-bg" id="moModal">
+  <form class="modal" id="moForm" style="max-width:780px" autocomplete="off">
+    <h2>📝 Qo'lda buyurtma</h2>
+    <div class="hint">Telefon, do'kon yoki tanish orqali kelgan buyurtma. Ombordagi qoldiq o'zgarmaydi.
+      Saqlangach hamma adminlarga botda «Qo'lda buyurtma» kartochkasi keladi. Oyna yopilsa ham yozganlaringiz saqlanib turadi.</div>
+    <div class="form-grid">
+      <div><label for="moName">Mijoz ismi *</label><input id="moName" maxlength="200" required></div>
+      <div><label for="moPhone">Telefon *</label><input id="moPhone" inputmode="tel" maxlength="30" placeholder="+998 90 123 45 67" required></div>
+      <div class="full"><label for="moAddress">Manzil *</label><input id="moAddress" maxlength="500" required
+        placeholder="Shahar, ko'cha, uy — do'kondan olib ketgan bo'lsa «Olib ketdi»"></div>
+    </div>
+    <label for="moSearch">Mahsulot qo'shish</label>
+    <div class="mo-pick">
+      <input id="moSearch" type="search" placeholder="Nomini yozing: bodom, eritritol, kokos…" aria-controls="moResults">
+      <div class="mo-results" id="moResults" role="listbox"></div>
+    </div>
+    <div class="mo-lines" id="moLines"></div>
+    <div class="form-grid">
+      <div><label for="moPayment">To'lov *</label><select id="moPayment" required>
+        <option value="">— tanlang —</option>
+        <option value="cash">💵 Naqd</option>
+        <option value="online">💳 Onlayn</option>
+      </select></div>
+      <div><label for="moDelivery">Yetkazish *</label><select id="moDelivery" required>
+        <option value="">— tanlang —</option>
+        <option value="self">🚚 Ketoshop kuryer</option>
+        <option value="pickup">🏪 Olib ketish (do'kondan)</option>
+        <option value="yandex_taxi">🚖 Yandex Taxi</option>
+        <option value="bts">📦 BTS</option>
+        <option value="emu">📦 EMU</option>
+        <option value="uzpost">📮 UzPost</option>
+      </select></div>
+      <div class="full"><label for="moStatus">Holat *</label><select id="moStatus" required>
+        <option value="">— tanlang —</option>
+        <option value="pending">⏳ Kutilmoqda</option>
+        <option value="confirmed">✅ Tasdiqlangan</option>
+        <option value="shipped">🚚 Yo'lda</option>
+        <option value="delivered">📦 Yetkazildi</option>
+        <option value="cancelled">❌ Bekor qilingan</option>
+      </select></div>
+    </div>
+    <div class="calc" id="moCalc" aria-live="polite"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-o" id="moClear">Tozalash</button>
+      <button type="button" class="btn btn-o" data-close>Yopish</button>
+      <button type="submit" class="btn btn-p" id="moSave">✅ Saqlash</button>
+    </div>
+  </form>
 </div>
 
 <!-- ===== PRODUCT MODAL ===== -->
@@ -4029,6 +4109,181 @@ function closeBlogDetail(){
 }
 $('#blogBackBtn').addEventListener('click',closeBlogDetail);
 $('#blogDetailEditBtn').addEventListener('click',()=>{if(blogDetailId)openBlogModal(blogDetailId);});
+
+/* ===== Qo'lda buyurtma (dashboard) =====
+   The bot's «📝 Qo'lda buyurtma» as one form (owner, 2026-11-09). The server
+   (manual_order.parse) checks it by the bot's rules and prices it — this
+   page only collects it. A line's price is sent only when the admin typed
+   one; otherwise the server takes today's shelf price. Closing the window
+   keeps the draft; «Tozalash» or a save clears it. */
+const MO={lines:[],preview:null,seq:0,timer:null};
+const moNorm=s=>String(s||'').toLowerCase().replace(/[ʻʼ’‘`´]/g,"'");
+const moNum=v=>Number(String(v??'').replace(/\s/g,'').replace(',','.'));
+const moQty=n=>{const v=Number(n);return Number.isInteger(v)?String(v):String(+v.toFixed(3)).replace('.',',');};
+/* database.effective_price: the percent counts until discount_until (naive UTC). */
+function moShelf(p){
+  const d=Number(p.discount_percent)||0, base=Number(p.price)||0;
+  if(d<=0)return base;
+  if(p.discount_until){
+    const s=String(p.discount_until), t=Date.parse(/(Z|[+-]\d\d:?\d\d)$/.test(s)?s:s+'Z');
+    if(Number.isFinite(t)&&t<Date.now())return base;
+  }
+  return base*(100-d)/100;
+}
+function moLinePrice(l){const v=moNum(l.price);return String(l.price).trim()!==''&&Number.isFinite(v)&&v>0?v:l.shelf;}
+function moLineQty(l){const v=moNum(l.qty);return Number.isFinite(v)&&v>0?v:0;}
+
+function moSearch(){
+  const q=moNorm($('#moSearch').value.trim()), box=$('#moResults');
+  if(!q){box.classList.remove('open');box.innerHTML='';return;}
+  const hits=PRODUCTS.filter(p=>Number(p.is_active)===1&&!p.b2b_only&&
+    (moNorm(p.name).includes(q)||moNorm(p.name_ru).includes(q))).slice(0,12);
+  box.innerHTML=hits.length?hits.map((p,i)=>`<button type="button" role="option" data-pid="${p.id}"${i?'':' class="on"'}>
+      <span>${esc(p.name)}</span><span class="sub">${fmt(moShelf(p))} · qoldiq ${esc(moQty(p.quantity||0))}</span></button>`).join('')
+    :'<div class="mo-none">Topilmadi — boshqacha yozib ko\'ring</div>';
+  box.classList.add('open');
+}
+function moAdd(pid){
+  const p=PRODUCTS.find(x=>x.id===pid);if(!p)return;
+  const have=MO.lines.find(l=>l.pid===pid);
+  if(have)have.qty=moQty(moLineQty(have)+1);
+  else MO.lines.push({pid,name:p.name,shelf:moShelf(p),qty:'1',price:''});
+  $('#moSearch').value='';moSearch();
+  moRender();moSchedulePreview();
+  $('#moSearch').focus();
+}
+function moRowNote(l){
+  const price=moLinePrice(l), off=l.shelf>0&&price<l.shelf?Math.round((l.shelf-price)/l.shelf*100):0;
+  return `Do'konda: ${fmt(l.shelf)}`+(off?` · <b style="color:var(--green)">−${off}% chegirma</b>`:'')
+    +(l.shelf>0&&price>l.shelf+0.5?` · <b style="color:var(--red)">do'kondagidan baland</b>`:'');
+}
+function moRender(){
+  const box=$('#moLines');
+  if(!MO.lines.length){
+    box.innerHTML='<div class="mo-empty">Hali mahsulot yo\'q — yuqoridagi qatorga nomini yozing</div>';
+  }else{
+    box.innerHTML='<div class="mo-head"><span>Mahsulot</span><span>Soni</span><span>Narxi (1 ta)</span><span style="text-align:right">Jami</span><span></span></div>'+
+      MO.lines.map((l,i)=>`<div class="mo-line" data-i="${i}">
+        <div class="nm">${esc(l.name)}<small>${moRowNote(l)}</small></div>
+        <input type="text" inputmode="decimal" value="${esc(l.qty)}" data-f="qty" aria-label="Soni">
+        <input type="text" inputmode="numeric" value="${esc(l.price)}" placeholder="${Math.round(l.shelf)}" data-f="price" aria-label="Narxi (bo'sh — do'kon narxi)">
+        <div class="sum tnum">${fmt(moLinePrice(l)*moLineQty(l))}</div>
+        <button type="button" class="del" data-del="${i}" aria-label="Qatorni o'chirish">✕</button>
+      </div>`).join('');
+  }
+  moTotals();
+}
+function moTotals(){
+  const sub=MO.lines.reduce((s,l)=>s+moLinePrice(l)*moLineQty(l),0);
+  const pv=MO.preview, uz=$('#moDelivery').value==='uzpost', ready=pv&&!pv.error;
+  const fee=uz&&ready?Number(pv.uzpost_fee)||0:0;
+  let h=`<div class="line"><span class="lab">Mahsulotlar (${MO.lines.length} ta qator)</span><span class="tnum">${fmt(sub)}</span></div>`;
+  if(uz&&MO.lines.length)h+=`<div class="line"><span class="lab">📮 UzPost${ready&&pv.uzpost_kg?' ('+moQty(pv.uzpost_kg)+' kg)':''}</span>
+    <span class="tnum">${ready?fmt(fee):'hisoblanmoqda…'}</span></div>`;
+  h+=`<div class="line" style="font-weight:800;font-size:15px"><span>Jami</span><span class="tnum">${fmt(sub+fee)}</span></div>`;
+  if(pv&&pv.error)h+=`<div class="line" style="color:var(--red);font-weight:700">⚠️ ${esc(pv.error)}</div>`;
+  $('#moCalc').innerHTML=h;
+}
+function moBody(extra){
+  return {...extra,name:$('#moName').value.trim(),phone:$('#moPhone').value.trim(),address:$('#moAddress').value.trim(),
+    payment:$('#moPayment').value,delivery:$('#moDelivery').value,status:$('#moStatus').value,
+    items:MO.lines.map(l=>({product_id:l.pid,quantity:String(l.qty).trim(),price:String(l.price).trim()===''?null:String(l.price).trim()}))};
+}
+/* The server's price for the running total: the UzPost fee needs the parcel
+   weight, and a price the server would refuse shows up before «Saqlash». */
+function moSchedulePreview(){
+  clearTimeout(MO.timer);
+  if(!MO.lines.length){MO.preview=null;moTotals();return;}
+  MO.timer=setTimeout(async()=>{
+    const seq=++MO.seq;
+    try{
+      const r=await api('/admin/api/manual-order',{method:'POST',body:JSON.stringify(moBody({preview:true}))});
+      if(seq===MO.seq){MO.preview=r;moTotals();}
+    }catch(err){if(seq===MO.seq){MO.preview={error:err.message};moTotals();}}
+  },350);
+}
+function moReset(){
+  MO.lines=[];MO.preview=null;MO.seq++;clearTimeout(MO.timer);
+  ['#moName','#moPhone','#moAddress','#moSearch','#moPayment','#moDelivery','#moStatus'].forEach(s=>{$(s).value='';});
+  moSearch();moRender();
+}
+function openManualOrder(){
+  moRender();
+  $('#moModal').classList.add('open');
+  setTimeout(()=>($('#moName').value?$('#moSearch'):$('#moName')).focus(),60);
+}
+$('#moOpenBtn').addEventListener('click',openManualOrder);
+$('#moClear').addEventListener('click',()=>{
+  if((MO.lines.length||$('#moName').value)&&!window.confirm('Formadagi hamma narsa tozalansinmi?'))return;
+  moReset();$('#moName').focus();
+});
+$('#moSearch').addEventListener('input',moSearch);
+$('#moSearch').addEventListener('keydown',e=>{
+  const box=$('#moResults'), opts=[...box.querySelectorAll('button[data-pid]')];
+  if(e.key==='Enter'){
+    e.preventDefault();
+    const on=box.querySelector('button.on')||opts[0];
+    if(on)moAdd(Number(on.dataset.pid));
+    return;
+  }
+  if((e.key==='ArrowDown'||e.key==='ArrowUp')&&opts.length){
+    e.preventDefault();
+    let i=opts.findIndex(b=>b.classList.contains('on'));
+    i=e.key==='ArrowDown'?Math.min(opts.length-1,i+1):Math.max(0,i-1);
+    opts.forEach((b,j)=>b.classList.toggle('on',j===i));
+    opts[i].scrollIntoView({block:'nearest'});
+  }else if(e.key==='Escape'&&box.classList.contains('open')){
+    e.stopPropagation();$('#moSearch').value='';moSearch();
+  }
+});
+/* pointerdown, not click: the search box's blur would close the list first. */
+$('#moResults').addEventListener('pointerdown',e=>{
+  const b=e.target.closest('button[data-pid]');
+  if(!b)return;
+  e.preventDefault();moAdd(Number(b.dataset.pid));
+});
+$('#moSearch').addEventListener('blur',()=>setTimeout(()=>$('#moResults').classList.remove('open'),150));
+$('#moSearch').addEventListener('focus',()=>{if($('#moSearch').value.trim())moSearch();});
+$('#moLines').addEventListener('input',e=>{
+  const row=e.target.closest('.mo-line'), f=e.target.dataset.f;
+  if(!row||!f)return;
+  const l=MO.lines[Number(row.dataset.i)];if(!l)return;
+  l[f]=e.target.value;
+  row.querySelector('.sum').textContent=fmt(moLinePrice(l)*moLineQty(l));
+  row.querySelector('.nm small').innerHTML=moRowNote(l);
+  moTotals();moSchedulePreview();
+});
+$('#moLines').addEventListener('click',e=>{
+  const b=e.target.closest('[data-del]');if(!b)return;
+  MO.lines.splice(Number(b.dataset.del),1);
+  moRender();moSchedulePreview();
+});
+$('#moDelivery').addEventListener('change',()=>{moTotals();moSchedulePreview();});
+$('#moAddress').addEventListener('input',()=>{if($('#moDelivery').value==='uzpost')moSchedulePreview();});
+$('#moForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=$('#moSave');
+  if(btn.disabled)return;
+  if(!MO.lines.length){toast("⚠️ Kamida bitta mahsulot qo'shing");$('#moSearch').focus();return;}
+  btn.disabled=true;
+  try{
+    // The server checks everything first, and the summary shows its figures.
+    const pv=await api('/admin/api/manual-order',{method:'POST',body:JSON.stringify(moBody({preview:true,full:true}))});
+    const label=id=>{const s=$(id);return s.options[s.selectedIndex].text;};
+    const lines=pv.items.map(it=>`• ${it.name} — ${moQty(it.quantity)} × ${fmt(it.price)}`
+      +(it.discount_percent?` (−${it.discount_percent}%)`:'')).join('\n');
+    const msg=`Buyurtma saqlansinmi?\n\n👤 ${pv.name}, ${pv.phone}\n📍 ${pv.address}\n\n${lines}\n`
+      +(pv.uzpost_fee?`📮 UzPost: ${fmt(pv.uzpost_fee)}\n`:'')
+      +`\nJami: ${fmt(pv.total)}\n${label('#moPayment')} · ${label('#moDelivery')} · ${label('#moStatus')}`;
+    if(!window.confirm(msg))return;
+    const r=await api('/admin/api/manual-order',{method:'POST',body:JSON.stringify(moBody({}))});
+    moReset();closeModals();
+    toast(`✅ Buyurtma #${r.id} saqlandi — ${fmt(r.total)}`);
+    loadDashboard();
+  }catch(err){
+    if(err.message!=='unauthorized')toast('⚠️ '+err.message);
+  }finally{btn.disabled=false;}
+});
 
 /* ===== modals ===== */
 function closeModals(){$$('.modal-bg').forEach(m=>m.classList.remove('open'));}
