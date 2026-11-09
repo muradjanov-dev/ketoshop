@@ -2109,6 +2109,10 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     # paths because they don't start with /api/.
     from admin_web import setup_admin_routes
     setup_admin_routes(app)
+    # Meta webhook (Instagram/Facebook izohlari) — imzo X-Hub-Signature-256
+    # bilan tekshiriladi, sessiya yoki initData emas (meta_comments.py).
+    import meta_comments
+    meta_comments.setup_routes(app)
 
     # Serve the webapp/ directory at /static/ so we can self-host vendor
     # assets (Leaflet, etc) instead of relying on a CDN — flaky CDN

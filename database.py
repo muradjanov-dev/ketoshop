@@ -1217,6 +1217,59 @@ async def init_db():
                 CONSTRAINT meta_ads_state_single CHECK (id = 1)
             )
         """)
+        # Instagram/Facebook izohlari botda (meta_comments.py, 2026-11-09).
+        # Bitta izoh — bitta qator: kim yozdi, qaysi reklama, kim/qachon/nima
+        # deb javob berdi, va har admindagi kartochka (tg_messages) — biri
+        # javob bersa, hammasida yangilanadi.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS meta_comments (
+                id BIGSERIAL UNIQUE,
+                comment_id TEXT PRIMARY KEY,
+                platform TEXT NOT NULL,
+                parent_id TEXT,
+                media_id TEXT,
+                post_link TEXT,
+                ad_id TEXT,
+                ad_name TEXT,
+                from_id TEXT,
+                username TEXT,
+                text TEXT,
+                created_at TIMESTAMP,
+                received_at TIMESTAMP DEFAULT (NOW() AT TIME ZONE 'UTC'),
+                source TEXT,
+                status TEXT NOT NULL DEFAULT 'new',
+                category TEXT,
+                ai_draft TEXT,
+                ai_model TEXT,
+                note TEXT,
+                reply_text TEXT,
+                reply_kind TEXT,
+                replied_by BIGINT,
+                replied_at TIMESTAMP,
+                private_sent BOOLEAN NOT NULL DEFAULT FALSE,
+                hidden BOOLEAN NOT NULL DEFAULT FALSE,
+                tg_messages JSONB NOT NULL DEFAULT '[]'::jsonb
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_meta_comments_status ON meta_comments(status, received_at)")
+        # Izohlar tokeni (ads_read tokenidan ALOHIDA), AI rejimi, bilim bazasi.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS meta_comments_state (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                token TEXT,
+                token_by BIGINT,
+                token_at TIMESTAMP,
+                ai_mode TEXT NOT NULL DEFAULT 'avto',
+                backfilled BOOLEAN NOT NULL DEFAULT FALSE,
+                last_webhook_at TIMESTAMP,
+                last_sync_at TIMESTAMP,
+                kb JSONB NOT NULL DEFAULT '{}'::jsonb,
+                CONSTRAINT meta_comments_state_single CHECK (id = 1)
+            )
+        """)
+        await conn.execute(
+            "INSERT INTO meta_comments_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
         # AI sotuvchi (ai_sales.py): kunlik token/$ sarfi — kun+model bo'yicha
         # bitta qator, kunlik hisobot (targets.py) shundan o'qiydi.
         await conn.execute("""
@@ -8275,6 +8328,145 @@ async def set_meta_ads_token(token: str | None, admin_id: int) -> None:
                    SET ads_token = $1, updated_by = $2, updated_at = NOW() AT TIME ZONE 'UTC'""",
             token, admin_id,
         )
+
+
+# ===== Instagram/Facebook izohlari (meta_comments.py) =====
+
+def _jsonish(value, default):
+    if value is None:
+        return default
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return default
+    return value
+
+
+def _comment_row(row) -> dict | None:
+    if row is None:
+        return None
+    d = dict(row)
+    d["tg_messages"] = _jsonish(d.get("tg_messages"), [])
+    return d
+
+
+async def get_meta_comments_state() -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM meta_comments_state WHERE id = 1")
+        if row is None:
+            await conn.execute(
+                "INSERT INTO meta_comments_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+            row = await conn.fetchrow("SELECT * FROM meta_comments_state WHERE id = 1")
+    d = dict(row)
+    d["kb"] = _jsonish(d.get("kb"), {})
+    return d
+
+
+async def set_meta_comments_token(token: str | None, admin_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE meta_comments_state SET token = $1, token_by = $2, "
+            "token_at = NOW() AT TIME ZONE 'UTC' WHERE id = 1", token, admin_id)
+
+
+async def set_meta_comments_ai_mode(mode: str) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE meta_comments_state SET ai_mode = $1 WHERE id = 1", mode)
+
+
+async def set_meta_comments_kb(kb: dict) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE meta_comments_state SET kb = $1::jsonb WHERE id = 1",
+                           json.dumps(kb, ensure_ascii=False))
+
+
+async def mark_meta_comments_state(*, backfilled: bool | None = None,
+                                   webhook: bool = False, synced: bool = False) -> None:
+    sets = []
+    if backfilled is not None:
+        sets.append("backfilled = TRUE" if backfilled else "backfilled = FALSE")
+    if webhook:
+        sets.append("last_webhook_at = NOW() AT TIME ZONE 'UTC'")
+    if synced:
+        sets.append("last_sync_at = NOW() AT TIME ZONE 'UTC'")
+    if not sets:
+        return
+    async with pool.acquire() as conn:
+        await conn.execute(f"UPDATE meta_comments_state SET {', '.join(sets)} WHERE id = 1")
+
+
+async def insert_meta_comment(c: dict) -> dict | None:
+    """The stored row when this comment is new, None when it was already
+    there — a webhook and the next sync both see the same comment."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO meta_comments (comment_id, platform, parent_id, media_id, post_link,
+                                          ad_id, ad_name, from_id, username, text, created_at,
+                                          source, status, reply_text, reply_kind, note)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+               ON CONFLICT (comment_id) DO NOTHING
+               RETURNING *""",
+            c["comment_id"], c["platform"], c.get("parent_id"), c.get("media_id"),
+            c.get("post_link"), c.get("ad_id"), c.get("ad_name"), c.get("from_id"),
+            c.get("username"), c.get("text"), c.get("created_at"), c.get("source"),
+            c.get("status") or "new", c.get("reply_text"), c.get("reply_kind"), c.get("note"))
+    return _comment_row(row)
+
+
+async def get_meta_comment(key: int) -> dict | None:
+    async with pool.acquire() as conn:
+        return _comment_row(await conn.fetchrow("SELECT * FROM meta_comments WHERE id = $1", key))
+
+
+async def find_meta_comment_by_card(chat_id: int, message_id: int) -> dict | None:
+    async with pool.acquire() as conn:
+        return _comment_row(await conn.fetchrow(
+            "SELECT * FROM meta_comments WHERE tg_messages @> $1::jsonb",
+            json.dumps([{"c": chat_id, "m": message_id}])))
+
+
+async def update_meta_comment(key: int, **fields) -> dict | None:
+    """Set the given columns; `tg_messages` is stored as JSON."""
+    allowed = {"status", "category", "ai_draft", "ai_model", "note", "reply_text", "reply_kind",
+               "replied_by", "private_sent", "hidden", "tg_messages", "ad_name", "post_link"}
+    cols, args = [], []
+    for name, value in fields.items():
+        if name not in allowed:
+            raise ValueError(name)
+        args.append(json.dumps(value) if name == "tg_messages" else value)
+        cols.append(f"{name} = ${len(args)}" + ("::jsonb" if name == "tg_messages" else ""))
+    if fields.get("reply_text") is not None:
+        cols.append("replied_at = NOW() AT TIME ZONE 'UTC'")
+    args.append(key)
+    async with pool.acquire() as conn:
+        return _comment_row(await conn.fetchrow(
+            f"UPDATE meta_comments SET {', '.join(cols)} WHERE id = ${len(args)} RETURNING *", *args))
+
+
+async def claim_meta_comment(key: int, from_statuses: tuple, to_status: str) -> bool:
+    """Move a comment on only if nobody else did first — two admins tapping
+    «Yuborish» at once, or an admin and the AI, post one reply, not two."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "UPDATE meta_comments SET status = $1 WHERE id = $2 AND status = ANY($3::text[]) RETURNING id",
+            to_status, key, list(from_statuses))
+    return row is not None
+
+
+async def meta_comment_counts() -> dict:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT platform, status, COUNT(*) AS n FROM meta_comments GROUP BY platform, status")
+    return {(r["platform"], r["status"]): int(r["n"]) for r in rows}
+
+
+async def list_meta_comments(statuses: tuple, limit: int = 10) -> list[dict]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM meta_comments WHERE status = ANY($1::text[]) "
+            "ORDER BY COALESCE(created_at, received_at) DESC LIMIT $2", list(statuses), limit)
+    return [_comment_row(r) for r in rows]
 
 
 async def get_ad_source_for_user(user_id: int) -> dict | None:

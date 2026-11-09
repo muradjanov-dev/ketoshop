@@ -245,6 +245,11 @@ async def main():
     # ⚖️ Yurist-agent: every message in its group topic is a question (yurist.py).
     from yurist import router as yurist_router
     dp.include_router(yurist_router)
+    # 💬 Instagram/Facebook izohlari: admin kartochkaga reply qilsa — izohga
+    # javob. Filtri faqat izoh kartochkasiga reply'ni ushlaydi, shuning uchun
+    # erta turadi (admin boshqa FSM holatida bo'lsa ham javob ketadi).
+    from meta_comments import router as meta_comments_router
+    dp.include_router(meta_comments_router)
     dp.include_router(webapp_data_router)
     dp.include_router(start_router)
     dp.include_router(onboarding_video_router)
@@ -351,6 +356,11 @@ async def main():
     # Kunlik reklama xulosasi + "sarf yo'q" qorovuli.
     from meta_ads import scheduler_loop as meta_ads_scheduler_loop
     meta_ads_task = asyncio.create_task(meta_ads_scheduler_loop(bot))
+
+    # Instagram/Facebook izohlari: reklama nusxalari va postlar tekshiruvi
+    # (webhook sozlanmagan bo'lsa ham) — /izoh_token berilmaguncha jim.
+    from meta_comments import scheduler_loop as meta_comments_loop
+    asyncio.create_task(meta_comments_loop(bot))
 
     # Aksiya / Bonus — closes a campaign out the moment its window ends (so
     # bonuses stop being granted without anyone touching the admin panel) and

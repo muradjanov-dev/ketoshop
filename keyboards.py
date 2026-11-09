@@ -53,6 +53,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="sayt_havolalar", description="📊 Sayt havolalari: kim ochdi, kim sotib oldi"),
     BotCommand(command="reklama_token", description="🔑 Meta reklama tokeni"),
     BotCommand(command="reklama_bog", description="🔗 Reklama kampaniyasi ↔ bot havolasi"),
+    BotCommand(command="izohlar", description="💬 Instagram/Facebook izohlari: javobsizlar, AI"),
     BotCommand(command="leads", description="📋 Yangi leadlar"),
     BotCommand(command="ai_holat", description="🤖 AI sotuvchi: holat, yoqish/o'chirish, model"),
     BotCommand(command="ai_kalit", description="🔑 OpenAI (GPT) kaliti — serverga kirmasdan"),
@@ -724,6 +725,7 @@ def admin_ads_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="➕ Yangi havola yasash", callback_data="adm_ads:newlink")],
         [InlineKeyboardButton(text="📣 Facebook/Instagram manbalari (fb_…)", callback_data="adsrc:30")],
         [InlineKeyboardButton(text="📋 Leadlar (forma to'ldirganlar)", callback_data="adm_ads:leads")],
+        [InlineKeyboardButton(text="💬 Instagram/Facebook izohlari", callback_data="mcs:show")],
         [InlineKeyboardButton(text="🔑 Meta tokeni", callback_data="adm_ads:token")],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_panel")],
     ])
