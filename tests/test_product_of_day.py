@@ -44,6 +44,37 @@ class ScoreTest(unittest.TestCase):
                         pod.score(product(views=100, discount=30), {}) + 10)
 
 
+class NeverInChannelFirstTest(unittest.IsolatedAsyncioTestCase):
+    """Owner, 2026-11-09: "kanalga kun mahsuloti sifatida hali chiqmagan
+    mahsulotlarni chiqar" — a product the channel never carried goes before
+    any repeat, however strong the repeat."""
+
+    async def pick(self, candidates, sold=()):
+        from unittest.mock import AsyncMock, patch
+        import database
+        with patch.object(database, "get_product_of_day_state", AsyncMock(return_value={"cycle": 2})), \
+             patch.object(database, "get_product_of_day_candidates", AsyncMock(return_value=candidates)), \
+             patch.object(database, "get_top_products", AsyncMock(return_value=list(sold))):
+            return await pod.pick_product()
+
+    async def test_new_to_the_channel_beats_a_bestseller(self):
+        bestseller = dict(product(pid=1, views=200, discount=30), in_channel=True)
+        newcomer = dict(product(pid=2, qty=4, photo=None), in_channel=False)
+        best, cycle = await self.pick([bestseller, newcomer], [{"product_id": 1, "qty": 50}])
+        self.assertEqual((best["id"], cycle), (2, 2))
+
+    async def test_among_newcomers_the_score_decides(self):
+        plain = dict(product(pid=3), in_channel=False)
+        discounted = dict(product(pid=4, discount=20), in_channel=False)
+        best, _ = await self.pick([plain, discounted, dict(product(pid=5, discount=50), in_channel=True)])
+        self.assertEqual(best["id"], 4)
+
+    async def test_when_all_were_shown_it_is_the_old_ranking(self):
+        best, _ = await self.pick([dict(product(pid=6), in_channel=True),
+                                   dict(product(pid=7, discount=20), in_channel=True)])
+        self.assertEqual(best["id"], 7)
+
+
 class PayloadTest(unittest.TestCase):
     def test_reads_own_payload(self):
         self.assertEqual(product_card.parse_product_payload("prod_42"), 42)

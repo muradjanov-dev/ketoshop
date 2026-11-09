@@ -440,6 +440,12 @@ async def kun_status(message: Message):
     last_str = last.strftime("%d.%m.%Y") if last else "— (hali yo'q)"
     product, cycle = await product_of_day.pick_product()
     keyingi = f"{product.get('name')} (#{product['id']})" if product else "— (zaxirada mahsulot yo'q)"
+    if product and not product.get("in_channel"):
+        keyingi += " 🆕"
+    gap = await database.get_product_of_day_channel_gap()
+    yangilar = f"📣 Kanalga hali chiqmagan: <b>{gap['in_stock']}</b> ta — navbatda birinchi"
+    if gap["out_of_stock"]:
+        yangilar += f" (yana {gap['out_of_stock']} tasi zaxira kelganda)"
 
     history = await database.get_product_of_day_history(7)
     tarix = "\n".join(
@@ -454,6 +460,7 @@ async def kun_status(message: Message):
         f"Vaqt: har kuni <b>{product_of_day.SEND_HOUR:02d}:00</b> (Toshkent)\n"
         f"Oxirgi yuborilgan kun: {last_str}\n"
         f"Navbatdagi mahsulot: <b>{keyingi}</b>\n"
+        f"{yangilar}\n"
         f"Aylanma: {cycle + 1}-doira\n\n"
         f"<b>Oxirgi kunlar:</b>\n{tarix}",
         parse_mode=ParseMode.HTML,
