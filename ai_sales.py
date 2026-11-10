@@ -122,6 +122,7 @@ import ai_memory
 import ai_stats
 import cheque_confirm
 import pack_math
+import uzpost
 import ai_provider
 import database
 from config import (ADMIN_IDS, BOT_USERNAME, FREE_DELIVERY_FROM, LOW_STOCK_THRESHOLD,
@@ -167,7 +168,7 @@ SHOP_PLACE = f"{SHOP_STREET} (mo'ljal: {SHOP_LANDMARK})"
 # Mijoz tanlaydigan yetkazish -> bazadagi delivery_method. Tugmali checkout
 # bilan bir xil to'plam (keyboards.delivery_method_keyboard).
 DELIVERY = {"toshkent_kuryer": "self", "olib_ketish": "pickup", "yandex_taxi": "yandex_taxi",
-            "bts": "bts", "emu": "emu"}
+            "uzpost": uzpost.METHOD, "bts": "bts", "emu": "emu"}
 # Naqd faqat shu ikkisida — kuryerga yoki do'konda qo'lma-qo'l. Qolganida karta oldindan.
 CASH_OK = {"self", "pickup"}
 
@@ -229,7 +230,7 @@ _CYR_RUN = re.compile(r"[\u0400-\u04FF]+")
 _LAT_RUN = re.compile(r"[A-Za-z'ʻ’]+")
 _WORD = re.compile(r"[\w'ʻ’ʼ`‘]+")
 # Kirill matn ichida ham lotincha qoladigan nomlar ("Keto shopга").
-_KEEP_LATIN = {"keto", "shop", "ketoshop", "yandex", "taxi", "telegram", "bts", "emu", "uzs"}
+_KEEP_LATIN = {"keto", "shop", "ketoshop", "yandex", "taxi", "telegram", "bts", "emu", "uzs", "uzpost"}
 
 
 def fix_mixed_script(text: str) -> str:
@@ -910,6 +911,7 @@ def _shop_knowledge() -> str:
     """Yetkazish va to'lov shartlari — checkout bilan bir xil manbadan
     (config.FREE_DELIVERY_FROM, handlers/cart.SELF_DELIVERY_FEE)."""
     from handlers.cart import SELF_DELIVERY_FEE
+    first_kg = uzpost.FIRST_KG + uzpost.SURCHARGE      # mijoz to'laydigan: tarif + 3 000
     return (
         "YETKAZISH VA TO'LOV (do'kon qoidalari — boshqacha va'da berma)\n"
         f"- Toshkent bo'ylab Ketoshop kuryeri: {_fmt(SELF_DELIVERY_FEE)} so'm; mahsulotlar "
@@ -920,9 +922,22 @@ def _shop_knowledge() -> str:
         "ichida yetkazib beramiz. Shu ikki variantni ayt va qaysi biri qulayligini so'ra.\n"
         "- Toshkentda Yandex Taxi bilan ham bo'ladi: yo'l haqini mijoz haydovchiga o'zi to'laydi, "
         "mahsulot puli faqat karta orqali oldindan.\n"
-        "- Viloyatlarga BTS yoki EMU pochtasi orqali: pochta haqi pochtaga alohida to'lanadi, "
-        "mahsulot puli faqat karta orqali oldindan. Muddatini pochta belgilaydi — aniq kun "
-        "va'da qilma.\n"
+        # Egasi, 2026-11-07: "nega uzpostni qo'shmayapsan, uni ham tahminiy narxlari bilan
+        # qo'sh!" — tugmali checkout dagi UzPost (uzpost.py) bilan bir xil shartlar.
+        "- Viloyatlarga UzPost «Bir Qadam» orqali — viloyat uchun birinchi taklif: posilka "
+        "mijozga eng yaqin pochta bo'limiga odatda 1 ish kunida yetib boradi, olishda pasport "
+        "yoki ID karta kerak. Yetkazish narxini buyurtma summasiga qo'shamiz, og'irlikka qarab "
+        f"taxminan: posilka 1 kg gacha ~{_fmt(first_kg)} so'm, har keyingi kg +{_fmt(uzpost.NEXT_KG)} "
+        f"so'm (Qoraqalpog'iston, Xorazm, Surxondaryoga har keyingi kg +{_fmt(uzpost.NEXT_KG_FAR)} "
+        "so'm). Mijoz viloyatga yetkazish narxini so'rasa: mahsulotlarni aytgan bo'lsa — hisob "
+        "dagi UzPost qatorini ayt; aytmagan bo'lsa — AVVAL savatni_korish ni chaqir: savatda "
+        "mahsulot bo'lsa, undagi UzPost qatoridagi aniq summani ayt; savat bo'sh bo'lsa — shu "
+        "taxminiy narxni. Savat yoki ro'yxat summasini aytganda 'savatingizdagi mahsulotlar bilan "
+        "yetkazish ~X so'm, jami ~Y so'm' de — uni '1 kg gacha' tarifi deb aralashtirma. "
+        "Mahsulot va yetkazish puli faqat karta orqali oldindan.\n"
+        "- Viloyatlarga BTS yoki EMU pochtasi orqali ham bo'ladi: pochta haqi pochtaga alohida "
+        "to'lanadi, mahsulot puli faqat karta orqali oldindan. Muddatini pochta belgilaydi — "
+        "aniq kun va'da qilma.\n"
         f"- Do'kondan o'zi olib ketish: BEPUL. Manzil: {SHOP_PLACE}, havola: "
         f"{SHOP_ADDRESS_URL} . Buyurtma tayyor bo'lgach operatorimiz xabar beradi. To'lov naqd "
         "yoki karta. Faqat Toshkentdagi mijozga taklif qil — viloyatdagiga emas.\n"
@@ -931,6 +946,8 @@ def _shop_knowledge() -> str:
         f"  🚚 Toshkent bo'ylab kuryer — {_fmt(SELF_DELIVERY_FEE)} so'm ({_fmt(FREE_DELIVERY_FROM)} "
         "so'mdan bepul), 24 soat ichida\n"
         "  🏪 Do'kondan olib ketish — bepul\n"
+        f"  📮 Viloyatlarga UzPost — ~{_fmt(first_kg)} so'mdan (og'irlikka qarab), 1 ish kunida "
+        "pochta bo'limiga\n"
         "  📦 Viloyatlarga BTS / EMU pochtasi — pochta haqi alohida\n"
         "  🚖 Toshkentda Yandex Taxi — yo'l haqi haydovchiga\n"
         "- DO'KON MANZILI: mijoz do'kon/ofis qayerda, manzilingiz, adres, lokatsiya, qanday "
@@ -1138,7 +1155,8 @@ def _sales_rules() -> str:
         "- RASMIYLASHTIRISH — MAKSIMAL SODDA (egasi, 2026-10-16). Savatdan keyin atigi 3 ta "
         "qisqa qadam, har xabarda bitta savol:\n"
         "  1) QANDAY OLASIZ? — yetkazish usullarini narxi bilan bitta ro'yxatda ber (pastdagi "
-        "ro'yxat). Toshkentdan tashqarida bo'lsa — faqat BTS / EMU pochta.\n"
+        "ro'yxat). Toshkentdan tashqarida bo'lsa — UzPost (narxi bilan), BTS yoki EMU pochta; "
+        "UzPost ni birinchi qo'y.\n"
         "  2) RAQAM VA LOKATSIYA — lokatsiya_tugmasi ni chaqir va 'pastdagi tugmalar bilan "
         "raqamingiz va lokatsiyangizni yuboring' de. Do'kondan olib ketishda — faqat raqam. "
         "MIJOZ XOTIRASI da oxirgi manzil va raqam bo'lsa — qayta so'rama: ikkalasini TO'LIQ, "
@@ -1423,7 +1441,7 @@ _TOOL_SPECS = [
                 "yetkazish": {"type": "string", "enum": list(DELIVERY),
                               "description": "Toshkentda toshkent_kuryer, olib_ketish "
                                              "(do'kondan, bepul) yoki yandex_taxi; viloyatda "
-                                             "bts yoki emu"},
+                                             "uzpost (narxi buyurtmaga qo'shiladi), bts yoki emu"},
                 "oldingi_manzil": {"type": "boolean",
                                    "description": "Mijoz MIJOZ XOTIRASI dagi oxirgi buyurtma "
                                                   "manzili va raqamiga yetkazishni tasdiqladi"},
@@ -1715,6 +1733,20 @@ def _drop_mismatched(reply: str, issues: list[dict], lang: str) -> str:
     return f"{text}\n\n{note}" if text else note
 
 
+def _uzpost_line(items: list[dict], goods: float) -> str:
+    """Viloyatga UzPost «Bir Qadam» — tugmali checkout bilan bir xil hisob
+    (uzpost.buyer_fee: og'irlik nomdagi qadoqdan, + quti, + 3 000). Egasi,
+    2026-11-07: "nega uzpostni qo'shmayapsan, uni ham tahminiy narxlari bilan qo'sh!"."""
+    fee, far_fee = uzpost.buyer_fee(items), uzpost.buyer_fee(items, far=True)
+    line = (f"Viloyatga UzPost «Bir Qadam» bilan (faqat Toshkentdan tashqaridagi mijozga), SHU "
+            f"MAHSULOTLAR uchun: yetkazish ~{_fmt(fee)} so'm (posilka ~{uzpost.fmt_kg(uzpost.parcel_kg(items))} kg) "
+            f"-> JAMI ~{_fmt(goods + fee)} so'm, hammasi karta orqali oldindan")
+    if far_fee != fee:
+        line += (f"; Qoraqalpog'iston, Xorazm yoki Surxondaryoga yetkazish ~{_fmt(far_fee)} so'm "
+                 f"-> JAMI ~{_fmt(goods + far_fee)} so'm")
+    return line
+
+
 async def _tool_quote(user_id: int, args: dict) -> str:
     """Savatga solmasdan narx va jami — savat qatori bilan bir xil formula
     (mahsulot chegirmasi bilan). Egasi, 2026-11-02: model «Hisob to'liq»
@@ -1723,7 +1755,7 @@ async def _tool_quote(user_id: int, args: dict) -> str:
     rows = args.get("mahsulotlar") or []
     if not rows:
         return "Xato: mahsulotlar ro'yxati bo'sh."
-    lines, notes, total = [], [], 0.0
+    lines, notes, total, parcel = [], [], 0.0, []
     for row in rows[:30]:
         product_id = int(row.get("mahsulot_id") or 0)
         qty = float(row.get("miqdor") or 0)
@@ -1742,6 +1774,7 @@ async def _tool_quote(user_id: int, args: dict) -> str:
         price = database.effective_price(float(product["price"]), discount, product.get("discount_until"))
         line_total = price * qty
         total += line_total
+        parcel.append({"name": product["name"], "quantity": qty, "unit": product.get("unit")})
         unit = _pack_label(product.get("unit"))
         lines.append(f"- {product['name']} — {qty:g} {unit} × {_fmt(price)} = {_fmt(line_total)} so'm"
                      + (f" (chegirma -{discount}%, asl narxi {_fmt(product['price'])})" if discount else ""))
@@ -1752,7 +1785,8 @@ async def _tool_quote(user_id: int, args: dict) -> str:
         return "Xato: " + "; ".join(notes)
     out = ("HISOB (kod hisobladi, savatga solinmadi). Nom va raqamlarni aynan shundan ko'chir:\n"
            + "\n".join(lines) + f"\nJami (mahsulotlar): {_fmt(total)} so'm\n"
-           "Yetkazish, aksiya sovg'alari va aniq to'lov summasi — savat va buyurtma kartasida.")
+           + _uzpost_line(parcel, total) + "\n"
+           "Toshkent yetkazishi, aksiya sovg'alari va aniq to'lov summasi — savat va buyurtma kartasida.")
     if notes:
         out += "\nDiqqat: " + "; ".join(notes)
     return out
@@ -1795,6 +1829,7 @@ async def _tool_cart(user_id: int) -> str:
     lines.append(f"Mahsulotlar: {_fmt(subtotal)} so'm")
     lines.append(f"Toshkent kuryeri bilan: yetkazish {'BEPUL' if fee <= 0 else _fmt(fee) + ' so' + chr(39) + 'm'}"
                  f" -> JAMI {_fmt(total)} so'm")
+    lines.append(_uzpost_line(items, subtotal))
     lines.append(f"Yandex Taxi yoki viloyat (BTS/EMU) bilan: mahsulotlar uchun {_fmt(subtotal)} so'm "
                  "karta orqali oldindan, yetkazish haqi taksi yoki pochtaga alohida")
     hints = [free_delivery_hint(before_bot, "uz") if fee > 0 else ""]
@@ -1965,8 +2000,8 @@ async def _tool_card(message: Message, args: dict) -> str:
                 "buyurtma berishni taklif qil.")
     delivery = DELIVERY.get((args.get("yetkazish") or "").strip().lower())
     if not delivery:
-        return ("Xato: yetkazish turi toshkent_kuryer, olib_ketish, yandex_taxi, bts yoki emu "
-                "bo'lishi kerak.")
+        return ("Xato: yetkazish turi toshkent_kuryer, olib_ketish, yandex_taxi, uzpost, bts "
+                "yoki emu bo'lishi kerak.")
     if not await database.get_cart(user_id):
         return "Xato: savat bo'sh — avval mahsulotni savatga_qoshish bilan qo'sh."
 
@@ -2023,7 +2058,21 @@ async def _tool_card(message: Message, args: dict) -> str:
     in_tashkent = lat is not None and lng is not None and _is_tashkent(float(lat), float(lng))
     if delivery == "self" and lat is not None and not in_tashkent:
         return ("Xato: lokatsiya Toshkentdan tashqarida — Ketoshop kuryeri faqat Toshkent "
-                "bo'ylab. Viloyatga BTS yoki EMU pochtani taklif qil.")
+                "bo'ylab. Viloyatga UzPost (narxi bilan), BTS yoki EMU pochtani taklif qil.")
+    if delivery == uzpost.METHOD and in_tashkent:
+        return ("Xato: lokatsiya Toshkentda — UzPost faqat viloyatlarga. Toshkentda kuryer, "
+                "Yandex Taxi yoki do'kondan olib ketishni taklif qil.")
+    post_office, far = None, False
+    if delivery == uzpost.METHOD:
+        # Tugmali checkout bilan bir xil (handlers/cart.process_delivery_method):
+        # lokatsiyaga eng yaqin «Bir Qadam» bo'limi buyurtmaga yoziladi, narx
+        # og'irlik va hududdan; bo'lim topilmasa — admin aniqlaydi.
+        from handlers.cart import uzpost_far_for
+        try:
+            post_office = await uzpost.nearest_office(lat, lng)
+        except Exception:
+            logger.warning("UzPost office lookup failed for user %s", user_id, exc_info=True)
+        far = uzpost.is_far(post_office["region"]) if post_office else uzpost_far_for(lat, lng, address)
 
     # Yandex va pochtada faqat karta. Aks holda mijoz aytgani, aytmagan bo'lsa —
     # kartadagi tanlovi (to'lov tugmasi) yoki naqd.
@@ -2044,6 +2093,8 @@ async def _tool_card(message: Message, args: dict) -> str:
         "online_only": online_only, "in_tashkent": in_tashkent,
         "address_note": note, "secondary_phone": secondary,
         "pickup": delivery == "pickup", "pickup_map_url": pickup_url,
+        "post_office": post_office, "post_office_line": uzpost.office_line(post_office) or None,
+        "uzpost_far": far,
         "keto_redeem": int(old.get("keto_redeem") or 0),
     })
     await state.set_state(CheckoutStates.confirming)
@@ -2462,7 +2513,8 @@ _STATUS_MEANING = {
     "cancelled": "bekor qilingan",
 }
 _DELIVERY_NAME = {"self": "Toshkent kuryeri", "pickup": "do'kondan olib ketish",
-                  "yandex_taxi": "Yandex Taxi", "bts": "BTS pochta", "emu": "EMU pochta"}
+                  "yandex_taxi": "Yandex Taxi", uzpost.METHOD: "UzPost pochta",
+                  "bts": "BTS pochta", "emu": "EMU pochta"}
 OPEN_STATUS_SHOWN = 3
 
 
@@ -2473,7 +2525,7 @@ def _status_meaning(order: dict) -> str:
         return "tayyor — do'kondan olib ketsa bo'ladi"
     if method == "pickup" and status == "delivered":
         return "olib ketilgan"
-    if method in ("bts", "emu") and status in ("shipped", "delivering"):
+    if method in ("bts", "emu", uzpost.METHOD) and status in ("shipped", "delivering"):
         office = (order.get("post_office") or "").strip()
         return "pochtaga topshirilgan, yo'lda" + (f" ({office})" if office else "")
     meaning = _STATUS_MEANING.get(status, status)
