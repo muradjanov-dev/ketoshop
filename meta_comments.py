@@ -23,7 +23,7 @@ ADMIN KO'RADI
   📩 Shaxsiy xabar, 💰 Narx / 🚚 Yetkazish / 🤖 Bot shablonlari, 🙈 Yashirish,
   ✅ Ko'rildi. Kartochkaga reply qilib yozilgan matn — izohga ochiq javob.
 
-AI (comment_ai.py, Claude) — har izohga loyiha; rahmat va bilim bazasida aniq
+AI (comment_ai.py: GPT, kerak bo'lsa Claude) — har izohga loyiha; rahmat va bilim bazasida aniq
 javobi borini AI_DELAY dan keyin o'zi yuboradi (oldin izohga boshqa avtomat
 javob yozganmi — tekshiradi; bitta izohga bitta javob). Qolgani tasdiqqa.
 
@@ -863,7 +863,8 @@ async def status_text() -> str:
     mode = state.get("ai_mode") or "avto"
     mode_txt = {"avto": "avto (rahmat va aniq javoblarni o'zi yuboradi)",
                 "tasdiq": "faqat loyiha — hammasi admin tasdig'i bilan", "off": "o'chiq"}[mode]
-    ai_key = "" if comment_ai.available() else " — ⚠️ ANTHROPIC_API_KEY serverda yo'q"
+    label = await comment_ai.provider_label()
+    ai_key = f" · {label}" if label else " — ⚠️ AI kaliti yo'q (/ai_kalit)"
     lines.append(f"🤖 AI: {mode_txt}{ai_key} · /izoh_ai")
     hook = state.get("last_webhook_at")
     lines.append("📡 Webhook: " + ((hook + timedelta(hours=5)).strftime("oxirgi %d.%m %H:%M") if hook else
@@ -1007,13 +1008,15 @@ async def cmd_ai(message: Message):
     if len(parts) > 1 and parts[1].lower() in comment_ai.AI_MODES:
         await database.set_meta_comments_ai_mode(parts[1].lower())
     mode = (await database.get_meta_comments_state()).get("ai_mode") or "avto"
+    label = await comment_ai.provider_label()
     await message.answer(
-        f"🤖 <b>Izohlarga AI javob</b>: <b>{mode}</b>\n\n"
+        f"🤖 <b>Izohlarga AI javob</b>: <b>{mode}</b>"
+        + (f" · {html.escape(label)}" if label else "") + "\n\n"
         "<code>/izoh_ai avto</code> — rahmat va bilim bazasida aniq javobi borini o'zi yuboradi, "
         "qolganiga loyiha + tasdiq\n"
         "<code>/izoh_ai tasdiq</code> — hammasiga faqat loyiha, yuborishni admin bosadi\n"
         "<code>/izoh_ai off</code> — AI ishlamaydi, adminlar o'zi yozadi"
-        + ("" if comment_ai.available() else "\n\n⚠️ ANTHROPIC_API_KEY serverda yo'q — AI hozir ishlamaydi."),
+        + ("" if label else "\n\n⚠️ AI kaliti yo'q — AI sotuvchidagi GPT kaliti (/ai_kalit) ishlatiladi."),
         parse_mode="HTML")
 
 
