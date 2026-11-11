@@ -48,12 +48,19 @@ CATEGORY_LABELS = {
     "salomatlik": "🩺 Salomatlik", "shikoyat": "⚠️ Tanqid / shikoyat", "spam": "🚫 Spam",
     "boshqa": "❓ Boshqa savol",
 }
-# TZ jadvali: kim yuboradi.
-AUTO_ALWAYS = {"rahmat"}
-AUTO_IF_KNOWN = {"manzil", "yetkazish", "buyurtma", "narx", "mavjudlik"}
+# Shu turlarga ikkinchi, chuqurroq o'tish (reasoning "medium").
 COMPLEX = {"salomatlik", "shikoyat", "boshqa"}
 
 AI_MODES = ("avto", "tasdiq", "off")
+
+# Direct'dagi rahmat oxiriga kod o'zi qo'shadigan havola (egasi, 2026-11-11:
+# "barcha sog'lom Keto va PP mahsulotlarini … shu yerdan ko'rib chiqishingiz
+# mumkin, deb: https://t.me/ketoshopbot/shop shu linkni bergin").
+SHOP_LINK = os.getenv("META_COMMENTS_SHOP_LINK", "https://t.me/ketoshopbot/shop").strip()
+DEFAULT_DM = ("Izohingiz uchun katta rahmat! 🌿 Barcha sog'lom keto va PP mahsulotlarimizni "
+              "shu yerdan bemalol ko'rib chiqishingiz mumkin:")
+# ai_usage da izohlar sarfi AI sotuvchinikidan alohida qatorda turadi.
+USAGE_TAG = " · izohlar"
 
 SCHEMA = {
     "type": "object",
@@ -61,8 +68,9 @@ SCHEMA = {
         "category": {"type": "string", "enum": list(CATEGORIES)},
         "reply": {"type": "string"},
         "confident": {"type": "boolean"},
+        "dm": {"type": "string"},
     },
-    "required": ["category", "reply", "confident"],
+    "required": ["category", "reply", "confident", "dm"],
     "additionalProperties": False,
 }
 
@@ -121,30 +129,29 @@ def kb_with_defaults(stored: dict | None) -> dict:
 
 # ─────────────────────────────── the policy ─────────────────────────────────
 
-def decide(category: str | None, confident: bool, mode: str, fresh: bool = True) -> str:
-    """'auto' (AI o'zi yuboradi), 'approve' (admin tasdig'i) yoki 'spam'.
+def decide(category: str | None, confident: bool, mode: str) -> str:
+    """'auto' (AI o'zi yuboradi), 'approve' (adminga) yoki 'spam' (javobsiz).
 
-    TZ jadvali: rahmat — darhol o'zi; manzil/yetkazish/buyurtma, narx/mavjudlik
-    — bilim bazasida aniq javob bo'lsa o'zi, bo'lmasa admin; sog'liq, shikoyat
-    va boshqa savollar — faqat admin; spam — xabar + 🙈. `mode`='tasdiq' —
-    hammasi admin orqali; eski izoh (fresh=False) ham o'zi ketmaydi."""
+    Egasi, 2026-11-11: "ai o'zi javoblarni yuborishni boshlasin hammasini …
+    botga faqat ai javob topa olmagan izohlar kelsin". 'avto' rejimda AI
+    javob topgan har qanday izohga — rahmat, savol, sog'liq, shikoyat, eski
+    izoh ham — o'zi yozadi; topa olmaganini (confident=false) adminga beradi.
+    Spamga yozmaydi va adminni ham bezovta qilmaydi. 'tasdiq' — hammasi admin
+    orqali."""
     if category == "spam":
         return "spam"
-    if mode != "avto" or not fresh or category not in CATEGORIES:
+    if mode != "avto" or category not in CATEGORIES:
         return "approve"
-    if category in AUTO_ALWAYS:
-        return "auto"
-    if category in AUTO_IF_KNOWN and confident:
-        return "auto"
-    return "approve"
+    return "auto" if confident else "approve"
 
 
 # ─────────────────────────────── the prompt ─────────────────────────────────
 
-RULES = """Sen Ketoshop do'konining Instagram va Facebook sahifasidagi izohlarga javob yozasan.
+RULES = """Sen Ketoshop do'konining Instagram va Facebook sahifasida izohlarga javob yozadigan xodimisan.
 Ketoshop Toshkentda keto, glyutensiz va PP mahsulotlari sotadi (@ketoshop.uz, Telegram: @ketoshopbot).
 
-VAZIFA: izohni bitta turga ajrat (category) va unga ochiq javob yoz (reply).
+VAZIFA: izohni bitta turga ajrat (category), unga ochiq javob yoz (reply) va javobing izohga
+to'liq javob bo'la oladimi — ayt (confident). Javobing izoh ostida hammaga ko'rinadi.
 
 TURLAR
 - rahmat — rahmat, maqtov, emoji, "zo'r", duo.
@@ -158,17 +165,39 @@ TURLAR
 - spam — reklama, havola tarqatish, haqorat, mavzuga aloqasiz.
 - boshqa — yuqoridagilarga kirmaydigan savol yoki fikr.
 
-JAVOB QOIDALARI
+QANDAY YOZISH — muloyim, jonli odamdek, biroz hamdardlik bilan
+- Iliq, samimiy va sodda yoz — do'konning mehribon xodimi yozgandek. Har javob o'ziga xos bo'lsin:
+  shablon gaplar va har safar bir xil boshlanish bo'lmasin, "Ha," bilan boshlama.
+- Odamni eshitganingni qisqa va tabiiy ko'rsat: savoliga qiziqish, tashvishiga tushunish ("Tushunaman,
+  bu muhim"), maqtoviga samimiy minnatdorchilik. Ortiqcha shirinsuxanlik va mubolag'a yo'q.
+- Savolga aniq, foydali javob ber; kerak bo'lsa keyingi qadamni ayt (masalan, buyurtma — @ketoshopbot orqali).
+- Qisqa: 1–3 gap. O'rinli bo'lsa 1–2 ta emoji.
+- Savol yoki muammoga "Assalomu alaykum" bilan boshlasang bo'ladi, lekin har doim shart emas;
+  rahmat, maqtov va emojiga — qisqa, samimiy rahmat.
 - Izoh qaysi yozuvda bo'lsa, o'shanda javob ber: o'zbek lotin, o'zbek kirill yoki rus. Izoh kirillda bo'lsa — javob ham kirillda.
-- Qisqa: 1–3 gap. Xushmuomala, iliq, "Assalomu alaykum" bilan boshla (rahmat/emoji izohiga salomsiz qisqa rahmat ham bo'ladi). 1–2 ta emoji.
+- Shikoyat yoki norozilikka: avval kechirim so'ra yoki tushunishingni bildir, oqlanma va bahslashma;
+  hal qilish uchun Direct'ga yoki @ketoshopbot ga yozishni taklif qil.
+- Xatomizni ko'rsatishsa (masalan, videoda): samimiy rahmat ayt va to'g'ri ma'lumotni ber.
+
+FAKTLAR
 - Faqat quyidagi BILIM BAZASI va KATALOGdagi faktlarni yoz. Narx, mahsulot, muddat, manzil yoki telefonni o'zing o'ylab topma.
 - Narx so'ralsa: mahsulot katalogda aniq topilsa — narxini ayt; topilmasa yoki qaysi mahsulot ekani noaniq bo'lsa — confident=false.
-- Tibbiy va'da berma ("davolaydi", "kasallikka yordam beradi", "qandni tushiradi" kabi). Sog'liq savollarida "shifokor bilan maslahatlashing" deb qo'sh.
+- Tibbiy va'da berma ("davolaydi", "kasallikka yordam beradi", "qandni tushiradi" kabi). Sog'liq savoliga —
+  bilim bazasidagi umumiy ma'lumot va "shifokor bilan maslahatlashing".
 - Instagram izohida havola bosilmaydi: havola yozma, "@ketoshopbot" deb yoz yoki "profildagi havola orqali" de.
 - O'zingni bot, AI yoki dastur deb tanishtirma. Ichki so'zlarni (bilim bazasi, katalog, kategoriya) ishlatma.
 - Spam va haqoratga javob yozma: reply bo'sh qator bo'lsin.
 
-confident = true faqat javobdagi har bir fakt bilim bazasi yoki katalogda aniq yozilgan bo'lsa. Ikkilansang — false."""
+confident — javobing izohga to'liq va to'g'ri javobmi:
+- true: rahmat, maqtov, emoji; javobi bilim bazasi yoki katalogda bor savol; sog'liq savoliga umumiy javob
+  va shifokor tavsiyasi; shikoyatga kechirim va Direct'ga yoki botga taklif.
+- false: javob uchun bilim bazasi yoki katalogda yo'q fakt kerak bo'lsa; odam nima so'rayotgani tushunarsiz
+  bo'lsa; aniq buyurtma muammosi (kelmadi, noto'g'ri keldi, pul qaytarish) yoki optom narx kelishuvi kabi
+  odam qarori kerak bo'lsa; aniq dori, doza yoki davolash so'ralsa. Ikkilansang — false.
+
+dm — shu odamga Direct'ga boradigan 1–2 gaplik samimiy xabar: izoh qoldirgani uchun rahmat va barcha
+sog'lom keto va PP mahsulotlarimizni ko'rib chiqishga iliq taklif. Har safar o'zingcha, ijodiy yoz,
+izoh yozuvida. Havola YOZMA — uni o'zimiz oxiriga qo'shamiz. Spam va haqoratga — bo'sh qator."""
 
 
 def comment_prompt(c: dict) -> str:
@@ -219,6 +248,31 @@ class Draft:
     reply: str
     confident: bool
     model: str
+    dm: str = ""
+
+
+_URL = re.compile(r"(https?://\S+|t\.me/\S+)", re.IGNORECASE)
+
+
+def dm_text(comment_text: str | None, dm: str | None) -> str:
+    """Direct'dagi rahmat: AI yozgani (yoki DEFAULT_DM) + do'kon havolasi.
+    Havolani har doim kod qo'yadi — model o'zgartirib yozmasin."""
+    body = _URL.sub("", (dm or "").strip()).strip() or DEFAULT_DM
+    body = in_script_of(comment_text, body)
+    return f"{body}\n\n👉 {SHOP_LINK}"
+
+
+def _build(first: dict, better: dict | None, model: str, better_model: str) -> Draft:
+    """Birinchi o'tish turini qoldiramiz; murakkab savolda chuqurroq o'tish
+    bo'lsa — uning javobi va o'z bahosi (confident) olinadi."""
+    result = Draft(first["category"], first["reply"].strip(), bool(first["confident"]), model,
+                   (first.get("dm") or "").strip())
+    if better and (better.get("reply") or "").strip():
+        result = Draft(result.category, better["reply"].strip(), bool(better.get("confident")), better_model,
+                       (better.get("dm") or result.dm or "").strip())
+    if result.category == "spam":
+        result.reply, result.dm = "", ""
+    return result
 
 
 _client = None
@@ -290,7 +344,7 @@ async def _record_usage(model: str, usage) -> None:
         p_in, p_cache, p_out = _PRICES.get(model, (0, 0, 0))
         cost = ((fresh + written * 1.25) * p_in + cached * p_cache + out * p_out) / 1_000_000
         import database
-        await database.record_ai_usage(model, "anthropic", fresh + cached + written, cached, out, cost)
+        await database.record_ai_usage(model + USAGE_TAG, "anthropic", fresh + cached + written, cached, out, cost)
     except Exception:
         logger.warning("comment AI usage not recorded", exc_info=True)
 
@@ -367,7 +421,7 @@ async def _ask_openai(key: str, model: str, instructions: str, user: str, effort
     usage = ai_provider._openai_usage(getattr(resp, "usage", None))
     try:
         import database
-        await database.record_ai_usage(model, "openai", usage.input, usage.cached, usage.output,
+        await database.record_ai_usage(model + USAGE_TAG, "openai", usage.input, usage.cached, usage.output,
                                        ai_provider.estimate_cost(model, usage.input, usage.cached, usage.output))
     except Exception:
         logger.warning("comment AI usage not recorded", exc_info=True)
@@ -399,18 +453,13 @@ async def _draft_openai(comment: dict, kb: dict) -> Draft | None:
     first = await _ask_openai(key, model, instructions, user, effort="low")
     if first is None:
         return None
-    result = Draft(first["category"], first["reply"].strip(), bool(first["confident"]), model)
-    if result.category in COMPLEX:
+    better = None
+    if first["category"] in COMPLEX:
         try:
             better = await _ask_openai(key, model, instructions, user, effort="medium")
         except Exception:
             logger.exception("comment AI: complex redraft failed — keeping the first draft")
-            better = None
-        if better and better.get("reply", "").strip():
-            result = Draft(result.category, better["reply"].strip(), False, model)
-    if result.category == "spam":
-        result.reply = ""
-    return result
+    return _build(first, better, model, model)
 
 
 async def draft(comment: dict, kb: dict) -> Draft | None:
@@ -429,19 +478,13 @@ async def draft(comment: dict, kb: dict) -> Draft | None:
     first = await _ask(SIMPLE_MODEL, system, user, effort="low", fallback=False)
     if first is None:
         return None
-    result = Draft(first["category"], first["reply"].strip(), bool(first["confident"]), SIMPLE_MODEL)
-    if result.category in COMPLEX:
+    better = None
+    if first["category"] in COMPLEX:
         try:
             better = await _ask(COMPLEX_MODEL, system, user, effort="medium", fallback=True)
         except Exception:
             logger.exception("comment AI: complex redraft failed — keeping the first draft")
-            better = None
-        if better and better.get("reply", "").strip():
-            # Ehtiyot tomonga: turini Haiku qo'ygandek qoldiramiz (murakkab).
-            result = Draft(result.category, better["reply"].strip(), False, COMPLEX_MODEL)
-    if result.category == "spam":
-        result.reply = ""
-    return result
+    return _build(first, better, SIMPLE_MODEL, COMPLEX_MODEL)
 
 
 # ─────────────────────────────── helpers ────────────────────────────────────

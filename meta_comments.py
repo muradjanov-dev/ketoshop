@@ -68,7 +68,11 @@ SYNC_EVERY = max(120, int(os.getenv("META_COMMENTS_SYNC_SECONDS", "600")))
 AI_DELAY = int(os.getenv("META_COMMENTS_AI_DELAY", "90"))
 FRESH_FOR = timedelta(days=2)         # bundan eski izohga AI o'zi yozmaydi
 PRIVATE_WINDOW = timedelta(days=7)    # Meta: shaxsiy javob 7 kun ichida
-ORGANIC_POSTS = 15
+# Egasi, 2026-11-11: "hamma postlar va reelslardagi izohlarga javob yozishi
+# kerak" — oxirgi 50 ta post/reels (izohi borlari) har tekshiruvda o'qiladi.
+ORGANIC_POSTS = 50
+DM_ON = os.getenv("META_COMMENTS_DM", "1") != "0"
+CLEANUP_KEY = "meta_comments_cards_cleanup_2026_11_11"
 MAX_ADS = 100
 TEXT_MAX = 1500
 REPLY_MAX = 900                       # Instagram izohi ~2200 belgi; javob qisqa
@@ -397,31 +401,50 @@ async def ingest(bot: Bot | None, c: dict, *, source: str, our_reply: str | None
     row = await database.insert_meta_comment(c)
     if row is None:
         return None
-    fresh = not backfill and (row.get("created_at") or _utcnow()) > _utcnow() - FRESH_FOR
-    await route(bot, row, fresh=fresh and our_reply is None)
+    # Eski izohlar (birinchi yuklash): AI javob topsa — yozadi, topolmasa
+    # adminni bezovta qilmaydi, izoh /izohlar ro'yxatida turadi.
+    await route(bot, row, notify=not backfill)
     return row
 
 
-async def route(bot: Bot | None, row: dict, fresh: bool) -> None:
+async def route(bot: Bot | None, row: dict, *, notify: bool = True, wait: bool = False) -> str:
+    """Egasi, 2026-11-11: "ai o'zi javoblarni yuborishni boshlasin hammasini …
+    botga faqat ai javob topa olmagan izohlar kelsin". AI javob topsa — o'zi
+    yozadi (va Direct'da rahmat); topolmasa — adminga kartochka (notify=False
+    bo'lsa faqat /izohlar ro'yxatida). Spam — javobsiz, adminsiz."""
+    if not (row.get("text") or "").strip():
+        await database.claim_meta_comment(row["id"], OPEN, "seen")
+        await database.update_meta_comment(row["id"], ai_confident=False)
+        return "empty"
     state = await database.get_meta_comments_state()
     mode = state.get("ai_mode") or "avto"
     d = None
-    if mode != "off" and (row.get("text") or "").strip():
+    if mode != "off":
         try:
             d = await comment_ai.draft(row, comment_ai.kb_with_defaults(state.get("kb")))
         except Exception:
             logger.exception("comment AI draft failed for %s", row.get("comment_id"))
-    action = comment_ai.decide(d.category, d.confident, mode, fresh) if d else "approve"
+    action = comment_ai.decide(d.category, d.confident, mode) if d else "approve"
+    fields = {"ai_confident": bool(d and d.confident and action == "auto")}
     if d:
-        row = await database.update_meta_comment(
-            row["id"], category=d.category, ai_draft=d.reply or None, ai_model=d.model) or row
+        fields.update(category=d.category, ai_draft=d.reply or None, ai_model=d.model, ai_dm=d.dm or None)
+    row = await database.update_meta_comment(row["id"], **fields) or row
+    if action == "spam":
+        await database.claim_meta_comment(row["id"], OPEN, "skipped")
+        await send_cards(bot, await database.get_meta_comment(row["id"]), new_ok=False)
+        return "spam"
     if action == "auto" and d and d.reply:
-        _spawn(auto_send(bot, row["id"]))
-        return
-    await send_cards(bot, row)
+        if wait:
+            await auto_send(bot, row["id"], delay=0, notify=notify)
+        else:
+            _spawn(auto_send(bot, row["id"], notify=notify))
+        return "auto"
+    if notify:
+        await send_cards(bot, row)
+    return "approve"
 
 
-async def auto_send(bot: Bot | None, key: int, delay: float | None = None) -> None:
+async def auto_send(bot: Bot | None, key: int, delay: float | None = None, notify: bool = True) -> None:
     await asyncio.sleep(AI_DELAY if delay is None else delay)
     row = await database.get_meta_comment(key)
     if not row or row["status"] != "new" or not row.get("ai_draft"):
@@ -430,10 +453,12 @@ async def auto_send(bot: Bot | None, key: int, delay: float | None = None) -> No
         async with aiohttp.ClientSession() as session:
             ident = await identity(session)
             other = await our_existing_reply(session, ident, row)
-            if other is not None:
+            if other is not None and not needs_answer_after_auto(row.get("text"), other):
+                # Kimdir (qo'lda yoki boshqa avtomat) allaqachon to'liq javob bergan.
                 row = await database.update_meta_comment(
-                    key, note=f"⚠️ Boshqa avtomat allaqachon javob yozgan: «{other[:120]}» — AI yozmadi")
-                await send_cards(bot, row)
+                    key, status="answered", reply_text=other, reply_kind="public",
+                    note="Boshqa avtomat yoki admin javob bergan — AI yozmadi")
+                await send_cards(bot, row, new_ok=False)
                 return
             if not await database.claim_meta_comment(key, ("new",), "sending"):
                 return
@@ -442,10 +467,69 @@ async def auto_send(bot: Bot | None, key: int, delay: float | None = None) -> No
     except GraphError as e:
         await database.claim_meta_comment(key, ("sending",), "new")
         row = await database.update_meta_comment(key, note=f"❌ AI yubora olmadi: {e}")
-        await send_cards(bot, row)
+        if notify:
+            await send_cards(bot, row)
         return
     row = await database.update_meta_comment(key, status="ai_answered", reply_text=text, reply_kind="public")
-    await send_cards(bot, row)
+    await send_cards(bot, row, new_ok=False)
+    await thank_in_direct(row)
+
+
+async def thank_in_direct(row: dict) -> bool:
+    """AI izohga javob bergach — Direct'da rahmat va do'kon havolasi (egasi,
+    2026-11-11). Meta: bitta izohga bitta shaxsiy xabar, 7 kun ichida; bitta
+    odamga 7 kunda bittadan ortiq yubormaymiz."""
+    if not DM_ON or row.get("category") == "spam" or not _private_allowed(row):
+        return False
+    if await database.meta_comment_dm_recent(row.get("from_id")):
+        return False
+    text = comment_ai.dm_text(row.get("text"), row.get("ai_dm"))
+    try:
+        async with aiohttp.ClientSession() as session:
+            ident = await identity(session)
+            await reply_private(session, ident, row, text)
+    except GraphError as e:
+        logger.info("comment %s: Direct thanks failed: %s", row.get("comment_id"), e)
+        await database.update_meta_comment(row["id"], note=f"📩 Direct yuborilmadi: {e}"[:300])
+        return False
+    await database.update_meta_comment(row["id"], private_sent=True, ai_dm=text)
+    return True
+
+
+async def cleanup_cards_once(bot: Bot | None) -> int:
+    """Egasi, 2026-11-11: "botga yuborgan xabarlaringni (izoh bo'yicha
+    hammasini o'chir) bizni chalg'ityapti" — shu kungacha yuborilgan izoh
+    kartochkalari bir marta o'chiriladi."""
+    if bot is None or not await database.claim_release_notes(CLEANUP_KEY):
+        return 0
+    removed = 0
+    for row in await database.list_meta_comments_with_cards():
+        for ref in row.get("tg_messages") or []:
+            try:
+                await bot.delete_message(ref["c"], ref["m"])
+                removed += 1
+            except Exception as exc:
+                logger.info("comment card %s not deleted: %s", ref, exc)
+            await asyncio.sleep(0.05)
+        await database.update_meta_comment(row["id"], tg_messages=[])
+    logger.info("comment cards cleanup: %d message(s) deleted", removed)
+    return removed
+
+
+async def catch_up(bot: Bot | None) -> dict:
+    """AI hali ko'rmagan javobsiz izohlar (shu o'zgarishgacha kelganlari ham):
+    javob topsa — yozadi; topolmasa — adminni bezovta qilmaydi."""
+    stats = {"auto": 0, "approve": 0, "spam": 0, "empty": 0}
+    for _ in range(10):
+        rows = await database.list_meta_comments_unchecked(40)
+        if not rows:
+            break
+        for row in rows:
+            result = await route(bot, row, notify=False, wait=True)
+            stats[result] = stats.get(result, 0) + 1
+    if any(stats.values()):
+        logger.info("comment catch-up: %s", stats)
+    return stats
 
 
 # ─────────────────────────────── the card ───────────────────────────────────
@@ -529,12 +613,16 @@ async def render(row: dict) -> tuple[str, InlineKeyboardMarkup | None]:
     return "\n".join(lines), (InlineKeyboardMarkup(inline_keyboard=rows) if rows else None)
 
 
-async def send_cards(bot: Bot | None, row: dict | None) -> None:
-    """Yangi bo'lsa — har adminga yuboradi; bo'lsa — hammasini yangilaydi."""
+async def send_cards(bot: Bot | None, row: dict | None, new_ok: bool = True) -> None:
+    """Yangi bo'lsa — har adminga yuboradi; bo'lsa — hammasini yangilaydi.
+    new_ok=False — faqat bor kartochkalarni yangilaydi (AI javob bergan izoh
+    adminlarga yangi xabar bo'lib kelmaydi)."""
     if bot is None or not row:
         return
-    text, kb = await render(row)
     sent = list(row.get("tg_messages") or [])
+    if not sent and not new_ok:
+        return
+    text, kb = await render(row)
     if not sent:
         for admin_id in ADMIN_IDS:
             try:
@@ -723,23 +811,32 @@ async def _ad_targets(session) -> list[dict]:
     return out
 
 
+_last_sync: dict = {}
+
+
 async def _organic_targets(session, ident: dict) -> list[dict]:
+    """Oxirgi ORGANIC_POSTS ta post va reels (Instagram /media reels'ni ham
+    beradi) — faqat izohi borlari, shunda har tekshiruv arzon."""
     out = []
+    _last_sync.pop("organic_errors", None)
     try:
         if ident.get("ig_id"):
             data = await _graph(session, "GET", f"{ident['ig_id']}/media", ident["page_token"],
-                                {"fields": "id,permalink", "limit": ORGANIC_POSTS})
+                                {"fields": "id,permalink,comments_count", "limit": ORGANIC_POSTS})
             out += [{"platform": "ig", "object": str(m["id"]), "link": m.get("permalink")}
-                    for m in data.get("data", [])]
+                    for m in data.get("data", []) if int(m.get("comments_count") or 0) > 0]
     except GraphError as e:
         logger.info("comments sync: IG media unreadable: %s", e)
+        _last_sync.setdefault("organic_errors", []).append(f"Instagram postlari: {e}")
     try:
         data = await _graph(session, "GET", f"{PAGE_ID}/posts", ident["page_token"],
-                            {"fields": "id,permalink_url", "limit": ORGANIC_POSTS})
+                            {"fields": "id,permalink_url,comments.limit(0).summary(true)", "limit": ORGANIC_POSTS})
         out += [{"platform": "fb", "object": str(p["id"]), "link": p.get("permalink_url")}
-                for p in data.get("data", [])]
+                for p in data.get("data", [])
+                if int(((p.get("comments") or {}).get("summary") or {}).get("total_count") or 0) > 0]
     except GraphError as e:
         logger.info("comments sync: page posts unreadable: %s", e)
+        _last_sync.setdefault("organic_errors", []).append(f"Facebook postlari: {e}")
     return out
 
 
@@ -785,7 +882,7 @@ async def sync(bot: Bot | None) -> dict:
     o'zi yozmaydi)."""
     state = await database.get_meta_comments_state()
     first = not state.get("backfilled")
-    stats = {"targets": 0, "seen": 0, "new": 0, "errors": 0}
+    stats = {"targets": 0, "ads": 0, "ig_posts": 0, "fb_posts": 0, "seen": 0, "new": 0, "errors": 0}
     async with aiohttp.ClientSession() as session:
         ident = await identity(session, force=True)
         targets, known = [], set()
@@ -796,6 +893,9 @@ async def sync(bot: Bot | None) -> dict:
             targets.append(t)
             if t.get("ad_id"):
                 _object_ads[t["object"]] = (t["ad_id"], t.get("ad_name"))
+                stats["ads"] += 1
+            else:
+                stats["ig_posts" if t["platform"] == "ig" else "fb_posts"] += 1
         stats["targets"] = len(targets)
         for t in targets:
             try:
@@ -824,23 +924,83 @@ async def sync(bot: Bot | None) -> dict:
                                    our_reply=ours, backfill=first)
                 stats["new"] += bool(row)
     await database.mark_meta_comments_state(backfilled=True, synced=True)
+    _last_sync.update(stats=dict(stats))
     return stats
 
 
 async def scheduler_loop(bot: Bot) -> None:
     await asyncio.sleep(30)
     logger.info("Comments loop started (every %ds)", SYNC_EVERY)
+    try:
+        await cleanup_cards_once(bot)
+    except Exception:
+        logger.exception("comment cards cleanup failed")
     while True:
         try:
             await load_token()
             if token():
+                await catch_up(bot)
                 stats = await sync(bot)
                 logger.info("comments sync: %s", stats)
+                await catch_up(bot)
         except GraphError as e:
             logger.warning("comments sync: %s", e)
         except Exception:
             logger.exception("comments sync failed")
         await asyncio.sleep(SYNC_EVERY)
+
+
+# ───────────────────────────── AI sarfi hisoboti ────────────────────────────
+# Egasi, 2026-11-11: "har 3 soatda ai dan qancha sarflaganimizni aytib tur va
+# shu xabarlarni javobi uchun bugun qancha sarflaganini ham alohida botdan
+# adminlarga yubor". 09–21 oralig'ida har 3 soatda (tunda bezovta qilmaymiz);
+# har slot bir marta (release_notes_sent kaliti — qayta ishga tushsa ham).
+SPEND_HOURS = (9, 12, 15, 18, 21)
+
+
+def _usd(v) -> str:
+    v = float(v or 0)
+    return f"${v:.2f}" if v >= 0.1 else f"${v:.3f}"
+
+
+async def spend_text(now_tk: datetime | None = None) -> str:
+    now_tk = now_tk or (_utcnow() + timedelta(hours=5))
+    rows = await database.get_ai_usage_today()
+    month = await database.get_ai_usage_month()
+    total = sum(float(r.get("cost_usd") or 0) for r in rows)
+    comments = [r for r in rows if comment_ai.USAGE_TAG in (r.get("model") or "")]
+    c_cost = sum(float(r.get("cost_usd") or 0) for r in comments)
+    c_req = sum(int(r.get("requests") or 0) for r in comments)
+    today = await database.meta_comment_today()
+    lines = [f"💸 <b>AI sarfi — bugun</b> ({now_tk.strftime('%d.%m, %H:%M')} holatiga)", "",
+             f"• Jami: <b>{_usd(total)}</b>",
+             f"• Instagram/Facebook izohlariga javob: <b>{_usd(c_cost)}</b> — {c_req} ta so'rov, "
+             f"{today.get('ai_answered', 0)} ta javob, {today.get('dms', 0)} ta Direct",
+             f"• Qolgani (AI sotuvchi va boshqalar): {_usd(total - c_cost)}"]
+    if rows:
+        lines += ["", "<b>Model bo'yicha:</b>"]
+        for r in rows:
+            lines.append(f"  {_esc(r.get('model'))}: {_usd(r.get('cost_usd'))} · {int(r.get('requests') or 0)} so'rov")
+    lines += ["", f"📅 Oy boshidan: {_usd((month or {}).get('cost_usd'))}"]
+    return "\n".join(lines)
+
+
+async def spend_loop(bot: Bot) -> None:
+    await asyncio.sleep(60)
+    while True:
+        try:
+            now_tk = _utcnow() + timedelta(hours=5)
+            if now_tk.hour in SPEND_HOURS and \
+                    await database.claim_release_notes(f"ai_spend:{now_tk:%Y-%m-%d}:{now_tk.hour:02d}"):
+                text = await spend_text(now_tk)
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await bot.send_message(admin_id, text, parse_mode="HTML")
+                    except Exception as exc:
+                        logger.info("AI spend report → %s failed: %s", admin_id, exc)
+        except Exception:
+            logger.exception("AI spend report failed")
+        await asyncio.sleep(300)
 
 
 # ─────────────────────────────── commands ───────────────────────────────────
@@ -853,15 +1013,20 @@ async def status_text() -> str:
     open_fb = sum(n for (p, s), n in counts.items() if p == "fb" and s in OPEN)
     ai_n = sum(n for (p, s), n in counts.items() if s == "ai_answered")
     done = sum(n for (p, s), n in counts.items() if s in ("answered", "ai_answered"))
+    spam = sum(n for (p, s), n in counts.items() if s == "skipped")
+    today = await database.meta_comment_today()
     lines = ["💬 <b>Instagram/Facebook izohlari</b>", "",
-             f"⏳ Javobsiz: <b>{open_ig + open_fb}</b> (Instagram {open_ig} · Facebook {open_fb})",
-             f"✅ Javob berilgan: {done} (shundan AI: {ai_n})", ""]
+             f"🤖 AI bugun javob berdi: <b>{today.get('ai_answered', 0)}</b> · 📩 Direct bugun: "
+             f"{today.get('dms', 0)} (jami {today.get('dms_all', 0)})",
+             f"✅ Jami javob berilgan: {done} (shundan AI: {ai_n})",
+             f"⏳ AI javob topa olmagan: <b>{open_ig + open_fb}</b> (Instagram {open_ig} · Facebook {open_fb})"
+             + (f" · 🚫 spam: {spam}" if spam else ""), ""]
     if token():
         lines.append("🔑 Token: bor")
     else:
         lines.append("🔑 Token: <b>yo'q</b> — /izoh_token &lt;token&gt; (bot bilan shaxsiy chatda)")
     mode = state.get("ai_mode") or "avto"
-    mode_txt = {"avto": "avto (rahmat va aniq javoblarni o'zi yuboradi)",
+    mode_txt = {"avto": "avto (javob topgan hamma izohga o'zi yozadi + Direct'da rahmat)",
                 "tasdiq": "faqat loyiha — hammasi admin tasdig'i bilan", "off": "o'chiq"}[mode]
     label = await comment_ai.provider_label()
     ai_key = f" · {label}" if label else " — ⚠️ AI kaliti yo'q (/ai_kalit)"
@@ -872,9 +1037,24 @@ async def status_text() -> str:
     synced = state.get("last_sync_at")
     lines.append("🔄 Tekshiruv: " + ((synced + timedelta(hours=5)).strftime("oxirgi %d.%m %H:%M")
                                     if synced else "hali bo'lmagan") + f", har {SYNC_EVERY // 60} daqiqada")
+    st = _last_sync.get("stats")
+    if st:
+        lines.append(f"   o'qildi: {st['ads']} reklama, {st['ig_posts']} Instagram post/reels, "
+                     f"{st['fb_posts']} Facebook post (izohi borlari)")
+    for err in _last_sync.get("organic_errors") or []:
+        lines.append(f"   ⚠️ {_esc(err)[:200]}")
+    recent = await database.list_meta_comments(("ai_answered",), 3)
+    if recent:
+        lines += ["", "<b>Oxirgi AI javoblari:</b>"]
+        for r in recent:
+            lines.append(f"• «{_esc((r.get('text') or '')[:50])}» → «{_esc((r.get('reply_text') or '')[:120])}»")
+    dm_err = next((r.get("note") for r in await database.list_meta_comments(("ai_answered",), 10)
+                   if (r.get("note") or "").startswith("📩 Direct yuborilmadi")), None)
+    if dm_err:
+        lines.append(f"⚠️ {_esc(dm_err)[:250]}")
     pending = await database.list_meta_comments(OPEN, 10)
     if pending:
-        lines += ["", "<b>Javobsizlar:</b>"]
+        lines += ["", "<b>AI javob topa olmaganlar</b> (javob berish uchun: 📤 tugmasi):"]
         for r in pending:
             link = f" <a href=\"{html.escape(r['post_link'])}\">🔗</a>" if r.get("post_link") else ""
             lines.append(f"• {'📷' if r['platform'] == 'ig' else '📘'} {_esc(r.get('username') or '—')}: "
@@ -886,7 +1066,8 @@ async def status_text() -> str:
 def status_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔄 Hozir tekshirish", callback_data="mcs:sync"),
-         InlineKeyboardButton(text="📤 Javobsizlarni qayta yuborish", callback_data="mcs:resend")],
+         InlineKeyboardButton(text="📤 Javobsizlarni menga yubor", callback_data="mcs:resend")],
+        [InlineKeyboardButton(text="💸 AI sarfi (bugun)", callback_data="mcs:spend")],
         [InlineKeyboardButton(text="🔙 Reklama menyusi", callback_data="admin_menu:ads")],
     ])
 
@@ -917,19 +1098,35 @@ async def on_status_button(callback: CallbackQuery):
         await callback.answer("🔄 Tekshirilyapti…")
         try:
             stats = await sync(callback.bot)
+            caught = await catch_up(callback.bot)
+            errs = "".join(f"\n⚠️ {_esc(e)[:200]}" for e in _last_sync.get("organic_errors") or [])
             await callback.message.answer(
-                f"🔄 Tekshirildi: {stats['targets']} ta post/reklama, {stats['seen']} ta izoh, "
-                f"yangi: <b>{stats['new']}</b>" + (f", o'qib bo'lmadi: {stats['errors']}" if stats["errors"] else ""),
+                f"🔄 Tekshirildi: {stats['ads']} reklama, {stats['ig_posts']} Instagram post/reels, "
+                f"{stats['fb_posts']} Facebook post — {stats['seen']} ta izoh, yangi: <b>{stats['new']}</b>"
+                + (f", o'qib bo'lmadi: {stats['errors']}" if stats["errors"] else "")
+                + (f"\n🤖 AI hozir javob berdi: {caught.get('auto', 0)}" if caught.get("auto") else "") + errs,
                 parse_mode="HTML")
         except GraphError as e:
             await callback.message.answer(f"❌ Meta: <code>{_esc(e)}</code>", parse_mode="HTML")
     elif action == "resend":
+        # Faqat bosgan admin o'ziga — boshqalarni bezovta qilmaymiz.
         rows = await database.list_meta_comments(OPEN, 20)
+        sent = []
         for r in rows:
-            await database.update_meta_comment(r["id"], tg_messages=[])
-            r["tg_messages"] = []
-            await send_cards(callback.bot, r)
-        await callback.answer(f"📤 {len(rows)} ta kartochka qayta yuborildi")
+            text, kb = await render(r)
+            try:
+                msg = await callback.bot.send_message(callback.from_user.id, text, reply_markup=kb,
+                                                      parse_mode="HTML", disable_web_page_preview=True)
+            except Exception as exc:
+                logger.info("resend card failed: %s", exc)
+                continue
+            refs = list(r.get("tg_messages") or []) + [{"c": callback.from_user.id, "m": msg.message_id}]
+            await database.update_meta_comment(r["id"], tg_messages=refs)
+            sent.append(r["id"])
+        await callback.answer(f"📤 {len(sent)} ta izoh yuborildi" if sent else "Javobsiz izoh yo'q")
+    elif action == "spend":
+        await callback.message.answer(await spend_text(), parse_mode="HTML")
+        await callback.answer()
     else:
         await callback.answer()
 
