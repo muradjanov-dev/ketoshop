@@ -14,8 +14,13 @@ admin /izoh_bilim bilan o'zgartiradi; boshlang'ich matnlar — DEFAULT_KB
 (do'kon manzili va yetkazish shartlari ai_sales/config bilan bir manbadan).
 Narx va mavjudlik — jonli katalogdan (bazadagi narx, chegirma, qoldiq).
 
-ANTHROPIC_API_KEY faqat serverda (env). Kalit bo'lmasa AI o'chiq: izohlar
-baribir botga tushadi, adminlar o'zi javob yozadi.
+QAYSI AI (egasi, 2026-11-09: "antropic emas, gpt api bor")
+  Asosiy — OpenAI (GPT): AI sotuvchining o'sha kaliti (/ai_kalit yoki env
+  OPENAI_API_KEY) va o'sha modeli (gpt-5.4-mini); oddiy izoh — reasoning
+  "low", murakkabi — "medium". Claude yo'li ham turibdi: faqat OpenAI kaliti
+  yo'q va ANTHROPIC_API_KEY bor bo'lsa (yoki COMMENT_AI_PROVIDER=anthropic).
+  Kalit bo'lmasa AI o'chiq: izohlar baribir botga tushadi, adminlar o'zi
+  javob yozadi.
 """
 import json
 import logging
@@ -217,10 +222,48 @@ class Draft:
 
 
 _client = None
+_openai_client: tuple[str, object] | None = None
 
 
-def available() -> bool:
-    return bool(os.getenv("ANTHROPIC_API_KEY", "").strip())
+async def _openai_key() -> str:
+    """AI sotuvchi ishlatayotgan OpenAI kaliti: /ai_kalit bilan botga
+    berilgani ustun, bo'lmasa env."""
+    try:
+        import ai_sales
+        await ai_sales._load_settings()
+        prov = ai_sales.PROVIDER
+        if prov is not None and getattr(prov, "name", "") == "openai" and getattr(prov, "api_key", ""):
+            return prov.api_key
+    except Exception:
+        logger.warning("comment AI: AI seller settings unreadable", exc_info=True)
+    return os.getenv("OPENAI_API_KEY", "").strip()
+
+
+def openai_model() -> str:
+    import ai_provider
+    return os.getenv("COMMENT_AI_OPENAI_MODEL", "").strip() or ai_provider.DEFAULT_MODELS["openai"]
+
+
+async def provider() -> str:
+    """'openai', 'anthropic' yoki '' (kalit yo'q). GPT birinchi."""
+    wanted = os.getenv("COMMENT_AI_PROVIDER", "").strip().lower()
+    oa = await _openai_key()
+    an = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    if wanted == "anthropic" and an:
+        return "anthropic"
+    if oa:
+        return "openai"
+    return "anthropic" if an else ""
+
+
+async def provider_label() -> str:
+    """/izohlar va /izoh_ai uchun: qaysi AI ishlayapti, bo'sh — hech biri."""
+    prov = await provider()
+    if prov == "openai":
+        return f"GPT ({openai_model()})"
+    if prov == "anthropic":
+        return f"Claude ({SIMPLE_MODEL} / {COMPLEX_MODEL})"
+    return ""
 
 
 def _get_client():
@@ -296,9 +339,86 @@ async def _ask(model: str, system: list, user: str, effort: str, fallback: bool)
     return _parse(resp)
 
 
+async def _ask_openai(key: str, model: str, instructions: str, user: str, effort: str) -> dict | None:
+    """OpenAI Responses API, qat'iy JSON sxemasi bilan (AI sotuvchidagi kabi
+    Responses — GPT-5.x da reasoning shu yerda ishlaydi)."""
+    global _openai_client
+    import ai_provider
+    import openai
+    if _openai_client is None or _openai_client[0] != key:
+        _openai_client = (key, openai.AsyncOpenAI(api_key=key, timeout=60.0, max_retries=2))
+    client = _openai_client[1]
+    try:
+        resp = await client.responses.create(
+            model=model, instructions=instructions,
+            input=[{"role": "user", "content": user}],
+            reasoning={"effort": effort}, max_output_tokens=MAX_TOKENS,
+            text={"format": {"type": "json_schema", "name": "izoh_javob", "schema": SCHEMA, "strict": True}},
+        )
+    except openai.RateLimitError:
+        logger.warning("comment AI rate-limited (%s)", model)
+        return None
+    except openai.APIStatusError as e:
+        logger.warning("comment AI error %s (%s): %s", e.status_code, model, e.message)
+        return None
+    except openai.APIConnectionError:
+        logger.warning("comment AI connection failed (%s)", model)
+        return None
+    usage = ai_provider._openai_usage(getattr(resp, "usage", None))
+    try:
+        import database
+        await database.record_ai_usage(model, "openai", usage.input, usage.cached, usage.output,
+                                       ai_provider.estimate_cost(model, usage.input, usage.cached, usage.output))
+    except Exception:
+        logger.warning("comment AI usage not recorded", exc_info=True)
+    for item in getattr(resp, "output", None) or []:
+        if getattr(item, "type", "") == "message" and any(
+                getattr(part, "type", "") == "refusal" for part in (getattr(item, "content", None) or [])):
+            logger.info("comment AI refused (%s)", model)
+            return None
+    if getattr(resp, "status", "completed") == "incomplete":
+        logger.info("comment AI incomplete (%s)", model)
+        return None
+    text = getattr(resp, "output_text", "") or ""
+    try:
+        data = json.loads(text)
+    except (TypeError, ValueError):
+        logger.warning("comment AI returned non-JSON: %.200s", text)
+        return None
+    if data.get("category") not in CATEGORIES or not isinstance(data.get("reply"), str):
+        return None
+    return data
+
+
+async def _draft_openai(comment: dict, kb: dict) -> Draft | None:
+    key = await _openai_key()
+    model = openai_model()
+    # Barqaror qism oldinda — OpenAI uzun prefiksni o'zi keshlaydi.
+    instructions = RULES + "\n\n" + kb_block(kb, await catalog_text())
+    user = comment_prompt(comment)
+    first = await _ask_openai(key, model, instructions, user, effort="low")
+    if first is None:
+        return None
+    result = Draft(first["category"], first["reply"].strip(), bool(first["confident"]), model)
+    if result.category in COMPLEX:
+        try:
+            better = await _ask_openai(key, model, instructions, user, effort="medium")
+        except Exception:
+            logger.exception("comment AI: complex redraft failed — keeping the first draft")
+            better = None
+        if better and better.get("reply", "").strip():
+            result = Draft(result.category, better["reply"].strip(), False, model)
+    if result.category == "spam":
+        result.reply = ""
+    return result
+
+
 async def draft(comment: dict, kb: dict) -> Draft | None:
     """Javob loyihasi yoki None (kalit yo'q, xato, rad etildi — admin o'zi yozadi)."""
-    if not available():
+    prov = await provider()
+    if prov == "openai":
+        return await _draft_openai(comment, kb)
+    if prov != "anthropic":
         return None
     system = [
         {"type": "text", "text": RULES},

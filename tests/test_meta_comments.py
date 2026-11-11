@@ -415,9 +415,116 @@ def claude_reply(payload, stop="end_turn"):
                                                  cache_creation_input_tokens=0, output_tokens=20))
 
 
+class ProviderTest(unittest.IsolatedAsyncioTestCase):
+    """Egasi, 2026-11-09: "antropic emas, gpt api bor" — GPT birinchi."""
+
+    async def pick(self, bot_key="", env=None):
+        with patch.dict(os.environ, env or {}, clear=False), \
+             patch.object(comment_ai, "_openai_key", AsyncMock(return_value=bot_key)):
+            return await comment_ai.provider()
+
+    async def test_gpt_first(self):
+        self.assertEqual(await self.pick("sk-bot", {"ANTHROPIC_API_KEY": "a"}), "openai")
+        self.assertEqual(await self.pick("sk-bot", {"ANTHROPIC_API_KEY": ""}), "openai")
+
+    async def test_claude_only_without_a_gpt_key_or_when_asked(self):
+        self.assertEqual(await self.pick("", {"ANTHROPIC_API_KEY": "a"}), "anthropic")
+        self.assertEqual(await self.pick("sk", {"ANTHROPIC_API_KEY": "a", "COMMENT_AI_PROVIDER": "anthropic"}),
+                         "anthropic")
+        self.assertEqual(await self.pick("", {"ANTHROPIC_API_KEY": ""}), "")
+
+    async def test_the_ai_sellers_key_is_used(self):
+        import ai_sales
+        seller = SimpleNamespace(name="openai", api_key="sk-from-ai-kalit")
+        with patch.object(ai_sales, "_load_settings", AsyncMock(return_value={})), \
+             patch.object(ai_sales, "PROVIDER", seller), patch.dict(os.environ, {"OPENAI_API_KEY": "sk-env"}):
+            self.assertEqual(await comment_ai._openai_key(), "sk-from-ai-kalit")
+        with patch.object(ai_sales, "_load_settings", AsyncMock(return_value={})), \
+             patch.object(ai_sales, "PROVIDER", None), patch.dict(os.environ, {"OPENAI_API_KEY": "sk-env"}):
+            self.assertEqual(await comment_ai._openai_key(), "sk-env")
+
+
+class FakeResponses:
+    def __init__(self, replies):
+        self.replies, self.calls = list(replies), []
+
+    async def create(self, **kw):
+        self.calls.append(kw)
+        return self.replies.pop(0)
+
+
+def gpt_reply(payload, refusal=False, status="completed"):
+    part = SimpleNamespace(type="refusal" if refusal else "output_text")
+    return SimpleNamespace(output_text="" if refusal else json.dumps(payload), status=status,
+                           output=[SimpleNamespace(type="message", content=[part])],
+                           usage=SimpleNamespace(input_tokens=900, input_tokens_details=SimpleNamespace(cached_tokens=800),
+                                                 output_tokens=40))
+
+
+class GptDraftTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        import openai
+        self.usage = AsyncMock()
+        self.made = []
+        self.responses = FakeResponses([])
+
+        def factory(**kw):
+            self.made.append(kw)
+            return SimpleNamespace(responses=self.responses)
+
+        comment_ai._openai_client = None
+        for p in (patch.object(comment_ai, "provider", AsyncMock(return_value="openai")),
+                  patch.object(comment_ai, "_openai_key", AsyncMock(return_value="sk-test")),
+                  patch.object(comment_ai, "catalog_text", AsyncMock(return_value="- Bodom uni 500gr — 120 000 so'm")),
+                  patch.object(database, "record_ai_usage", self.usage),
+                  patch.object(openai, "AsyncOpenAI", factory),
+                  patch.dict(os.environ, {"COMMENT_AI_OPENAI_MODEL": ""})):
+            p.start()
+            self.addCleanup(p.stop)
+        self.addCleanup(lambda: setattr(comment_ai, "_openai_client", None))
+        self.kb = {"manzil": "Toshkent", "yetkazish": "kuryer"}
+        self.row = {"platform": "ig", "username": "dilnoza", "ad_name": "Glyuten", "text": "Narxi qancha?"}
+
+    async def test_simple_comment_uses_the_ai_sellers_model_with_a_strict_schema(self):
+        self.responses.replies = [gpt_reply({"category": "narx", "reply": "120 000 so'm 🌿", "confident": True})]
+        d = await comment_ai.draft(self.row, self.kb)
+        self.assertEqual((d.category, d.reply, d.confident, d.model), ("narx", "120 000 so'm 🌿", True, "gpt-5.4-mini"))
+        call = self.responses.calls[0]
+        self.assertEqual(call["model"], "gpt-5.4-mini")
+        self.assertEqual(call["reasoning"], {"effort": "low"})
+        fmt = call["text"]["format"]
+        self.assertEqual((fmt["type"], fmt["strict"]), ("json_schema", True))
+        self.assertIn("Bodom uni 500gr", call["instructions"])
+        self.assertTrue(call["instructions"].startswith(comment_ai.RULES))   # stable prefix first → cached
+        self.assertIn("Narxi qancha?", call["input"][0]["content"])
+        self.assertEqual(self.made[0]["api_key"], "sk-test")
+        args = self.usage.await_args.args
+        self.assertEqual((args[0], args[1], args[2], args[3], args[4]), ("gpt-5.4-mini", "openai", 900, 800, 40))
+
+    async def test_complex_question_gets_a_second_deeper_pass_and_waits_for_an_admin(self):
+        self.responses.replies = [gpt_reply({"category": "salomatlik", "reply": "qisqa", "confident": True}),
+                                  gpt_reply({"category": "salomatlik", "reply": "Shifokor bilan maslahatlashing 🌿",
+                                             "confident": True})]
+        d = await comment_ai.draft(dict(self.row, text="Diabetga bo'ladimi?"), self.kb)
+        self.assertEqual((d.category, d.reply, d.confident), ("salomatlik", "Shifokor bilan maslahatlashing 🌿", False))
+        self.assertEqual([c["reasoning"]["effort"] for c in self.responses.calls], ["low", "medium"])
+        self.assertEqual(comment_ai.decide(d.category, d.confident, "avto"), "approve")
+
+    async def test_refusal_incomplete_or_garbage_means_no_draft(self):
+        for reply in (gpt_reply({}, refusal=True), gpt_reply({"category": "narx", "reply": "x", "confident": True},
+                                                             status="incomplete"),
+                      SimpleNamespace(output_text="salom", status="completed", output=[], usage=None)):
+            self.responses.replies = [reply]
+            self.assertIsNone(await comment_ai.draft(self.row, self.kb))
+
+    async def test_label(self):
+        self.assertEqual(await comment_ai.provider_label(), "GPT (gpt-5.4-mini)")
+
+
 class ClaudeDraftTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         for p in (patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}),
+                  patch.object(comment_ai, "provider", AsyncMock(return_value="anthropic")),
                   patch.object(comment_ai, "catalog_text", AsyncMock(return_value="- Bodom uni 500gr — 120 000 so'm")),
                   patch.object(database, "record_ai_usage", AsyncMock())):
             p.start()
@@ -482,7 +589,7 @@ class ClaudeDraftTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((d.category, d.reply), ("spam", ""))
 
     async def test_no_key_no_ai(self):
-        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}):
+        with patch.object(comment_ai, "provider", AsyncMock(return_value="")):
             self.assertIsNone(await comment_ai.draft(self.row, self.kb))
 
 
