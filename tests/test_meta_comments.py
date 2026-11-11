@@ -91,8 +91,14 @@ class FakeDB:
         return [copy.deepcopy(r) for r in self.rows.values()
                 if r["status"] in ("new", "pending") and r.get("ai_confident") is None][:limit]
 
-    async def list_meta_comments_with_cards(self):
-        return [copy.deepcopy(r) for r in self.rows.values() if r["tg_messages"]]
+    async def list_meta_comments_with_cards(self, received_before=None):
+        return [copy.deepcopy(r) for r in self.rows.values() if r["tg_messages"]
+                and (received_before is None or r["received_at"] < received_before)]
+
+    async def meta_comment_same_author_texts(self, from_id, media_id, key):
+        return [r["text"] for r in self.rows.values() if from_id and media_id and r.get("from_id") == from_id
+                and r.get("media_id") == media_id and r["id"] != key
+                and r["status"] in ("ai_answered", "answered", "sending")]
 
     async def claim_release_notes(self, key):
         claimed = getattr(self, "claimed", set())
@@ -122,7 +128,8 @@ class FakeDB:
             "get_meta_comments_state", "mark_meta_comments_state", "insert_meta_comment",
             "get_meta_comment", "update_meta_comment", "claim_meta_comment",
             "find_meta_comment_by_card", "get_user", "meta_comment_dm_recent",
-            "list_meta_comments_unchecked", "list_meta_comments_with_cards", "claim_release_notes")]
+            "list_meta_comments_unchecked", "list_meta_comments_with_cards", "claim_release_notes",
+            "meta_comment_same_author_texts")]
 
 
 class FakeBot:
@@ -296,9 +303,21 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
             return "https://www.instagram.com/p/TESTPOST01/"
 
         self.draft = None
+        self.ai = None            # None: AI ready only when a draft is given; "" / "openai" force it
+        self.posts = {}           # media_id → (caption, image)
+        self.seen_rows = []
 
         async def draft(row, kb):
+            self.seen_rows.append(row)
             return self.draft
+
+        async def provider():
+            if self.ai is not None:
+                return self.ai
+            return "openai" if self.draft is not None else ""
+
+        async def post_context(row):
+            return self.posts.get(row.get("media_id"), ("", ""))
 
         for p in self.db.patches() + [
             patch.object(mc, "identity", AsyncMock(return_value=IDENT)),
@@ -307,6 +326,8 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
             patch.object(mc, "_permalink", permalink), patch.object(mc, "AI_DELAY", 0),
             patch.object(mc, "ADMIN_IDS", [ADMIN, 6950127923]),
             patch.object(comment_ai, "draft", draft),
+            patch.object(comment_ai, "provider", provider),
+            patch.object(mc, "post_context", post_context),
         ]:
             p.start()
             self.addCleanup(p.stop)
@@ -442,8 +463,9 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_catch_up_answers_comments_from_before_this_change(self):
         # Rows the old rules left waiting (ai_confident is NULL), with cards out.
-        for cid in ("p", "q"):
-            await self.db.insert_meta_comment(dict(self.comment(comment_id=cid), tg_messages=[{"c": ADMIN, "m": 7}]))
+        for cid, text in (("p", "Narxi qancha?"), ("q", "Toshkentga yetkazasizlarmi?")):
+            await self.db.insert_meta_comment(dict(self.comment(comment_id=cid, text=text),
+                                                   tg_messages=[{"c": ADMIN, "m": 7}]))
         self.draft = comment_ai.Draft("narx", "Bodom uni 500gr — 120 000 so'm 🌿", True, "gpt-5.4-mini")
         stats = await mc.catch_up(self.bot)
         self.assertEqual(stats["auto"], 2)
@@ -451,7 +473,58 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.bot.sent, [])                     # no new cards…
         self.assertEqual(len(self.bot.edits), 2)                # …the old ones now say the AI answered
         self.assertIn("🤖 AI javob berdi", self.bot.edits[0][2])
-        self.assertEqual(await mc.catch_up(self.bot), {"auto": 0, "approve": 0, "spam": 0, "empty": 0})
+        again = await mc.catch_up(self.bot)
+        self.assertEqual(sum(again.values()), 0)
+
+    async def test_one_answer_for_the_same_text_tagging_different_people(self):
+        self.draft = comment_ai.Draft("boshqa", "Ma'lumot uchun rahmat! 🌿", True, "gpt-5.4-mini")
+        for cid, tag in (("t1", "@ali"), ("t2", "@vali"), ("t3", "@gani")):
+            await self.db.insert_meta_comment(self.comment(comment_id=cid, text=f"{tag} Bug'doyda kimyoviy moddalar ko'p"))
+        stats = await mc.catch_up(self.bot)
+        self.assertEqual((stats["auto"], stats["repeat"]), (1, 2))
+        self.assertEqual(len(self.public), 1)
+
+    async def test_the_ai_sees_the_post_it_is_under(self):
+        self.posts["18100000000000009"] = ("Bodom uni 500gr — keto pishiriqlar uchun", "https://cdn.example/thumb.jpg")
+        self.draft = comment_ai.Draft("narx", "Bodom uni 500gr — 120 000 so'm 🌿", True, "gpt-5.4-mini")
+        await mc.ingest(self.bot, self.comment(text="Narxi qancha?"), source="webhook")
+        await self.settle()
+        row = self.seen_rows[0]
+        self.assertEqual((row["post_caption"], row["post_image"]),
+                         ("Bodom uni 500gr — keto pishiriqlar uchun", "https://cdn.example/thumb.jpg"))
+
+    async def test_ai_hiccup_is_retried_later_without_a_card(self):
+        self.ai = "openai"               # AI is configured, but this call returned nothing
+        await mc.ingest(self.bot, self.comment(text="Narxi qancha?"), source="webhook")
+        await self.settle()
+        self.assertEqual(self.bot.sent, [])
+        self.assertIsNone(self.db.rows[1]["ai_confident"])      # catch_up will try again
+
+    async def test_report_groups_answers_by_post_and_explains_the_rest(self):
+        today = datetime.utcnow()
+        rows_today = [
+            {"platform": "ig", "post_link": "https://www.instagram.com/reel/AAA/", "media_id": "m1",
+             "ad_name": None, "text": "Narxi?", "reply_text": "120 000 so'm", "private_sent": True},
+            {"platform": "ig", "post_link": "https://www.instagram.com/reel/AAA/", "media_id": "m1",
+             "ad_name": None, "text": "Zo'r", "reply_text": "Rahmat!", "private_sent": False},
+            {"platform": "fb", "post_link": "https://www.facebook.com/1_2", "media_id": "1_2",
+             "ad_name": "Kepak", "text": "Manzil?", "reply_text": "Oqsoy 1-tor", "private_sent": True},
+        ]
+        rows_open = [{"platform": "ig", "username": "u1", "text": "Buyurtmam kelmadi", "post_link": None,
+                      "ai_confident": False, "category": "shikoyat", "note": None},
+                     {"platform": "ig", "username": "u2", "text": "?", "post_link": None,
+                      "ai_confident": None, "category": None, "note": None}]
+
+        async def report(scope, limit=500):
+            return rows_today if scope == "today" else rows_open
+        with patch.object(database, "meta_comments_report", report):
+            text = "\n".join(await mc.report_texts())
+        self.assertIn("AI bugun javob berdi: 3 ta</b> (📩 Direct: 2)", text)
+        self.assertIn("reel/AAA</a> — <b>2</b> ta", text)
+        self.assertIn("📣 Kepak — <b>1</b> ta", text)
+        self.assertIn("Javob bera olmagan: 2 ta", text)
+        self.assertIn("AI aniq javob topolmadi (⚠️ Tanqid / shikoyat)", text)
+        self.assertIn("AI hali ko'rmagan", text)
 
     async def test_old_cards_are_deleted_once(self):
         await self.db.insert_meta_comment(dict(self.comment(comment_id="k1"),
@@ -583,10 +656,25 @@ class GptDraftTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((fmt["type"], fmt["strict"]), ("json_schema", True))
         self.assertIn("Bodom uni 500gr", call["instructions"])
         self.assertTrue(call["instructions"].startswith(comment_ai.RULES))   # stable prefix first → cached
-        self.assertIn("Narxi qancha?", call["input"][0]["content"])
+        self.assertIn("Narxi qancha?", call["input"][0]["content"][0]["text"])
+        self.assertEqual(len(call["input"][0]["content"]), 1)                 # no post image here
         self.assertEqual(self.made[0]["api_key"], "sk-test")
         args = self.usage.await_args.args
-        self.assertEqual((args[0], args[1], args[2], args[3], args[4]), ("gpt-5.4-mini · izohlar", "openai", 900, 800, 40))   # its own row in ai_usage
+        self.assertEqual((args[0], args[1], args[2], args[3], args[4]),
+                         ("gpt-5.4-mini · izohlar", "openai", 900, 800, 40))   # its own row in ai_usage
+
+    async def test_post_caption_and_image_go_to_the_model(self):
+        self.responses.replies = [gpt_reply({"category": "narx", "reply": "120 000 so'm", "confident": True, "dm": ""})]
+        await comment_ai.draft(dict(self.row, post_caption="Bodom uni 500gr", post_image="https://cdn.example/p.jpg"),
+                               self.kb)
+        content = self.responses.calls[0]["input"][0]["content"]
+        self.assertIn("POST MATNI:\nBodom uni 500gr", content[0]["text"])
+        self.assertEqual(content[1], {"type": "input_image", "image_url": "https://cdn.example/p.jpg", "detail": "low"})
+
+    async def test_rules_speak_as_the_team_and_never_ask_which_product(self):
+        self.assertIn('"biz"', comment_ai.RULES)
+        self.assertIn("HECH QACHON \"qaysi mahsulot?\"", comment_ai.RULES)
+        self.assertIn("iltimos", comment_ai.RULES)
 
     async def test_complex_question_gets_a_second_deeper_pass_which_decides(self):
         self.responses.replies = [gpt_reply({"category": "salomatlik", "reply": "qisqa", "confident": True, "dm": "a"}),

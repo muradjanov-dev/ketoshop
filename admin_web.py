@@ -1037,6 +1037,21 @@ async def api_admin_message(request: web.Request):
                   "extra_reached": [i for i in extra if i in delivered]})
 
 
+@require_auth
+async def api_comments(request: web.Request):
+    """GET /admin/api/comments?scope=today|open|all&limit=200 — Instagram/
+    Facebook izohlari va AI javoblari (meta_comments.py), tahlil uchun."""
+    scope = request.query.get("scope", "today")
+    if scope not in ("today", "open", "all"):
+        return _json({"error": "scope: today | open | all"}, status=400)
+    try:
+        limit = max(1, min(1000, int(request.query.get("limit", "200"))))
+    except ValueError:
+        return _json({"error": "limit raqam bo'lsin"}, status=400)
+    rows = await database.meta_comments_report(scope, limit)
+    return _json({"scope": scope, "count": len(rows), "comments": rows})
+
+
 MANUAL_ORDER_BY = "🖥 Admin sayt"
 
 
@@ -2248,6 +2263,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_post("/admin/api/expenses", api_expenses_add)
     app.router.add_post("/admin/api/admin-message", api_admin_message)
     app.router.add_post("/admin/api/manual-order", api_manual_order)
+    app.router.add_get("/admin/api/comments", api_comments)
     app.router.add_post("/admin/api/expenses/{id:\\d+}", api_expenses_update)
     app.router.add_post("/admin/api/expenses/{id:\\d+}/delete", api_expenses_delete)
     app.router.add_get("/admin/api/orders/{id:\\d+}/costs", api_order_line_costs)

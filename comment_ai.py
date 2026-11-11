@@ -147,11 +147,25 @@ def decide(category: str | None, confident: bool, mode: str) -> str:
 
 # ─────────────────────────────── the prompt ─────────────────────────────────
 
-RULES = """Sen Ketoshop do'konining Instagram va Facebook sahifasida izohlarga javob yozadigan xodimisan.
-Ketoshop Toshkentda keto, glyutensiz va PP mahsulotlari sotadi (@ketoshop.uz, Telegram: @ketoshopbot).
+RULES = """Sen Keto shop jamoasi nomidan Instagram va Facebook sahifamizdagi izohlarga javob yozasan.
+Keto shop Toshkentda keto, glyutensiz va PP mahsulotlari sotadi (@ketoshop.uz, Telegram: @ketoshopbot).
 
 VAZIFA: izohni bitta turga ajrat (category), unga ochiq javob yoz (reply) va javobing izohga
 to'liq javob bo'la oladimi — ayt (confident). Javobing izoh ostida hammaga ko'rinadi.
+
+KIM NOMIDAN: har doim "biz" — Keto shop jamoasi nomidan (egasi, 2026-11-11: "aytaman emas, aytamiz
+desin"). "Aytamiz", "yuboramiz", "xursandmiz", "bizda bor"; hech qachon "men", "aytaman", "yuboraman".
+
+IZOH QAYSI POST OSTIDA: izoh o'sha post yoki reels haqida. "POST MATNI" va post rasmi (berilgan bo'lsa)
+— postda ko'rsatilgan mahsulot; savoldagi "bu", "narxi qancha" shu mahsulotga tegishli. Rasmdagi
+mahsulotni KATALOG bilan solishtirib aniqla.
+- HECH QACHON "qaysi mahsulot?", "nomini yoki suratini yuboring" kabi qayta so'rama: mahsulot o'zimizning
+  postimizda turibdi (egasi, 2026-11-11: "postda yoki videoda mahsulot bo'ladi … bu javob mantiqsiz").
+- Mahsulotni aniq aniqlay olmasang ham — "videodagi mahsulot va barcha narxlar @ketoshopbot da, Direct'ga
+  ham havolasini yubordik" mazmunida javob ber (bu to'liq javob, confident=true).
+
+ODOB: biror narsa so'raganda yoki taklif qilganda "iltimos" yoki "imkoningiz bo'lsa" ishlat (masalan,
+"iltimos, Direct'ga yozing", "imkoningiz bo'lsa, @ketoshopbot ga kiring").
 
 TURLAR
 - rahmat — rahmat, maqtov, emoji, "zo'r", duo.
@@ -166,7 +180,7 @@ TURLAR
 - boshqa — yuqoridagilarga kirmaydigan savol yoki fikr.
 
 QANDAY YOZISH — muloyim, jonli odamdek, biroz hamdardlik bilan
-- Iliq, samimiy va sodda yoz — do'konning mehribon xodimi yozgandek. Har javob o'ziga xos bo'lsin:
+- Iliq, samimiy va sodda yoz — do'konimiz jamoasi yozgandek. Har javob o'ziga xos bo'lsin:
   shablon gaplar va har safar bir xil boshlanish bo'lmasin, "Ha," bilan boshlama.
 - Odamni eshitganingni qisqa va tabiiy ko'rsat: savoliga qiziqish, tashvishiga tushunish ("Tushunaman,
   bu muhim"), maqtoviga samimiy minnatdorchilik. Ortiqcha shirinsuxanlik va mubolag'a yo'q.
@@ -181,7 +195,11 @@ QANDAY YOZISH — muloyim, jonli odamdek, biroz hamdardlik bilan
 
 FAKTLAR
 - Faqat quyidagi BILIM BAZASI va KATALOGdagi faktlarni yoz. Narx, mahsulot, muddat, manzil yoki telefonni o'zing o'ylab topma.
-- Narx so'ralsa: mahsulot katalogda aniq topilsa — narxini ayt; topilmasa yoki qaysi mahsulot ekani noaniq bo'lsa — confident=false.
+- Narx so'ralsa: mahsulot (izohdan, POST MATNIdan yoki rasmdan) katalogda aniq topilsa — nomi va narxini
+  ayt. Aniqlab bo'lmasa — narxlar @ketoshopbot da ekanini va Direct'ga havola yuborganimizni ayt
+  (confident=true). Narxni taxmin qilma.
+- Bitta odam bir xil matnni boshqalarni belgilab (@...) ko'p marta yozgan bo'lsa — mazmuniga bir marta
+  javob ber; reklama yoki tarqatma bo'lsa — spam.
 - Tibbiy va'da berma ("davolaydi", "kasallikka yordam beradi", "qandni tushiradi" kabi). Sog'liq savoliga —
   bilim bazasidagi umumiy ma'lumot va "shifokor bilan maslahatlashing".
 - Instagram izohida havola bosilmaydi: havola yozma, "@ketoshopbot" deb yoz yoki "profildagi havola orqali" de.
@@ -204,7 +222,9 @@ def comment_prompt(c: dict) -> str:
     platform = "Instagram" if c.get("platform") == "ig" else "Facebook"
     where = f"reklama «{c['ad_name']}»" if c.get("ad_name") else ("reklama" if c.get("ad_id") else "post")
     who = c.get("username") or "mijoz"
-    return (f"{platform} · {where}\nIzoh muallifi: {who}\n"
+    caption = (c.get("post_caption") or "").strip()
+    post = f"POST MATNI:\n{caption[:700]}\n\n" if caption else ""
+    return (f"{platform} · {where}\nIzoh muallifi: {who}\n\n{post}"
             f"IZOH:\n{(c.get('text') or '').strip()[:1500]}")
 
 
@@ -364,12 +384,15 @@ def _parse(resp) -> dict | None:
     return data
 
 
-async def _ask(model: str, system: list, user: str, effort: str, fallback: bool) -> dict | None:
+async def _ask(model: str, system: list, user: str, effort: str, fallback: bool,
+               image: str | None = None) -> dict | None:
     import anthropic
     client = _get_client()
+    content = ([{"type": "image", "source": {"type": "url", "url": image}}] if image else []) + \
+              [{"type": "text", "text": user}]
     kwargs = dict(
         model=model, max_tokens=MAX_TOKENS, system=system,
-        messages=[{"role": "user", "content": user}],
+        messages=[{"role": "user", "content": content}],
         output_config={"effort": effort, "format": {"type": "json_schema", "schema": SCHEMA}},
     )
     try:
@@ -383,6 +406,12 @@ async def _ask(model: str, system: list, user: str, effort: str, fallback: bool)
     except anthropic.RateLimitError:
         logger.warning("comment AI rate-limited (%s)", model)
         return None
+    except anthropic.BadRequestError as e:
+        if image:   # post rasmi ochilmadi (muddati o'tgan havola) — rasmsiz
+            logger.info("comment AI: image refused (%s), retrying without it", e.message)
+            return await _ask(model, system, user, effort, fallback)
+        logger.warning("comment AI error 400 (%s): %s", model, e.message)
+        return None
     except anthropic.APIStatusError as e:
         logger.warning("comment AI error %s (%s): %s", e.status_code, model, e.message)
         return None
@@ -393,24 +422,35 @@ async def _ask(model: str, system: list, user: str, effort: str, fallback: bool)
     return _parse(resp)
 
 
-async def _ask_openai(key: str, model: str, instructions: str, user: str, effort: str) -> dict | None:
+async def _ask_openai(key: str, model: str, instructions: str, user: str, effort: str,
+                      image: str | None = None) -> dict | None:
     """OpenAI Responses API, qat'iy JSON sxemasi bilan (AI sotuvchidagi kabi
-    Responses — GPT-5.x da reasoning shu yerda ishlaydi)."""
+    Responses — GPT-5.x da reasoning shu yerda ishlaydi). `image` — post
+    rasmi yoki reels muqovasi (detail "low" — arzon)."""
     global _openai_client
     import ai_provider
     import openai
     if _openai_client is None or _openai_client[0] != key:
         _openai_client = (key, openai.AsyncOpenAI(api_key=key, timeout=60.0, max_retries=2))
     client = _openai_client[1]
+    content = [{"type": "input_text", "text": user}]
+    if image:
+        content.append({"type": "input_image", "image_url": image, "detail": "low"})
     try:
         resp = await client.responses.create(
             model=model, instructions=instructions,
-            input=[{"role": "user", "content": user}],
+            input=[{"role": "user", "content": content}],
             reasoning={"effort": effort}, max_output_tokens=MAX_TOKENS,
             text={"format": {"type": "json_schema", "name": "izoh_javob", "schema": SCHEMA, "strict": True}},
         )
     except openai.RateLimitError:
         logger.warning("comment AI rate-limited (%s)", model)
+        return None
+    except openai.BadRequestError as e:
+        if image:   # post rasmi ochilmadi (muddati o'tgan havola) — rasmsiz
+            logger.info("comment AI: image refused (%s), retrying without it", e.message)
+            return await _ask_openai(key, model, instructions, user, effort)
+        logger.warning("comment AI error 400 (%s): %s", model, e.message)
         return None
     except openai.APIStatusError as e:
         logger.warning("comment AI error %s (%s): %s", e.status_code, model, e.message)
@@ -450,13 +490,14 @@ async def _draft_openai(comment: dict, kb: dict) -> Draft | None:
     # Barqaror qism oldinda — OpenAI uzun prefiksni o'zi keshlaydi.
     instructions = RULES + "\n\n" + kb_block(kb, await catalog_text())
     user = comment_prompt(comment)
-    first = await _ask_openai(key, model, instructions, user, effort="low")
+    image = comment.get("post_image") or None
+    first = await _ask_openai(key, model, instructions, user, effort="low", image=image)
     if first is None:
         return None
     better = None
     if first["category"] in COMPLEX:
         try:
-            better = await _ask_openai(key, model, instructions, user, effort="medium")
+            better = await _ask_openai(key, model, instructions, user, effort="medium", image=image)
         except Exception:
             logger.exception("comment AI: complex redraft failed — keeping the first draft")
     return _build(first, better, model, model)
@@ -475,13 +516,14 @@ async def draft(comment: dict, kb: dict) -> Draft | None:
         {"type": "text", "text": kb_block(kb, await catalog_text()), "cache_control": {"type": "ephemeral"}},
     ]
     user = comment_prompt(comment)
-    first = await _ask(SIMPLE_MODEL, system, user, effort="low", fallback=False)
+    image = comment.get("post_image") or None
+    first = await _ask(SIMPLE_MODEL, system, user, effort="low", fallback=False, image=image)
     if first is None:
         return None
     better = None
     if first["category"] in COMPLEX:
         try:
-            better = await _ask(COMPLEX_MODEL, system, user, effort="medium", fallback=True)
+            better = await _ask(COMPLEX_MODEL, system, user, effort="medium", fallback=True, image=image)
         except Exception:
             logger.exception("comment AI: complex redraft failed — keeping the first draft")
     return _build(first, better, SIMPLE_MODEL, COMPLEX_MODEL)
