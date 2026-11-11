@@ -8478,10 +8478,70 @@ async def list_meta_comments_unchecked(limit: int = 40) -> list[dict]:
     return [_comment_row(r) for r in rows]
 
 
-async def list_meta_comments_with_cards() -> list[dict]:
+async def list_meta_comments_with_cards(received_before=None) -> list[dict]:
+    """Kartochkasi bor izohlar; received_before — faqat shu vaqtdan oldin kelganlari."""
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM meta_comments WHERE tg_messages <> '[]'::jsonb")
+        if received_before is None:
+            rows = await conn.fetch("SELECT * FROM meta_comments WHERE tg_messages <> '[]'::jsonb")
+        else:
+            rows = await conn.fetch("SELECT * FROM meta_comments WHERE tg_messages <> '[]'::jsonb "
+                                    "AND received_at < $1", received_before)
     return [_comment_row(r) for r in rows]
+
+
+async def reset_meta_comments_unconfident() -> int:
+    """Javobsiz va AI «topa olmadi» degan izohlarni qayta ko'rishga qo'yadi
+    (AI qoidasi yoki konteksti o'zgarganda — bir marta)."""
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE meta_comments SET ai_confident = NULL "
+            "WHERE status IN ('new', 'pending') AND ai_confident = FALSE")
+    return int(result.split()[-1]) if result else 0
+
+
+async def meta_comment_same_author_texts(from_id: str | None, media_id: str | None, key: int) -> list[str]:
+    """Shu odamning shu post ostidagi, javob berilgan (yoki berilayotgan) boshqa izohlari matni."""
+    if not from_id or not media_id:
+        return []
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT text FROM meta_comments WHERE from_id = $1 AND media_id = $2 AND id <> $3 "
+            "AND status IN ('ai_answered', 'answered', 'sending')", from_id, media_id, key)
+    return [r["text"] or "" for r in rows]
+
+
+async def meta_comment_open_breakdown() -> dict:
+    """Javobsizlar: AI hali ko'rmagan / javob topa olmagan / yuborib bo'lmagan + oxirgi xato."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) FILTER (WHERE ai_confident IS NULL) AS unchecked,
+                      COUNT(*) FILTER (WHERE ai_confident IS FALSE) AS unanswerable,
+                      COUNT(*) FILTER (WHERE ai_confident IS TRUE) AS failed
+                 FROM meta_comments WHERE status IN ('new', 'pending')""")
+        last = await conn.fetchval(
+            "SELECT note FROM meta_comments WHERE note LIKE '❌%' OR note LIKE '📩 Direct yuborilmadi%' "
+            "ORDER BY COALESCE(replied_at, received_at) DESC, id DESC LIMIT 1")
+    out = {k: int(row[k] or 0) for k in ("unchecked", "unanswerable", "failed")} if row else {}
+    out["last_error"] = last
+    return out
+
+
+async def meta_comments_report(scope: str = "today", limit: int = 500) -> list[dict]:
+    """/izoh_hisobot va /admin/api/comments uchun. scope: 'today' — bugun
+    (Toshkent) AI javob berganlari; 'open' — javobsizlar; 'all' — oxirgilari."""
+    where = {
+        "today": f"status = 'ai_answered' AND (replied_at + INTERVAL '5 hours')::date = {_AI_DAY}",
+        "open": "status IN ('new', 'pending')",
+        "all": "TRUE",
+    }.get(scope, "TRUE")
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT id, platform, media_id, post_link, ad_name, username, text, status, category,
+                       ai_confident, ai_draft, reply_text, reply_kind, note, private_sent,
+                       created_at, replied_at, source
+                  FROM meta_comments WHERE {where}
+                 ORDER BY COALESCE(replied_at, created_at, received_at) DESC LIMIT $1""", limit)
+    return [dict(r) for r in rows]
 
 
 async def meta_comment_dm_recent(from_id: str | None, days: int = 7) -> bool:

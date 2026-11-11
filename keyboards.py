@@ -54,6 +54,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="reklama_token", description="🔑 Meta reklama tokeni"),
     BotCommand(command="reklama_bog", description="🔗 Reklama kampaniyasi ↔ bot havolasi"),
     BotCommand(command="izohlar", description="💬 Instagram/Facebook izohlari: javobsizlar, AI"),
+    BotCommand(command="izoh_hisobot", description="📋 AI bugun qayerda javob berdi, qaysilariga bera olmadi"),
     BotCommand(command="leads", description="📋 Yangi leadlar"),
     BotCommand(command="ai_holat", description="🤖 AI sotuvchi: holat, yoqish/o'chirish, model"),
     BotCommand(command="ai_kalit", description="🔑 OpenAI (GPT) kaliti — serverga kirmasdan"),
