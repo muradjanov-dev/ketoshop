@@ -539,9 +539,80 @@ def is_cyrillic(text: str | None) -> bool:
     return bool(letters) and sum(1 for ch in letters if _CYR.match(ch)) * 2 > len(letters)
 
 
+_APOS = str.maketrans({"‘": "'", "’": "'", "`": "'", "´": "'", "ʼ": "'"})
+_CYR_APOS = {"о'": "ў", "О'": "Ў", "г'": "ғ", "Г'": "Ғ"}
+
+
+def _fix_cyr_apos(text: str) -> str:
+    """Kirill matndagi «со‘м», «бо‘лса» → «сўм», «бўлса» (translit ‘ ’ ni
+    apostrof deb tanimaydi, model ham ba'zan shunday yozadi)."""
+    return re.sub(r"[оОгГ]'", lambda m: _CYR_APOS[m.group(0)], text)
+
+
 def in_script_of(comment_text: str | None, reply: str) -> str:
-    """Shablon (lotinda) izoh kirillda bo'lsa — kirillga."""
-    if is_cyrillic(comment_text) and not is_cyrillic(reply):
+    """Izoh kirillda bo'lsa — javob ham butunlay kirillda: lotincha qolgan
+    so'zlar (mahsulot nomlari: «Stevia 200гр») ham o'giriladi; @handle va
+    havolalarga translit tegmaydi."""
+    if is_cyrillic(comment_text):
         from translit import lat_to_cyr
-        return lat_to_cyr(reply)
+        # Avval kirilldagi «о'» → «ў» (aks holda translit «'» ni «ъ» qiladi).
+        return _fix_cyr_apos(lat_to_cyr(_fix_cyr_apos(reply.translate(_APOS))))
     return reply
+
+
+# 1-shaxs birlik → "biz" (egasi, 2026-11-11: "aytaman demasin aytamiz desin").
+_SINGULAR_WORDS = {"xursandman": "xursandmiz", "minnatdorman": "minnatdormiz", "tayyorman": "tayyormiz",
+                   "хурсандман": "хурсандмиз", "миннатдорман": "миннатдормиз", "тайёрман": "тайёрмиз"}
+_SINGULAR_VERB = re.compile(r"\b(\w{3,}?)(a|а|ya|я)(y|й)?(man|ман)\b", re.IGNORECASE)
+# "Qaysi … kerakligini yozing", "номини ёзинг" — o'z postimizdagi mahsulotni qayta so'rash.
+_ASK = re.compile(r"(nomini|номини|qaysi|қайси|kerakligini|кераклигини).{0,80}"
+                  r"(yozing|ёзинг|ayting|айтинг|yuboring|юборинг|yozsangiz|ёзсангиз|aytsangiz|айтсангиз)",
+                  re.IGNORECASE)
+_ASK_FALLBACK = "Barcha narxlar va mahsulotlarimiz @ketoshopbot da 🌿"
+
+
+def _plural(text: str) -> str:
+    for one, many in _SINGULAR_WORDS.items():
+        text = re.sub(rf"\b{one}\b", many, text, flags=re.IGNORECASE)
+
+    def verb(m):
+        stem, vowel, y, man = m.groups()
+        if len(stem) + len(vowel) < 4:          # «yaman», «осман» — fe'l emas
+            return m.group(0)
+        mi = "miz" if man.lower() == "man" else "миз"
+        return f"{stem}{vowel}{y or ''}{mi}"
+    return _SINGULAR_VERB.sub(verb, text)
+
+
+_CLAUSE_START = re.compile(r"\b(agar|агар|xohlasangiz|хоҳласангиз|iltimos|илтимос)\b", re.IGNORECASE)
+_BOUNDARY = re.compile("[.!?…]|[\U0001F300-\U0001FAFF☀-➿]")
+
+
+def _drop_asks(text: str) -> str:
+    """Faqat so'rash bo'lagini kesadi: «Кепак — 10 000 сўм 😊 Агар … номини
+    ёзинг — айтаман.» → «Кепак — 10 000 сўм 😊» + narxlar botda."""
+    m = _ASK.search(text)
+    if not m:
+        return text
+    head = text[:m.start()]
+    cut = 0
+    for b in _BOUNDARY.finditer(head):
+        cut = b.end()
+    starts = [s.start() for s in _CLAUSE_START.finditer(head) if s.start() >= cut]
+    if starts:
+        cut = starts[0]
+    kept = head[:cut].rstrip(" ,—-") if cut else ""
+    end = _BOUNDARY.search(text, m.end())
+    tail = text[end.end():].strip() if end else ""
+    return " ".join(p for p in (kept, tail, _ASK_FALLBACK) if p).strip()
+
+
+def finalize(comment_text: str | None, reply: str | None) -> str:
+    """Izohga ketishdan oldin har javob: markdown yo'q (Instagram ko'rsatmaydi),
+    "biz" nomidan, o'z postimizdagi mahsulotni qayta so'ramaydi, izoh
+    yozuvida (kirillda — to'liq kirill, «сўм» to'g'ri)."""
+    text = (reply or "").replace("**", "").replace("__", "")
+    text = text.translate(_APOS)
+    text = _drop_asks(text)
+    text = _plural(text)
+    return in_script_of(comment_text, text).strip()

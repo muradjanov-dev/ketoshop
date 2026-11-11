@@ -77,6 +77,8 @@ CLEANUP_KEY_V2 = "meta_comments_cards_cleanup_2026_11_11_v2"
 CLEANUP_BEFORE = datetime(2026, 11, 11, 11, 40)   # #190 deployi (UTC) — undan oldingi kartochkalar
 # Post matni va "biz" qoidasi kelgach — AI "topa olmadi" deganlarini bir marta qayta ko'radi.
 RECHECK_KEY = "meta_comments_recheck_2026_11_11b"
+# Ichki javoblarga yozib bo'lmay qolganlar (#100 top-level) — tuzatishdan keyin bir marta qayta.
+RETRY_KEY = "meta_comments_retry_subreplies_2026_11_11"
 MAX_ADS = 100
 TEXT_MAX = 1500
 REPLY_MAX = 900                       # Instagram izohi ~2200 belgi; javob qisqa
@@ -191,9 +193,24 @@ def is_own(c: dict, ident: dict) -> bool:
            (bool(ident.get("ig_username")) and (c.get("username") or "").lower() == ident["ig_username"].lower())
 
 
+def reply_target(c: dict, text: str) -> tuple[str, str]:
+    """(qaysi izohga, qanday matn). Instagram faqat asosiy izohga javob
+    qabul qiladi — ichki javobga yozilsa "(#100) Field is only available for
+    top-level comments" (2026-11-11, 37 ta izoh). Shuning uchun ichki javobga
+    — asosiy izoh ostiga, odamni @username bilan belgilab."""
+    parent = c.get("parent_id")
+    if not parent:
+        return c["comment_id"], text
+    who = (c.get("username") or "").strip().lstrip("@")
+    if c.get("platform") == "ig" and who and f"@{who}".lower() not in text.lower():
+        text = f"@{who} {text}"
+    return parent, text
+
+
 async def reply_public(session, ident: dict, c: dict, text: str) -> str:
     """Izohning o'zi ostiga — reklama nusxasining o'ziga — ochiq javob."""
-    path = f"{c['comment_id']}/replies" if c["platform"] == "ig" else f"{c['comment_id']}/comments"
+    target, text = reply_target(c, text)
+    path = f"{target}/replies" if c["platform"] == "ig" else f"{target}/comments"
     data = await _graph(session, "POST", path, ident["page_token"], {"message": text[:REPLY_MAX * 2]})
     return str(data.get("id") or "")
 
@@ -480,7 +497,11 @@ async def auto_send(bot: Bot | None, key: int, delay: float | None = None, notif
                 return
             if not await database.claim_meta_comment(key, ("new",), "sending"):
                 return
-            text = comment_ai.in_script_of(row.get("text"), row["ai_draft"])
+            text = comment_ai.finalize(row.get("text"), row["ai_draft"])
+            # Avval Direct, keyin ochiq javob: Instagram ochiq javobi bor
+            # izohga shaxsiy javobni rad etayotgan bo'lishi mumkin («already
+            # has a reply», 2026-11-11, 47 ta) — tartibni almashtirdik.
+            await thank_in_direct(row)
             await reply_public(session, ident, row, text)
     except GraphError as e:
         await database.claim_meta_comment(key, ("sending",), "new")
@@ -490,7 +511,6 @@ async def auto_send(bot: Bot | None, key: int, delay: float | None = None, notif
         return
     row = await database.update_meta_comment(key, status="ai_answered", reply_text=text, reply_kind="public")
     await send_cards(bot, row, new_ok=False)
-    await thank_in_direct(row)
 
 
 async def thank_in_direct(row: dict) -> bool:
@@ -586,6 +606,21 @@ async def _cleanup_quietly(bot: Bot | None) -> None:
         await cleanup_cards_once(bot, CLEANUP_KEY_V2, CLEANUP_BEFORE)
     except Exception:
         logger.exception("comment cards cleanup failed")
+
+
+async def retry_failed_once(bot: Bot | None) -> int:
+    """AI javobi bor, lekin yuborib bo'lmay qolgan izohlar (ichki javoblar —
+    #100 top-level xatosi) — tuzatishdan keyin bir marta qayta yuboriladi."""
+    if not await database.claim_release_notes(RETRY_KEY):
+        return 0
+    rows = await database.list_meta_comments_failed(200)
+    for row in rows:
+        try:
+            await auto_send(bot, row["id"], delay=0, notify=False)
+        except Exception:
+            logger.exception("retry failed for %s", row.get("comment_id"))
+    logger.info("comments: retried %d failed send(s)", len(rows))
+    return len(rows)
 
 
 CATCH_UP_PARALLEL = 4
@@ -833,7 +868,7 @@ async def on_button(callback: CallbackQuery):
         if not row.get("ai_draft"):
             await callback.answer("AI loyihasi yo'q", show_alert=True)
             return
-        err = await answer(bot, key, comment_ai.in_script_of(row.get("text"), row["ai_draft"]), uid)
+        err = await answer(bot, key, comment_ai.finalize(row.get("text"), row["ai_draft"]), uid)
         await callback.answer(f"❌ {err}" if err else "✅ Yuborildi", show_alert=bool(err))
     elif action == "t":
         kb = await _kb()
@@ -846,7 +881,7 @@ async def on_button(callback: CallbackQuery):
     elif action in ("ed", "dm"):
         private = action == "dm"
         if private and row.get("ai_draft") and row["status"] in OPEN:
-            err = await answer(bot, key, comment_ai.in_script_of(row.get("text"), row["ai_draft"]), uid,
+            err = await answer(bot, key, comment_ai.finalize(row.get("text"), row["ai_draft"]), uid,
                                private=True)
             await callback.answer(f"❌ {err}" if err else "📩 Shaxsiy xabar yuborildi", show_alert=bool(err))
             return
@@ -1039,6 +1074,10 @@ async def scheduler_loop(bot: Bot) -> None:
             logger.info("comments: %d unanswerable comment(s) queued for a re-check", n)
     except Exception:
         logger.exception("comments re-check reset failed")
+    try:
+        await retry_failed_once(bot)
+    except Exception:
+        logger.exception("comments retry failed")
     while True:
         try:
             await load_token()

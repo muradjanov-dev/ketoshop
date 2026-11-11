@@ -87,6 +87,11 @@ class FakeDB:
         return bool(from_id) and any(r.get("from_id") == from_id and r.get("private_sent")
                                      for r in self.rows.values())
 
+    async def list_meta_comments_failed(self, limit=200):
+        return [copy.deepcopy(r) for r in self.rows.values()
+                if r["status"] in ("new", "pending") and r.get("ai_confident") is True and r.get("ai_draft")
+                and (r.get("note") or "").startswith("❌ AI yubora olmadi")][:limit]
+
     async def list_meta_comments_unchecked(self, limit=40):
         return [copy.deepcopy(r) for r in self.rows.values()
                 if r["status"] in ("new", "pending") and r.get("ai_confident") is None][:limit]
@@ -129,7 +134,7 @@ class FakeDB:
             "get_meta_comment", "update_meta_comment", "claim_meta_comment",
             "find_meta_comment_by_card", "get_user", "meta_comment_dm_recent",
             "list_meta_comments_unchecked", "list_meta_comments_with_cards", "claim_release_notes",
-            "meta_comment_same_author_texts")]
+            "meta_comment_same_author_texts", "list_meta_comments_failed")]
 
 
 class FakeBot:
@@ -220,6 +225,31 @@ class WebhookEndpointTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.ingested, [("18000000000000001", "webhook")])
 
 
+class ReplyShapeTest(unittest.TestCase):
+    """2026-11-11: 37 replies failed with "(#100) Field is only available for
+    top-level comments" — they were answers to answers."""
+
+    def test_a_reply_to_a_reply_goes_under_the_top_comment_with_a_mention(self):
+        c = {"comment_id": "sub", "parent_id": "top", "platform": "ig", "username": "dilnoza.uz"}
+        self.assertEqual(mc.reply_target(c, "Rahmat! 🌿"), ("top", "@dilnoza.uz Rahmat! 🌿"))
+        self.assertEqual(mc.reply_target(c, "@dilnoza.uz rahmat"), ("top", "@dilnoza.uz rahmat"))
+        self.assertEqual(mc.reply_target(dict(c, platform="fb", username="Ali Valiyev"), "Rahmat"), ("top", "Rahmat"))
+        self.assertEqual(mc.reply_target({"comment_id": "top", "platform": "ig"}, "Salom"), ("top", "Salom"))
+
+    def test_finalize_cleans_what_instagram_shows_badly(self):
+        f = comment_ai.finalize
+        self.assertEqual(f("Narxi?", "**Tabiiy GHEE 1000ml — 135 000 so'm** 😊"), "Tabiiy GHEE 1000ml — 135 000 so'm 😊")
+        self.assertEqual(f("Нархи", "Кепак — 10 000 со‘м 😊"), "Кепак — 10 000 сўм 😊")
+        self.assertEqual(f("Нархлари", "Stevia 200гр — 33 000 сўм"), "Стевиа 200гр — 33 000 сўм")
+        self.assertEqual(f("Zo'r", "Juda xursandman, yordam beraman."), "Juda xursandmiz, yordam beramiz.")
+        self.assertEqual(f("Yaxshi", "Yaman emas!"), "Yaman emas!")
+
+    def test_finalize_never_asks_for_the_product_in_our_own_post(self):
+        out = comment_ai.finalize("Нархи канча", "Кепак — 10 000 со‘м 😊 Агар бошқа маҳсулот бўлса, "
+                                                 "номини ёзинг — аниқ нархини айтаман.")
+        self.assertEqual(out, "Кепак — 10 000 сўм 😊 Барча нархлар ва маҳсулотларимиз @ketoshopbot да 🌿")
+
+
 class PolicyTest(unittest.TestCase):
     def test_ai_answers_everything_it_can(self):
         # Owner, 2026-11-11: AI answers all by itself; only what it could not
@@ -286,12 +316,16 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
         self.public, self.private, self.hidden = [], [], []
         self.existing = None
 
+        self.order = []
+
         async def reply_public(session, ident, c, text):
             self.public.append((c["comment_id"], text))
+            self.order.append("public")
             return "reply1"
 
         async def reply_private(session, ident, c, text):
             self.private.append((c["comment_id"], text))
+            self.order.append("private")
 
         async def hide(session, ident, c):
             self.hidden.append(c["comment_id"])
@@ -397,6 +431,22 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("AI loyiha", text)
         self.assertEqual(buttons(kb), ["mc:ok:1", "mc:ed:1", "mc:dm:1", "mc:t:narx:1", "mc:t:yetkazish:1",
                                        "mc:t:bot:1", "mc:hide:1", "mc:seen:1", "mc:no:1"])
+
+    async def test_direct_goes_first_then_the_public_reply(self):
+        self.draft = comment_ai.Draft("rahmat", "Rahmat!", True, "gpt-5.4-mini", "Rahmat")
+        await mc.ingest(self.bot, self.comment(text="Zo'r"), source="webhook")
+        await self.settle()
+        self.assertEqual(self.order, ["private", "public"])
+
+    async def test_failed_sends_are_retried_once_after_the_fix(self):
+        await self.db.insert_meta_comment(dict(self.comment(comment_id="sub1", parent_id="top1", text="Narxi?"),
+                                               ai_confident=True, ai_draft="120 000 so'm 🌿",
+                                               note="❌ AI yubora olmadi: [100] (#100) Field is only available "
+                                                    "for top-level comments."))
+        self.assertEqual(await mc.retry_failed_once(self.bot), 1)
+        self.assertEqual(self.public, [("sub1", "120 000 so'm 🌿")])
+        self.assertEqual(self.db.rows[1]["status"], "ai_answered")
+        self.assertEqual(await mc.retry_failed_once(self.bot), 0)            # once
 
     async def test_spam_gets_nothing(self):
         self.draft = comment_ai.Draft("spam", "", True, "gpt-5.4-mini")

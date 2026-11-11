@@ -8526,6 +8526,16 @@ async def meta_comment_open_breakdown() -> dict:
     return out
 
 
+async def list_meta_comments_failed(limit: int = 200) -> list[dict]:
+    """AI javobi bor, lekin Meta'ga yuborib bo'lmagan javobsiz izohlar."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM meta_comments WHERE status IN ('new', 'pending') AND ai_confident IS TRUE "
+            "AND ai_draft IS NOT NULL AND note LIKE '❌ AI yubora olmadi%' "
+            "ORDER BY COALESCE(created_at, received_at) LIMIT $1", limit)
+    return [_comment_row(r) for r in rows]
+
+
 async def meta_comments_report(scope: str = "today", limit: int = 500) -> list[dict]:
     """/izoh_hisobot va /admin/api/comments uchun. scope: 'today' — bugun
     (Toshkent) AI javob berganlari; 'open' — javobsizlar; 'all' — oxirgilari."""
