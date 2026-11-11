@@ -2739,7 +2739,7 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
                     amount=f"{keto_used:,}".replace(",", " "),
                     full=f"{int(data['total']) + keto_used:,}".replace(",", " "),
                 )
-            await bot.send_message(
+            card = await bot.send_message(
                 chat_id=admin_id,
                 text=text,
                 # An order watcher (config.ORDER_WATCHER_IDS) is not an admin:
@@ -2754,6 +2754,11 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
                 # 🗺 link on top of it would just push the card off screen.
                 disable_web_page_preview=True,
             )
+            # 📌 Tasdiqlanguncha adminning chatida pin (owner, 2026-11-11) —
+            # order_pins.status_changed tasdiqlanishi bilan olib tashlaydi.
+            if buttons:
+                import order_pins
+                await order_pins.pin(bot, order_id, admin_id, card.message_id)
             # Send location pin right after the order text so they group together
             if data.get("latitude") and data.get("longitude"):
                 await bot.send_location(
