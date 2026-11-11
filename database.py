@@ -1275,6 +1275,18 @@ async def init_db():
         """)
         await conn.execute(
             "INSERT INTO meta_comments_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+        # Adminlar chatida pin qilingan yangi buyurtma kartochkalari
+        # (order_pins.py, 2026-11-11) — buyurtma tasdiqlansa olinadi.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS order_pins (
+                chat_id BIGINT NOT NULL,
+                message_id BIGINT NOT NULL,
+                order_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT (NOW() AT TIME ZONE 'UTC'),
+                PRIMARY KEY (chat_id, message_id)
+            )
+        """)
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_order_pins_order ON order_pins(order_id)")
         # AI sotuvchi (ai_sales.py): kunlik token/$ sarfi — kun+model bo'yicha
         # bitta qator, kunlik hisobot (targets.py) shundan o'qiydi.
         await conn.execute("""
@@ -2930,6 +2942,43 @@ async def get_order(order_id: int) -> dict | None:
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM orders WHERE id = $1", order_id)
         return dict(row) if row else None
+
+
+# ===== Yangi buyurtmalar pini (order_pins.py) =====
+
+async def add_order_pin(order_id: int, chat_id: int, message_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO order_pins (chat_id, message_id, order_id) VALUES ($1, $2, $3) "
+            "ON CONFLICT (chat_id, message_id) DO NOTHING", chat_id, message_id, order_id)
+
+
+async def take_order_pins(order_id: int) -> list[dict]:
+    """Shu buyurtmaning pinlari — o'qib, o'chiradi (ikki marta olinmaydi)."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "DELETE FROM order_pins WHERE order_id = $1 RETURNING chat_id, message_id", order_id)
+    return [dict(r) for r in rows]
+
+
+async def order_pins_to_release() -> list[int]:
+    """Pin qilingan, lekin endi 'pending' bo'lmagan yoki o'chirilgan buyurtmalar."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT DISTINCT p.order_id FROM order_pins p
+                 LEFT JOIN orders o ON o.id = p.order_id
+                WHERE o.id IS NULL OR o.status <> 'pending'""")
+    return [r["order_id"] for r in rows]
+
+
+async def pending_orders_without_pins(limit: int = 30) -> list[dict]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT * FROM orders o
+                WHERE o.status = 'pending' AND COALESCE(o.source, '') NOT IN ('test', 'b2b')
+                  AND NOT EXISTS (SELECT 1 FROM order_pins p WHERE p.order_id = o.id)
+                ORDER BY o.created_at LIMIT $1""", limit)
+    return [dict(r) for r in rows]
 
 
 # Which lifecycle column each status stamps the first time it is reached.

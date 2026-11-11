@@ -364,6 +364,9 @@ async def main():
     # 💸 AI sarfi adminlarga: 09–21 da har 3 soatda, izohlar sarfi alohida.
     from meta_comments import spend_loop as ai_spend_loop
     asyncio.create_task(ai_spend_loop(bot))
+    # 📌 Tasdiqlanmagan buyurtmalar adminlarda pin; tasdiqlangani olinadi.
+    from order_pins import loop as order_pins_loop
+    asyncio.create_task(order_pins_loop(bot))
 
     # Aksiya / Bonus — closes a campaign out the moment its window ends (so
     # bonuses stop being granted without anyone touching the admin panel) and

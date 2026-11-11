@@ -64,6 +64,8 @@ _T = {
                      "ru": "📝 <b>Новый заказ вручную #{id}</b>"},
     "b2b_title": {"uz": "🏢 <b>Yangi ulgurji (B2B) buyurtma #{id}</b>",
                   "ru": "🏢 <b>Новый оптовый (B2B) заказ #{id}</b>"},
+    "waiting_title": {"uz": "⏳ <b>Tasdiqlanmagan buyurtma #{id}</b>",
+                      "ru": "⏳ <b>Неподтверждённый заказ #{id}</b>"},
     "open_title": {"uz": "📦 <b>Yetkazilmagan buyurtma #{id}</b>",
                    "ru": "📦 <b>Недоставленный заказ #{id}</b>"},
     "open_intro": {"uz": ("🧪 <b>Test:</b> hozir yetkazilmagan {n} ta buyurtma quyida.\n\n"
@@ -384,6 +386,9 @@ def status_changed(bot: Bot | None, order_id: int, old_status: str | None,
                    new_status: str, by) -> None:
     if bot is None or old_status == new_status:
         return
+    # 📌 Yangi buyurtma tasdiqlandi/bekor qilindi — adminlardagi pin olinadi.
+    import order_pins
+    order_pins.status_changed(bot, order_id, new_status)
     _spawn(_send_all(bot, order_id, title="status_title", by=actor(by),
                      old_status=old_status, new_status=new_status))
 
@@ -394,6 +399,9 @@ def deleted(bot: Bot | None, order: dict | None, by) -> None:
     for it still has live buttons — this tells them before they tap one
     (owner, 2026-11-06). The admin who deleted it already knows; a 🧪 test
     order is nobody's news."""
+    if bot is not None and order and order.get("id"):
+        import order_pins
+        order_pins.status_changed(bot, order["id"], "deleted")
     if bot is None or not order or (order.get("source") or "") == "test":
         return
     me = getattr(by, "id", None)
