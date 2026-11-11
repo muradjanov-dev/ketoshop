@@ -871,8 +871,9 @@ class SpendReportTest(unittest.IsolatedAsyncioTestCase):
                 {"model": "gpt-5.4-mini · izohlar", "requests": 37, "cost_usd": 0.031}]
         with patch.object(database, "get_ai_usage_today", AsyncMock(return_value=rows)),              patch.object(database, "get_ai_usage_month", AsyncMock(return_value={"cost_usd": 9.5})),              patch.object(database, "meta_comment_today", AsyncMock(return_value={"ai_answered": 30, "dms": 21})):
             text = await mc.spend_text(datetime(2026, 11, 11, 15, 0))
-        self.assertIn("Jami: <b>$0.45</b>", text)
-        self.assertIn("izohlariga javob: <b>$0.031</b> — 37 ta so'rov, 30 ta javob, 21 ta Direct", text)
+        self.assertIn("Jami AI sarfi: <b>$0.45</b>", text)
+        self.assertIn("Izohlarga: $0.031 — 37 ta so'rov, 30 ta javob, 21 ta Direct", text)
+        self.assertIn("Izohlarga AI javob berdi: 30 ta", text)          # the count comes first
         self.assertIn("Qolgani (AI sotuvchi va boshqalar): $0.42", text)
         self.assertIn("Oy boshidan: $9.50", text)
         self.assertIn("11.11, 15:00", text)
