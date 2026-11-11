@@ -361,6 +361,9 @@ async def main():
     # (webhook sozlanmagan bo'lsa ham) — /izoh_token berilmaguncha jim.
     from meta_comments import scheduler_loop as meta_comments_loop
     asyncio.create_task(meta_comments_loop(bot))
+    # 💸 AI sarfi adminlarga: 09–21 da har 3 soatda, izohlar sarfi alohida.
+    from meta_comments import spend_loop as ai_spend_loop
+    asyncio.create_task(ai_spend_loop(bot))
 
     # Aksiya / Bonus — closes a campaign out the moment its window ends (so
     # bonuses stop being granted without anyone touching the admin panel) and

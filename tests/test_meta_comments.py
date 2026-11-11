@@ -67,7 +67,8 @@ class FakeDB:
             return None
         row = {"id": self.next, "status": "new", "tg_messages": [], "private_sent": False, "hidden": False,
                "received_at": datetime.utcnow(), "category": None, "ai_draft": None, "ai_model": None,
-               "replied_by": None, "replied_at": None, "reply_text": None, "reply_kind": None, "note": None}
+               "replied_by": None, "replied_at": None, "reply_text": None, "reply_kind": None, "note": None,
+               "ai_confident": None, "ai_dm": None, "dm_sent_at": None}
         row.update({k: v for k, v in c.items() if v is not None})
         self.rows[self.next] = row
         self.next += 1
@@ -78,7 +79,28 @@ class FakeDB:
 
     async def update_meta_comment(self, key, **fields):
         self.rows[key].update(fields)
+        if fields.get("private_sent") is True:
+            self.rows[key]["dm_sent_at"] = datetime.utcnow()
         return copy.deepcopy(self.rows[key])
+
+    async def meta_comment_dm_recent(self, from_id, days=7):
+        return bool(from_id) and any(r.get("from_id") == from_id and r.get("private_sent")
+                                     for r in self.rows.values())
+
+    async def list_meta_comments_unchecked(self, limit=40):
+        return [copy.deepcopy(r) for r in self.rows.values()
+                if r["status"] in ("new", "pending") and r.get("ai_confident") is None][:limit]
+
+    async def list_meta_comments_with_cards(self):
+        return [copy.deepcopy(r) for r in self.rows.values() if r["tg_messages"]]
+
+    async def claim_release_notes(self, key):
+        claimed = getattr(self, "claimed", set())
+        self.claimed = claimed
+        if key in claimed:
+            return False
+        claimed.add(key)
+        return True
 
     async def claim_meta_comment(self, key, from_statuses, to_status):
         if self.rows[key]["status"] in from_statuses:
@@ -99,12 +121,16 @@ class FakeDB:
         return [patch.object(database, name, getattr(self, name)) for name in (
             "get_meta_comments_state", "mark_meta_comments_state", "insert_meta_comment",
             "get_meta_comment", "update_meta_comment", "claim_meta_comment",
-            "find_meta_comment_by_card", "get_user")]
+            "find_meta_comment_by_card", "get_user", "meta_comment_dm_recent",
+            "list_meta_comments_unchecked", "list_meta_comments_with_cards", "claim_release_notes")]
 
 
 class FakeBot:
     def __init__(self):
-        self.sent, self.edits, self.n = [], [], 100
+        self.sent, self.edits, self.deleted, self.n = [], [], [], 100
+
+    async def delete_message(self, chat_id, message_id):
+        self.deleted.append((chat_id, message_id))
 
     async def send_message(self, chat_id, text, **kw):
         self.n += 1
@@ -188,20 +214,28 @@ class WebhookEndpointTest(unittest.IsolatedAsyncioTestCase):
 
 
 class PolicyTest(unittest.TestCase):
-    def test_tz_table(self):
+    def test_ai_answers_everything_it_can(self):
+        # Owner, 2026-11-11: AI answers all by itself; only what it could not
+        # answer reaches the admins.
         d = comment_ai.decide
-        self.assertEqual(d("rahmat", False, "avto"), "auto")
-        for cat in ("manzil", "yetkazish", "buyurtma", "narx", "mavjudlik"):
+        for cat in comment_ai.CATEGORIES:
+            if cat == "spam":
+                continue
             self.assertEqual(d(cat, True, "avto"), "auto", cat)
             self.assertEqual(d(cat, False, "avto"), "approve", cat)
-        for cat in ("salomatlik", "shikoyat", "boshqa"):
-            self.assertEqual(d(cat, True, "avto"), "approve", cat)
         self.assertEqual(d("spam", True, "avto"), "spam")
 
-    def test_modes_and_old_comments(self):
+    def test_modes(self):
         self.assertEqual(comment_ai.decide("rahmat", True, "tasdiq"), "approve")
-        self.assertEqual(comment_ai.decide("rahmat", True, "avto", fresh=False), "approve")
         self.assertEqual(comment_ai.decide("nimadir", True, "avto"), "approve")
+
+    def test_direct_thanks_carries_the_shop_link(self):
+        out = comment_ai.dm_text("Zo'r!", "Izohingiz uchun rahmat, mahsulotlarimizni ko'ring https://evil.example")
+        self.assertTrue(out.endswith("👉 https://t.me/ketoshopbot/shop"))
+        self.assertNotIn("evil.example", out)
+        cyr = comment_ai.dm_text("Раҳмат!", "")
+        self.assertIn("Изоҳингиз учун катта раҳмат", cyr)                   # default, in the comment's script
+        self.assertTrue(cyr.endswith("https://t.me/ketoshopbot/shop"))
 
     def test_canned_direct_reply_still_needs_an_answer_for_questions(self):
         self.assertTrue(mc.needs_answer_after_auto("Адрес қаерда", "Rahmat! Sizga Direct orqali javob yubordik 📩"))
@@ -288,38 +322,67 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
         c.update(kw)
         return c
 
-    async def test_thanks_goes_out_by_itself_then_admins_are_told(self):
-        self.draft = comment_ai.Draft("rahmat", "Rahmat, sog' bo'ling! 🌿", True, "claude-haiku-5-5")
+    async def test_answered_by_ai_publicly_and_thanked_in_direct_without_bothering_admins(self):
+        self.draft = comment_ai.Draft("rahmat", "Rahmat, sog' bo'ling! 🌿", True, "gpt-5.4-mini",
+                                      "Izohingiz uchun rahmat! Mahsulotlarimizni ko'rib chiqing")
         await mc.ingest(self.bot, self.comment(text="🔥🔥🔥"), source="webhook")
         await self.settle()
         self.assertEqual(self.public, [("18000000000000001", "Rahmat, sog' bo'ling! 🌿")])
+        self.assertEqual(len(self.private), 1)
+        self.assertTrue(self.private[0][1].endswith("👉 https://t.me/ketoshopbot/shop"))
         row = self.db.rows[1]
-        self.assertEqual(row["status"], "ai_answered")
-        self.assertEqual(len(self.bot.sent), 2)                  # one card per admin
-        self.assertIn("🤖 AI javob berdi", self.bot.sent[0][1])
-        self.assertIn("Glyuten 1-qism | 25-45", self.bot.sent[0][1])
+        self.assertEqual((row["status"], row["private_sent"], row["ai_confident"]), ("ai_answered", True, True))
+        self.assertEqual(self.bot.sent, [])                      # no card: the AI handled it
 
-    async def test_no_second_reply_when_another_automation_answered(self):
-        self.draft = comment_ai.Draft("rahmat", "Rahmat!", True, "claude-haiku-5-5")
-        self.existing = "Rahmat! Sizga Direct orqali javob yubordik 📩"
+    async def test_one_direct_per_person(self):
+        self.draft = comment_ai.Draft("rahmat", "Rahmat!", True, "gpt-5.4-mini", "Rahmat")
+        await mc.ingest(self.bot, self.comment(comment_id="x1", text="Zo'r"), source="webhook")
+        await mc.ingest(self.bot, self.comment(comment_id="x2", text="Yana zo'r"), source="webhook")
+        await self.settle()
+        self.assertEqual(len(self.public), 2)
+        self.assertEqual(len(self.private), 1)
+
+    async def test_health_question_with_a_safe_answer_goes_out(self):
+        self.draft = comment_ai.Draft("salomatlik", "Glyuten bug'doydagi oqsil … shifokor bilan maslahatlashing 🌿",
+                                      True, "gpt-5.4-mini", "")
+        await mc.ingest(self.bot, self.comment(text="Glyuten nima o'zi?"), source="webhook")
+        await self.settle()
+        self.assertEqual(len(self.public), 1)
+        self.assertEqual(self.bot.sent, [])
+
+    async def test_no_second_reply_when_someone_already_answered(self):
+        self.draft = comment_ai.Draft("rahmat", "Rahmat!", True, "gpt-5.4-mini")
+        self.existing = "Sizga ham rahmat! 🌿"
         await mc.ingest(self.bot, self.comment(text="Zo'r"), source="webhook")
         await self.settle()
         self.assertEqual(self.public, [])
-        self.assertEqual(self.db.rows[1]["status"], "new")
-        self.assertIn("Boshqa avtomat allaqachon javob yozgan", self.bot.sent[0][1])
-        self.assertIn("mc:ok:1", buttons(self.bot.sent[0][2]))
+        self.assertEqual(self.db.rows[1]["status"], "answered")
+        self.assertEqual(self.bot.sent, [])
 
-    async def test_health_question_waits_for_an_admin(self):
-        self.draft = comment_ai.Draft("salomatlik", "Assalomu alaykum! … shifokor bilan maslahatlashing 🌿",
-                                      False, "claude-sonnet-5-5")
-        await mc.ingest(self.bot, self.comment(text="Autizmli bolaga bo'ladimi?"), source="webhook")
+    async def test_a_question_that_only_got_the_canned_direct_reply_is_answered(self):
+        self.draft = comment_ai.Draft("manzil", "Toshkent, Oqsoy 1-tor ko'chasi, 2A 📍", True, "gpt-5.4-mini")
+        self.existing = "Rahmat! Sizga Direct orqali javob yubordik 📩"
+        await mc.ingest(self.bot, self.comment(text="Manzil qayerda?"), source="webhook")
+        await self.settle()
+        self.assertEqual(self.public, [("18000000000000001", "Toshkent, Oqsoy 1-tor ko'chasi, 2A 📍")])
+
+    async def test_what_the_ai_cannot_answer_comes_to_the_admins(self):
+        self.draft = comment_ai.Draft("shikoyat", "Uzr so'raymiz 🙏", False, "gpt-5.4-mini")
+        await mc.ingest(self.bot, self.comment(text="Buyurtmam 3 kundan beri kelmadi!"), source="webhook")
         await self.settle()
         self.assertEqual(self.public, [])
+        self.assertEqual(len(self.bot.sent), 2)                  # one card per admin
         text, kb = self.bot.sent[0][1], self.bot.sent[0][2]
         self.assertIn("AI loyiha", text)
-        self.assertIn("🩺 Salomatlik", text)
         self.assertEqual(buttons(kb), ["mc:ok:1", "mc:ed:1", "mc:dm:1", "mc:t:narx:1", "mc:t:yetkazish:1",
                                        "mc:t:bot:1", "mc:hide:1", "mc:seen:1", "mc:no:1"])
+
+    async def test_spam_gets_nothing(self):
+        self.draft = comment_ai.Draft("spam", "", True, "gpt-5.4-mini")
+        await mc.ingest(self.bot, self.comment(text="Mening sahifamga obuna bo'ling!!!"), source="webhook")
+        await self.settle()
+        self.assertEqual((self.public, self.private, self.bot.sent), ([], [], []))
+        self.assertEqual(self.db.rows[1]["status"], "skipped")
 
     async def test_admin_reply_to_the_card_is_posted_and_every_card_updates(self):
         await mc.ingest(self.bot, self.comment(), source="webhook")
@@ -359,21 +422,45 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
         await self.settle()
         self.assertIn("7 kun", await mc.answer(self.bot, 2, "Salom", ADMIN, private=True))
 
-    async def test_backfill_shows_unanswered_and_canned_only_but_never_sends(self):
-        self.draft = comment_ai.Draft("rahmat", "Rahmat!", True, "claude-haiku-5-5")
-        old = datetime.utcnow() - timedelta(days=3)
+    async def test_old_comments_are_answered_too_but_never_ping_admins(self):
+        old = datetime.utcnow() - timedelta(days=10)
+        self.draft = comment_ai.Draft("rahmat", "Раҳмат!", True, "gpt-5.4-mini")
         await mc.ingest(self.bot, self.comment(comment_id="a", text="Раҳмат", created_at=old),
                         source="backfill", backfill=True)
-        await mc.ingest(self.bot, self.comment(comment_id="b", text="Манзил қаерда", created_at=old),
-                        source="backfill", our_reply="Rahmat! Sizga Direct orqali javob yubordik 📩", backfill=True)
+        await self.settle()
+        self.draft = comment_ai.Draft("boshqa", "…", False, "gpt-5.4-mini")
+        await mc.ingest(self.bot, self.comment(comment_id="b", text="Бу нима?", created_at=old),
+                        source="backfill", backfill=True)
         await mc.ingest(self.bot, self.comment(comment_id="c", text="Rahmat", created_at=old),
                         source="backfill", our_reply="Sizga ham rahmat!", backfill=True)
         await self.settle()
-        self.assertEqual(self.public, [])                       # nothing old goes out by itself
+        self.assertEqual(self.public, [("a", "Раҳмат!")])
+        self.assertEqual(self.private, [])                      # older than 7 days: Meta allows no Direct
         statuses = {r["comment_id"]: r["status"] for r in self.db.rows.values()}
-        self.assertEqual(statuses, {"a": "new", "b": "new", "c": "answered"})
-        self.assertIn("Faqat avtomatik javob olgan", self.db.rows[2]["note"])
-        self.assertEqual(len(self.bot.sent), 4)                 # a and b, to two admins
+        self.assertEqual(statuses, {"a": "ai_answered", "b": "new", "c": "answered"})
+        self.assertEqual(self.bot.sent, [])                     # the unanswerable old one waits in /izohlar
+
+    async def test_catch_up_answers_comments_from_before_this_change(self):
+        # Rows the old rules left waiting (ai_confident is NULL), with cards out.
+        for cid in ("p", "q"):
+            await self.db.insert_meta_comment(dict(self.comment(comment_id=cid), tg_messages=[{"c": ADMIN, "m": 7}]))
+        self.draft = comment_ai.Draft("narx", "Bodom uni 500gr — 120 000 so'm 🌿", True, "gpt-5.4-mini")
+        stats = await mc.catch_up(self.bot)
+        self.assertEqual(stats["auto"], 2)
+        self.assertEqual(len(self.public), 2)
+        self.assertEqual(self.bot.sent, [])                     # no new cards…
+        self.assertEqual(len(self.bot.edits), 2)                # …the old ones now say the AI answered
+        self.assertIn("🤖 AI javob berdi", self.bot.edits[0][2])
+        self.assertEqual(await mc.catch_up(self.bot), {"auto": 0, "approve": 0, "spam": 0, "empty": 0})
+
+    async def test_old_cards_are_deleted_once(self):
+        await self.db.insert_meta_comment(dict(self.comment(comment_id="k1"),
+                                               tg_messages=[{"c": ADMIN, "m": 11}, {"c": 6950127923, "m": 12}]))
+        await self.db.insert_meta_comment(dict(self.comment(comment_id="k2"), tg_messages=[{"c": ADMIN, "m": 13}]))
+        self.assertEqual(await mc.cleanup_cards_once(self.bot), 3)
+        self.assertEqual(sorted(self.bot.deleted), [(ADMIN, 11), (ADMIN, 13), (6950127923, 12)])
+        self.assertTrue(all(r["tg_messages"] == [] for r in self.db.rows.values()))
+        self.assertEqual(await mc.cleanup_cards_once(self.bot), 0)         # only once
 
     async def test_template_button_follows_the_script(self):
         await mc.ingest(self.bot, self.comment(text="Нархи қанча?"), source="webhook")
@@ -499,16 +586,18 @@ class GptDraftTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Narxi qancha?", call["input"][0]["content"])
         self.assertEqual(self.made[0]["api_key"], "sk-test")
         args = self.usage.await_args.args
-        self.assertEqual((args[0], args[1], args[2], args[3], args[4]), ("gpt-5.4-mini", "openai", 900, 800, 40))
+        self.assertEqual((args[0], args[1], args[2], args[3], args[4]), ("gpt-5.4-mini · izohlar", "openai", 900, 800, 40))   # its own row in ai_usage
 
-    async def test_complex_question_gets_a_second_deeper_pass_and_waits_for_an_admin(self):
-        self.responses.replies = [gpt_reply({"category": "salomatlik", "reply": "qisqa", "confident": True}),
+    async def test_complex_question_gets_a_second_deeper_pass_which_decides(self):
+        self.responses.replies = [gpt_reply({"category": "salomatlik", "reply": "qisqa", "confident": True, "dm": "a"}),
                                   gpt_reply({"category": "salomatlik", "reply": "Shifokor bilan maslahatlashing 🌿",
-                                             "confident": True})]
+                                             "confident": False, "dm": "Rahmat!"})]
         d = await comment_ai.draft(dict(self.row, text="Diabetga bo'ladimi?"), self.kb)
-        self.assertEqual((d.category, d.reply, d.confident), ("salomatlik", "Shifokor bilan maslahatlashing 🌿", False))
+        self.assertEqual((d.category, d.reply, d.confident, d.dm),
+                         ("salomatlik", "Shifokor bilan maslahatlashing 🌿", False, "Rahmat!"))
         self.assertEqual([c["reasoning"]["effort"] for c in self.responses.calls], ["low", "medium"])
         self.assertEqual(comment_ai.decide(d.category, d.confident, "avto"), "approve")
+        self.assertIn("dm", self.responses.calls[0]["text"]["format"]["schema"]["required"])
 
     async def test_refusal_incomplete_or_garbage_means_no_draft(self):
         for reply in (gpt_reply({}, refusal=True), gpt_reply({"category": "narx", "reply": "x", "confident": True},
@@ -553,12 +642,12 @@ class ClaudeDraftTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("temperature", call)
         self.assertEqual(beta.calls, [])
 
-    async def test_complex_question_is_redrafted_by_sonnet_and_never_confident(self):
+    async def test_complex_question_is_redrafted_by_sonnet(self):
         plain, beta = self.client(
             [claude_reply({"category": "salomatlik", "reply": "qisqa", "confident": True})],
             [claude_reply({"category": "rahmat", "reply": "Shifokor bilan maslahatlashing 🌿", "confident": True})])
         d = await comment_ai.draft(dict(self.row, text="Diabetga bo'ladimi?"), self.kb)
-        self.assertEqual((d.category, d.model, d.confident), ("salomatlik", "claude-sonnet-5-5", False))
+        self.assertEqual((d.category, d.model, d.confident), ("salomatlik", "claude-sonnet-5-5", True))
         self.assertEqual(d.reply, "Shifokor bilan maslahatlashing 🌿")
         call = beta.calls[0]
         self.assertEqual((call["model"], call["extra_body"], call["betas"]),
@@ -634,6 +723,24 @@ class TokenHintsTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_nothing_to_say(self):
         self.assertEqual(await self.hints(list(mc.NEEDED_PERMISSIONS), [(mc.PAGE_ID, "Keto market.uz")]), "")
+
+
+class SpendReportTest(unittest.IsolatedAsyncioTestCase):
+    """Owner, 2026-11-11: AI spend every 3 hours, comment replies separately."""
+
+    async def test_comment_spend_is_shown_apart(self):
+        rows = [{"model": "gpt-5.4-mini", "requests": 120, "cost_usd": 0.42},
+                {"model": "gpt-5.4-mini · izohlar", "requests": 37, "cost_usd": 0.031}]
+        with patch.object(database, "get_ai_usage_today", AsyncMock(return_value=rows)),              patch.object(database, "get_ai_usage_month", AsyncMock(return_value={"cost_usd": 9.5})),              patch.object(database, "meta_comment_today", AsyncMock(return_value={"ai_answered": 30, "dms": 21})):
+            text = await mc.spend_text(datetime(2026, 11, 11, 15, 0))
+        self.assertIn("Jami: <b>$0.45</b>", text)
+        self.assertIn("izohlariga javob: <b>$0.031</b> — 37 ta so'rov, 30 ta javob, 21 ta Direct", text)
+        self.assertIn("Qolgani (AI sotuvchi va boshqalar): $0.42", text)
+        self.assertIn("Oy boshidan: $9.50", text)
+        self.assertIn("11.11, 15:00", text)
+
+    def test_daytime_every_three_hours(self):
+        self.assertEqual(mc.SPEND_HOURS, (9, 12, 15, 18, 21))
 
 
 if __name__ == "__main__":

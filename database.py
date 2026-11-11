@@ -1253,6 +1253,11 @@ async def init_db():
         """)
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_meta_comments_status ON meta_comments(status, received_at)")
+        # 2026-11-11: AI hammasiga o'zi javob beradi — ai_confident NULL = AI
+        # hali ko'rmagan; Direct'dagi rahmat matni va vaqti (bir odamga 7 kunda bitta).
+        await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS ai_confident BOOLEAN")
+        await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS ai_dm TEXT")
+        await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS dm_sent_at TIMESTAMP")
         # Izohlar tokeni (ads_read tokenidan ALOHIDA), AI rejimi, bilim bazasi.
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS meta_comments_state (
@@ -8429,7 +8434,8 @@ async def find_meta_comment_by_card(chat_id: int, message_id: int) -> dict | Non
 async def update_meta_comment(key: int, **fields) -> dict | None:
     """Set the given columns; `tg_messages` is stored as JSON."""
     allowed = {"status", "category", "ai_draft", "ai_model", "note", "reply_text", "reply_kind",
-               "replied_by", "private_sent", "hidden", "tg_messages", "ad_name", "post_link"}
+               "replied_by", "private_sent", "hidden", "tg_messages", "ad_name", "post_link",
+               "ai_confident", "ai_dm"}
     cols, args = [], []
     for name, value in fields.items():
         if name not in allowed:
@@ -8438,6 +8444,8 @@ async def update_meta_comment(key: int, **fields) -> dict | None:
         cols.append(f"{name} = ${len(args)}" + ("::jsonb" if name == "tg_messages" else ""))
     if fields.get("reply_text") is not None:
         cols.append("replied_at = NOW() AT TIME ZONE 'UTC'")
+    if fields.get("private_sent") is True:
+        cols.append("dm_sent_at = NOW() AT TIME ZONE 'UTC'")
     args.append(key)
     async with pool.acquire() as conn:
         return _comment_row(await conn.fetchrow(
@@ -8459,6 +8467,44 @@ async def meta_comment_counts() -> dict:
         rows = await conn.fetch(
             "SELECT platform, status, COUNT(*) AS n FROM meta_comments GROUP BY platform, status")
     return {(r["platform"], r["status"]): int(r["n"]) for r in rows}
+
+
+async def list_meta_comments_unchecked(limit: int = 40) -> list[dict]:
+    """Javobsiz va AI hali ko'rmagan izohlar (ai_confident NULL), eskisi oldin."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM meta_comments WHERE status IN ('new', 'pending') AND ai_confident IS NULL "
+            "ORDER BY COALESCE(created_at, received_at) LIMIT $1", limit)
+    return [_comment_row(r) for r in rows]
+
+
+async def list_meta_comments_with_cards() -> list[dict]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT * FROM meta_comments WHERE tg_messages <> '[]'::jsonb")
+    return [_comment_row(r) for r in rows]
+
+
+async def meta_comment_dm_recent(from_id: str | None, days: int = 7) -> bool:
+    """Shu odamga oxirgi `days` kunda Direct ketganmi (bitta odamga bitta rahmat)."""
+    if not from_id:
+        return False
+    async with pool.acquire() as conn:
+        return bool(await conn.fetchval(
+            "SELECT 1 FROM meta_comments WHERE from_id = $1 AND private_sent AND "
+            "dm_sent_at > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $2) LIMIT 1", from_id, days))
+
+
+async def meta_comment_today() -> dict:
+    """Bugun (Toshkent) AI javob bergan izohlar va ketgan Direct'lar soni."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""SELECT COUNT(*) FILTER (WHERE status = 'ai_answered'
+                                         AND (replied_at + INTERVAL '5 hours')::date = {_AI_DAY}) AS ai_answered,
+                       COUNT(*) FILTER (WHERE private_sent
+                                         AND (dm_sent_at + INTERVAL '5 hours')::date = {_AI_DAY}) AS dms,
+                       COUNT(*) FILTER (WHERE private_sent) AS dms_all
+                  FROM meta_comments""")
+    return {k: int(row[k] or 0) for k in ("ai_answered", "dms", "dms_all")} if row else {}
 
 
 async def list_meta_comments(statuses: tuple, limit: int = 10) -> list[dict]:
