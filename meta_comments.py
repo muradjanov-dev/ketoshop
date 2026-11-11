@@ -974,7 +974,8 @@ async def cmd_token(message: Message):
         async with aiohttp.ClientSession() as session:
             ident = await identity(session, access_token=candidate)
     except GraphError as e:
-        await message.answer(f"❌ Token ishlamadi, saqlanmadi:\n<code>{_esc(e)}</code>", parse_mode="HTML")
+        await message.answer(f"❌ Token ishlamadi, saqlanmadi:\n<code>{_esc(e)}</code>"
+                             + await token_hints(candidate), parse_mode="HTML")
         return
     except Exception:
         logger.exception("comments token check failed")
@@ -991,6 +992,46 @@ async def cmd_token(message: Message):
         lines += ["", "⚠️ Tokenli xabarni o'chira olmadim — uni qo'lda o'chiring."]
     await message.answer("\n".join(lines), parse_mode="HTML")
     _spawn(_first_sync(message.bot))
+
+
+NEEDED_PERMISSIONS = ("pages_show_list", "pages_read_engagement", "pages_manage_engagement",
+                      "pages_manage_metadata", "pages_messaging", "instagram_basic",
+                      "instagram_manage_comments", "instagram_manage_messages")
+
+
+async def token_hints(candidate: str) -> str:
+    """Meta '(#100) … requires pages_read_engagement' degan bitta xabarni ikki
+    sababga beradi (2026-11-11 da egasi aynan shuni oldi): tokenda ruxsat
+    yo'q, yoki sahifa tizim foydalanuvchisiga tayinlanmagan. Qaysi biri
+    ekanini aytamiz — nimani tuzatishni bilsin."""
+    lines = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            try:
+                perms = await _graph(session, "GET", "me/permissions", candidate)
+                granted = {p.get("permission") for p in perms.get("data", []) if p.get("status") == "granted"}
+                missing = [p for p in NEEDED_PERMISSIONS if p not in granted]
+                if missing:
+                    lines.append("🔒 Tokenda yo'q ruxsatlar: <code>" + ", ".join(missing) + "</code> — "
+                                 "token yaratishda shularga ham belgi qo'ying.")
+            except GraphError:
+                pass
+            try:
+                accounts = await _graph(session, "GET", "me/accounts", candidate, {"fields": "id,name", "limit": 100})
+                pages = {str(a.get("id")): a.get("name") for a in accounts.get("data", [])}
+                if PAGE_ID not in pages:
+                    seen = ", ".join(_esc(n or i) for i, n in pages.items()) or "hech qaysi"
+                    lines.append("📘 «Keto market.uz» sahifasi bu tokenga ulanmagan (token ko'rayotgan sahifalar: "
+                                 f"{seen}). Business sozlamalarida tizim foydalanuvchisiga sahifani aktiv "
+                                 "sifatida tayinlang (to'liq boshqaruv), keyin tokenni qayta yarating.")
+            except GraphError:
+                pass
+    except Exception:
+        logger.info("token hints failed", exc_info=True)
+        return ""
+    if not lines:
+        return ""
+    return "\n\n" + "\n".join(lines) + "\n\nTuzatgach, yangi tokenni yana <code>/izoh_token TOKEN</code> bilan yuboring."
 
 
 async def _first_sync(bot: Bot) -> None:

@@ -604,5 +604,37 @@ class KnowledgeBaseTest(unittest.TestCase):
         self.assertIn("Tuz — 5 000", block)
 
 
+class TokenHintsTest(unittest.IsolatedAsyncioTestCase):
+    """2026-11-11: '(#100) … requires pages_read_engagement' — which of the two
+    causes it is."""
+
+    async def hints(self, granted, pages):
+        async def graph(session, method, path, token, params=None, body=None):
+            if path == "me/permissions":
+                return {"data": [{"permission": p, "status": "granted"} for p in granted]
+                        + [{"permission": "pages_messaging", "status": "declined"}]}
+            if path == "me/accounts":
+                return {"data": [{"id": i, "name": n} for i, n in pages]}
+            raise AssertionError(path)
+        with patch.object(mc, "_graph", graph):
+            return await mc.token_hints("candidate")
+
+    async def test_missing_permissions_are_named(self):
+        text = await self.hints(["ads_read", "pages_show_list"], [(mc.PAGE_ID, "Keto market.uz")])
+        self.assertIn("pages_read_engagement", text)
+        self.assertIn("instagram_manage_comments", text)
+        self.assertIn("pages_messaging", text)          # declined counts as missing
+        self.assertNotIn("sahifasi bu tokenga ulanmagan", text)
+
+    async def test_page_not_assigned(self):
+        text = await self.hints(list(mc.NEEDED_PERMISSIONS), [("123", "Boshqa sahifa")])
+        self.assertIn("sahifasi bu tokenga ulanmagan", text)
+        self.assertIn("Boshqa sahifa", text)
+        self.assertNotIn("yo'q ruxsatlar", text)
+
+    async def test_nothing_to_say(self):
+        self.assertEqual(await self.hints(list(mc.NEEDED_PERMISSIONS), [(mc.PAGE_ID, "Keto market.uz")]), "")
+
+
 if __name__ == "__main__":
     unittest.main()
