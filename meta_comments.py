@@ -81,6 +81,11 @@ RECHECK_KEY = "meta_comments_recheck_2026_11_11b"
 # v2: birinchi urinish token bazadan yuklanmasdan oldin ishlab, hammasi
 # "[no_token]" bilan qaytgan edi (2026-11-11) — endi token yuklangach.
 RETRY_KEY = "meta_comments_retry_subreplies_2026_11_11_v2"
+# v3 (2026-11-12): v2 ham #100 bilan qaytdi — sabab javobning o'zi emas, ichki
+# javobda «kimdir javob berganmi» tekshiruvi (our_existing_reply) edi.
+RETRY_KEY_V3 = "meta_comments_retry_subreplies_2026_11_12_v3"
+# Shablon zaxirasi kelgach — «topa olmadi» deganlar yana bir marta ko'riladi.
+RECHECK_KEY_C = "meta_comments_recheck_2026_11_12c"
 MAX_ADS = 100
 TEXT_MAX = 1500
 REPLY_MAX = 900                       # Instagram izohi ~2200 belgi; javob qisqa
@@ -229,7 +234,12 @@ async def hide(session, ident: dict, c: dict) -> None:
 
 
 async def our_existing_reply(session, ident: dict, c: dict) -> str | None:
-    """Izohga bizning hisobdan javob bormi (boshqa avtomat yoki qo'lda)."""
+    """Izohga bizning hisobdan javob bormi (boshqa avtomat yoki qo'lda).
+    Ichki javob (parent_id bor) uchun tekshirilmaydi: Instagram'da
+    /{ichki_javob}/replies so'rovining o'zi "(#100) Field is only available for
+    top-level comments" beradi (2026-11-12, 38 ta izoh shu sababli qolgan)."""
+    if c.get("parent_id"):
+        return None
     if c["platform"] == "ig":
         data = await _graph(session, "GET", f"{c['comment_id']}/replies", ident["page_token"],
                             {"fields": "id,text,username,from"})
@@ -462,6 +472,14 @@ async def route(bot: Bot | None, row: dict, *, notify: bool = True, wait: bool =
             # yana uriniladi; adminni hozircha bezovta qilmaymiz.
             return "retry"
     action = comment_ai.decide(d.category, d.confident, mode) if d else "approve"
+    if d and action == "approve" and mode == "avto":
+        # Oddiy savol (narx, bor-yo'qligi, buyurtma, yetkazish, manzil) — AI
+        # aniq javob topmasa ham, bilim bazasidagi tayyor javob ketadi
+        # (egasi, 2026-11-12: "javob bermaganlaringga?" — «Narxi qancha» kabi
+        # 16 ta izoh kutib qolgan edi). Sog'liq, shikoyat, boshqa — adminga.
+        fallback = comment_ai.template_reply(d.category, comment_ai.kb_with_defaults(state.get("kb")))
+        if fallback:
+            d.reply, d.confident, action = fallback, True, "auto"
     fields = {"ai_confident": bool(d and d.confident and action == "auto")}
     if d:
         fields.update(category=d.category, ai_draft=d.reply or None, ai_model=d.model, ai_dm=d.dm or None)
@@ -618,7 +636,7 @@ async def retry_failed_once(bot: Bot | None) -> int:
     await load_token()
     if not token():
         return 0
-    if not await database.claim_release_notes(RETRY_KEY):
+    if not await database.claim_release_notes(RETRY_KEY_V3):
         return 0
     rows = await database.list_meta_comments_failed(200)
     for row in rows:
@@ -1076,7 +1094,7 @@ async def scheduler_loop(bot: Bot) -> None:
     # #190 deployidan oldin kelgan izohlar kartochkasi qolmaydi.
     _spawn(_cleanup_quietly(bot))
     try:
-        if await database.claim_release_notes(RECHECK_KEY):
+        if await database.claim_release_notes(RECHECK_KEY_C):
             n = await database.reset_meta_comments_unconfident()
             logger.info("comments: %d unanswerable comment(s) queued for a re-check", n)
     except Exception:
