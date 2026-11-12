@@ -2473,6 +2473,19 @@ def reorder_categories(ordered_keys: list[str]) -> None:
     CATEGORIES[:] = [k for k in ordered_keys if k in known] + [k for k in CATEGORIES if k not in ordered_keys]
 
 
+def keep_only_categories(active_keys: list[str]) -> None:
+    """Faqat bazadagi faol bo'limlar qoladi (yashirilgan/o'chirilgani —
+    boshlang'ich ro'yxatdagisi ham — bot va sayt tugmalaridan chiqadi).
+    Tartib — active_keys tartibi. Nomlar TEXTS da qoladi: eski buyurtma
+    yoki xabar o'sha bo'limni nomi bilan ko'rsata oladi."""
+    CATEGORIES[:] = list(dict.fromkeys(active_keys))
+
+
+def unregister_category(key: str) -> None:
+    if key in CATEGORIES:
+        CATEGORIES.remove(key)
+
+
 def get_unit_name(unit_key: str, lang: str) -> str:
     """Get localized unit name"""
     return get_text(f"unit_{unit_key}", lang)

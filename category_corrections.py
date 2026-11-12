@@ -31,9 +31,17 @@ FIXES = {
         "shokolad_marmalat": {"name_uz": ("Shokolad marmalat", "🍫 Shokolad va marmelad"),
                               "name_ru": ("Shokolad marmalat", "🍫 Шоколад и мармелад")},
     },
+    # 2026-11-12 — owner: "bu yerdagi ortiqcha bo'limlarni ham o'chirib tashla"
+    # (bot catalog screenshot). Six categories an admin made by typing product
+    # names into «➕ Yangi kategoriya qo'shish» — none holds a product.
+    "category-cleanup-2026-11-12": {},
 }
 # Hidden when they hold no product at all (active or not).
 HIDE_IF_EMPTY = {"category-names-2026-11-08": ["shokolad_marmalat"]}
+# Deleted when they hold no product at all (active or not) — never otherwise.
+DELETE_IF_EMPTY = {"category-cleanup-2026-11-12": [
+    "tabiiy_soklar", "sok_vitamin", "eko_vitamin_sok", "eko_vitamin_sok_2", "qovoq_uni", "bodom_unida_pechiniy",
+]}
 
 
 async def apply(key: str) -> list[str]:
@@ -53,6 +61,14 @@ async def apply(key: str) -> list[str]:
                 "AND NOT EXISTS (SELECT 1 FROM products WHERE category = $1) RETURNING key", cat_key)
             if hidden:
                 done.append(f"{cat_key}: yashirildi (bo'sh takror)")
+        for cat_key in DELETE_IF_EMPTY.get(key, []):
+            deleted = await conn.fetchval(
+                "DELETE FROM categories WHERE key = $1 "
+                "AND NOT EXISTS (SELECT 1 FROM products WHERE category = $1) RETURNING key", cat_key)
+            if deleted:
+                import locales
+                locales.unregister_category(cat_key)
+                done.append(f"{cat_key}: o'chirildi (bo'sh)")
     return done
 
 
