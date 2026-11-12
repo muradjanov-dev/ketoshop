@@ -78,7 +78,9 @@ CLEANUP_BEFORE = datetime(2026, 11, 11, 11, 40)   # #190 deployi (UTC) — undan
 # Post matni va "biz" qoidasi kelgach — AI "topa olmadi" deganlarini bir marta qayta ko'radi.
 RECHECK_KEY = "meta_comments_recheck_2026_11_11b"
 # Ichki javoblarga yozib bo'lmay qolganlar (#100 top-level) — tuzatishdan keyin bir marta qayta.
-RETRY_KEY = "meta_comments_retry_subreplies_2026_11_11"
+# v2: birinchi urinish token bazadan yuklanmasdan oldin ishlab, hammasi
+# "[no_token]" bilan qaytgan edi (2026-11-11) — endi token yuklangach.
+RETRY_KEY = "meta_comments_retry_subreplies_2026_11_11_v2"
 MAX_ADS = 100
 TEXT_MAX = 1500
 REPLY_MAX = 900                       # Instagram izohi ~2200 belgi; javob qisqa
@@ -610,7 +612,12 @@ async def _cleanup_quietly(bot: Bot | None) -> None:
 
 async def retry_failed_once(bot: Bot | None) -> int:
     """AI javobi bor, lekin yuborib bo'lmay qolgan izohlar (ichki javoblar —
-    #100 top-level xatosi) — tuzatishdan keyin bir marta qayta yuboriladi."""
+    #100 top-level xatosi) — tuzatishdan keyin bir marta qayta yuboriladi.
+    Token bazadan yuklanmaguncha kalit «ishlatilmaydi» — aks holda hammasi
+    "[no_token]" bilan qaytib, imkoniyat bekorga ketadi."""
+    await load_token()
+    if not token():
+        return 0
     if not await database.claim_release_notes(RETRY_KEY):
         return 0
     rows = await database.list_meta_comments_failed(200)
