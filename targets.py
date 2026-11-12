@@ -149,6 +149,14 @@ async def snapshot() -> dict:
         ai_questions = await database.count_ai_questions_today()
     except Exception:
         logger.warning("AI usage for the daily report could not be loaded", exc_info=True)
+    # Instagram/Facebook izohlari — AI nechta javob berdi, qayerda, qancha
+    # (egasi, 2026-11-11). Qo'shimcha: o'qilmasa hisobot baribir ketadi.
+    comments = {}
+    try:
+        import meta_comments
+        comments = await meta_comments.daily_summary()
+    except Exception:
+        logger.warning("Comment summary for the daily report could not be loaded", exc_info=True)
 
     return {
         "date": today,
@@ -186,6 +194,7 @@ async def snapshot() -> dict:
         "ai_today": ai_today,
         "ai_month": ai_month,
         "ai_questions": ai_questions,
+        "comments": comments,
     }
 
 
@@ -270,6 +279,13 @@ def build_message(snap: dict, slot: int) -> str:
         ai_block = _ai_block(snap)
         if ai_block:
             lines += [""] + ai_block
+        try:
+            import meta_comments
+            comment_block = meta_comments.summary_lines(snap.get("comments") or {})
+        except Exception:
+            comment_block = []
+        if comment_block:
+            lines += [""] + comment_block
     return "\n".join(lines)
 
 

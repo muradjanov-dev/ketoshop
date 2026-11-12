@@ -1113,6 +1113,47 @@ def _usd(v) -> str:
     return f"${v:.2f}" if v >= 0.1 else f"${v:.3f}"
 
 
+async def daily_summary(top: int = 5) -> dict:
+    """Bugungi izohlar: AI nechta javob berdi, qaysi postlar ostida, Direct,
+    sarf va javobsizlar — 3 soatlik sarf xabari va kunlik hisobot uchun
+    (egasi, 2026-11-11: "nechta izohga javob berganingni ham … faqat narxini emas")."""
+    answered = await database.meta_comments_report("today", 1000)
+    groups: dict[str, dict] = {}
+    for r in answered:
+        key = r.get("post_link") or r.get("media_id") or "?"
+        g = groups.setdefault(key, {"link": r.get("post_link"), "label": _post_label(r),
+                                    "ad": r.get("ad_name"), "n": 0})
+        g["n"] += 1
+    usage = await database.get_ai_usage_today()
+    cost = sum(float(u.get("cost_usd") or 0) for u in usage if comment_ai.USAGE_TAG in (u.get("model") or ""))
+    parts = await database.meta_comment_open_breakdown()
+    return {
+        "answered": len(answered),
+        "dms": sum(1 for r in answered if r.get("private_sent")),
+        "posts": len(groups),
+        "top": sorted(groups.values(), key=lambda g: -g["n"])[:top],
+        "cost": cost,
+        "open": sum(int(parts.get(k) or 0) for k in ("unchecked", "unanswerable", "failed")),
+    }
+
+
+def summary_lines(s: dict) -> list[str]:
+    """Izohlar bloki: avval son va joy, keyin pul."""
+    if not s or not (s.get("answered") or s.get("open") or s.get("cost")):
+        return []
+    lines = [f"💬 <b>Izohlarga AI javob berdi: {s['answered']} ta</b>"
+             + (f" — {s['posts']} ta post/reels ostida" if s.get("posts") else "")
+             + f" · 📩 Direct: {s.get('dms', 0)}"]
+    for g in s.get("top") or []:
+        where = (f"<a href=\"{html.escape(g['link'])}\">{_esc(g['label'])}</a>" if g.get("link")
+                 else _esc(g["label"]))
+        ad = f" · 📣 {_esc(g['ad'])}" if g.get("ad") else ""
+        lines.append(f"   • {where}{ad} — {g['n']} ta")
+    lines.append(f"   💸 Izohlarga AI sarfi: {_usd(s.get('cost'))}"
+                 + (f" · ⏳ javobsiz: {s['open']} ta — /izoh_hisobot" if s.get("open") else ""))
+    return lines
+
+
 async def spend_text(now_tk: datetime | None = None) -> str:
     now_tk = now_tk or (_utcnow() + timedelta(hours=5))
     rows = await database.get_ai_usage_today()
@@ -1122,11 +1163,18 @@ async def spend_text(now_tk: datetime | None = None) -> str:
     c_cost = sum(float(r.get("cost_usd") or 0) for r in comments)
     c_req = sum(int(r.get("requests") or 0) for r in comments)
     today = await database.meta_comment_today()
-    lines = [f"💸 <b>AI sarfi — bugun</b> ({now_tk.strftime('%d.%m, %H:%M')} holatiga)", "",
-             f"• Jami: <b>{_usd(total)}</b>",
-             f"• Instagram/Facebook izohlariga javob: <b>{_usd(c_cost)}</b> — {c_req} ta so'rov, "
-             f"{today.get('ai_answered', 0)} ta javob, {today.get('dms', 0)} ta Direct",
-             f"• Qolgani (AI sotuvchi va boshqalar): {_usd(total - c_cost)}"]
+    try:
+        summary = await daily_summary(top=3)
+    except Exception:
+        logger.warning("comment summary for the spend report failed", exc_info=True)
+        summary = {}
+    lines = [f"💸 <b>AI sarfi — bugun</b> ({now_tk.strftime('%d.%m, %H:%M')} holatiga)", ""]
+    lines += summary_lines(summary) or [f"💬 Izohlarga AI javob berdi: {today.get('ai_answered', 0)} ta"]
+    lines += ["",
+              f"• Jami AI sarfi: <b>{_usd(total)}</b>",
+              f"• Izohlarga: {_usd(c_cost)} — {c_req} ta so'rov, {today.get('ai_answered', 0)} ta javob, "
+              f"{today.get('dms', 0)} ta Direct",
+              f"• Qolgani (AI sotuvchi va boshqalar): {_usd(total - c_cost)}"]
     if rows:
         lines += ["", "<b>Model bo'yicha:</b>"]
         for r in rows:
