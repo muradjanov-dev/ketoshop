@@ -712,6 +712,15 @@ body.kuryer-mode .kb-admin-only{display:none!important}
   .exp-cat-row{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
   .exp-cat-row .grow{flex:1;min-width:0;overflow-wrap:anywhere}
   .exp-cat-pick{display:flex;gap:8px}
+  .cat-mgr-row{display:grid;grid-template-columns:1fr 1fr auto auto auto;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+  .cat-mgr-row .meta{grid-column:1/-1;font-size:12px;color:var(--ink-2);margin-top:-4px}
+  .cat-mgr-row .meta.warn{color:var(--red)}
+  .cat-mgr-row.off input[type=text]{opacity:.6}
+  .cat-mgr-row .move{grid-column:1/-1;display:none;gap:8px;align-items:center}
+  .cat-mgr-row .move.show{display:flex}
+  .cat-mgr-row .move select{flex:1;min-width:0}
+  .cat-mgr-row label.on{display:flex;gap:4px;align-items:center;font-size:12.5px;margin:0;white-space:nowrap}
+  @media(max-width:640px){.cat-mgr-row{grid-template-columns:1fr 1fr}.cat-mgr-row label.on{grid-column:1/2}}
   .exp-cat-pick select{flex:1;min-width:0}
   #view-expenses .exp-actions .hint{font-size:12px;color:var(--ink-2);white-space:nowrap}
   @media(max-width:600px){
@@ -1185,6 +1194,8 @@ body.kuryer-mode .kb-admin-only{display:none!important}
       <button class="btn btn-o" id="descImportBtn" type="button"
               title="To'ldirilgan JSON faylni qaytarib yuklash">📤 Tavsiflarni yuklash</button>
       <input type="file" id="descFile" accept="application/json,.json" style="display:none">
+      <button class="btn btn-o" id="catManageBtn" type="button"
+              title="Bo'limlar (kategoriyalar): nomini o'zgartirish, yashirish, o'chirish">🏷 Bo'limlar</button>
       <button class="btn btn-p" id="newProdBtn">＋ Yangi mahsulot</button>
     </div>
     <div class="tbl-wrap">
@@ -1638,6 +1649,19 @@ body.kuryer-mode .kb-admin-only{display:none!important}
   </form>
 </div>
 
+<!-- Mahsulot bo'limlari: nomi, ko'rinishi, o'chirish (2026-11-12) -->
+<div class="modal-bg" id="catMgrModal">
+  <div class="modal" style="max-width:760px">
+    <h2>🏷 Bo'limlar (kategoriyalar)</h2>
+    <div class="hint">Nomini o'zgartiring va 💾 bosing. «Ko'rinadi» belgisini olsangiz, bo'lim bot va saytda chiqmaydi.
+      🗑 — bo'limni o'chiradi; ichida mahsulot bo'lsa, avval ularni qaysi bo'limga ko'chirishni tanlaysiz.</div>
+    <div id="catMgrList"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-o" data-close>Yopish</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== PRODUCT MODAL ===== -->
 <div class="modal-bg" id="prodModal">
   <form class="modal" id="prodForm">
@@ -1958,7 +1982,13 @@ function renderCatOptions(){
 $('#prodCat').addEventListener('change',async()=>{
   const sel=$('#prodCat');
   if(sel.value!=='__new__'){lastCatValue=sel.value;return;}
-  const name_uz=(prompt("Yangi kategoriya nomi (UZ):")||'').trim();
+  // 2026-11-12: «Qovoq uni», «Bodom unida pechiniy» kabi mahsulot nomlari
+  // shu yerga yozilib, botda ortiqcha bo'lim bo'lib chiqqan edi.
+  if(!confirm("Bu botda va saytda YANGI BO'LIM (kategoriya) yaratadi — mahsulot nomi emas.\n"
+             +"Mahsulot nomi yuqoridagi «Nomi» qatoriga yoziladi.\n\nYangi bo'lim yaratilsinmi?")){
+    sel.value=lastCatValue||CATEGORIES[0]?.key||'';return;
+  }
+  const name_uz=(prompt("Yangi bo'lim nomi (UZ), masalan: «🥤 Ichimliklar»:")||'').trim();
   if(!name_uz){sel.value=lastCatValue||CATEGORIES[0]?.key||'';return;}
   const name_ru=(prompt("Yangi kategoriya nomi (RU) — ixtiyoriy, bo'sh qoldirish mumkin:")||'').trim();
   try{
@@ -1973,6 +2003,77 @@ $('#prodCat').addEventListener('change',async()=>{
     toast('⚠️ '+err.message);
     sel.value=lastCatValue||CATEGORIES[0]?.key||'';
   }
+});
+
+/* ===== Bo'limlar (kategoriyalar) boshqaruvi =====
+   Egasi, 2026-11-12: "admin panelga ortiqcha bo'limlarni o'chirish va
+   tahrirlash imkoniyatini ham qo'shgin". Nomi (uz/ru), ko'rinishi, o'chirish
+   — mahsuloti bor bo'lim faqat mahsulotlar boshqa bo'limga ko'chirilsa. */
+let CAT_MGR=[];
+async function reloadCategories(){
+  const s=await api('/admin/api/session');
+  CATEGORIES=s.categories||[];
+  CAT_MAP={};CATEGORIES.forEach(c=>CAT_MAP[c.key]=c.name_uz);
+  renderCatOptions();
+}
+function renderCatMgr(){
+  const box=$('#catMgrList');
+  if(!CAT_MGR.length){box.innerHTML='<div class="empty" style="padding:20px">Bo\'lim yo\'q</div>';return;}
+  box.innerHTML=CAT_MGR.map(c=>{
+    const others=CAT_MGR.filter(o=>o.key!==c.key).map(o=>`<option value="${esc(o.key)}">${esc(o.name_uz)}</option>`).join('');
+    const empty=!c.total;
+    return `<div class="cat-mgr-row${c.is_active?'':' off'}" data-key="${esc(c.key)}">
+      <input type="text" class="cat-uz" maxlength="200" value="${esc(c.name_uz)}" aria-label="Nomi (UZ)">
+      <input type="text" class="cat-ru" maxlength="200" value="${esc(c.name_ru||'')}" aria-label="Nomi (RU)">
+      <label class="on"><input type="checkbox" class="cat-on"${c.is_active?' checked':''}> Ko'rinadi</label>
+      <button type="button" class="btn btn-o btn-sm" data-act="save" title="Saqlash">💾</button>
+      <button type="button" class="btn btn-o btn-sm" data-act="del" title="O'chirish">🗑</button>
+      <div class="meta${empty?' warn':''}">${empty?'Bo\'sh — mahsulot yo\'q':`${c.total} ta mahsulot (${c.active} tasi sotuvda)`}
+        · <code>${esc(c.key)}</code></div>
+      <div class="move">${empty?'':`<span>Mahsulotlarni ko'chirish:</span><select class="cat-move">${others}</select>`}
+        <button type="button" class="btn btn-sm" data-act="del-confirm" style="background:var(--red-wash);color:var(--red)">
+          ${empty?'Ha, o\'chirilsin':'Ko\'chirib, o\'chirish'}</button>
+        <button type="button" class="btn btn-o btn-sm" data-act="del-cancel">Bekor</button></div>
+    </div>`;
+  }).join('');
+}
+async function openCatManager(){
+  try{
+    CAT_MGR=(await api('/admin/api/categories')).categories||[];
+  }catch(err){toast('⚠️ '+err.message);return;}
+  renderCatMgr();
+  $('#catMgrModal').classList.add('open');
+}
+$('#catManageBtn').addEventListener('click',openCatManager);
+$('#catMgrList').addEventListener('click',async e=>{
+  const btn=e.target.closest('button[data-act]');if(!btn)return;
+  const row=btn.closest('.cat-mgr-row'), key=row.dataset.key, act=btn.dataset.act;
+  const cat=CAT_MGR.find(c=>c.key===key);if(!cat)return;
+  if(act==='del'){row.querySelector('.move').classList.add('show');return;}
+  if(act==='del-cancel'){row.querySelector('.move').classList.remove('show');return;}
+  btn.disabled=true;
+  try{
+    if(act==='save'){
+      const body={name_uz:row.querySelector('.cat-uz').value.trim(),name_ru:row.querySelector('.cat-ru').value.trim(),
+                  is_active:row.querySelector('.cat-on').checked};
+      if(!body.name_uz){toast("⚠️ O'zbekcha nom bo'sh bo'lmasin");return;}
+      await api(`/admin/api/categories/${encodeURIComponent(key)}`,{method:'POST',body:JSON.stringify(body)});
+      toast("✅ Saqlandi: "+body.name_uz);
+    }else if(act==='del-confirm'){
+      const move=row.querySelector('.cat-move');
+      const body=cat.total?{move_to:move?move.value:null}:{};
+      const target=cat.total?CAT_MGR.find(c=>c.key===body.move_to):null;
+      if(cat.total&&!confirm(`«${cat.name_uz}» o'chirilsinmi? Undagi ${cat.total} ta mahsulot «${target?target.name_uz:''}» bo'limiga o'tadi.`))return;
+      await api(`/admin/api/categories/${encodeURIComponent(key)}/delete`,{method:'POST',body:JSON.stringify(body)});
+      toast("🗑 O'chirildi: "+cat.name_uz);
+      if(cat.total)loadProducts();
+    }
+    CAT_MGR=(await api('/admin/api/categories')).categories||[];
+    renderCatMgr();
+    await reloadCategories();
+    if(typeof renderProducts==='function')renderProducts();
+  }catch(err){toast('⚠️ '+err.message);}
+  finally{btn.disabled=false;}
 });
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}

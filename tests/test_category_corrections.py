@@ -73,7 +73,7 @@ class CorrectionTest(unittest.TestCase):
         self.assertEqual(conn.get("ziravorlar")[:2], ("🫙 Ziravorlar", "🫙 Специи"))
         self.assertEqual(conn.get("shokolad_marmalad"), ("🍫 Shokolad va marmelad", "🍫 Шоколад и мармелад", 1))
         self.assertEqual(conn.get("salt"), ("🧂 Tuz", "🧂 Соль", 1))                    # untouched
-        sync.assert_awaited_once()                                                    # bot and site read it now
+        self.assertEqual(sync.await_count, len(cc.FIXES))                             # bot and site read it now
 
     def test_empty_duplicate_hidden_full_one_kept(self):
         conn = Conn()

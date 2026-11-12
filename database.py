@@ -3148,6 +3148,10 @@ async def sync_categories_to_locales() -> None:
     for cat in cats:
         locales.register_category(cat["key"], cat["name_uz"], cat["name_ru"])
     locales.reorder_categories([c["key"] for c in cats])
+    # Faqat bazadagi faol bo'limlar: yashirilgan yoki o'chirilgan bo'lim
+    # (hatto boshlang'ich ro'yxatdagisi ham) bot va sayt tugmalarida qolmasin.
+    if cats:
+        locales.keep_only_categories([c["key"] for c in cats])
 
 
 async def move_category_to_top(key: str) -> None:
@@ -3157,6 +3161,65 @@ async def move_category_to_top(key: str) -> None:
         min_sort = await conn.fetchval("SELECT COALESCE(MIN(sort_order), 0) FROM categories")
         await conn.execute("UPDATE categories SET sort_order = $1 WHERE key = $2", min_sort - 1, key)
     await sync_categories_to_locales()
+
+
+async def category_product_counts() -> dict:
+    """{key: {"total": n, "active": m}} — bo'limlar oynasida ko'rsatish uchun."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT category, COUNT(*) AS total, COUNT(*) FILTER (WHERE is_active = 1) AS active "
+            "FROM products GROUP BY category")
+    return {r["category"]: {"total": int(r["total"]), "active": int(r["active"])} for r in rows}
+
+
+async def update_category(key: str, *, name_uz: str | None = None, name_ru: str | None = None,
+                          is_active: bool | None = None) -> dict | None:
+    """Admin saytida bo'limni tahrirlash (egasi, 2026-11-12): nomlar va
+    ko'rinishi. Bot va sayt darhol yangilanadi."""
+    sets, args = [], []
+    for col, val in (("name_uz", name_uz), ("name_ru", name_ru)):
+        if val is not None:
+            args.append(val)
+            sets.append(f"{col} = ${len(args)}")
+    if is_active is not None:
+        args.append(1 if is_active else 0)
+        sets.append(f"is_active = ${len(args)}")
+    if not sets:
+        return None
+    args.append(key)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"UPDATE categories SET {', '.join(sets)} WHERE key = ${len(args)} RETURNING *", *args)
+    if row is None:
+        return None
+    import locales
+    locales.register_category(row["key"], row["name_uz"], row["name_ru"])
+    await sync_categories_to_locales()
+    return dict(row)
+
+
+async def delete_category(key: str, move_to: str | None = None) -> dict:
+    """Bo'limni o'chiradi. Ichida mahsulot bo'lsa — faqat `move_to` berilganda
+    (mahsulotlar o'sha bo'limga ko'chiriladi), aks holda o'chirilmaydi.
+    {"deleted": bool, "moved": n, "products": n, "error": str|None}."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            exists = await conn.fetchval("SELECT 1 FROM categories WHERE key = $1", key)
+            if not exists:
+                return {"deleted": False, "moved": 0, "products": 0, "error": "not_found"}
+            n = int(await conn.fetchval("SELECT COUNT(*) FROM products WHERE category = $1", key) or 0)
+            moved = 0
+            if n:
+                if not move_to or move_to == key or not await conn.fetchval(
+                        "SELECT 1 FROM categories WHERE key = $1", move_to):
+                    return {"deleted": False, "moved": 0, "products": n, "error": "has_products"}
+                moved = int((await conn.execute(
+                    "UPDATE products SET category = $1 WHERE category = $2", move_to, key)).split()[-1])
+            await conn.execute("DELETE FROM categories WHERE key = $1", key)
+    import locales
+    locales.unregister_category(key)
+    await sync_categories_to_locales()
+    return {"deleted": True, "moved": moved, "products": n, "error": None}
 
 
 # ===== SEARCH =====

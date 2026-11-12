@@ -254,6 +254,67 @@ async def api_categories_create(request: web.Request):
     return _json({"ok": True, "category": cat})
 
 
+# Bo'limlarni boshqarish (egasi, 2026-11-12: "admin panelga ortiqcha
+# bo'limlarni o'chirish va tahrirlash imkoniyatini ham qo'shgin").
+_CAT_KEY = re.compile(r"^[a-z0-9_]{1,64}$")
+
+
+@require_auth
+async def api_categories_list(request: web.Request):
+    """GET /admin/api/categories — hamma bo'limlar (yashiringanlari ham) va
+    har birida nechta mahsulot borligi."""
+    cats = await database.get_categories(active_only=False)
+    counts = await database.category_product_counts()
+    for c in cats:
+        c.update(counts.get(c["key"], {"total": 0, "active": 0}))
+    return _json({"categories": cats})
+
+
+@require_auth
+async def api_categories_update(request: web.Request):
+    """POST /admin/api/categories/{key} {name_uz?, name_ru?, is_active?}."""
+    key = request.match_info["key"]
+    if not _CAT_KEY.match(key):
+        return _json({"error": "bo'lim topilmadi"}, status=404)
+    try:
+        b = await request.json()
+    except Exception:
+        return _json({"error": "bad request"}, status=400)
+    name_uz = _clean_str(b.get("name_uz"), 200) if "name_uz" in b else None
+    name_ru = _clean_str(b.get("name_ru"), 200) if "name_ru" in b else None
+    if "name_uz" in b and not name_uz:
+        return _json({"error": "O'zbekcha nom bo'sh bo'lmasin"}, status=400)
+    is_active = b.get("is_active") if isinstance(b.get("is_active"), bool) else None
+    cat = await database.update_category(key, name_uz=name_uz, name_ru=name_ru or (None if "name_ru" not in b else name_uz),
+                                         is_active=is_active)
+    if cat is None:
+        return _json({"error": "bo'lim topilmadi yoki o'zgarish yo'q"}, status=404)
+    return _json({"ok": True, "category": cat})
+
+
+@require_auth
+async def api_categories_delete(request: web.Request):
+    """POST /admin/api/categories/{key}/delete {move_to?} — mahsuloti bor
+    bo'lim faqat mahsulotlar boshqa bo'limga ko'chirilsa o'chiriladi."""
+    key = request.match_info["key"]
+    if not _CAT_KEY.match(key):
+        return _json({"error": "bo'lim topilmadi"}, status=404)
+    try:
+        b = await request.json()
+    except Exception:
+        b = {}
+    move_to = (b or {}).get("move_to") or None
+    if move_to is not None and not _CAT_KEY.match(str(move_to)):
+        return _json({"error": "ko'chiriladigan bo'lim noto'g'ri"}, status=400)
+    result = await database.delete_category(key, move_to)
+    if result["error"] == "not_found":
+        return _json({"error": "bo'lim topilmadi"}, status=404)
+    if result["error"] == "has_products":
+        return _json({"error": f"Bu bo'limda {result['products']} ta mahsulot bor — avval ularni qaysi "
+                               f"bo'limga ko'chirishni tanlang", "products": result["products"]}, status=409)
+    return _json({"ok": True, **result})
+
+
 # ────────────────────────────── products ────────────────────────────────────
 
 @require_auth
@@ -2238,6 +2299,9 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/pickup", api_pickup_settings)
     app.router.add_post("/admin/api/pickup", api_pickup_settings_update)
     app.router.add_post("/admin/api/categories", api_categories_create)
+    app.router.add_get("/admin/api/categories", api_categories_list)
+    app.router.add_post("/admin/api/categories/{key}", api_categories_update)
+    app.router.add_post("/admin/api/categories/{key}/delete", api_categories_delete)
     app.router.add_get("/admin/api/products", api_products_list)
     app.router.add_post("/admin/api/translit", api_translit)
     app.router.add_get("/admin/api/products/descriptions", api_descriptions_export)
