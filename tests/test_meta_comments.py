@@ -443,10 +443,16 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
                                                ai_confident=True, ai_draft="120 000 so'm 🌿",
                                                note="❌ AI yubora olmadi: [100] (#100) Field is only available "
                                                     "for top-level comments."))
-        self.assertEqual(await mc.retry_failed_once(self.bot), 1)
-        self.assertEqual(self.public, [("sub1", "120 000 so'm 🌿")])
-        self.assertEqual(self.db.rows[1]["status"], "ai_answered")
-        self.assertEqual(await mc.retry_failed_once(self.bot), 0)            # once
+        # 2026-11-11: the first run started before the token was loaded and
+        # spent its one chance on "[no_token]" — without a token, wait.
+        with patch.object(mc, "load_token", AsyncMock()), patch.object(mc, "token", lambda: ""):
+            self.assertEqual(await mc.retry_failed_once(self.bot), 0)
+        self.assertEqual(self.public, [])
+        with patch.object(mc, "load_token", AsyncMock()), patch.object(mc, "token", lambda: "T"):
+            self.assertEqual(await mc.retry_failed_once(self.bot), 1)
+            self.assertEqual(self.public, [("sub1", "120 000 so'm 🌿")])
+            self.assertEqual(self.db.rows[1]["status"], "ai_answered")
+            self.assertEqual(await mc.retry_failed_once(self.bot), 0)            # once
 
     async def test_spam_gets_nothing(self):
         self.draft = comment_ai.Draft("spam", "", True, "gpt-5.4-mini")
