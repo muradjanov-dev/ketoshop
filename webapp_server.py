@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -17,6 +18,7 @@ from urllib.parse import parse_qsl, unquote
 from aiohttp import web
 from aiogram import Bot
 
+import database
 import promotions
 
 
@@ -410,8 +412,10 @@ async def api_products(request: web.Request):
         sets = await get_active_sets_for_catalog()
         import bot_discount
         bot_prices = await bot_discount.display_prices([dict(s, is_set=True) for s in sets])
-        serialized = [_serialize_set(s, lang, bp) for s, bp in zip(sets, bot_prices)]
-        
+        stock = await _sets_stock(sets, request.get("user_id"))
+        serialized = [_apply_set_stock(_serialize_set(s, lang, bp), stock[s["id"]])
+                      for s, bp in zip(sets, bot_prices)]
+
         # Paginate sets
         total = len(serialized)
         start = page * per_page
@@ -512,8 +516,23 @@ async def api_set_detail(request: web.Request):
     # serialize set like a product
     import bot_discount
     data = _serialize_set(s, lang, await bot_discount.display_price(dict(s, is_set=True)))
-    data["description"] = "Tarkibi: " + ", ".join([f"{i['name_ru'] if lang == 'ru' and i.get('name_ru') else i['name']} ({i['quantity']})" for i in s["items"]])
-    data["out_of_stock"] = False
+    stock = (await _sets_stock([s], request.get("user_id")))[s["id"]]
+    _apply_set_stock(data, stock)
+    # The parts one per line (the missing one marked) and what they cost one
+    # by one — the sheet used to show only "Tarkibi: Bodom uni (1.0), …" and
+    # always offered «Savatga qo'shish», even when a part had run out.
+    data["description"] = localize_product_text(s.get("description"), s.get("description_ru"), lang) or ""
+    data["items"] = [{
+        "id": i["product_id"],
+        "name": localize_product_text(i.get("name"), i.get("name_ru"), lang),
+        "quantity": _num_text(i["quantity"]),
+        "unit": get_display_unit(i.get("unit") or "piece", lang),
+        "price": float(i.get("price") or 0),
+        "photo_url": photo_url(i.get("image_url") or i.get("photo_id")),
+        "out_of_stock": i["product_id"] in stock["short"],
+    } for i in s["items"]]
+    data["original_total"] = float(s.get("original_total") or 0)
+    data["restock_waiting"] = False
     return _json(data)
 
 
@@ -782,11 +801,24 @@ async def api_restock_wait(request: web.Request):
     import restock_notify
     try:
         data = await request.json()
-        product_id = int(data.get("product_id"))
+        set_id = int(data["set_id"]) if data.get("set_id") else None
+        product_id = None if set_id else int(data.get("product_id"))
     except Exception:
         return _json({"error": "bad_request"}, status=400)
-    status = await restock_notify.subscribe(
-        request["user_id"], product_id, request.get("user_lang", "uz"), "site")
+    lang = request.get("user_lang", "uz")
+    if set_id:
+        # A set comes back when its missing parts do: the buyer waits for
+        # each of them (told per part, the same message as for a product).
+        from database import get_set
+        the_set = await get_set(set_id)
+        if not the_set or not the_set.get("is_active"):
+            return _json({"error": "not_found"}, status=404)
+        short = (await _sets_stock([the_set], request["user_id"]))[set_id]["short"]
+        got = [await restock_notify.subscribe(request["user_id"], pid, lang, "site") for pid in short]
+        got = [g for g in got if g != "not_found"]
+        status = ("added" if "added" in got else "already" if "already" in got else "in_stock")
+        return _json({"ok": True, "status": status})
+    status = await restock_notify.subscribe(request["user_id"], product_id, lang, "site")
     if status == "not_found":
         return _json({"error": "not_found"}, status=404)
     return _json({"ok": True, "status": status})
@@ -815,6 +847,10 @@ async def api_cart_add(request: web.Request):
         # only what no other buyer's cart holds (Savat broni).
     elif set_id:
         set_id = int(set_id)
+        from database import get_set
+        the_set = await get_set(set_id)
+        if not the_set or not the_set.get("is_active"):
+            return _json({"error": "not_found"}, status=404)
 
     # Whether this product/set was already in the cart — only a NEW line gets
     # the "savatingizga qo'shildi" chat message, so the Mini App's own stepper
@@ -840,18 +876,20 @@ async def api_cart_add(request: web.Request):
             import cart_reservations
             body["waiting"] = await cart_reservations.wait_for_hold(
                 user_id, int(product_id), request.get("user_lang", "uz"), "held")
+        if set_id:
+            # Which part stops the set — the sheet names it instead of a bare
+            # «Savatga qo'shib bo'lmadi» (11.11: sets 28 opens, 0 adds).
+            short = set((await _sets_stock([the_set], user_id))[set_id]["short"])
+            lang = request.get("user_lang", "uz")
+            body["missing"] = [localize_product_text(i.get("name"), i.get("name_ru"), lang)
+                               for i in the_set["items"] if int(i["product_id"]) in short]
         return _json(body, status=409)
 
     if not before:
         import asyncio
         from handlers.cart import send_added_to_cart
-        from locales import localize_product_text
         lang = request.get("user_lang", "uz")
-        if product_id:
-            item = product
-        else:
-            from database import get_set
-            item = await get_set(set_id) or {}
+        item = product if product_id else the_set
         name = localize_product_text(item.get("name"), item.get("name_ru"), lang) or item.get("name") or ""
         # Fire-and-forget: the Mini App gets its "ok" immediately; the chat
         # message follows a moment later.
@@ -1957,13 +1995,70 @@ def _serialize_set(s: dict, lang: str, bot_price: float | None = None) -> dict:
         "price": s["set_price"],
         "photo_id": s["image_url"],
         "photo_url": photo_url(s["image_url"]),
-        "unit": "piece",
+        "unit": get_display_unit("piece", lang),
         "quantity": 999,
         "is_set": True,
     }
     if bot_price is not None:
         data.update(price=bot_price, original_price=s["set_price"],
                     discount_percent=bot_discount.shown_percent(s["set_price"], bot_price))
+    return data
+
+
+def _num_text(v) -> int | float:
+    v = float(v or 0)
+    return int(v) if v.is_integer() else v
+
+
+def set_capacity(items: list[dict], view: dict[int, dict]) -> dict:
+    """How many of one set a buyer can put in the cart now, from its parts —
+    the same rule database._line_cap enforces when it goes in: each part's
+    free stock (shelf minus other buyers' holds, `view` from
+    database.stock_view) divided by what one set takes, the scarcest part
+    decides. {"available": n, "short": [product ids that stop it],
+    "held": True when every stopping part is only held in other carts}."""
+    caps, short, held = [], [], True
+    for it in items:
+        need = float(it.get("quantity") or 0)
+        if need <= 0:
+            continue
+        pid = int(it["product_id"])
+        v = view.get(pid) or {"shelf": 0.0, "held": 0.0, "free": 0.0}
+        free = float(v["free"]) if it.get("is_active", 1) else 0.0
+        can = math.floor(free / need + 1e-9)
+        caps.append(can)
+        if can <= 0:
+            short.append(pid)
+            if not it.get("is_active", 1) or float(v["shelf"]) < need:
+                held = False
+    if not caps:
+        return {"available": int(database.SET_WITHOUT_ITEMS_STOCK), "short": [], "held": False}
+    available = min(caps)
+    return {"available": available, "short": short, "held": bool(short) and held}
+
+
+async def _sets_stock(sets: list[dict], viewer: int | None) -> dict[int, dict]:
+    """{set_id: set_capacity(...)} for `viewer`, one stock query for all.
+    A failed lookup shows the set as before (orderable); adding it is still
+    checked by the database, so nothing wrong can get into a cart."""
+    pids = {int(i["product_id"]) for s in sets for i in s.get("items") or []}
+    try:
+        view = await database.stock_view(pids, viewer) if pids else {}
+    except Exception:
+        logger.warning("set stock lookup failed", exc_info=True)
+        return {s["id"]: {"available": int(database.SET_WITHOUT_ITEMS_STOCK), "short": [], "held": False}
+                for s in sets}
+    return {s["id"]: set_capacity(s.get("items") or [], view) for s in sets}
+
+
+def _apply_set_stock(data: dict, stock: dict) -> dict:
+    """A set card says what the buyer can really do: a set whose part has run
+    out is «Yo'lda 🚚» like a sold-out product (it stays on the shelf), one
+    whose part sits in other carts is «⏳ Band»."""
+    available = int(stock["available"])
+    data["quantity"] = min(max(available, 0), int(database.SET_WITHOUT_ITEMS_STOCK))
+    data["out_of_stock"] = available <= 0
+    data["held_out"] = available <= 0 and bool(stock.get("held"))
     return data
 
 

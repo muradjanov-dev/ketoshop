@@ -915,6 +915,46 @@
   .card-quick-add:active { transform: scale(.95); }
   .card-quick-add.done { background: var(--surface-hi); color: var(--text); }
 
+  /* Catalog cards (2026-11-12: people scroll, ~30% open a product): a
+     bigger price, «+ Savatga» right on the card — a 40 px target on the
+     card's bottom line — and «🔥 Ko'p olinadi» on the bestsellers. The rest
+     of the card still opens the product. */
+  .product-card .card-price { font-size: 16.5px; letter-spacing: -.01em; }
+  .product-card .card-foot { margin-top: auto; padding-top: 10px; }
+  .card-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 40px;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--btn-grad);
+    color: var(--btn-text);
+    font: 800 13.5px/1.1 var(--font-body);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: transform .3s var(--ease-spring), background-color .2s;
+  }
+  .card-add:active { transform: scale(.95); }
+  .card-add.done { background: var(--surface-hi); color: var(--text); }
+  .card-add:disabled { opacity: .7; }
+  .card-hot {
+    align-self: flex-start;
+    max-width: calc(100% - 12px);
+    margin-top: 9px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--berry-soft);
+    color: var(--berry);
+    font: 800 11px/1.3 var(--font-body);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .card-hot + .card-name { margin-top: 5px; }
+
   /* ── Podiums ───────────────────────────────────────────────────────────
      Real pedestals under the tiles. The product podium only raises the
      middle slot (those three are not ranked — see buildPodium), so its two
@@ -1337,6 +1377,16 @@
   #product-grid.pg-list .card-img-wrap::after { width: 24px; height: 24px; right: 5px; bottom: 5px; background-size: 11px; }
   #product-grid.pg-list .discount-corner { font-size: 10px; padding: 3px 7px; top: 5px; left: 5px; }
   #product-grid.pg-list .disc-until-corner { display: none; }
+  /* Price and «+ Savatga» in the small and the list views. */
+  #product-grid.pg-3 .product-card .card-price { font-size: 14px; }
+  #product-grid.pg-3 .card-foot { padding-top: 8px; }
+  #product-grid.pg-3 .card-add { padding: 6px 4px; font-size: 12px; }
+  #product-grid.pg-3 .card-hot { max-width: calc(100% - 6px); margin-top: 6px; padding: 2px 6px; font-size: 9.5px; }
+  #product-grid.pg-3 .card-hot + .card-name { margin-top: 4px; }
+  #product-grid.pg-list .product-card .card-price { font-size: 17px; }
+  #product-grid.pg-list .card-hot { justify-self: start; max-width: 100%; margin-top: 2px; }
+  #product-grid.pg-list .card-foot { align-self: end; justify-self: start; padding-top: 8px; }
+  #product-grid.pg-list .card-add { width: auto; min-width: 136px; padding: 6px 18px; }
 
   /* ── Page headers ──────────────────────────────────────────────────────
      Big display titles that end in an accent full stop. */
@@ -2304,6 +2354,57 @@
     to { opacity: 1; transform: none; }
   }
   @media (prefers-reduced-motion: reduce) { .detail-soon { animation: none; } }
+  /* To'plam (set) sheet: the parts, one per line; a missing one is marked. */
+  .detail-set { margin-top: 16px; }
+  .detail-set[hidden] { display: none; }
+  .dset-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .dset-head b { font: 800 16px var(--font-display); letter-spacing: -.01em; color: var(--text); }
+  .dset-head span { font-size: 12.5px; color: var(--hint); white-space: nowrap; }
+  .dset-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .dset-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px 8px 8px;
+    border-radius: 18px 24px 16px 26px / 22px 16px 24px 18px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+  }
+  .dset-item img, .dset-item .dset-noimg {
+    width: 46px;
+    height: 46px;
+    flex-shrink: 0;
+    border-radius: var(--blob-d);
+    object-fit: cover;
+    background: var(--surface-hi);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .dset-item.is-out img, .dset-item.is-out .dset-noimg { filter: grayscale(.55); opacity: .62; }
+  .dset-text { flex: 1; min-width: 0; }
+  .dset-name { font-size: 13.5px; font-weight: 700; line-height: 1.3; color: var(--text); }
+  .dset-meta { margin-top: 2px; font-size: 12.5px; color: var(--hint); }
+  .dset-out {
+    flex-shrink: 0;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--berry-soft);
+    color: var(--berry);
+    font-size: 11.5px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .dset-save {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 16px;
+    background: var(--leaf-soft);
+    color: var(--leaf-deep);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.4;
+  }
   .detail-footer.is-out .qty-controls { display: none; }
   .modal .detail-rating { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--text); }
   .modal .detail-rating:empty, .modal .detail-seller:empty { display: none; }
@@ -3258,6 +3359,53 @@
   .rm-prod-price { font-size: 13px; font-weight: 800; color: var(--link); }
   .rm-prod-out { font-size: 12px; font-weight: 700; color: var(--berry); }
   .rm-why { margin-top: 6px; font-size: 12px; line-height: 1.45; color: var(--hint); }
+  .rm-prod-text { flex: 1; min-width: 0; }
+  .rm-go { color: var(--hint); font-weight: 800; }
+  .rm-prod-add {
+    flex-shrink: 0;
+    min-height: 40px;
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--btn-grad);
+    color: var(--btn-text);
+    font: 800 12.5px/1.1 var(--font-body);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: transform .3s var(--ease-spring);
+  }
+  .rm-prod-add:active { transform: scale(.95); }
+  .rm-prod-add.done { background: var(--surface); color: var(--text); }
+  /* The add-all button in the recipe itself: under the ingredients and
+     after the steps (2026-11-12). */
+  .rm-cta {
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 22px 28px 20px 30px / 26px 20px 28px 22px;
+    background: var(--t-leaf);
+    border: 1px solid var(--hairline);
+    text-align: center;
+  }
+  .rm-cta-title { margin-bottom: 10px; font: 800 15px/1.35 var(--font-display); color: var(--text); text-wrap: balance; }
+  .rm-cta-btn {
+    display: block;
+    width: 100%;
+    min-height: 52px;
+    padding: 12px 16px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--leaf-deep);
+    color: #fff;
+    font: 800 15.5px/1.2 var(--font-body);
+    cursor: pointer;
+    transition: transform .3s var(--ease-spring);
+  }
+  .rm-cta-btn:active { transform: scale(.97); }
+  .rm-cta-btn:disabled { opacity: .6; }
+  .rm-cta-btn.go { background: var(--text); color: var(--bg); }
+  .rm-cta-note { margin-top: 8px; font-size: 12.5px; color: var(--hint); }
+  .rm-cta-note b { color: var(--text); }
+  :root[data-site-theme="night"] .rm-cta-btn:not(.go) { background: #5E8358; }
   /* Pinned to the bottom of the sheet while the recipe scrolls under it. */
   .rm-cart-bar {
     position: sticky;
@@ -3270,7 +3418,10 @@
     background: var(--bg);
     border-top: 1px solid var(--hairline);
     box-shadow: 0 -10px 24px -16px rgba(0,0,0,.35);
+    transition: opacity .25s var(--ease), visibility .25s;
   }
+  .rm-cart-bar.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+  @media (prefers-reduced-motion: reduce) { .rm-cart-bar { transition: none; } }
   .rm-cart-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; color: var(--text); }
   .rm-cart-info b { font-size: 12.5px; font-weight: 700; }
   .rm-cart-total { font: 800 17px/1.2 var(--font-display); letter-spacing: -.01em; }
@@ -3928,6 +4079,7 @@
       <div class="detail-seller" id="detail-seller"></div>
       <div class="detail-desc" id="detail-desc"></div>
       <div class="detail-desc detail-composition" id="detail-composition" style="display:none"></div>
+      <div class="detail-set" id="detail-set" hidden></div>
       <div class="detail-reviews" id="detail-reviews">
         <div class="reviews-heading" id="reviews-heading"></div>
         <div id="reviews-list"></div>
@@ -4985,6 +5137,12 @@ const L = {
     restockAdded: '🔔 Yozib qo\'ydik! Qaytishi bilan sizga birinchilardan bo\'lib xabar beramiz 🤍',
     restockAlready: '✅ Siz ro\'yxatdasiz — qaytishi bilan xabar beramiz 🤍',
     restockBack: '🎉 Xushxabar — mahsulot allaqachon qaytdi!',
+    // To'plam (set) sheet — its parts one per line (2026-11-12).
+    setItemsTitle: '🎁 To\'plam tarkibi',
+    setItemsCount: '{n} ta mahsulot',
+    setSeparately: 'Alohida olsangiz {total} so\'m — to\'plamda {saved} so\'m tejaysiz',
+    setPartOut: '⏳ Yo\'lda',
+    setMissing: '⏳ To\'plamdagi {names} hozircha yo\'q — tez orada qaytadi',
     discountUntil: '⏳ Chegirma {date} gacha amal qiladi',
     youSave: '💚 {amount} so\'m tejaysiz',
     discountsTab: '🔥 Chegirmalar',
@@ -5218,6 +5376,11 @@ const L = {
     restockAdded: '🔔 Записали! Как только товар вернётся, вы узнаете одним из первых 🤍',
     restockAlready: '✅ Вы уже в списке — сообщим, как только вернётся 🤍',
     restockBack: '🎉 Хорошая новость — товар уже вернулся!',
+    setItemsTitle: '🎁 Состав набора',
+    setItemsCount: 'товаров: {n}',
+    setSeparately: 'По отдельности {total} сум — в наборе экономия {saved} сум',
+    setPartOut: '⏳ В пути',
+    setMissing: '⏳ В наборе сейчас нет: {names} — скоро вернётся',
     discountUntil: '⏳ Скидка действует до {date}',
     youSave: '💚 экономия {amount} сум',
     discountsTab: '🔥 Скидки',
@@ -6476,6 +6639,7 @@ async function checkStartGate(manual) {
   // The whole catalog, asked for now so it comes alongside the categories
   // and the promo instead of after them (loadProducts picks it up).
   fetchCatalogList('all').catch(() => {});
+  loadPopularIds();
 
   try {
     categories = await api('/api/categories');
@@ -7015,6 +7179,9 @@ function renderRecipe(r) {
       (i.product === undefined ? '<span class="rm-home">' + escapeHtml(L.from_home) + '</span>' : '') +
       '</b><span class="rm-amt">' + escapeHtml(i.amount) + '</span></div>';
     if (i.product) {
+      // The shop's product for this ingredient: the whole row opens its
+      // card, «+ Savatga» puts one pack in (2026-11-12); price or «⏳ tez
+      // orada qaytadi» say whether it is there.
       const p = i.product;
       const img = p.photo_url
         ? '<img src="' + p.photo_url + '" alt="" loading="lazy" onerror="this.outerHTML=\'<div class=rm-noimg>📦</div>\'">'
@@ -7022,15 +7189,19 @@ function renderRecipe(r) {
       const price = p.out_of_stock
         ? '<div class="rm-prod-out">' + escapeHtml(L.out_of_stock) + '</div>'
         : '<div class="rm-prod-price">' + priceHtml(p) + '</div>';
-      html += '<div class="rm-prod" onclick="openDetail(' + p.id + ')">' + img +
-        '<div><div class="rm-prod-name">' + escapeHtml(p.name) + '</div>' + price + '</div></div>';
+      html += '<div class="rm-prod" data-pid="' + p.id + '">' + img +
+        '<div class="rm-prod-text"><div class="rm-prod-name">' + escapeHtml(p.name) +
+        ' <span class="rm-go" aria-hidden="true">›</span></div>' + price + '</div>' +
+        (p.out_of_stock ? '' : '<button type="button" class="rm-prod-add">' + escapeHtml(t.quickAdd) + '</button>') +
+        '</div>';
     }
     if (i.why) html += '<div class="rm-why">' + escapeHtml(i.why) + '</div>';
     return html + '</li>';
   }).join('');
   // One pack of each in-stock product — exactly what recipeToCart puts in.
-  // Pinned to the bottom of the sheet (2026-10-22): mid-page, under the
-  // ingredients, the add-all button was almost never pressed.
+  // Pinned to the bottom of the sheet (2026-10-22); since 2026-11-12 the same
+  // button also stands under the ingredients and after the steps, and the
+  // bar steps aside while one of those is on screen.
   const seen = new Set();
   const buy = [];
   r.ingredients.forEach(i => {
@@ -7038,12 +7209,20 @@ function renderRecipe(r) {
     if (p && !p.out_of_stock && !seen.has(p.id)) { seen.add(p.id); buy.push(p); }
   });
   const total = buy.reduce((s, p) => s + (Number(p.price) || 0), 0);
+  const ctaNote = escapeHtml(L.bar_count.replace('{n}', buy.length)) + ' · <b>' + formatPrice(total) + ' UZS</b>';
+  const cta = (where) => buy.length
+    ? '<div class="rm-cta rm-cta-' + where + '">' +
+        (where === 'end' && L.end_title ? '<div class="rm-cta-title">' + escapeHtml(L.end_title) + '</div>' : '') +
+        '<button class="rm-cta-btn" type="button" data-where="' + where + '">' + escapeHtml(L.cta || L.add_all) + '</button>' +
+        '<div class="rm-cta-note">' + ctaNote + '</div>' +
+      '</div>'
+    : '';
   const cartBar = buy.length
     ? '<div class="rm-cart-bar">' +
         '<div class="rm-cart-info"><b>' + escapeHtml(L.bar_title) + '</b>' +
           '<span class="rm-cart-total">' + formatPrice(total) + ' UZS</span>' +
           '<small>' + escapeHtml(L.bar_count.replace('{n}', buy.length)) + '</small></div>' +
-        '<button class="rm-cart-btn" type="button" onclick="recipeToCart(\'' + r.slug + '\', this)">' +
+        '<button class="rm-cart-btn" type="button" data-where="bar">' +
           escapeHtml(L.bar_btn) + '</button>' +
       '</div>'
     : '';
@@ -7056,31 +7235,68 @@ function renderRecipe(r) {
       '<div class="rm-meta">' + recipeMetaHtml(r, L) + '</div>' +
       '<div class="rm-note">' + escapeHtml(L.per_serving) + '</div>' +
       '<h3>' + escapeHtml(L.ingredients) + '</h3><ul class="rm-ings">' + ings + '</ul>' +
+      cta('ings') +
       '<h3>' + escapeHtml(L.steps) + '</h3><ol class="rm-steps">' +
         r.steps.map(s => '<li>' + escapeHtml(s) + '</li>').join('') + '</ol>' +
       (r.tip ? '<div class="rm-tip"><b>' + escapeHtml(L.tip) + '</b><br>' + escapeHtml(r.tip) + '</div>' : '') +
+      cta('end') +
       '<div class="rm-next">' + escapeHtml(L.next.replace('{date}', recipesData.next_at)) + '</div>' +
     '</div>' +
     cartBar;
+  const body = document.getElementById('recipe-body');
+  const products = {};
+  r.ingredients.forEach(i => { if (i.product) products[i.product.id] = i.product; });
+  // Taps are tracked: a product opened from here is a view with src
+  // "recipe:<slug>", its «+ Savatga» a cart_add with the same src, and the
+  // add-all buttons a cart_add of the recipe with src "cta:<where>".
+  body.querySelectorAll('.rm-prod').forEach(el => {
+    const p = products[el.dataset.pid];
+    el.onclick = () => openDetail(p.id);   // the tracker's src: recipe:<slug>
+    const add = el.querySelector('.rm-prod-add');
+    if (add) add.onclick = (e) => { e.stopPropagation(); quickAddToCart(p, add, 'recipe:' + r.slug); };
+  });
+  body.querySelectorAll('.rm-cta-btn, .rm-cart-btn').forEach(btn => {
+    btn.onclick = () => recipeToCart(r.slug, btn, btn.dataset.where);
+  });
+  watchRecipeCta(body);
   document.querySelector('#recipe-modal .modal').scrollTop = 0;
 }
 
-async function recipeToCart(slug, btn) {
+// The pinned bar steps aside while the add-all button under the
+// ingredients or after the steps is on screen — one button at a time.
+let recipeCtaWatch = null;
+function watchRecipeCta(body) {
+  if (recipeCtaWatch) { recipeCtaWatch.disconnect(); recipeCtaWatch = null; }
+  const bar = body.querySelector('.rm-cart-bar');
+  const ctas = body.querySelectorAll('.rm-cta');
+  if (!bar || !ctas.length || !window.IntersectionObserver) return;
+  const seen = new Set();
+  recipeCtaWatch = new IntersectionObserver(es => {
+    es.forEach(e => { if (e.isIntersecting) seen.add(e.target); else seen.delete(e.target); });
+    bar.classList.toggle('is-hidden', seen.size > 0);
+  }, { root: document.querySelector('#recipe-modal .modal'), threshold: 0.6 });
+  ctas.forEach(el => recipeCtaWatch.observe(el));
+}
+
+async function recipeToCart(slug, btn, where) {
   const L = recipesData.labels;
   if (btn) btn.disabled = true;
   try {
     const res = await api('/api/recipes/' + encodeURIComponent(slug) + '/cart', { method: 'POST' });
-    trk(() => Trk.ev('cart_add', 'recipe', slug, 'recipe', res.added.length));
+    trk(() => Trk.ev('cart_add', 'recipe', slug, 'cta:' + (where || 'bar'), res.added.length));
     let msg = res.added.length ? L.added.replace('{n}', res.added.length) : L.already;
     if (res.missing.length) msg += ' · ' + L.missing.replace('{names}', res.missing.join(', '));
     showToast(msg, false, 3500);
     try { tg.HapticFeedback.notificationOccurred('success'); } catch (_) {}
     await loadCart();
-    // The ingredients are in the cart now — the bar's next step is the cart.
-    if (btn && (res.added.length || res.already.length)) {
-      btn.textContent = L.go_cart;
-      btn.classList.add('go');
-      btn.onclick = () => { closeRecipe(); switchPage('cart'); };
+    // The ingredients are in the cart now — every add-all button's next
+    // step is the cart.
+    if (res.added.length || res.already.length) {
+      document.querySelectorAll('#recipe-body .rm-cta-btn, #recipe-body .rm-cart-btn').forEach(b => {
+        b.textContent = L.go_cart;
+        b.classList.add('go');
+        b.onclick = () => { closeRecipe(); switchPage('cart'); };
+      });
     }
   } catch (e) {
     showToast(t.errorLoad, true);
@@ -7461,16 +7677,17 @@ function buildPopularRow(products) {
 }
 
 // One piece straight from a card — the same rules and messages as the
-// product page's button (addToCart), without opening it.
-async function quickAddToCart(p, btn) {
+// product page's button (addToCart), without opening it. `src` names where
+// the tap was (a recipe's ingredient) when the tracker can't tell by itself.
+async function quickAddToCart(p, btn, src) {
   if (btn.disabled) return;
   btn.disabled = true;
   try {
     const res = await api('/api/cart/add', {
       method: 'POST',
-      body: JSON.stringify({ product_id: p.id, quantity: 1 })
+      body: JSON.stringify(p.is_set ? { set_id: p.id, quantity: 1 } : { product_id: p.id, quantity: 1 })
     });
-    trk(() => Trk.ev('cart_add', 'product', p.id, Trk.from()));
+    trk(() => Trk.ev('cart_add', p.is_set ? 'set' : 'product', p.id, src || Trk.from()));
     await loadCart();
     try { tg.HapticFeedback.impactOccurred('light'); } catch (_) {}
     showToast(res && res.partial ? t.addedPartly.replace('{n}', res.added) : t.addedToCart);
@@ -7483,9 +7700,7 @@ async function quickAddToCart(p, btn) {
     }, 1800);
   } catch (e) {
     console.error('Quick add error:', e);
-    const reason = e && e.body && e.body.error;
-    const held = reason === 'held' && (e.body.waiting ? t.heldWaiting : t.heldLimit);
-    showToast(held || t.errorCart, true);
+    showToast(cartErrorText(e), true, 4000);
     btn.disabled = false;
   }
 }
@@ -7870,10 +8085,36 @@ function cardNoteHtml(p) {
   return p.description ? '<div class="card-desc">' + escapeHtml(p.description) + '</div>' : '';
 }
 
-function createProductCard(p) {
+// «🔥 Ko'p olinadi» on catalog cards: the same bestsellers as the home row
+// (/api/popular — the last 30 days' orders, in stock only), asked for once.
+// Cards drawn before the answer get the badge when it comes.
+let popularIds = null;
+function loadPopularIds() {
+  if (popularIds) return;
+  popularIds = new Set();
+  api('/api/popular').then(list => {
+    (Array.isArray(list) ? list : []).forEach(p => popularIds.add(String(p.id)));
+    document.querySelectorAll('.product-card[data-id]').forEach(card => {
+      if (card.dataset.set || card.querySelector('.card-hot') || !popularIds.has(card.dataset.id)) return;
+      card.querySelector('.card-name').insertAdjacentHTML('beforebegin', hotBadgeHtml({ id: card.dataset.id }));
+    });
+  }).catch(() => {});
+}
+function hotBadgeHtml(p) {
+  return (!p.is_set && popularIds && popularIds.has(String(p.id)))
+    ? '<div class="card-hot">' + escapeHtml(t.sectionPopular) + '</div>' : '';
+}
+
+function createProductCard(p, opts) {
   const card = document.createElement('div');
   card.className = 'product-card';
+  card.dataset.id = p.id;
+  if (p.is_set) card.dataset.set = '1';
   card.onclick = () => openDetail(p.id, p.is_set);
+  // «+ Savatga» on the card itself (2026-11-12): people scroll the catalog
+  // but ~30% open a product. Not on sold-out cards (the card says when it
+  // returns) nor on saved favourites, whose copies may predate the set flag.
+  const addBtn = !(opts && opts.addBtn === false) && !p.out_of_stock;
 
   const isFav = !!favorites[p.id];
   let imgInner;
@@ -7891,18 +8132,27 @@ function createProductCard(p) {
       soldOutStampHtml(p) +
       '<button class="card-fav-btn" data-id="' + p.id + '">' + (isFav ? '❤️' : '🤍') + '</button>' +
     '</div>' +
+    hotBadgeHtml(p) +
     '<div class="card-name">' + (p.is_set ? '🎁 ' : '') + escapeHtml(p.name) + '</div>' +
     '<div class="card-price">' + priceHtml(p) + '</div>' +
     savingHtml(p) +
     bonusBadgeHtml(p) +
     ketoBadgeHtml(p.price) +
-    cardNoteHtml(p);
+    cardNoteHtml(p) +
+    (addBtn ? '<div class="card-foot"><button type="button" class="card-add">' + escapeHtml(t.quickAdd) + '</button></div>' : '');
 
   card.querySelector('.card-fav-btn').onclick = (e) => {
     e.stopPropagation();
     toggleFav(p);
     e.currentTarget.textContent = favorites[p.id] ? '❤️' : '🤍';
   };
+  if (addBtn) {
+    const add = card.querySelector('.card-add');
+    add.onclick = (e) => {
+      e.stopPropagation();   // the card itself opens the product
+      quickAddToCart(p, add);
+    };
+  }
 
   return card;
 }
@@ -8060,6 +8310,7 @@ async function openDetail(productId, isSet = false) {
       compEl.innerHTML = '';
       compEl.style.display = 'none';
     }
+    renderSetItems(p);
     document.getElementById('qty-value').textContent = qty;
     const addBtn = document.getElementById('add-to-cart-btn');
     // Sold out — "🔔 Kelganda xabar bering". Held in other buyers' carts
@@ -8148,11 +8399,58 @@ async function openDetail(productId, isSet = false) {
 
     document.getElementById('detail-modal').classList.add('show');
     updateBackButton();
-    loadProductReviews(productId);
+    // Reviews belong to products: a set's id is not a product id, and the
+    // sheet used to show (and take) the reviews of the product with that id.
+    document.getElementById('detail-reviews').hidden = !!p.is_set;
+    if (!p.is_set) loadProductReviews(productId);
   } catch(e) {
     console.error('Detail error:', e);
     showToast(t.errorLoad, true);
   }
+}
+
+// ===== TO'PLAM (SET) TARKIBI (2026-11-12) =====
+// 11.11: «Keto set» 12 opens / 0 cart adds, «Supper set» 10 / 0. The sheet
+// showed one line "Tarkibi: Bodom uni (1.0), …" and always «Savatga
+// qo'shish», even when a part had run out — the tap then failed with a bare
+// «Savatga qo'shib bo'lmadi». Now /api/set/<id> says what is really there:
+// the parts one per line (a missing one marked «⏳ Yo'lda»), what they cost
+// bought one by one, and a sold-out set gets «🔔 Kelganda xabar bering».
+function renderSetItems(p) {
+  const box = document.getElementById('detail-set');
+  const items = (p && p.is_set && Array.isArray(p.items)) ? p.items : [];
+  box.hidden = !items.length;
+  if (!items.length) { box.innerHTML = ''; return; }
+  const rows = items.map(i => {
+    const img = i.photo_url
+      ? '<img src="' + i.photo_url + '" alt="" loading="lazy" onerror="this.outerHTML=\'<div class=dset-noimg>📦</div>\'">'
+      : '<div class="dset-noimg">📦</div>';
+    return '<li class="dset-item' + (i.out_of_stock ? ' is-out' : '') + '">' + img +
+      '<div class="dset-text"><div class="dset-name">' + escapeHtml(i.name) + '</div>' +
+      '<div class="dset-meta">' + escapeHtml(i.quantity + ' ' + i.unit) + ' · ' + formatPrice(i.price * i.quantity) + ' UZS</div></div>' +
+      (i.out_of_stock ? '<span class="dset-out">' + escapeHtml(t.setPartOut) + '</span>' : '') + '</li>';
+  }).join('');
+  const total = Number(p.original_total) || 0;
+  const saved = Math.round(total - (Number(p.price) || 0));
+  const save = total > 0 && saved > 0
+    ? '<div class="dset-save">' + escapeHtml(t.setSeparately.replace('{total}', formatPrice(total))
+        .replace('{saved}', formatPrice(saved))) + '</div>'
+    : '';
+  box.innerHTML = '<div class="dset-head"><b>' + escapeHtml(t.setItemsTitle) + '</b><span>' +
+    escapeHtml(t.setItemsCount.replace('{n}', items.length)) + '</span></div>' +
+    '<ul class="dset-items">' + rows + '</ul>' + save;
+}
+
+// What a refused /api/cart/add means, in the buyer's words: held in another
+// cart, a set's missing part, or the generic line.
+function cartErrorText(e) {
+  const b = (e && e.body) || {};
+  const reason = b.error;
+  if (reason === 'held') return b.waiting ? t.heldWaiting : t.heldLimit;
+  if (Array.isArray(b.missing) && b.missing.length) {
+    return t.setMissing.replace('{names}', b.missing.map(n => '«' + n + '»').join(', '));
+  }
+  return t.errorCart;
 }
 
 // ===== PRODUCT REVIEWS =====
@@ -8276,13 +8574,14 @@ async function restockWait() {
   // The message comes from the bot — make sure it may write to this buyer.
   await ensureBotCanWrite();
   try {
+    // A set waits for its missing parts (the server knows which).
     const res = await api('/api/restock-wait', {
       method: 'POST',
-      body: JSON.stringify({ product_id: p.id })
+      body: JSON.stringify(p.is_set ? { set_id: p.id } : { product_id: p.id })
     });
     if (res.status === 'in_stock') {
       showToast(t.restockBack);
-      openDetail(p.id);
+      openDetail(p.id, !!p.is_set);
       return;
     }
     p.restock_waiting = true;
@@ -8330,7 +8629,7 @@ function renderFavPage() {
   }
   empty.style.display = 'none';
   items.forEach(p => {
-    grid.appendChild(createProductCard(p));
+    grid.appendChild(createProductCard(p, { addBtn: false }));
   });
 }
 
@@ -8357,9 +8656,13 @@ async function addToCart() {
     showToast(res && res.partial ? t.addedPartly.replace('{n}', res.added) : t.addedToCart);
   } catch(e) {
     console.error('Add to cart error:', e);
-    const reason = e && e.body && e.body.error;
-    const held = reason === 'held' && (e.body.waiting ? t.heldWaiting : t.heldLimit);
-    showToast(held || t.errorCart, true);
+    showToast(cartErrorText(e), true, 4000);
+    // A set whose part ran out meanwhile: draw it again as it is now —
+    // the missing part marked and «🔔 Kelganda xabar bering».
+    const p = currentProduct;
+    if (p && p.is_set && e && e.status === 409 && e.body && e.body.error === 'out_of_stock') {
+      openDetail(p.id, true).catch(() => {});
+    }
   } finally {
     if (btn) btn.disabled = false;
   }

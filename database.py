@@ -7027,7 +7027,7 @@ async def _set_with_items(conn, row) -> dict:
     s = dict(row)
     items = await conn.fetch(
         """SELECT si.id AS item_id, si.product_id, si.quantity,
-                  p.name, p.name_ru, p.price, p.unit, p.image_url, p.is_active
+                  p.name, p.name_ru, p.price, p.unit, p.image_url, p.photo_id, p.is_active
            FROM product_set_items si
            JOIN products p ON p.id = si.product_id
            WHERE si.set_id = $1

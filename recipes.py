@@ -51,6 +51,12 @@ LABELS = {
     "bar_count": {"uz": "{n} ta mahsulot, har biridan 1 qadoq",
                   "ru": "Товаров: {n}, по 1 упаковке"},
     "bar_btn": {"uz": "🛒 Savatga", "ru": "🛒 В корзину"},
+    # 2026-11-12: recipes are read (~86 s a visit) but rarely lead to a
+    # product — the same button now also sits right under the ingredients
+    # and at the end of the steps (the bar hides while one of them shows).
+    "cta": {"uz": "🛒 Masalliqlarni savatga qo'shish", "ru": "🛒 Добавить ингредиенты в корзину"},
+    "end_title": {"uz": "Pishirishga tayyormisiz? Ketoshop mahsulotlari bir bosishda savatda",
+                  "ru": "Готовы готовить? Продукты Ketoshop — в корзину одним нажатием"},
     "go_cart": {"uz": "Savatni ochish →", "ru": "Открыть корзину →"},
     "steps": {"uz": "Tayyorlash", "ru": "Приготовление"},
     "tip": {"uz": "💡 Maslahat", "ru": "💡 Совет"},
