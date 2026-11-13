@@ -453,8 +453,7 @@ async def route(bot: Bot | None, row: dict, *, notify: bool = True, wait: bool =
         # Bir odam bir post ostida bir xil matnni boshqalarni belgilab ko'p
         # marta yozgan — bittasiga javob yetadi.
         await database.claim_meta_comment(row["id"], OPEN, "seen")
-        await database.update_meta_comment(row["id"], ai_confident=False,
-                                           note="Shu odamning shu post ostidagi bir xil izohiga javob berilgan")
+        await database.update_meta_comment(row["id"], ai_confident=False, note=REPEAT_NOTE)
         return "repeat"
     state = await database.get_meta_comments_state()
     mode = state.get("ai_mode") or "avto"
@@ -503,6 +502,12 @@ async def auto_send(bot: Bot | None, key: int, delay: float | None = None, notif
     await asyncio.sleep(AI_DELAY if delay is None else delay)
     row = await database.get_meta_comment(key)
     if not row or row["status"] != "new" or not row.get("ai_draft"):
+        return
+    if await is_repeat(row):
+        # Qayta yuborishda ham: bir odam bir xil matnni 14 kishini belgilab
+        # yozgan (12.11) — bittasiga javob ketgan bo'lsa, qolganiga yozmaymiz.
+        if await database.claim_meta_comment(key, ("new",), "seen"):
+            await database.update_meta_comment(key, ai_confident=False, note=REPEAT_NOTE)
         return
     try:
         async with aiohttp.ClientSession() as session:
@@ -588,6 +593,9 @@ async def post_context(row: dict) -> tuple[str, str]:
 
 
 _MENTION = re.compile(r"@[\w.]+")
+
+
+REPEAT_NOTE = "Shu odamning shu post ostidagi bir xil izohiga javob berilgan"
 
 
 def _same_text(a: str | None, b: str | None) -> bool:
