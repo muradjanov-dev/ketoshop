@@ -162,6 +162,8 @@ SHOP_LANDMARK = os.getenv("SHOP_LANDMARK", "Ko'kcha masjidi atrofida").strip()
 # Egasi, 2026-11-04: "manzilga qo'shimcha qilib endi buni ham qo'sh javoblarda:
 # Toshkent shahri, Oqsoy 1-tor ko'chasi, 2A".
 SHOP_STREET = os.getenv("SHOP_STREET", "Toshkent shahri, Oqsoy 1-tor ko'chasi, 2A").strip()
+# Egasi, 2026-11-12: "ish vaqti (do'kondan kelib olib ketish uchun) 09:00-21:00 gacha".
+SHOP_HOURS = os.getenv("SHOP_HOURS", "09:00–21:00").strip()
 SHOP_PLACE = f"{SHOP_STREET} (mo'ljal: {SHOP_LANDMARK})"
 
 # Mijoz tanlaydigan yetkazish -> bazadagi delivery_method. Tugmali checkout
@@ -924,7 +926,8 @@ def _shop_knowledge() -> str:
         "mahsulot puli faqat karta orqali oldindan. Muddatini pochta belgilaydi — aniq kun "
         "va'da qilma.\n"
         f"- Do'kondan o'zi olib ketish: BEPUL. Manzil: {SHOP_PLACE}, havola: "
-        f"{SHOP_ADDRESS_URL} . Buyurtma tayyor bo'lgach operatorimiz xabar beradi. To'lov naqd "
+        f"{SHOP_ADDRESS_URL} . Ish vaqti (kelib olib ketish uchun): {SHOP_HOURS}. "
+        "Ish vaqti so'ralsa — shuni ayt. Buyurtma tayyor bo'lgach operatorimiz xabar beradi. To'lov naqd "
         "yoki karta. Faqat Toshkentdagi mijozga taklif qil — viloyatdagiga emas.\n"
         "- Yetkazish usullarini taklif qilganda shunday ro'yxat qil (narxlari bilan, har biri "
         "alohida qatorda):\n"

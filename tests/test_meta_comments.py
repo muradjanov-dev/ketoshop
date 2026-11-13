@@ -830,6 +830,9 @@ class KnowledgeBaseTest(unittest.TestCase):
     def test_defaults_come_from_the_shop_rules(self):
         kb = comment_ai.kb_with_defaults({"optom": "99 000 00 00", "nonsense": "x"})
         self.assertIn("Oqsoy", kb["manzil"])                    # owner's 2026-11-04 address
+        self.assertIn("09:00–21:00", kb["manzil"])              # owner, 2026-11-12: pickup hours
+        import ai_sales
+        self.assertIn("Ish vaqti (kelib olib ketish uchun): 09:00–21:00", ai_sales._shop_knowledge())
         self.assertIn("800 000", kb["yetkazish"])
         self.assertEqual(kb["optom"], "99 000 00 00")
         self.assertNotIn("nonsense", kb)

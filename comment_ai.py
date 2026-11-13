@@ -91,7 +91,7 @@ KB_KEYS = {
 def default_kb() -> dict:
     """Boshlang'ich matnlar — izoh-javoblari-2026-11-09 (3-bo'lim) va do'konning
     o'z qoidalari. Manzil ai_sales'dagi bilan bir xil (egasi, 2026-11-04)."""
-    from ai_sales import SHOP_LANDMARK, SHOP_STREET
+    from ai_sales import SHOP_HOURS, SHOP_LANDMARK, SHOP_STREET
     from config import FREE_DELIVERY_FROM
     from handlers.cart import SELF_DELIVERY_FEE
 
@@ -102,7 +102,8 @@ def default_kb() -> dict:
                 "so'mdan ortiq buyurtmaga bepul, 24 soat ichida; shoshilinch bo'lsa Yandex Taxi orqali; "
                 "viloyatlarga pochta orqali yuboramiz; do'kondan o'zi olib ketish bepul.")
     return {
-        "manzil": f"{SHOP_STREET}, mo'ljal: {SHOP_LANDMARK}. Aniq manzil profildagi aktual storisda ✅",
+        "manzil": (f"{SHOP_STREET}, mo'ljal: {SHOP_LANDMARK}. Ish vaqti (kelib olib ketish uchun): "
+                   f"{SHOP_HOURS}. Aniq manzil profildagi aktual storisda ✅"),
         "yetkazish": delivery,
         "buyurtma": "Telegram botimiz orqali: @ketoshopbot → «🛍 Do'konni ochish»",
         "optom": "Optom bo'yicha: 94 618 05 07",
