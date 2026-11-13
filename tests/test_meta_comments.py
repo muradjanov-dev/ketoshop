@@ -488,6 +488,23 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.db.rows[1]["status"], "ai_answered")
             self.assertEqual(await mc.retry_failed_once(self.bot), 0)            # once
 
+    async def test_retry_answers_one_copy_of_a_repeated_comment(self):
+        # 2026-11-13: one person pasted the same text under 14 comments of one
+        # post, tagging each — the retry must answer it once, not 14 times.
+        for n, who in enumerate(("@ali", "@vali", "@soli"), 1):
+            await self.db.insert_meta_comment(dict(
+                self.comment(comment_id=f"sub{n}", parent_id=f"top{n}", from_id="777", media_id="M1",
+                             text=f"{who} Bug'doyda kimyoviy moddalar ko'p"),
+                ai_confident=True, ai_draft="Tushunamiz, savolingiz muhim 🌿",
+                note="❌ AI yubora olmadi: [100] (#100) Field is only available for top-level comments."))
+        with patch.object(mc, "load_token", AsyncMock()), patch.object(mc, "token", lambda: "T"):
+            self.assertEqual(await mc.retry_failed_once(self.bot), 3)
+        self.assertEqual([cid for cid, _ in self.public], ["sub1"])
+        self.assertEqual(self.db.rows[1]["status"], "ai_answered")
+        for key in (2, 3):
+            self.assertEqual(self.db.rows[key]["status"], "seen")
+            self.assertEqual(self.db.rows[key]["note"], mc.REPEAT_NOTE)
+
     async def test_plain_questions_get_the_template_when_the_ai_is_unsure(self):
         # 2026-11-12: «Narxi qancha», «Нархи» waited for an admin.
         self.draft = comment_ai.Draft("narx", "…", False, "gpt-5.4-mini")
