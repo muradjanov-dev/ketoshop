@@ -86,6 +86,8 @@ RETRY_KEY = "meta_comments_retry_subreplies_2026_11_11_v2"
 RETRY_KEY_V3 = "meta_comments_retry_subreplies_2026_11_12_v3"
 # Shablon zaxirasi kelgach — «topa olmadi» deganlar yana bir marta ko'riladi.
 RECHECK_KEY_C = "meta_comments_recheck_2026_11_12c"
+# 100 g dagi raqamlar va tarkib katalogga qo'shilgach — uglevod/tarkib savollari yana bir marta.
+RECHECK_KEY_D = "meta_comments_recheck_2026_11_13d"
 MAX_ADS = 100
 TEXT_MAX = 1500
 REPLY_MAX = 900                       # Instagram izohi ~2200 belgi; javob qisqa
@@ -1119,9 +1121,10 @@ async def scheduler_loop(bot: Bot) -> None:
     # #190 deployidan oldin kelgan izohlar kartochkasi qolmaydi.
     _spawn(_cleanup_quietly(bot))
     try:
-        if await database.claim_release_notes(RECHECK_KEY_C):
-            n = await database.reset_meta_comments_unconfident()
-            logger.info("comments: %d unanswerable comment(s) queued for a re-check", n)
+        for key in (RECHECK_KEY_C, RECHECK_KEY_D):
+            if await database.claim_release_notes(key):
+                n = await database.reset_meta_comments_unconfident()
+                logger.info("comments: %d unanswerable comment(s) queued for a re-check (%s)", n, key)
     except Exception:
         logger.exception("comments re-check reset failed")
     try:
