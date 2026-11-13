@@ -1293,6 +1293,20 @@ async def init_db():
             )
         """)
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_order_pins_order ON order_pins(order_id)")
+        # Har admin (va kuzatuvchi) chatidagi buyurtma kartochkasi — holat
+        # o'zgarsa yangi xabar emas, shu xabar tahrirlanadi (egasi, 2026-11-13:
+        # "qayta yubormagin huddi o'shani edit qil").
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS order_cards (
+                order_id BIGINT NOT NULL,
+                chat_id BIGINT NOT NULL,
+                message_id BIGINT NOT NULL,
+                updated_at TIMESTAMP DEFAULT (NOW() AT TIME ZONE 'UTC'),
+                PRIMARY KEY (order_id, chat_id)
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_order_cards_message ON order_cards(chat_id, message_id)")
         # AI sotuvchi (ai_sales.py): kunlik token/$ sarfi — kun+model bo'yicha
         # bitta qator, kunlik hisobot (targets.py) shundan o'qiydi.
         await conn.execute("""
@@ -2973,6 +2987,36 @@ async def get_order(order_id: int) -> dict | None:
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM orders WHERE id = $1", order_id)
         return dict(row) if row else None
+
+
+# ===== Buyurtma kartochkalari (order_admin_feed.py) =====
+
+async def set_order_card(order_id: int, chat_id: int, message_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO order_cards (order_id, chat_id, message_id) VALUES ($1, $2, $3) "
+            "ON CONFLICT (order_id, chat_id) DO UPDATE SET message_id = EXCLUDED.message_id, "
+            "updated_at = NOW() AT TIME ZONE 'UTC'", order_id, chat_id, message_id)
+
+
+async def get_order_cards(order_id: int) -> dict[int, int]:
+    """{chat_id: message_id} — shu buyurtmaning har chatdagi kartochkasi."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT chat_id, message_id FROM order_cards WHERE order_id = $1", order_id)
+    return {int(r["chat_id"]): int(r["message_id"]) for r in rows}
+
+
+async def order_card_order(chat_id: int, message_id: int) -> int | None:
+    """Bu xabar qaysi buyurtmaning kartochkasi (yoki None)."""
+    async with pool.acquire() as conn:
+        value = await conn.fetchval(
+            "SELECT order_id FROM order_cards WHERE chat_id = $1 AND message_id = $2", chat_id, message_id)
+    return int(value) if value is not None else None
+
+
+async def delete_order_cards(order_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM order_cards WHERE order_id = $1", order_id)
 
 
 # ===== Yangi buyurtmalar pini (order_pins.py) =====

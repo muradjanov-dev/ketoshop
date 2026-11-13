@@ -35,6 +35,13 @@ Call sites (every place an order's status is written):
 
 Sends never raise and never block the caller: a dead admin chat or a slow
 Telegram must not undo or delay the status change that already happened.
+
+One card per order per chat (owner, 2026-11-13: "buyurtmalarni statusi
+o'zgarganidan keyin qayta yubormagin huddi o'shani edit qil, botdan ko'p xabar
+kelib bizni chalg'ityapti"): the new-order card (handlers/cart) and every card
+sent from here is remembered in order_cards; a later status change or delete
+EDITS that message — text plus the next-step buttons for admins — and only
+sends a new one when there is none or it can't be edited (deleted by hand).
 """
 import asyncio
 import html
@@ -306,15 +313,66 @@ async def _contact(order: dict) -> str:
                               order.get("customer_name"))
 
 
-async def _send_card(bot: Bot, chat_id: int, order: dict, contact: str, **card_kw) -> None:
+async def _buyer_username(order: dict) -> str | None:
+    if is_typed_by_admin(order) or not order.get("user_id"):
+        return None
+    try:
+        return ((await database.get_user(order["user_id"])) or {}).get("username")
+    except Exception:
+        return None
+
+
+def _markup(order: dict, lang: str, chat_id: int, username: str | None):
+    """The card's next-step buttons — admins only; a watcher's card has none."""
+    if chat_id not in ADMIN_IDS:
+        return None
+    from keyboards import seller_order_keyboard
+    return seller_order_keyboard(lang, order["id"], order.get("status") or "pending",
+                                 buyer_username=username, is_admin=True, source=order.get("source"))
+
+
+async def _cards(order_id) -> dict[int, int]:
+    try:
+        return await database.get_order_cards(order_id)
+    except Exception:
+        logger.warning("order cards of #%s unavailable", order_id, exc_info=True)
+        return {}
+
+
+async def remember_card(order_id, chat_id: int, message) -> None:
+    message_id = getattr(message, "message_id", None)
+    if not isinstance(message_id, int):
+        return
+    try:
+        await database.set_order_card(order_id, chat_id, message_id)
+    except Exception:
+        logger.warning("order card #%s in %s not remembered", order_id, chat_id, exc_info=True)
+
+
+async def _send_card(bot: Bot, chat_id: int, order: dict, contact: str, *,
+                     message_id: int | None = None, username: str | None = None,
+                     track: bool = False, buttons: bool = False, **card_kw) -> None:
     from handlers.cart import order_history_block
     lang = await database.get_user_language(chat_id)
     history = ("" if is_typed_by_admin(order)
                else await order_history_block(order.get("user_id"), order["id"], lang))
-    await bot.send_message(chat_id, build_card(order, lang, history=history,
-                                               contact=contact, **card_kw),
-                           parse_mode=ParseMode.HTML,
-                           disable_web_page_preview=True)
+    text = build_card(order, lang, history=history, contact=contact, **card_kw)
+    markup = _markup(order, lang, chat_id, username) if buttons else None
+    if message_id:
+        try:
+            await bot.edit_message_text(text, chat_id=chat_id, message_id=message_id,
+                                        parse_mode=ParseMode.HTML, disable_web_page_preview=True,
+                                        reply_markup=markup)
+            return
+        except Exception as exc:
+            if "not modified" in str(exc):
+                return
+            # Deleted by hand, or no longer text — a fresh card takes its place.
+            logger.info("order card #%s in %s not editable (%s) — sending anew", order["id"], chat_id, exc)
+    msg = await bot.send_message(chat_id, text, parse_mode=ParseMode.HTML,
+                                 disable_web_page_preview=True, reply_markup=markup)
+    if track:
+        await remember_card(order["id"], chat_id, msg)
 
 
 async def _send_all(bot: Bot, order_id: int, **card_kw) -> None:
@@ -327,12 +385,15 @@ async def _send_all(bot: Bot, order_id: int, **card_kw) -> None:
         logger.exception("order feed #%s failed", order_id)
 
 
-async def _send_order(bot: Bot, order: dict, *, skip=(), **card_kw) -> None:
+async def _send_order(bot: Bot, order: dict, *, skip=(), buttons: bool = True, **card_kw) -> None:
     contact = await _contact(order)
+    username = await _buyer_username(order) if buttons else None
+    cards = await _cards(order["id"])
 
     async def one(admin_id: int) -> None:
         try:
-            await _send_card(bot, admin_id, order, contact, **card_kw)
+            await _send_card(bot, admin_id, order, contact, message_id=cards.get(admin_id),
+                             username=username, track=True, buttons=buttons, **card_kw)
         except Exception as exc:
             logger.warning("order feed #%s → admin %s failed: %s", order["id"], admin_id, exc)
 
@@ -342,9 +403,13 @@ async def _send_order(bot: Bot, order: dict, *, skip=(), **card_kw) -> None:
 
 async def _send_deleted(bot: Bot, order: dict, by, skip) -> None:
     try:
-        await _send_order(bot, order, skip=skip, title="deleted_title", by=actor(by))
+        await _send_order(bot, order, skip=skip, buttons=False, title="deleted_title", by=actor(by))
     except Exception:
         logger.exception("order feed: deleted #%s failed", order.get("id"))
+    try:
+        await database.delete_order_cards(order["id"])
+    except Exception:
+        logger.warning("order cards of deleted #%s not cleared", order.get("id"), exc_info=True)
 
 
 OPEN_SEND_GAP = 1.0       # seconds between cards — one chat, keep under Telegram's limit
