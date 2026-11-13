@@ -128,6 +128,23 @@ def kb_with_defaults(stored: dict | None) -> dict:
     return kb
 
 
+# Oddiy savollar: AI aniq javob topmasa ham — bilim bazasidagi tayyor javob.
+_TEMPLATE_FOR = {"narx": "tpl_narx", "mavjudlik": "tpl_narx", "buyurtma": "tpl_bot",
+                 "yetkazish": "tpl_yetkazish"}
+
+
+def template_reply(category: str | None, kb: dict) -> str | None:
+    """Narx / bor-yo'qligi / buyurtma / yetkazish / manzil savoliga tayyor
+    javob (2026-11-12: «Narxi qancha», «Нархи» kabi izohlar kutib qolgan edi).
+    Sog'liq, shikoyat va boshqa savollar uchun — None (admin javob beradi)."""
+    if category == "manzil":
+        text = (kb.get("manzil") or "").strip()
+        return f"Assalomu alaykum! Manzilimiz: {text} Viloyatlarga pochta orqali ham yuboramiz 🌿" if text else None
+    key = _TEMPLATE_FOR.get(category or "")
+    text = (kb.get(key) or "").strip() if key else ""
+    return text or None
+
+
 # ─────────────────────────────── the policy ─────────────────────────────────
 
 def decide(category: str | None, confident: bool, mode: str) -> str:

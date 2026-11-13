@@ -225,6 +225,30 @@ class WebhookEndpointTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.ingested, [("18000000000000001", "webhook")])
 
 
+class SubReplyCheckTest(unittest.IsolatedAsyncioTestCase):
+    async def test_no_replies_lookup_on_an_answer_to_an_answer(self):
+        # 2026-11-12: GET /{reply}/replies itself raised #100 for 38 comments.
+        called = []
+
+        async def graph(*a, **k):
+            called.append(a)
+            return {"data": []}
+        with patch.object(mc, "_graph", graph):
+            self.assertIsNone(await mc.our_existing_reply(None, IDENT, {"comment_id": "sub", "parent_id": "top",
+                                                                        "platform": "ig"}))
+            self.assertEqual(called, [])
+            await mc.our_existing_reply(None, IDENT, {"comment_id": "top", "platform": "ig"})
+            self.assertEqual(len(called), 1)
+
+    def test_template_for_plain_questions_only(self):
+        kb = comment_ai.kb_with_defaults({})
+        self.assertIn("@ketoshopbot", comment_ai.template_reply("narx", kb))
+        self.assertIn("Oqsoy", comment_ai.template_reply("manzil", kb))
+        self.assertIn("pochta", comment_ai.template_reply("yetkazish", kb))
+        for cat in ("salomatlik", "shikoyat", "boshqa", "spam", None):
+            self.assertIsNone(comment_ai.template_reply(cat, kb))
+
+
 class ReplyShapeTest(unittest.TestCase):
     """2026-11-11: 37 replies failed with "(#100) Field is only available for
     top-level comments" — they were answers to answers."""
@@ -453,6 +477,40 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.public, [("sub1", "120 000 so'm 🌿")])
             self.assertEqual(self.db.rows[1]["status"], "ai_answered")
             self.assertEqual(await mc.retry_failed_once(self.bot), 0)            # once
+
+    async def test_retry_answers_one_copy_of_a_repeated_comment(self):
+        # 2026-11-13: one person pasted the same text under 14 comments of one
+        # post, tagging each — the retry must answer it once, not 14 times.
+        for n, who in enumerate(("@ali", "@vali", "@soli"), 1):
+            await self.db.insert_meta_comment(dict(
+                self.comment(comment_id=f"sub{n}", parent_id=f"top{n}", from_id="777", media_id="M1",
+                             text=f"{who} Bug'doyda kimyoviy moddalar ko'p"),
+                ai_confident=True, ai_draft="Tushunamiz, savolingiz muhim 🌿",
+                note="❌ AI yubora olmadi: [100] (#100) Field is only available for top-level comments."))
+        with patch.object(mc, "load_token", AsyncMock()), patch.object(mc, "token", lambda: "T"):
+            self.assertEqual(await mc.retry_failed_once(self.bot), 3)
+        self.assertEqual([cid for cid, _ in self.public], ["sub1"])
+        self.assertEqual(self.db.rows[1]["status"], "ai_answered")
+        for key in (2, 3):
+            self.assertEqual(self.db.rows[key]["status"], "seen")
+            self.assertEqual(self.db.rows[key]["note"], mc.REPEAT_NOTE)
+
+    async def test_plain_questions_get_the_template_when_the_ai_is_unsure(self):
+        # 2026-11-12: «Narxi qancha», «Нархи» waited for an admin.
+        self.draft = comment_ai.Draft("narx", "…", False, "gpt-5.4-mini")
+        await mc.ingest(self.bot, self.comment(text="Narxi qancha"), source="webhook")
+        await self.settle()
+        self.assertEqual(len(self.public), 1)
+        self.assertIn("@ketoshopbot", self.public[0][1])
+        self.assertEqual(self.bot.sent, [])
+        self.assertEqual(self.db.rows[1]["status"], "ai_answered")
+
+    async def test_health_or_complaint_still_go_to_the_admins(self):
+        self.draft = comment_ai.Draft("salomatlik", "…", False, "gpt-5.4-mini")
+        await mc.ingest(self.bot, self.comment(text="Diabetga mumkinmi?"), source="webhook")
+        await self.settle()
+        self.assertEqual(self.public, [])
+        self.assertEqual(len(self.bot.sent), 2)
 
     async def test_spam_gets_nothing(self):
         self.draft = comment_ai.Draft("spam", "", True, "gpt-5.4-mini")
