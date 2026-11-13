@@ -271,7 +271,7 @@ class ReplyShapeTest(unittest.TestCase):
     def test_finalize_never_asks_for_the_product_in_our_own_post(self):
         out = comment_ai.finalize("Нархи канча", "Кепак — 10 000 со‘м 😊 Агар бошқа маҳсулот бўлса, "
                                                  "номини ёзинг — аниқ нархини айтаман.")
-        self.assertEqual(out, "Кепак — 10 000 сўм 😊 Барча нархлар ва маҳсулотларимиз @ketoshopbot да 🌿")
+        self.assertEqual(out, "Кепак — 10 000 сўм 😊 Барча нархлар ва маҳсулотларимиз Telegram ботимиз @ketoshopbot да 🌿")
 
 
 class PolicyTest(unittest.TestCase):

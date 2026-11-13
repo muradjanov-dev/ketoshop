@@ -150,6 +150,27 @@ class RulesTest(unittest.TestCase):
             self.assertNotIn("{kanal}", rules)
         self.assertIn("Shikoyat, sog'liq, manzil, yetkazish va spamda qo'shma", comment_ai.RULES)
 
+    def test_iltimos_only_where_natural(self):
+        # Egasi, 2026-11-13: "iltimos deyilmaydigan joylarda iltimos deb notabiiy yozyapsan".
+        f = comment_ai.finalize
+        self.assertTrue(f("@ketoshop.uz рахмат", "Илтимос 🤍 Раҳмат сизга!").startswith("Арзимайди 🤍"))
+        self.assertTrue(f("Rahmat", "Iltimos! Sizga ham rahmat 🙂").startswith("Arzimaydi."))
+        self.assertIn("Agar xohlasangiz, botga", f("Narxi?", "Iltimos, agar xohlasangiz, botga kiring."))
+        self.assertIn("Iltimos, bizga Direct", f("Kelmadi", "Kechirasiz 😕 Iltimos, bizga Direct'ga yozing."))
+        self.assertEqual(f("Rahmat", "Iltimos Direct'ga yozing"), "Iltimos Direct'ga yozing")   # not a "you're welcome"
+        self.assertIn("faqat odamdan aniq bir ish so'raganda", comment_ai.RULES)
+
+    def test_bot_and_channel_are_said_to_be_on_telegram(self):
+        # Egasi, 2026-11-13: "ketoshopbot bu telegramda … telegramda ekanini aytib o't".
+        f = comment_ai.finalize
+        self.assertEqual(f("Narxi?", "Narxlar @ketoshopbot da 🌿"), "Narxlar Telegram'dagi @ketoshopbot da 🌿")
+        self.assertEqual(f("Нархи", "Нархлар @ketoshopbot да"), "Нархлар Телеграмдаги @ketoshopbot да")
+        self.assertIn("@ketoshopbot (Telegram)", f("Сколько?", "Цены в боте @ketoshopbot, пишите"))
+        self.assertEqual(f("Narxi?", "Telegram botimiz @ketoshopbot da"), "Telegram botimiz @ketoshopbot da")
+        self.assertIn("Telegram'dagi @ketoshop_uz", f("Rahmat", "Retseptlar @ketoshop_uz kanalimizda"))
+        for rules in (comment_ai.RULES, comment_ai.FOLLOWUP_RULES):
+            self.assertIn("Telegram botimiz @ketoshopbot", rules)
+
     def test_direct_in_cyrillic(self):
         out = comment_ai.finalize("Тел номер беринг", "Agar xohlasangiz, Direct'ga ham yo'llab qo'yamiz 🙂")
         self.assertIn("Директга", out)
