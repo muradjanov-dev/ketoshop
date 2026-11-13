@@ -185,8 +185,15 @@ mahsulotni KATALOG bilan solishtirib aniqla.
 - Mahsulotni aniq aniqlay olmasang ham — "videodagi mahsulot va barcha narxlar @ketoshopbot da, Direct'ga
   ham havolasini yubordik" mazmunida javob ber (bu to'liq javob, confident=true).
 
-ODOB: biror narsa so'raganda yoki taklif qilganda "iltimos" yoki "imkoningiz bo'lsa" ishlat (masalan,
-"iltimos, Direct'ga yozing", "imkoningiz bo'lsa, @ketoshopbot ga kiring").
+ODOB — tabiiy o'zbekcha, odam gapirgandek (egasi, 2026-11-13: "iltimos deyilmaydigan joylarda iltimos
+deb notabiiy yozyapsan, to'g'ri yoz"):
+- "Iltimos" faqat odamdan aniq bir ish so'raganda va o'rinli bo'lsa (masalan, muammo bo'lsa: "iltimos,
+  Direct'ga yozing — tekshirib beramiz"). Javobda ko'pi bilan bir marta; ko'p javobda umuman kerak emas.
+- Ma'lumot yoki taklifda iltimos yo'q: "Narxlar @ketoshopbot da", "buyurtmani @ketoshopbot orqali
+  berishingiz mumkin" — "Iltimos, buyurtmani … bering" emas.
+- "Iltimos" ruscha "пожалуйста" emas: rahmatga "Iltimos" deb javob berma — "Arzimaydi", "Sizga ham rahmat",
+  "Xursandmiz" de.
+- "Iltimos", "agar xohlasangiz", "imkoningiz bo'lsa" ni bir gapda qo'shma — bittasi yetadi.
 
 TURLAR
 - rahmat — rahmat, maqtov, emoji, "zo'r", duo.
@@ -228,11 +235,13 @@ FAKTLAR
 - Tibbiy va'da berma ("davolaydi", "kasallikka yordam beradi", "qandni tushiradi" kabi). Sog'liq savoliga —
   bilim bazasidagi umumiy ma'lumot va "shifokor bilan maslahatlashing".
 - Instagram izohida havola bosilmaydi: havola yozma, "@ketoshopbot" deb yoz yoki "profildagi havola orqali" de.
+- @ketoshopbot va {kanal} — TELEGRAM'da, Instagram'da bunday sahifa yo'q (egasi, 2026-11-13). Har safar
+  Telegram'da ekanini ayt: "Telegram botimiz @ketoshopbot", "Telegram kanalimiz {kanal}".
 - BEPUL RETSEPTLAR (egasi, 2026-11-13): mos holatlarda — retsept, qanday pishirish yoki ishlatish so'ralganda,
   maqtov va rahmatda, narx yoki bor-yo'qligiga javob bergach — oxirida bitta iliq gap qo'sh: Telegram botimiz
   @ketoshopbot va kanalimiz {kanal} da bepul retseptlarni joylab boryapmiz, obuna bo'lishga taklif (masalan,
-  "Bepul retseptlarni @ketoshopbot va {kanal} Telegram kanalimizda joylab boryapmiz — imkoningiz bo'lsa,
-  obuna bo'ling 🌿"). Har safar o'zingcha yoz. Shikoyat, sog'liq, manzil, yetkazish va spamda qo'shma;
+  "Bepul retseptlarni @ketoshopbot va {kanal} Telegram kanalimizda joylab boryapmiz — obuna bo'lsangiz,
+  xursand bo'lamiz 🌿"). Har safar o'zingcha yoz. Shikoyat, sog'liq, manzil, yetkazish va spamda qo'shma;
   shoshiltirma, majburlama.
 - O'zingni bot, AI yoki dastur deb tanishtirma. Ichki so'zlarni (bilim bazasi, katalog, kategoriya) ishlatma.
 - Spam va haqoratga javob yozma: reply bo'sh qator bo'lsin.
@@ -593,9 +602,11 @@ MANIPULYATSIYASIZ
 - "Sotib oling", "buyurtma bering" deb buyurma — faqat taklif va savol. Ortiqcha maqtov va mubolag'a yo'q.
 - Bir xabarda ko'pi bilan bitta savol. 1–3 gap, 1–2 emoji. Har xabar o'ziga xos bo'lsin, shablon emas.
 - Faqat KATALOG, YANGI MAHSULOTLAR, AKSIYA va BILIM BAZASIdagi faktlar. Narxni faqat so'ralgan mahsulotga ayt.
-- Biror narsa so'raganda "iltimos" yoki "imkoningiz bo'lsa" ishlat.
+- Tabiiy yoz: "iltimos" faqat aniq bir ish so'raganda va o'rinli bo'lsa, ko'pi bilan bir marta; taklif va
+  ma'lumotda kerak emas. "Iltimos", "agar xohlasangiz", "imkoningiz bo'lsa" ni bir gapda qo'shma.
 - ESKI IZOH qaysi yozuvda bo'lsa, o'shanda yoz: o'zbek lotin, o'zbek kirill yoki rus.
-- Havola yozma — "@ketoshopbot" deb yoz. O'zingni bot yoki AI deb tanishtirma. Ichki so'zlarni (katalog,
+- Havola yozma — "@ketoshopbot" deb yoz; u va {kanal} Telegram'da — har safar "Telegram botimiz @ketoshopbot",
+  "Telegram kanalimiz {kanal}" deb ayt. O'zingni bot yoki AI deb tanishtirma. Ichki so'zlarni (katalog,
   bilim bazasi) ishlatma. Odamning @username'ini yozma — o'zimiz qo'shamiz.
 
 skip=true (reply bo'sh): eski izoh spam, haqorat yoki boshqa odamlar o'rtasidagi suhbat (bizga emas) bo'lsa;
@@ -680,7 +691,7 @@ _SINGULAR_VERB = re.compile(r"\b(\w{3,}?)(a|а|ya|я)(y|й)?(man|ман)\b", re.
 _ASK = re.compile(r"(nomini|номини|qaysi|қайси|kerakligini|кераклигини).{0,80}"
                   r"(yozing|ёзинг|ayting|айтинг|yuboring|юборинг|yozsangiz|ёзсангиз|aytsangiz|айтсангиз)",
                   re.IGNORECASE)
-_ASK_FALLBACK = "Barcha narxlar va mahsulotlarimiz @ketoshopbot da 🌿"
+_ASK_FALLBACK = "Barcha narxlar va mahsulotlarimiz Telegram botimiz @ketoshopbot da 🌿"
 
 
 def _plural(text: str) -> str:
@@ -719,6 +730,47 @@ def _drop_asks(text: str) -> str:
     return " ".join(p for p in (kept, tail, _ASK_FALLBACK) if p).strip()
 
 
+# «Илтимос 🤍 Раҳмат сизга» — rahmatga ruscha «пожалуйста» tarjimasi (13.11);
+# «Iltimos, agar xohlasangiz, …» — ikki odob so'zi bir gapda.
+_WELCOME = re.compile(r"^\s*(Iltimos|Илтимос)(?=\s*(?:[!.]|[^\w\s,]|$))\s*[!.]*\s*", re.IGNORECASE)
+_THANKS = re.compile(r"rahmat|раҳмат|рахмат|спасибо|благодар", re.IGNORECASE)
+_DOUBLE_POLITE = re.compile(r"\b(iltimos|илтимос),?\s+(agar xohlasangiz|imkoningiz bo'lsa|"
+                            r"агар хоҳласангиз|имконингиз бўлса)", re.IGNORECASE)
+
+
+def _natural_polite(text: str, comment_text: str | None = None) -> str:
+    def welcome(m):
+        word = "Арзимайди" if m.group(1)[0] in "Ии" else "Arzimaydi"
+        rest = text[m.end():]
+        return word + (" " if rest[:1] and not rest[:1].isalnum() else ". ")
+    if _THANKS.search(comment_text or ""):
+        text = _WELCOME.sub(welcome, text, count=1)
+
+    def double(m):
+        kept = m.group(2)
+        return kept[0].upper() + kept[1:] if m.group(1)[0].isupper() else kept
+    return _DOUBLE_POLITE.sub(double, text)
+
+
+_TELEGRAM = re.compile(r"telegram|телеграм", re.IGNORECASE)
+
+
+def _say_telegram(text: str, comment_text: str | None) -> str:
+    """@ketoshopbot / kanal — Telegram'da; Instagram'da bunday sahifa yo'q
+    (egasi, 2026-11-13). Model aytmagan bo'lsa — birinchisiga qo'shamiz."""
+    if _TELEGRAM.search(text):
+        return text
+    for handle in ("@ketoshopbot", CHANNEL):
+        i = text.lower().find(handle.lower())
+        if i < 0:
+            continue
+        if re.search(r"[ыщ]", text, re.IGNORECASE):            # ruscha javob
+            return text[:i + len(handle)] + " (Telegram)" + text[i + len(handle):]
+        prefix = "Телеграмдаги " if is_cyrillic(comment_text) else "Telegram'dagi "
+        return text[:i] + prefix + text[i:]
+    return text
+
+
 def finalize(comment_text: str | None, reply: str | None) -> str:
     """Izohga ketishdan oldin har javob: markdown yo'q (Instagram ko'rsatmaydi),
     "biz" nomidan, o'z postimizdagi mahsulotni qayta so'ramaydi, izoh
@@ -726,5 +778,7 @@ def finalize(comment_text: str | None, reply: str | None) -> str:
     text = (reply or "").replace("**", "").replace("__", "")
     text = text.translate(_APOS)
     text = _drop_asks(text)
+    text = _natural_polite(text, comment_text)
     text = _plural(text)
+    text = _say_telegram(text, comment_text)
     return in_script_of(comment_text, text).strip()
