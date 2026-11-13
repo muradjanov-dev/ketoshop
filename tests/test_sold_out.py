@@ -87,7 +87,8 @@ class MiniAppTextsTest(unittest.TestCase):
         html = INDEX.read_text(encoding="utf-8")
         # Both the catalog grid and the home rows use the stamp + note.
         self.assertEqual(html.count("soldOutStampHtml(p) +"), 2)
-        self.assertEqual(html.count("cardNoteHtml(p);"), 2)
+        # The catalog card goes on with its «+ Savatga» (2026-11-12).
+        self.assertEqual(len(re.findall(r"cardNoteHtml\(p\)\s*[;+]", html)), 2)
 
 
 if __name__ == "__main__":
