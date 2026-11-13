@@ -29,6 +29,9 @@ import re
 import time
 from dataclasses import dataclass
 
+# Telegram kanali (obuna darvozasi bilan bir xil) — bepul retseptlar shu yerda.
+CHANNEL = "@" + (os.getenv("REQUIRED_CHANNEL_USERNAME") or "ketoshop_uz").lstrip("@")
+
 logger = logging.getLogger(__name__)
 
 # TZ: "Oddiy izohlarni ajratish va qisqa javoblar uchun claude-haiku-5-5 ...
@@ -225,6 +228,12 @@ FAKTLAR
 - Tibbiy va'da berma ("davolaydi", "kasallikka yordam beradi", "qandni tushiradi" kabi). Sog'liq savoliga —
   bilim bazasidagi umumiy ma'lumot va "shifokor bilan maslahatlashing".
 - Instagram izohida havola bosilmaydi: havola yozma, "@ketoshopbot" deb yoz yoki "profildagi havola orqali" de.
+- BEPUL RETSEPTLAR (egasi, 2026-11-13): mos holatlarda — retsept, qanday pishirish yoki ishlatish so'ralganda,
+  maqtov va rahmatda, narx yoki bor-yo'qligiga javob bergach — oxirida bitta iliq gap qo'sh: Telegram botimiz
+  @ketoshopbot va kanalimiz {kanal} da bepul retseptlarni joylab boryapmiz, obuna bo'lishga taklif (masalan,
+  "Bepul retseptlarni @ketoshopbot va {kanal} Telegram kanalimizda joylab boryapmiz — imkoningiz bo'lsa,
+  obuna bo'ling 🌿"). Har safar o'zingcha yoz. Shikoyat, sog'liq, manzil, yetkazish va spamda qo'shma;
+  shoshiltirma, majburlama.
 - O'zingni bot, AI yoki dastur deb tanishtirma. Ichki so'zlarni (bilim bazasi, katalog, kategoriya) ishlatma.
 - Spam va haqoratga javob yozma: reply bo'sh qator bo'lsin.
 
@@ -238,6 +247,7 @@ confident — javobing izohga to'liq va to'g'ri javobmi:
 dm — shu odamga Direct'ga boradigan 1–2 gaplik samimiy xabar: izoh qoldirgani uchun rahmat va barcha
 sog'lom keto va PP mahsulotlarimizni ko'rib chiqishga iliq taklif. Har safar o'zingcha, ijodiy yoz,
 izoh yozuvida. Havola YOZMA — uni o'zimiz oxiriga qo'shamiz. Spam va haqoratga — bo'sh qator."""
+RULES = RULES.replace("{kanal}", CHANNEL)
 
 
 def comment_prompt(c: dict) -> str:
@@ -566,11 +576,11 @@ NIMA YOZISH — ESKI IZOH mazmuniga qarab bittasini tanla:
 - Mahsulot, narx, bor-yo'qligi yoki buyurtma haqida so'ragan bo'lsa: o'sha mahsulot (izohdan, POST MATNIdan
   yoki rasmdan; nomi KATALOGdagidek) hozir ham Keto shopda borligini ayt. Katalogda «tugagan» bo'lsa — bor
   dema. Odam olgan-olmaganini bilmaymiz, shuning uchun shartli so'ra: "Agar olgan bo'lsangiz, nima
-  pishirdingiz, qanday chiqdi? Izohda bo'lishsangiz xursand bo'lamiz". Retseptlar uchun @ketoshopbot ga
-  kirishni taklif qil.
+  pishirdingiz, qanday chiqdi? Izohda bo'lishsangiz xursand bo'lamiz". Bepul retseptlarni Telegram botimiz
+  @ketoshopbot va kanalimiz {kanal} da joylab borayotganimizni ayt va obuna bo'lishga iliq taklif qil.
 - Rahmat, maqtov yoki umumiy fikr bo'lsa: iliq salom va YANGI MAHSULOTLAR ichidan uning qiziqishiga (post
-  mavzusiga) mos 1–3 tasini ayt — "Ko'rdingizmi?" kabi. Mos yangi mahsulot bo'lmasa — yangi retseptlar va
-  mahsulotlar @ketoshopbot da ekanini ayt.
+  mavzusiga) mos 1–3 tasini ayt — "Ko'rdingizmi?" kabi. Mos yangi mahsulot bo'lmasa — bepul retseptlarni
+  @ketoshopbot va {kanal} Telegram kanalimizda joylab borayotganimizni ayt va obuna bo'lishga taklif qil.
 - Shikoyat, norozilik yoki tanqid bo'lsa: samimiy — fikri uchun rahmat, uni e'tiborga olganimizni ayt; savoli
   yoki muammosi qolgan bo'lsa, iltimos yozishini so'ra. Mahsulot reklama qilma, "yaxshiladik" kabi
   tekshirib bo'lmaydigan gap yozma.
@@ -590,6 +600,7 @@ MANIPULYATSIYASIZ
 
 skip=true (reply bo'sh): eski izoh spam, haqorat yoki boshqa odamlar o'rtasidagi suhbat (bizga emas) bo'lsa;
 yoki qayta yozish noo'rin bo'lsa (odam qattiq norozi bo'lib ketgan, yana yozish uni bezovta qiladi)."""
+FOLLOWUP_RULES = FOLLOWUP_RULES.replace("{kanal}", CHANNEL)
 
 FOLLOWUP_SCHEMA = {
     "type": "object",
