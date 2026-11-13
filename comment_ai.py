@@ -445,7 +445,7 @@ async def _ask(model: str, system: list, user: str, effort: str, fallback: bool,
 
 
 async def _ask_openai(key: str, model: str, instructions: str, user: str, effort: str,
-                      image: str | None = None) -> dict | None:
+                      image: str | None = None, schema: dict | None = None) -> dict | None:
     """OpenAI Responses API, qat'iy JSON sxemasi bilan (AI sotuvchidagi kabi
     Responses — GPT-5.x da reasoning shu yerda ishlaydi). `image` — post
     rasmi yoki reels muqovasi (detail "low" — arzon)."""
@@ -463,7 +463,8 @@ async def _ask_openai(key: str, model: str, instructions: str, user: str, effort
             model=model, instructions=instructions,
             input=[{"role": "user", "content": content}],
             reasoning={"effort": effort}, max_output_tokens=MAX_TOKENS,
-            text={"format": {"type": "json_schema", "name": "izoh_javob", "schema": SCHEMA, "strict": True}},
+            text={"format": {"type": "json_schema", "name": "izoh_javob" if schema is None else "izoh_qayta",
+                             "schema": schema or SCHEMA, "strict": True}},
         )
     except openai.RateLimitError:
         logger.warning("comment AI rate-limited (%s)", model)
@@ -471,7 +472,7 @@ async def _ask_openai(key: str, model: str, instructions: str, user: str, effort
     except openai.BadRequestError as e:
         if image:   # post rasmi ochilmadi (muddati o'tgan havola) — rasmsiz
             logger.info("comment AI: image refused (%s), retrying without it", e.message)
-            return await _ask_openai(key, model, instructions, user, effort)
+            return await _ask_openai(key, model, instructions, user, effort, schema=schema)
         logger.warning("comment AI error 400 (%s): %s", model, e.message)
         return None
     except openai.APIStatusError as e:
@@ -501,6 +502,8 @@ async def _ask_openai(key: str, model: str, instructions: str, user: str, effort
     except (TypeError, ValueError):
         logger.warning("comment AI returned non-JSON: %.200s", text)
         return None
+    if schema is not None:
+        return data if isinstance(data, dict) and isinstance(data.get("reply"), str) else None
     if data.get("category") not in CATEGORIES or not isinstance(data.get("reply"), str):
         return None
     return data
@@ -551,6 +554,79 @@ async def draft(comment: dict, kb: dict) -> Draft | None:
     return _build(first, better, SIMPLE_MODEL, COMPLEX_MODEL)
 
 
+# ─────────────────────────── qayta aloqa (follow-up) ────────────────────────
+
+FOLLOWUP_RULES = """Sen Keto shop jamoasi nomidan Instagram yoki Facebook'da bir oy va undan ham oldin izoh
+qoldirgan odamga o'sha izohi ostida qayta, samimiy yozasan (egasi, 2026-11-13). Maqsad — munosabatni iliq
+davom ettirish va unga foydali yangilikni aytish; sotish emas. Odam bizni eslab, o'zi qiziqsin.
+
+KIM NOMIDAN: har doim "biz" — Keto shop jamoasi ("ko'rdingizmi", "xursand bo'lamiz", "bizda bor").
+
+NIMA YOZISH — ESKI IZOH mazmuniga qarab bittasini tanla:
+- Mahsulot, narx, bor-yo'qligi yoki buyurtma haqida so'ragan bo'lsa: o'sha mahsulot (izohdan, POST MATNIdan
+  yoki rasmdan; nomi KATALOGdagidek) hozir ham Keto shopda borligini ayt. Katalogda «tugagan» bo'lsa — bor
+  dema. Odam olgan-olmaganini bilmaymiz, shuning uchun shartli so'ra: "Agar olgan bo'lsangiz, nima
+  pishirdingiz, qanday chiqdi? Izohda bo'lishsangiz xursand bo'lamiz". Retseptlar uchun @ketoshopbot ga
+  kirishni taklif qil.
+- Rahmat, maqtov yoki umumiy fikr bo'lsa: iliq salom va YANGI MAHSULOTLAR ichidan uning qiziqishiga (post
+  mavzusiga) mos 1–3 tasini ayt — "Ko'rdingizmi?" kabi. Mos yangi mahsulot bo'lmasa — yangi retseptlar va
+  mahsulotlar @ketoshopbot da ekanini ayt.
+- Shikoyat, norozilik yoki tanqid bo'lsa: samimiy — fikri uchun rahmat, uni e'tiborga olganimizni ayt; savoli
+  yoki muammosi qolgan bo'lsa, iltimos yozishini so'ra. Mahsulot reklama qilma, "yaxshiladik" kabi
+  tekshirib bo'lmaydigan gap yozma.
+- Sog'liq savoli bo'lsa: javob topdimi deb so'ra, yana savoli bo'lsa yozishini ayt. Tibbiy va'da yo'q,
+  mahsulot reklamasi yo'q.
+- AKSIYA berilgan bo'lsa va odamning qiziqishiga mos kelsa — bir gap bilan ayt. Boshqa chegirma o'ylab topma.
+
+MANIPULYATSIYASIZ
+- Shoshiltirma ("faqat bugun", "tez tugaydi", "oxirgi imkoniyat" yo'q), qo'rqitma, aybdor his qildirma.
+- "Sotib oling", "buyurtma bering" deb buyurma — faqat taklif va savol. Ortiqcha maqtov va mubolag'a yo'q.
+- Bir xabarda ko'pi bilan bitta savol. 1–3 gap, 1–2 emoji. Har xabar o'ziga xos bo'lsin, shablon emas.
+- Faqat KATALOG, YANGI MAHSULOTLAR, AKSIYA va BILIM BAZASIdagi faktlar. Narxni faqat so'ralgan mahsulotga ayt.
+- Biror narsa so'raganda "iltimos" yoki "imkoningiz bo'lsa" ishlat.
+- ESKI IZOH qaysi yozuvda bo'lsa, o'shanda yoz: o'zbek lotin, o'zbek kirill yoki rus.
+- Havola yozma — "@ketoshopbot" deb yoz. O'zingni bot yoki AI deb tanishtirma. Ichki so'zlarni (katalog,
+  bilim bazasi) ishlatma. Odamning @username'ini yozma — o'zimiz qo'shamiz.
+
+skip=true (reply bo'sh): eski izoh spam, haqorat yoki boshqa odamlar o'rtasidagi suhbat (bizga emas) bo'lsa;
+yoki qayta yozish noo'rin bo'lsa (odam qattiq norozi bo'lib ketgan, yana yozish uni bezovta qiladi)."""
+
+FOLLOWUP_SCHEMA = {
+    "type": "object",
+    "properties": {"reply": {"type": "string"}, "skip": {"type": "boolean"}},
+    "required": ["reply", "skip"],
+    "additionalProperties": False,
+}
+
+
+def followup_prompt(c: dict, days_ago: int) -> str:
+    platform = "Instagram" if c.get("platform") == "ig" else "Facebook"
+    where = f"reklama «{c['ad_name']}»" if c.get("ad_name") else ("reklama" if c.get("ad_id") else "post")
+    caption = (c.get("post_caption") or "").strip()
+    post = f"POST MATNI:\n{caption[:700]}\n\n" if caption else ""
+    ours = (c.get("reply_text") or "").strip()
+    return (f"{platform} · {where}\nIzoh muallifi: {c.get('username') or 'mijoz'}\n"
+            f"Izoh yozilgan: taxminan {days_ago} kun oldin\n\n{post}"
+            f"ESKI IZOH:\n{(c.get('text') or '').strip()[:1000]}\n\n"
+            f"O'SHANDA BIZ YOZGAN JAVOB:\n{ours[:500] or '—'}")
+
+
+async def followup(comment: dict, kb: dict, days_ago: int, new_products: str, offers: str) -> str | None:
+    """Qayta aloqa matni; None — yozmaymiz (AI skip dedi, kalit yo'q yoki xato).
+    Faqat GPT orqali (izohlar AI'si ham GPT-first)."""
+    if await provider() != "openai":
+        return None
+    key = await _openai_key()
+    instructions = (FOLLOWUP_RULES + "\n\n" + kb_block(kb, await catalog_text())
+                    + "\n\nYANGI MAHSULOTLAR (oxirgi haftalarda qo'shilgan)\n" + (new_products or "—")
+                    + "\n\nAKSIYA\n" + (offers or "hozir yo'q"))
+    data = await _ask_openai(key, openai_model(), instructions, followup_prompt(comment, days_ago),
+                             effort="low", image=comment.get("post_image") or None, schema=FOLLOWUP_SCHEMA)
+    if not data or data.get("skip") or not (data.get("reply") or "").strip():
+        return None
+    return finalize(comment.get("text"), data["reply"]) or None
+
+
 # ─────────────────────────────── helpers ────────────────────────────────────
 
 _CYR = re.compile(r"[а-яёўқғҳ]", re.IGNORECASE)
@@ -561,6 +637,7 @@ def is_cyrillic(text: str | None) -> bool:
     return bool(letters) and sum(1 for ch in letters if _CYR.match(ch)) * 2 > len(letters)
 
 
+_DIRECT = re.compile(r"\bDirect\b")
 _APOS = str.maketrans({"‘": "'", "’": "'", "`": "'", "´": "'", "ʼ": "'"})
 _CYR_APOS = {"о'": "ў", "О'": "Ў", "г'": "ғ", "Г'": "Ғ"}
 
@@ -577,8 +654,10 @@ def in_script_of(comment_text: str | None, reply: str) -> str:
     havolalarga translit tegmaydi."""
     if is_cyrillic(comment_text):
         from translit import lat_to_cyr
+        # «Direct'ga» → «Диреcтъга» edi (13.11): c ning o'zbekcha harfi yo'q.
+        reply = _DIRECT.sub("Direkt", reply.translate(_APOS)).replace("Direkt'", "Direkt")
         # Avval kirilldagi «о'» → «ў» (aks holda translit «'» ni «ъ» qiladi).
-        return _fix_cyr_apos(lat_to_cyr(_fix_cyr_apos(reply.translate(_APOS))))
+        return _fix_cyr_apos(lat_to_cyr(_fix_cyr_apos(reply)))
     return reply
 
 

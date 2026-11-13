@@ -1258,6 +1258,10 @@ async def init_db():
         await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS ai_confident BOOLEAN")
         await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS ai_dm TEXT")
         await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS dm_sent_at TIMESTAMP")
+        # 2026-11-13: bir oy oldingi izoh egalariga qayta yozish (comment_followup.py) —
+        # bir odamga bir marta; followup_text '' — AI yozmaslikni tanlagan yoki yuborilmagan.
+        await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup_at TIMESTAMP")
+        await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup_text TEXT")
         # Izohlar tokeni (ads_read tokenidan ALOHIDA), AI rejimi, bilim bazasi.
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS meta_comments_state (
@@ -1275,6 +1279,8 @@ async def init_db():
         """)
         await conn.execute(
             "INSERT INTO meta_comments_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+        await conn.execute(
+            "ALTER TABLE meta_comments_state ADD COLUMN IF NOT EXISTS followup_on BOOLEAN NOT NULL DEFAULT TRUE")
         # Adminlar chatida pin qilingan yangi buyurtma kartochkalari
         # (order_pins.py, 2026-11-11) — buyurtma tasdiqlansa olinadi.
         await conn.execute("""
@@ -8498,6 +8504,75 @@ async def set_meta_comments_kb(kb: dict) -> None:
     async with pool.acquire() as conn:
         await conn.execute("UPDATE meta_comments_state SET kb = $1::jsonb WHERE id = 1",
                            json.dumps(kb, ensure_ascii=False))
+
+
+async def set_meta_comments_followup(on: bool) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE meta_comments_state SET followup_on = $1 WHERE id = 1", on)
+
+
+async def meta_comment_followup_candidates(days: int, limit: int = 10) -> list[dict]:
+    """Qayta yozish uchun: `days` kundan oldin izoh qoldirgan va o'shanda javob
+    olgan odamlar — har biridan oxirgi eski izohi. Bir odamga bir marta: unga
+    ilgari qayta yozilgan yoki oxirgi `days` kunda o'zi izoh qoldirgan bo'lsa
+    (yangi javob olgan) — tanlanmaydi. Yangiroqlari oldin."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT * FROM (
+                   SELECT DISTINCT ON (lower(m.username)) m.*
+                   FROM meta_comments m
+                   WHERE m.username IS NOT NULL AND m.username <> ''
+                     AND m.status IN ('answered', 'ai_answered')
+                     AND COALESCE(m.category, '') <> 'spam'
+                     AND COALESCE(m.created_at, m.received_at)
+                         <= (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)
+                     AND NOT EXISTS (
+                         SELECT 1 FROM meta_comments o
+                         WHERE lower(o.username) = lower(m.username)
+                           AND (o.followup_at IS NOT NULL
+                                OR COALESCE(o.created_at, o.received_at)
+                                   > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)))
+                   ORDER BY lower(m.username), COALESCE(m.created_at, m.received_at) DESC
+               ) t
+               ORDER BY COALESCE(t.created_at, t.received_at) DESC
+               LIMIT $2""", days, limit)
+    return [_comment_row(r) for r in rows]
+
+
+async def mark_meta_comment_followup(key: int, text: str) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE meta_comments SET followup_at = NOW() AT TIME ZONE 'UTC', followup_text = $2 WHERE id = $1",
+            key, text)
+
+
+async def meta_comment_followup_stats(days: int) -> dict:
+    """Bugun (Toshkent) va jami yuborilganlar, navbatdagilar soni, oxirgi 3 tasi."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) FILTER (WHERE followup_text <> ''
+                         AND followup_at >= date_trunc('day', NOW() AT TIME ZONE 'Asia/Tashkent')
+                                            - INTERVAL '5 hours') AS today,
+                      COUNT(*) FILTER (WHERE followup_text <> '') AS total,
+                      COUNT(*) FILTER (WHERE followup_at IS NOT NULL AND followup_text = '') AS skipped
+               FROM meta_comments""")
+        queue = await conn.fetchval(
+            """SELECT COUNT(DISTINCT lower(m.username)) FROM meta_comments m
+               WHERE m.username IS NOT NULL AND m.username <> ''
+                 AND m.status IN ('answered', 'ai_answered') AND COALESCE(m.category, '') <> 'spam'
+                 AND COALESCE(m.created_at, m.received_at) <= (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM meta_comments o WHERE lower(o.username) = lower(m.username)
+                       AND (o.followup_at IS NOT NULL
+                            OR COALESCE(o.created_at, o.received_at)
+                               > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)))""", days)
+        last = await conn.fetch(
+            """SELECT username, text, followup_text, post_link FROM meta_comments
+               WHERE followup_text <> '' ORDER BY followup_at DESC LIMIT 3""")
+    out = {k: int(row[k] or 0) for k in ("today", "total", "skipped")}
+    out["queue"] = int(queue or 0)
+    out["last"] = [dict(r) for r in last]
+    return out
 
 
 async def mark_meta_comments_state(*, backfilled: bool | None = None,
