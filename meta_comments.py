@@ -1048,7 +1048,9 @@ async def sync(bot: Bot | None) -> dict:
     o'zi yozmaydi)."""
     state = await database.get_meta_comments_state()
     first = not state.get("backfilled")
-    stats = {"targets": 0, "ads": 0, "ig_posts": 0, "fb_posts": 0, "seen": 0, "new": 0, "errors": 0}
+    stats = {"targets": 0, "ads": 0, "ig_posts": 0, "fb_posts": 0, "seen": 0, "new": 0, "errors": 0,
+             "fb_seen": 0, "ig_seen": 0}
+    read_errors: dict[str, list[str]] = {}
     async with aiohttp.ClientSession() as session:
         ident = await identity(session, force=True)
         targets, known = [], set()
@@ -1080,18 +1082,33 @@ async def sync(bot: Bot | None) -> dict:
                                          "filter": "toplevel", "limit": 100})
             except GraphError as e:
                 stats["errors"] += 1
+                stats[f"{t['platform']}_errors"] = stats.get(f"{t['platform']}_errors", 0) + 1
                 logger.info("comments sync: %s %s unreadable: %s", t["platform"], t["object"], e)
+                # Egasi, 2026-11-13: "facebookdagi barcha izohlarga ham javob ber" — bazada
+                # bitta ham FB izohi yo'q edi, xato esa faqat logda qolardi. Endi /izohlar
+                # va /admin/api/comments da ko'rinadi.
+                errs = read_errors.setdefault(t["platform"], [])
+                if str(e) not in errs and len(errs) < 3:
+                    errs.append(str(e))
                 continue
             for c, ours in comments_from_listing(t, data, ident):
                 stats["seen"] += 1
+                stats[f"{t['platform']}_seen"] += 1
                 if c.get("created_at") and c["created_at"] < _utcnow() - timedelta(days=60):
                     continue
                 row = await ingest(bot, c, source="backfill" if first else "sync",
                                    our_reply=ours, backfill=first)
                 stats["new"] += bool(row)
     await database.mark_meta_comments_state(backfilled=True, synced=True)
-    _last_sync.update(stats=dict(stats))
+    _last_sync.update(stats=dict(stats), read_errors=read_errors)
     return stats
+
+
+def sync_info() -> dict:
+    """Oxirgi tekshiruv: nechta reklama/post o'qildi, nechta izoh ko'rildi va
+    o'qib bo'lmaganlarning Meta xatolari — /admin/api/comments uchun."""
+    return {"stats": _last_sync.get("stats"), "organic_errors": _last_sync.get("organic_errors") or [],
+            "read_errors": _last_sync.get("read_errors") or {}}
 
 
 async def scheduler_loop(bot: Bot) -> None:
@@ -1274,8 +1291,14 @@ async def status_text() -> str:
     if st:
         lines.append(f"   o'qildi: {st['ads']} reklama, {st['ig_posts']} Instagram post/reels, "
                      f"{st['fb_posts']} Facebook post (izohi borlari)")
+        if "fb_seen" in st:
+            lines.append(f"   izohlar: Instagram {st['ig_seen']}, Facebook {st['fb_seen']}")
     for err in _last_sync.get("organic_errors") or []:
         lines.append(f"   ⚠️ {_esc(err)[:200]}")
+    names = {"fb": "Facebook izohlari", "ig": "Instagram izohlari"}
+    for platform, errs in (_last_sync.get("read_errors") or {}).items():
+        for err in errs:
+            lines.append(f"   ⚠️ {names.get(platform, platform)} o'qilmadi: {_esc(err)[:200]}")
     recent = await database.list_meta_comments(("ai_answered",), 3)
     if recent:
         lines += ["", "<b>Oxirgi AI javoblari:</b>"]
@@ -1458,8 +1481,8 @@ async def cmd_token(message: Message):
             "Reklama statistikasi tokeniga tegmang — bu alohida token: system user'ga sahifa "
             "«Keto market.uz» va Instagram @ketoshop.uz ulanadi (izohlarni boshqarish huquqi bilan), "
             "ruxsatlar: instagram_basic, instagram_manage_comments, instagram_manage_messages, "
-            "pages_show_list, pages_read_engagement, pages_manage_engagement, pages_manage_metadata, "
-            "pages_messaging.\n\n"
+            "pages_show_list, pages_read_engagement, pages_read_user_content, pages_manage_engagement, "
+            "pages_manage_metadata, pages_messaging.\n\n"
             "Yuborish: <code>/izoh_token TOKEN</code> — xabar darhol o'chiriladi.\n"
             "O'chirish: <code>/izoh_token off</code>\n\n" + ("Hozir: bor ✅" if token() else "Hozir: yo'q"),
             parse_mode="HTML")
@@ -1500,7 +1523,8 @@ async def cmd_token(message: Message):
     _spawn(_first_sync(message.bot))
 
 
-NEEDED_PERMISSIONS = ("pages_show_list", "pages_read_engagement", "pages_manage_engagement",
+NEEDED_PERMISSIONS = ("pages_show_list", "pages_read_engagement", "pages_read_user_content",
+                      "pages_manage_engagement",
                       "pages_manage_metadata", "pages_messaging", "instagram_basic",
                       "instagram_manage_comments", "instagram_manage_messages")
 
