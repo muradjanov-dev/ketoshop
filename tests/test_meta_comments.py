@@ -310,6 +310,16 @@ class PolicyTest(unittest.TestCase):
         self.assertIn("@ketoshopbot", out)
         self.assertEqual(comment_ai.in_script_of("Narxi?", "Salom"), "Salom")
 
+    def test_ghee_stays_latin_in_cyrillic_replies(self):
+        out = comment_ai.finalize("Нархи канча", "Tabiiy GHEE 1000ml — 135 000 so'm 😊")
+        self.assertEqual(out, "Табиий GHEE 1000мл — 135 000 сўм 😊")
+        self.assertNotIn("ГҲЕЕ", out)
+
+    def test_prompt_names_products_only_from_the_catalog(self):
+        # «Bahmal tog' GHEEsi» — reels sarlavhasi; katalogda «Tabiiy GHEE 1000ml» (egasi, 2026-11-13).
+        self.assertIn("Mahsulot nomini faqat KATALOGdagidek yoz", comment_ai.RULES)
+        self.assertIn("takrorlama", comment_ai.RULES)
+
 
 class ListingTest(unittest.TestCase):
     def test_instagram_listing(self):
