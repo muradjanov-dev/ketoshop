@@ -1827,6 +1827,23 @@
     cursor: pointer;
   }
   .checkout-error { margin-top: 6px; font-size: 12.5px; font-weight: 600; color: var(--berry); }
+  /* Under the phone field: "✓ +998 90 123 45 67" once the number reads
+     right, or what is wrong with it — right where the buyer is typing. */
+  .phone-hint { margin-top: 6px; font-size: 12.5px; line-height: 1.4; color: var(--hint); }
+  .phone-hint:empty { display: none; }
+  .phone-hint.ok { color: var(--leaf-deep); font-weight: 600; }
+  .phone-hint.bad { color: var(--berry); font-weight: 600; }
+  #inp-phone.bad { border-color: var(--berry); }
+  /* A box that needs fixing comes to the top, so the keyboard that opens
+     under it can't cover the field or its message. */
+  .checkout-form .form-group { scroll-margin-top: 12px; }
+  /* Search that found nothing: what to do next, not just a sad face. */
+  .search-miss-note { margin-top: 10px; font-size: 13.5px; line-height: 1.45; }
+  .search-miss-btn {
+    margin-top: 14px; padding: 10px 18px; border-radius: 999px;
+    border: 1px solid var(--hairline); background: var(--surface); color: var(--link);
+    font: 600 14px var(--font-body); cursor: pointer;
+  }
 
   /* ── Map picker ────────────────────────────────────────────────────── */
   .map-modal {
@@ -3673,6 +3690,7 @@
   <div class="empty-state" id="catalog-empty" style="display:none">
     <div class="emoji">😔</div>
     <div id="catalog-empty-text"></div>
+    <div id="catalog-empty-extra"></div>
   </div>
   <div class="catalog-more" id="catalog-more" style="display:none"></div>
 </div>
@@ -3724,7 +3742,8 @@
       </div>
       <div class="form-group">
         <label id="lbl-phone"></label>
-        <input type="tel" id="inp-phone" placeholder="+998901234567" autocomplete="tel">
+        <input type="tel" id="inp-phone" placeholder="90 123 45 67" autocomplete="tel" inputmode="tel">
+        <div class="phone-hint" id="phone-hint" aria-live="polite"></div>
       </div>
       <div class="form-group" id="customer-location-group">
         <label id="lbl-location"></label>
@@ -4775,6 +4794,10 @@ const L = {
     catalogEnd: '✓ Hammasi shu — {n} ta mahsulot',
     catalogRetry: '🔄 Qayta urinish',
     empty: 'Mahsulotlar topilmadi',
+    searchMiss: '«{q}» topilmadi',
+    searchMissNear: "O'xshash mahsulotlar",
+    searchMissNote: "Boshqacha yozib ko'ring (lotin yoki kirill — farqi yo'q) yoki bizga yozing — topib beramiz.",
+    searchMissBtn: '💬 Bizga yozing',
     addToCart: "Savatga qo'shish",
     cart: 'Savat',
     total: 'Jami',
@@ -4895,6 +4918,13 @@ const L = {
     chequeFileTooLarge: 'Fayl juda katta (10MB chegarasi)',
     chequePayLater: 'Botga qaytib to\'layman',
     errorPhone: 'Telefon raqamini tekshiring (masalan: 90 123 45 67)',
+    phoneEmpty: 'Telefon raqamingizni yozing, masalan: 90 123 45 67',
+    phoneShort: "Raqam to'liq emas — operator kodi bilan 9 ta raqam, masalan: 90 123 45 67",
+    phoneLong: "Raqam juda uzun — bitta raqam yozing, masalan: 90 123 45 67",
+    phoneForeign: "Faqat O'zbekiston raqami (+998), masalan: 90 123 45 67",
+    phoneCode: "Operator kodi noto'g'ri — masalan: 90 123 45 67",
+    phoneOk: '✓ {phone}',
+    phoneKnown: "✓ Oldingi buyurtmangizdagi raqam — boshqa bo'lsa, o'zgartiring",
     errorAddress: 'Joylashuvni yuboring',
     errorOutsideUzbekistan: 'Joylashuvingiz O\'zbekistondan tashqarida. Biz faqat O\'zbekiston bo\'ylab yetkazib beramiz. Iltimos, O\'zbekiston ichidagi joylashuvni kiriting.',
     errorStockGone: '🏃‍♀️ Voy, ulgurmay qoldik! Savatingizdagi bir mahsulotni boshqa keto-ixlosmand sizdan bir qadam oldin olib ketdi. Savatingizni yangiladik — bir ko\'z tashlab, qayta urinib ko\'ring 🛒',
@@ -5006,6 +5036,10 @@ const L = {
     catalogEnd: '✓ Это все товары ({n})',
     catalogRetry: '🔄 Повторить',
     empty: 'Товары не найдены',
+    searchMiss: '«{q}» не найдено',
+    searchMissNear: 'Похожие товары',
+    searchMissNote: 'Попробуйте написать иначе (латиницей или кириллицей — неважно) или напишите нам — подберём.',
+    searchMissBtn: '💬 Написать нам',
     addToCart: 'В корзину',
     cart: 'Корзина',
     total: 'Итого',
@@ -5124,6 +5158,13 @@ const L = {
     chequeFileTooLarge: 'Файл слишком большой (лимит 10 МБ)',
     chequePayLater: 'Оплачу через бот',
     errorPhone: 'Проверьте номер телефона (например: 90 123 45 67)',
+    phoneEmpty: 'Укажите номер телефона, например: 90 123 45 67',
+    phoneShort: 'Номер неполный — 9 цифр с кодом оператора, например: 90 123 45 67',
+    phoneLong: 'Номер слишком длинный — укажите один номер, например: 90 123 45 67',
+    phoneForeign: 'Только узбекский номер (+998), например: 90 123 45 67',
+    phoneCode: 'Неверный код оператора — например: 90 123 45 67',
+    phoneOk: '✓ {phone}',
+    phoneKnown: '✓ Номер из прошлого заказа — если другой, измените',
     errorAddress: 'Отправьте местоположение',
     errorOutsideUzbekistan: 'Ваша локация за пределами Узбекистана. Мы доставляем только по Узбекистану. Пожалуйста, укажите локацию в пределах Узбекистана.',
     errorStockGone: '🏃‍♀️ Ой, не успели! Один товар из вашей корзины только что забрал другой любитель кето. Мы обновили корзину — загляните в неё и попробуйте ещё раз 🛒',
@@ -7752,8 +7793,7 @@ async function loadProducts() {
     catalogList.forEach(p => { catalogGroupCounts[p.category] = (catalogGroupCounts[p.category] || 0) + 1; });
     setCatalogHeading(data.total);
     if (!catalogList.length) {
-      empty.style.display = 'block';
-      document.getElementById('catalog-empty-text').textContent = t.empty;
+      showCatalogEmpty(t.empty);
       return;
     }
     catalogDrawMore();
@@ -7867,7 +7907,41 @@ function createProductCard(p) {
   return card;
 }
 
-// Catalog search
+// The catalog's "nothing here" box. A search that found nothing says what to
+// try next (2026-11-11: 20 of 88 searches ended on a bare «Mahsulotlar
+// topilmadi»): the closest names when the server sent some (marked `near`,
+// drawn as cards under «O'xshash mahsulotlar»), and a button to ask the shop.
+function showCatalogEmpty(text, searchQuery, near) {
+  const empty = document.getElementById('catalog-empty');
+  const extra = document.getElementById('catalog-empty-extra');
+  const emoji = empty.querySelector('.emoji');
+  near = near || [];
+  extra.innerHTML = '';
+  if (emoji) emoji.style.display = near.length ? 'none' : '';
+  document.getElementById('catalog-empty-text').textContent = near.length ? '' : text;
+  if (searchQuery != null) {
+    if (near.length) {
+      // Short: the heading is one line next to the view switch.
+      document.getElementById('catalog-title').textContent = t.searchMissNear;
+      document.getElementById('catalog-count').textContent = '';
+      const grid = document.getElementById('product-grid');
+      near.forEach(p => grid.appendChild(createProductCard(p)));
+    }
+    const note = document.createElement('div');
+    note.className = 'search-miss-note';
+    note.textContent = t.searchMissNote;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'search-miss-btn';
+    btn.textContent = t.searchMissBtn;
+    btn.onclick = () => { trk(() => Trk.ev('search', 'catalog', searchQuery, 'ask', 0)); contactAdmin(); };
+    extra.append(note, btn);
+  }
+  empty.style.display = 'block';
+}
+
+// Catalog search. The server reads Latin and Cyrillic alike («кепак» finds
+// «Kepakli bug'doy uni» — search_text.py), so the query goes as typed.
 document.getElementById('catalog-search').addEventListener('input', function(e) {
   clearTimeout(searchTimeout);
   const q = e.target.value.trim();
@@ -7877,7 +7951,8 @@ document.getElementById('catalog-search').addEventListener('input', function(e) 
   }
   searchTimeout = setTimeout(async () => {
     // Search results are one list: no catalog cards may land under them.
-    catalogSeq++;
+    // A newer search (or a tab tapped meanwhile) wins over this one's answer.
+    const seq = ++catalogSeq;
     catalogList = [];
     catalogShown = 0;
     catalogGrouped = false;
@@ -7893,17 +7968,20 @@ document.getElementById('catalog-search').addEventListener('input', function(e) 
     document.querySelectorAll('#categories .cat-tab').forEach(el => el.classList.remove('active'));
 
     try {
-      const products = await api('/api/search?q=' + encodeURIComponent(q));
-      trk(() => { Trk.cat('search'); Trk.ev('search', 'catalog', q, null, products.length); });
+      const found = await api('/api/search?q=' + encodeURIComponent(q));
+      if (seq !== catalogSeq) return;
+      const near = found.filter(p => p.near);
+      const products = found.filter(p => !p.near);
+      trk(() => { Trk.cat('search'); Trk.ev('search', 'catalog', q, near.length ? 'near' : null, products.length); });
       setCatalogHeading(products.length);
       loading.style.display = 'none';
       if (products.length === 0) {
-        empty.style.display = 'block';
-        document.getElementById('catalog-empty-text').textContent = t.empty;
+        showCatalogEmpty(t.searchMiss.replace('{q}', q), q, near);
         return;
       }
       products.forEach(p => grid.appendChild(createProductCard(p)));
     } catch(e) {
+      if (seq !== catalogSeq) return;
       loading.style.display = 'none';
       console.error('Search error:', e);
       if (e && e.status === 403) {
@@ -8709,6 +8787,8 @@ function renderCheckoutPage() {
 
   // Remove old errors
   document.querySelectorAll('.checkout-error').forEach(e => e.remove());
+  setPhoneHint('', '');
+  prefillCheckoutPhone();
 }
 
 // Keto-as-discount at checkout — hidden entirely unless the owner has
@@ -9155,21 +9235,121 @@ function ensureBotCanWrite() {
   });
 }
 
+// The digits of a typed or pasted number: ASCII, Arabic-Indic, Persian and
+// full-width ones count, everything else (spaces, brackets, +, invisible
+// marks from a copied contact) is dropped. Same blocks as phone_utils.py.
+function uzPhoneDigits(raw) {
+  let d = '';
+  for (const ch of String(raw || '')) {
+    let c = ch.charCodeAt(0);
+    for (const base of [0x660, 0x6F0, 0xFF10]) if (c >= base && c <= base + 9) c = 48 + c - base;
+    if (c >= 48 && c <= 57) d += String.fromCharCode(c);
+  }
+  return d;
+}
+
 // Uzbek phone as buyers type it: "90 123 45 67", "+998 (90) 123-45-67",
-// "8 90 1234567"… → "+998901234567", or null. Same rule as phone_utils.py on
-// the server (2026-10-21: the strict "+998…" check turned most real numbers
-// away and the buyer only saw a button that "didn't work").
+// "8 90 1234567", "+998 +998 90…" (autofill after a typed +998)… →
+// "+998901234567", or null. Same rule as phone_utils.normalize_uz_phone on
+// the server — keep the two alike (2026-10-21: the strict "+998…" check
+// turned most real numbers away; 2026-11-11: still 18 of 45 checkouts).
 function normalizeUzPhone(raw) {
-  let d = String(raw || '').replace(/\D/g, '');
+  let d = uzPhoneDigits(raw);
   if (d.startsWith('00')) d = d.slice(2);
+  if (d.length === 15 && d.startsWith('998998')) d = d.slice(3);
   if (d.length === 9) d = '998' + d;
   else if (d.length === 10 && d[0] === '8') d = '998' + d.slice(1);
-  return /^998\d{9}$/.test(d) ? '+' + d : null;
+  return /^998[2-9][0-9]{8}$/.test(d) ? '+' + d : null;
+}
+
+// What is wrong with a number normalizeUzPhone refused, so the buyer is told
+// exactly that: 'empty' | 'short' | 'long' | 'foreign' | 'code' (operator
+// code starting with 0 or 1); null for a good number.
+function uzPhoneProblem(raw) {
+  if (normalizeUzPhone(raw)) return null;
+  let d = uzPhoneDigits(raw);
+  if (!d) return 'empty';
+  if (d.startsWith('00')) d = d.slice(2);
+  let n;
+  if (d.startsWith('998')) n = d.slice(3);
+  else if (d.length === 10 && d[0] === '8') n = d.slice(1);
+  else if (d.length <= 9) n = d;
+  else return (d.length === 10 || d.length >= 18) ? 'long' : 'foreign';
+  if (n.length < 9) return 'short';
+  if (n.length > 9) return 'long';
+  return 'code';
+}
+
+// "+998901234567" → "+998 90 123 45 67" (phone_utils.format_uz_phone).
+function formatUzPhone(phone) {
+  const p = normalizeUzPhone(phone);
+  return p ? p.slice(0, 4) + ' ' + p.slice(4, 6) + ' ' + p.slice(6, 9) + ' ' + p.slice(9, 11) + ' ' + p.slice(11)
+           : String(phone || '');
+}
+
+function phoneProblemText(problem) {
+  return ({ empty: t.phoneEmpty, short: t.phoneShort, long: t.phoneLong,
+            foreign: t.phoneForeign, code: t.phoneCode })[problem] || t.errorPhone;
+}
+
+function setPhoneHint(text, kind) {
+  const hint = document.getElementById('phone-hint');
+  const input = document.getElementById('inp-phone');
+  if (hint) {
+    hint.textContent = text || '';
+    hint.className = 'phone-hint' + (kind ? ' ' + kind : '');
+  }
+  if (input) input.classList.toggle('bad', kind === 'bad');
+}
+
+// Under the field as the buyer types: "✓ +998 90 123 45 67" once it reads
+// right (and the last press's error goes away); what is wrong with it only
+// when they leave the field (strict), never mid-typing.
+function updatePhoneHint(strict) {
+  const input = document.getElementById('inp-phone');
+  if (!input) return;
+  const phone = normalizeUzPhone(input.value);
+  if (phone) {
+    input.parentNode.querySelectorAll('.checkout-error').forEach(e => e.remove());
+    setPhoneHint(t.phoneOk.replace('{phone}', formatUzPhone(phone)), 'ok');
+    return;
+  }
+  const typed = strict && input.value.trim();
+  setPhoneHint(typed ? phoneProblemText(uzPhoneProblem(input.value)) : '', typed ? 'bad' : '');
+}
+(function () {
+  const input = document.getElementById('inp-phone');
+  if (!input) return;
+  input.addEventListener('input', () => updatePhoneHint(false));
+  input.addEventListener('blur', () => updatePhoneHint(true));
+})();
+
+// The field opened empty on every checkout, for a returning buyer too
+// (2026-11-11). Now it is filled with their number from the last order, or
+// the one they shared in the bot — asked once per opening of the app, and
+// never over something the buyer already typed or is typing.
+let knownPhonePromise = null;
+function prefillCheckoutPhone() {
+  const input = document.getElementById('inp-phone');
+  if (!input) return;
+  if (input.value.trim()) { updatePhoneHint(false); return; }
+  if (!knownPhonePromise) {
+    knownPhonePromise = api('/api/checkout/phone')
+      .then(r => (r && r.phone) || '')
+      .catch(() => { knownPhonePromise = null; return ''; });
+  }
+  knownPhonePromise.then(phone => {
+    if (!phone || input.value.trim() || document.activeElement === input) return;
+    input.value = phone;
+    setPhoneHint(t.phoneKnown, 'ok');
+  });
 }
 
 // A checkout mistake is shown where the buyer is looking: the field it is
 // about comes into view (and the keyboard, for the phone), and a toast says
-// what to fix — the note under a field far up the page went unseen.
+// what to fix — the note under a field far up the page went unseen. For a
+// field that gets the keyboard, its whole box goes to the TOP of the screen:
+// centred, it ended up under the keyboard together with its message.
 function showCheckoutFieldError(fieldId, message, focus) {
   const field = document.getElementById(fieldId);
   const err = document.createElement('div');
@@ -9177,7 +9357,9 @@ function showCheckoutFieldError(fieldId, message, focus) {
   err.textContent = message;
   if (field) {
     field.after(err);
-    try { field.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { field.scrollIntoView(); }
+    const box = (focus && field.closest && field.closest('.form-group')) || field;
+    const block = focus ? 'start' : 'center';
+    try { box.scrollIntoView({ behavior: 'smooth', block }); } catch (_) { box.scrollIntoView(); }
     if (focus) setTimeout(() => { try { field.focus({ preventScroll: true }); } catch (_) {} }, 350);
   }
   showToast(message, true, 4000);
@@ -9197,13 +9379,16 @@ async function submitOrder() {
   // Remove old errors
   document.querySelectorAll('.checkout-error').forEach(e => e.remove());
 
-  // Validate
+  // Validate. The message says what exactly is wrong; the event carries it
+  // too, so the analytics tell an empty field from a malformed number.
   if (!phone) {
-    showCheckoutFieldError('inp-phone', t.errorPhone, true);
-    trk(() => Trk.ev('checkout', 'checkout', 'error:phone'));
+    const problem = uzPhoneProblem(phoneInput.value) || 'check';
+    setPhoneHint('', 'bad');
+    showCheckoutFieldError('inp-phone', phoneProblemText(problem), true);
+    trk(() => Trk.ev('checkout', 'checkout', 'error:phone', problem));
     return;
   }
-  phoneInput.value = phone;                    // show the buyer the number we'll use
+  phoneInput.value = formatUzPhone(phone);     // show the buyer the number we'll use
   if (modeState.locationRequired && (!lat || !lng)) {
     showCheckoutFieldError('btn-get-location', t.errorAddress, false);
     trk(() => Trk.ev('checkout', 'checkout', 'error:address'));
@@ -9245,8 +9430,12 @@ async function submitOrder() {
     cartData = { items: [], total: 0 };
     updateCartBadge();
 
-    // Clear form
-    document.getElementById('inp-phone').value = '';
+    // Clear form — but keep the number: the next order in this opening of
+    // the app goes to the same phone unless the buyer changes it.
+    const usedPhone = formatUzPhone(phone);
+    knownPhonePromise = Promise.resolve(usedPhone);
+    document.getElementById('inp-phone').value = usedPhone;
+    setPhoneHint('', '');
     document.getElementById('inp-lat').value = '';
     document.getElementById('inp-lng').value = '';
     document.getElementById('location-text').textContent = t.btnGetLocation;
@@ -9288,6 +9477,10 @@ async function submitOrder() {
       if (addrBox) addrBox.style.display = 'none';
       const addrEl = document.getElementById('location-address');
       if (addrEl) addrEl.value = '';
+    } else if (e && e.body && e.body.error === 'invalid_phone') {
+      // The server's rule is the same as normalizeUzPhone, so this should
+      // not happen — but if it does, say it at the field, not "error".
+      showCheckoutFieldError('inp-phone', t.errorPhone, true);
     } else if (e && e.body && e.body.error === 'stock_gone') {
       showToast(stockGoneMessage(e.body), true, 7000);
       // Refresh cart so the user sees the gap before retrying

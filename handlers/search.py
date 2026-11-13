@@ -1,18 +1,36 @@
 """
 Product search handler
 """
+import html
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from database import get_user_language, search_products, effective_price, active_discount, get_cart_badge
+from database import (get_user_language, search_products, search_suggestions, effective_price,
+                      active_discount, get_cart_badge)
 from locales import get_text, get_unit_name, get_display_unit, localize_product_text
 from keyboards import back_to_menu_keyboard, cart_shortcut_row
+from search_text import fold
 
 router = Router()
 
 SEARCH_PER_PAGE = 5
+
+
+def page_callback(page: int, query: str) -> str:
+    """search_page:<page>:<query> within Telegram's 64-byte callback limit.
+    A Cyrillic letter takes 2 bytes, and now that Cyrillic queries find
+    products they can run to several pages; a query too long to fit goes as
+    its search key (fold), which finds the same products."""
+    data = f"search_page:{page}:{query}"
+    if len(data.encode("utf-8")) <= 64:
+        return data
+    data = f"search_page:{page}:{fold(query)}"
+    while len(data.encode("utf-8")) > 64:
+        data = data[:-1]
+    return data
 
 
 class SearchStates(StatesGroup):
@@ -81,14 +99,28 @@ async def search_navigate(callback: CallbackQuery):
 
 async def _show_search_results(message: Message, query: str, lang: str, page: int = 0,
                                 is_callback: bool = False, user_id: int | None = None):
-    """Show search results with pagination"""
+    """Show search results with pagination. Latin and Cyrillic queries find
+    the same products (search_text.py); when nothing matches, the closest
+    names are offered as buttons instead of a dead end."""
     products, total = await search_products(query, page=page, per_page=SEARCH_PER_PAGE)
     cart_count, cart_total = (await get_cart_badge(user_id)) if user_id is not None else (0, 0)
+    shown_query = html.escape(query, quote=False)
 
     if not products:
+        near = await search_suggestions(query, limit=3)
+        text = get_text("search_empty", lang, query=shown_query)
+        rows = []
+        if near:
+            text += "\n\n" + get_text("search_near", lang)
+            rows = [[InlineKeyboardButton(
+                text=localize_product_text(p.get("name"), p.get("name_ru"), lang),
+                callback_data=f"product:{p['id']}",
+            )] for p in near]
+        rows.append([InlineKeyboardButton(text=get_text("btn_search", lang), callback_data="search")])
+        menu = back_to_menu_keyboard(lang, cart_count, cart_total)
         await message.answer(
-            get_text("search_empty", lang, query=query),
-            reply_markup=back_to_menu_keyboard(lang, cart_count, cart_total),
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=rows + menu.inline_keyboard),
             parse_mode="HTML"
         )
         return
@@ -96,7 +128,7 @@ async def _show_search_results(message: Message, query: str, lang: str, page: in
     total_pages = (total + SEARCH_PER_PAGE - 1) // SEARCH_PER_PAGE
     start_num = page * SEARCH_PER_PAGE
 
-    text = get_text("search_results", lang, query=query, count=total)
+    text = get_text("search_results", lang, query=shown_query, count=total)
 
     import bot_discount
     bot_prices = await bot_discount.display_prices(products)
@@ -130,7 +162,7 @@ async def _show_search_results(message: Message, query: str, lang: str, page: in
     if page > 0:
         nav_row.append(InlineKeyboardButton(
             text="◀️",
-            callback_data=f"search_page:{page - 1}:{query}"
+            callback_data=page_callback(page - 1, query)
         ))
     nav_row.append(InlineKeyboardButton(
         text=f"{page + 1}/{total_pages}",
@@ -139,7 +171,7 @@ async def _show_search_results(message: Message, query: str, lang: str, page: in
     if page < total_pages - 1:
         nav_row.append(InlineKeyboardButton(
             text="▶️",
-            callback_data=f"search_page:{page + 1}:{query}"
+            callback_data=page_callback(page + 1, query)
         ))
     if total_pages > 1:
         buttons.append(nav_row)

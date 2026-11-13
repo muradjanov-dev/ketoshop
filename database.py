@@ -2563,6 +2563,31 @@ async def get_last_order_prefs(user_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+async def get_checkout_phone(user_id: int) -> str | None:
+    """The buyer's number for the Mini App's checkout field (2026-11-11):
+    the one on their latest own order, else the one they shared in the bot's
+    checkout (users.phone) — '+998XXXXXXXXX', or None. The field used to
+    open empty every time, so a returning buyer typed it again or pressed
+    «Buyurtmani tasdiqlash» on an empty field. Orders an admin typed in
+    (manual, b2b) or a test order carry someone else's number and are
+    skipped; a number that isn't Uzbek is too (the checkout would refuse it)."""
+    from phone_utils import normalize_uz_phone
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT phone FROM orders
+               WHERE user_id = $1 AND COALESCE(source, 'bot') NOT IN ('manual', 'b2b', 'test')
+                 AND COALESCE(phone, '') <> ''
+               ORDER BY created_at DESC LIMIT 3""",
+            user_id,
+        )
+        own = await conn.fetchval("SELECT phone FROM users WHERE user_id = $1", user_id)
+    for raw in [r["phone"] for r in rows] + [own]:
+        phone = normalize_uz_phone(raw)
+        if phone:
+            return phone
+    return None
+
+
 # ===== ORDER OPERATIONS =====
 
 class InsufficientStockError(Exception):
@@ -3224,63 +3249,40 @@ async def delete_category(key: str, move_to: str | None = None) -> dict:
 
 # ===== SEARCH =====
 
-# Trigram word-similarity cutoff. 0.3 catches typos like "aluloza"→"Alluloza"
-# and "eritrol"→"Eritritol" without dragging in unrelated products.
-SEARCH_SIMILARITY = 0.3
+async def _searchable_products() -> list[dict]:
+    """Every product a buyer can find, alphabetical — the shop's ~120 rows,
+    matched in Python by search_text (Latin and Cyrillic alike)."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT p.*, u.full_name as seller_name, u.username as seller_username
+               FROM products p
+               JOIN users u ON p.seller_id = u.user_id
+               WHERE p.is_active = 1 AND (p.b2b_only IS NOT TRUE)
+               ORDER BY LOWER(p.name) ASC, p.id ASC"""
+        )
+        return [dict(r) for r in rows]
 
 
 async def search_products(query: str, page: int = 0, per_page: int = 5) -> tuple[list[dict], int]:
-    """Typo-tolerant product search.
+    """Product search for the bot's 🔍 and the Mini App: (this page, total).
 
-    Matches by substring (ILIKE) first, then by pg_trgm word-similarity so a
-    misspelled query still returns the nearest-named products. Results are
-    ordered exact-substring-first, then by closeness. Falls back to plain
-    substring search if pg_trgm is unavailable.
-
-    The query may be in the 2026 alphabet ("şokolad"); the names are stored
-    in the old Latin, so it is read back into that first (translit).
+    Script-insensitive since 2026-11-11 (search_text.py): «кепак» finds
+    «Kepakli bug'doy uni», «жадвар» finds «Javdar uni», «şokolad» (2026
+    alphabet) finds «Shokolad», «kakos» finds «Kokos». It used to be ILIKE
+    plus pg_trgm on the name as typed, so a Cyrillic query found nothing.
+    An empty query lists every product, alphabetically.
     """
-    from translit import to_old_latin
-    query = to_old_latin(query or "")
-    async with pool.acquire() as conn:
-        search_term = f"%{query}%"
-        try:
-            where = """p.is_active = 1 AND (p.b2b_only IS NOT TRUE)
-                   AND (p.name ILIKE $1 OR p.description ILIKE $1
-                        OR word_similarity($2, p.name) > $3)"""
-            total = await conn.fetchval(
-                f"SELECT COUNT(*) FROM products p WHERE {where}",
-                search_term, query, SEARCH_SIMILARITY,
-            )
-            rows = await conn.fetch(
-                f"""SELECT p.*, u.full_name as seller_name, u.username as seller_username
-                   FROM products p
-                   JOIN users u ON p.seller_id = u.user_id
-                   WHERE {where}
-                   ORDER BY (p.name ILIKE $1) DESC,
-                            word_similarity($2, p.name) DESC,
-                            LOWER(p.name) ASC, p.id ASC
-                   LIMIT $4 OFFSET $5""",
-                search_term, query, SEARCH_SIMILARITY, per_page, page * per_page,
-            )
-            return [dict(r) for r in rows], total
-        except Exception:
-            # pg_trgm not available — fall back to plain substring search.
-            total = await conn.fetchval(
-                """SELECT COUNT(*) FROM products
-                   WHERE is_active = 1 AND (b2b_only IS NOT TRUE) AND (name ILIKE $1 OR description ILIKE $1)""",
-                search_term,
-            )
-            rows = await conn.fetch(
-                """SELECT p.*, u.full_name as seller_name, u.username as seller_username
-                   FROM products p
-                   JOIN users u ON p.seller_id = u.user_id
-                   WHERE p.is_active = 1 AND (p.b2b_only IS NOT TRUE) AND (p.name ILIKE $1 OR p.description ILIKE $1)
-                   ORDER BY LOWER(p.name) ASC, p.id ASC
-                   LIMIT $2 OFFSET $3""",
-                search_term, per_page, page * per_page,
-            )
-            return [dict(r) for r in rows], total
+    import search_text
+    found = search_text.find(query or "", await _searchable_products())
+    start = max(0, page) * per_page
+    return found[start:start + per_page], len(found)
+
+
+async def search_suggestions(query: str, limit: int = 4) -> list[dict]:
+    """The closest names when search_products found nothing — «balki
+    shulardir?» under an empty result (search_text.near)."""
+    import search_text
+    return search_text.near(query or "", await _searchable_products(), limit)
 
 
 # ===== REVIEWS =====

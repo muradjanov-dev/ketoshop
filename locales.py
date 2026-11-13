@@ -1828,9 +1828,13 @@ TEXTS = {
     },
     "search_empty": {
         "uz": "😔 \"{query}\" bo'yicha hech narsa topilmadi.\n"
-              "Boshqa so'z bilan qidirib ko'ring.",
+              "Boshqa so'z bilan qidirib ko'ring yoki nima kerakligini shu chatga yozing — topib beramiz.",
         "ru": "😔 По запросу \"{query}\" ничего не найдено.\n"
-              "Попробуйте другое слово.",
+              "Попробуйте другое слово или напишите в этот чат, что ищете, — подберём.",
+    },
+    "search_near": {
+        "uz": "Balki shulardan birini qidiryapsizmi?",
+        "ru": "Может быть, вы ищете одно из этих?",
     },
     "search_item": {
         "uz": "{i}. <b>{name}</b> — {price} so'm/{unit}\n",
