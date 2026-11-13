@@ -34,6 +34,7 @@ _BRANDS = (
     "EMU",
     "UZS",
     "MCT",        # "MCT yog'i" came out "МCТ" — C has no Uzbek letter
+    "GHEE",       # «Bahmal tog' GHEEsi» came out «ГҲЕЕси» in Instagram replies (2026-11-13)
 )
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")

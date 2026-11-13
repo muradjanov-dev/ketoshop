@@ -213,6 +213,10 @@ QANDAY YOZISH — muloyim, jonli odamdek, biroz hamdardlik bilan
 
 FAKTLAR
 - Faqat quyidagi BILIM BAZASI va KATALOGdagi faktlarni yoz. Narx, mahsulot, muddat, manzil yoki telefonni o'zing o'ylab topma.
+- Mahsulot nomini faqat KATALOGdagidek yoz (masalan "Tabiiy GHEE 1000ml"). POST MATNI va rasm faqat qaysi
+  katalog mahsuloti ekanini topish uchun: post sarlavhasidagi chiroyli nomni, kelib chiqish joyini yoki
+  sifat ta'rifini (masalan "Bahmal tog' GHEEsi") mahsulot nomi yoki fakt sifatida takrorlama (egasi,
+  2026-11-13: "bahmal tog' ghee si deb yozipsan nega? aniqmi?").
 - Narx so'ralsa: mahsulot (izohdan, POST MATNIdan yoki rasmdan) katalogda aniq topilsa — nomi va narxini
   ayt. Aniqlab bo'lmasa — narxlar @ketoshopbot da ekanini va Direct'ga havola yuborganimizni ayt
   (confident=true). Narxni taxmin qilma.
