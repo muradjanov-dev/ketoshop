@@ -223,6 +223,9 @@ QANDAY YOZISH — muloyim, jonli odamdek, biroz hamdardlik bilan
 
 FAKTLAR
 - Faqat quyidagi BILIM BAZASI va KATALOGdagi faktlarni yoz. Narx, mahsulot, muddat, manzil yoki telefonni o'zing o'ylab topma.
+- Uglevod, kaloriya, GI yoki tarkib so'ralsa: KATALOG qatoridagi «100 g: …» va «tarkibi: …» dan ayt —
+  "100 g da taxminan …" deb (confident=true). Shu mahsulotda bunday raqam yoki tarkib bo'lmasa — o'ylab
+  topma, confident=false.
 - Mahsulot nomini faqat KATALOGdagidek yoz (masalan "Tabiiy GHEE 1000ml"). POST MATNI va rasm faqat qaysi
   katalog mahsuloti ekanini topish uchun: post sarlavhasidagi chiroyli nomni, kelib chiqish joyini yoki
   sifat ta'rifini (masalan "Bahmal tog' GHEEsi") mahsulot nomi yoki fakt sifatida takrorlama (egasi,
@@ -279,6 +282,36 @@ def kb_block(kb: dict, catalog: str) -> str:
 
 
 _catalog_cache: tuple[float, str] = (0.0, "")
+COMPOSITION_MAX = 120
+# Aralash mahsulot asosiy masallig'ining raqamini olmasin: «Bodom unidan pechenye»
+# bodom uni emas, «Kepakli un makaron» un emas, «Qovoq uni» urug' emas (13.11).
+_NO_NUMBERS = re.compile(r"pechen|печен|makaron|макарон|vermishel|вермишел|spagett|спагетт|"
+                         r"qovoq uni|тыквенн\w* мук", re.IGNORECASE)
+
+
+def product_facts(p: dict) -> str:
+    """« · 100 g: ~590 kkal · uglevod 10 g · GI ~20 · ✅ keto · tarkibi: …» —
+    uglevod, kaloriya va tarkib savollari javobsiz qolardi (13.11: «Шу
+    махсулотларда канча углевод бор», «Эритрит кушилганми»). Raqamlar
+    product_guides jadvalidan (taxminiy, 100 g ga); u yerda bo'lmagan
+    mahsulotga raqam yozilmaydi — AI o'ylab topmasin."""
+    bits = []
+    name = p.get("name") or ""
+    line = note = None
+    if not _NO_NUMBERS.search(name):
+        try:
+            import product_guides
+            line = product_guides.card_line(name, "uz")
+            key = product_guides.guide_key(name)
+            note = (product_guides.NUTRI_NOTE.get(key) or {}).get("uz") if line else None
+        except Exception:
+            line = None
+    if line:
+        bits.append(line.replace("📊 ", "", 1) + (f" ({note.rstrip('.')})" if note else ""))
+    composition = " ".join((p.get("composition") or "").split())
+    if composition and len(composition) <= COMPOSITION_MAX:
+        bits.append(f"tarkibi: {composition}")
+    return "".join(f" · {b}" for b in bits)
 
 
 async def catalog_text() -> str:
@@ -293,9 +326,9 @@ async def catalog_text() -> str:
     for p in sorted(products, key=lambda p: (p.get("category") or "", p.get("name") or "")):
         if p.get("b2b_only"):
             continue
-        price = int(round(manual_order.shelf_price(p)))
+        price = f"{int(round(manual_order.shelf_price(p))):,}".replace(",", " ")
         stock = "" if float(p.get("quantity") or 0) > 0 else " (tugagan)"
-        rows.append(f"- {p.get('name')} — {price:,} so'm{stock}".replace(",", " "))
+        rows.append(f"- {p.get('name')} — {price} so'm{stock}{product_facts(p)}")
     text = "\n".join(rows)
     _catalog_cache = (time.monotonic(), text)
     return text
