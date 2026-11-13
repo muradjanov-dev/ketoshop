@@ -140,6 +140,16 @@ class RulesTest(unittest.TestCase):
                        "@ketoshopbot", "Agar olgan bo'lsangiz", "skip=true", "\"biz\""):
             self.assertIn(phrase, rules)
 
+    def test_free_recipes_cta_names_the_bot_and_the_channel(self):
+        # Egasi, 2026-11-13: "mos holatlarda botimiz va kanalimiz orqali bepul
+        # retseptlarni joylab boryapmiz deb cta qil".
+        for rules in (comment_ai.RULES, comment_ai.FOLLOWUP_RULES):
+            self.assertIn("bepul retseptlarni", rules.lower())
+            self.assertIn("@ketoshopbot", rules)
+            self.assertIn("@ketoshop_uz", rules)
+            self.assertNotIn("{kanal}", rules)
+        self.assertIn("Shikoyat, sog'liq, manzil, yetkazish va spamda qo'shma", comment_ai.RULES)
+
     def test_direct_in_cyrillic(self):
         out = comment_ai.finalize("Тел номер беринг", "Agar xohlasangiz, Direct'ga ham yo'llab qo'yamiz 🙂")
         self.assertIn("Директга", out)
