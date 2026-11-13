@@ -252,6 +252,8 @@ async def main():
     dp.include_router(meta_comments_router)
     from comment_followup import router as comment_followup_router
     dp.include_router(comment_followup_router)
+    from gemini_compare import router as gemini_compare_router
+    dp.include_router(gemini_compare_router)
     dp.include_router(webapp_data_router)
     dp.include_router(start_router)
     dp.include_router(onboarding_video_router)
