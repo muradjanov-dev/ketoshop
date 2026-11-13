@@ -250,6 +250,8 @@ async def main():
     # erta turadi (admin boshqa FSM holatida bo'lsa ham javob ketadi).
     from meta_comments import router as meta_comments_router
     dp.include_router(meta_comments_router)
+    from comment_followup import router as comment_followup_router
+    dp.include_router(comment_followup_router)
     dp.include_router(webapp_data_router)
     dp.include_router(start_router)
     dp.include_router(onboarding_video_router)
@@ -367,6 +369,9 @@ async def main():
     # 📌 Tasdiqlanmagan buyurtmalar adminlarda pin; tasdiqlangani olinadi.
     from order_pins import loop as order_pins_loop
     asyncio.create_task(order_pins_loop(bot))
+    # 🔁 Bir oy oldin izoh qoldirganlarga qayta, samimiy yozish (kuniga 25 tagacha).
+    from comment_followup import loop as comment_followup_loop
+    asyncio.create_task(comment_followup_loop(bot))
 
     # Aksiya / Bonus — closes a campaign out the moment its window ends (so
     # bonuses stop being granted without anyone touching the admin panel) and
