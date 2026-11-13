@@ -645,13 +645,25 @@ async def api_leaderboard(request: web.Request):
 
 
 async def api_search(request: web.Request):
-    """Search products by name."""
+    """Search products by name, in Latin or Cyrillic (search_text.py).
+
+    When nothing matches, the closest names come back instead, each marked
+    "near": true — the Mini App shows them under «topilmadi, balki
+    shulardir?» (an older page simply shows them as results)."""
+    import database
     lang = request.get("user_lang", "uz")
     q = request.query.get("q", "").strip()
     if len(q) < 2:
         return _json([])
     products, total = await search_products(q, page=0, per_page=20)
-    return _json(await _serialize_products(products, lang, request.get("user_id")))
+    near = not products
+    if near:
+        products = await database.search_suggestions(q, limit=4)
+    items = await _serialize_products(products, lang, request.get("user_id"))
+    if near:
+        for item in items:
+            item["near"] = True
+    return _json(items)
 
 
 async def api_cart(request: web.Request):
@@ -943,6 +955,21 @@ async def api_uzpost_quote(request: web.Request):
         "office": dict(uzpost.localize(office, request.get("user_lang", "uz")),
                        map_url=uzpost.map_url(office)) if office else None,
     })
+
+
+async def api_checkout_phone(request: web.Request):
+    """GET /api/checkout/phone — the buyer's own last number, to fill the
+    checkout's phone field ('+998 90 123 45 67'), or "" when none is known.
+    Only ever this user's own data. Any trouble answers "": the buyer then
+    types it, as before."""
+    import database
+    from phone_utils import format_uz_phone
+    try:
+        phone = await database.get_checkout_phone(request["user_id"])
+    except Exception:
+        logger.exception("Checkout phone lookup failed")
+        phone = None
+    return _json({"phone": format_uz_phone(phone) if phone else ""})
 
 
 async def api_checkout(request: web.Request):
@@ -2088,6 +2115,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_post("/api/cart/update", api_cart_update)
     app.router.add_post("/api/cart/clear", api_cart_clear)
     app.router.add_post("/api/checkout", api_checkout)
+    app.router.add_get("/api/checkout/phone", api_checkout_phone)
     app.router.add_get("/api/uzpost/quote", api_uzpost_quote)
     app.router.add_post("/api/site-feedback", api_site_feedback)
     app.router.add_get("/api/site-feedback/due", api_site_feedback_due)

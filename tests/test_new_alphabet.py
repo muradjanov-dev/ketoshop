@@ -178,8 +178,10 @@ class SearchTest(unittest.TestCase):
     def test_query_in_the_new_alphabet_finds_old_names(self):
         import database
         conn = MagicMock()
-        conn.fetchval = AsyncMock(return_value=0)
-        conn.fetch = AsyncMock(return_value=[])
+        # search_products ranks the shop's rows in Python (search_text.py,
+        # 2026-11-11); admin_search_products still asks SQL with ILIKE.
+        conn.fetch = AsyncMock(return_value=[{"id": 1, "name": "Qora shokolad granula"},
+                                             {"id": 2, "name": "Kokos uni"}])
 
         class Pool:
             def acquire(self):
@@ -192,9 +194,10 @@ class SearchTest(unittest.TestCase):
                 return Ctx()
 
         with patch.object(database, "pool", Pool()):
-            run(database.search_products("şokolad"))
+            found, total = run(database.search_products("şokolad"))
             run(database.admin_search_products("Çoy"))
-        self.assertIn("%shokolad%", conn.fetchval.await_args.args)
+        self.assertEqual([p["id"] for p in found], [1])
+        self.assertEqual(total, 1)
         self.assertIn("%Choy%", conn.fetch.await_args.args)
 
 
