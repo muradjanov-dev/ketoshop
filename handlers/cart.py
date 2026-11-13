@@ -2754,6 +2754,9 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
                 # 🗺 link on top of it would just push the card off screen.
                 disable_web_page_preview=True,
             )
+            # Holat o'zgarsa shu kartochka tahrirlanadi (order_admin_feed, 2026-11-13).
+            import order_admin_feed
+            await order_admin_feed.remember_card(order_id, admin_id, card)
             # 📌 Tasdiqlanguncha adminning chatida pin (owner, 2026-11-11) —
             # order_pins.status_changed tasdiqlanishi bilan olib tashlaydi.
             if buttons:
