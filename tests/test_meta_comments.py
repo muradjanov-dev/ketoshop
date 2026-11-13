@@ -321,6 +321,38 @@ class PolicyTest(unittest.TestCase):
         self.assertIn("takrorlama", comment_ai.RULES)
 
 
+class SyncReadErrorsTest(unittest.IsolatedAsyncioTestCase):
+    """2026-11-13: bazada bitta ham Facebook izohi yo'q edi — o'qish xatosi
+    faqat logda qolardi. Endi sync_info() va /izohlar da ko'rinadi."""
+
+    async def test_facebook_read_error_is_kept_for_the_owner(self):
+        async def graph(session, method, path, token, params=None, body=None):
+            if path == "P1/comments":
+                raise mc.GraphError(10, "(#10) This endpoint requires the 'pages_read_user_content' permission")
+            return {"data": []}
+
+        targets = [{"platform": "fb", "object": "P1", "link": "https://facebook.com/P1"},
+                   {"platform": "ig", "object": "M1", "link": "https://instagram.com/p/M1/"}]
+        patches = [
+            patch.object(database, "get_meta_comments_state", AsyncMock(return_value={"backfilled": True})),
+            patch.object(database, "mark_meta_comments_state", AsyncMock()),
+            patch.object(mc, "identity", AsyncMock(return_value=IDENT)),
+            patch.object(mc, "_ad_targets", AsyncMock(return_value=[])),
+            patch.object(mc, "_organic_targets", AsyncMock(return_value=targets)),
+            patch.object(mc, "_graph", graph),
+            patch.object(mc, "ingest", AsyncMock()),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        stats = await mc.sync(None)
+        self.assertEqual((stats["fb_errors"], stats.get("ig_errors", 0), stats["fb_seen"]), (1, 0, 0))
+        info = mc.sync_info()
+        self.assertIn("pages_read_user_content", info["read_errors"]["fb"][0])
+        self.assertNotIn("ig", info["read_errors"])
+        self.assertIn("pages_read_user_content", mc.NEEDED_PERMISSIONS)
+
+
 class ListingTest(unittest.TestCase):
     def test_instagram_listing(self):
         data = {"data": [

@@ -1110,7 +1110,8 @@ async def api_comments(request: web.Request):
     except ValueError:
         return _json({"error": "limit raqam bo'lsin"}, status=400)
     rows = await database.meta_comments_report(scope, limit)
-    return _json({"scope": scope, "count": len(rows), "comments": rows})
+    import meta_comments
+    return _json({"scope": scope, "count": len(rows), "comments": rows, "sync": meta_comments.sync_info()})
 
 
 MANUAL_ORDER_BY = "🖥 Admin sayt"
