@@ -15,6 +15,83 @@ from openpyxl import load_workbook
 
 import reports
 import admin_web
+import database
+import handlers.admin as admin_handlers
+
+
+class MonthlyProductReportTest(unittest.TestCase):
+    def test_monthly_product_sales_uses_month_orders_excludes_gifts_and_sorts_by_sales(self):
+        class FakeConn:
+            def __init__(self):
+                self.args = None
+
+            async def fetch(self, sql, *args):
+                self.sql = sql
+                self.args = args
+                return [
+                    {"items": [
+                        {"product_id": 1, "name": "Small", "quantity": 1, "price": 100},
+                        {"product_id": 2, "name": "Large", "quantity": 2, "price": 200},
+                        {"product_id": 3, "name": "Gift", "quantity": 5, "price": 0, "is_gift": True},
+                        {"product_id": 4, "name": "Bonus", "quantity": 1, "price": 500, "is_bonus": True},
+                    ]},
+                    {"items": '[{"product_id": 1, "name": "Small", "quantity": 2, "price": 100}]'},
+                ]
+
+        class FakePool:
+            def __init__(self, conn):
+                self.conn = conn
+
+            def acquire(self):
+                pool_conn = self.conn
+                class Acquire:
+                    async def __aenter__(self):
+                        return pool_conn
+
+                    async def __aexit__(self, *args):
+                        return False
+                return Acquire()
+
+        conn = FakeConn()
+        with patch.object(database, "pool", FakePool(conn)):
+            products = asyncio.run(database.get_monthly_product_sales(2026, 10))
+
+        self.assertEqual([p["name"] for p in products], ["Large", "Small"])
+        self.assertEqual(products[0]["qty"], 2)
+        self.assertEqual(products[0]["revenue"], 400)
+        self.assertEqual(products[1]["qty"], 3)
+        self.assertEqual(products[1]["revenue"], 300)
+        self.assertIn("created_at >= $1", conn.sql)
+        self.assertIn("created_at < $2", conn.sql)
+        self.assertIn("status <> 'cancelled'", conn.sql)
+        self.assertEqual(len(conn.args), 2)
+
+    def test_monthly_admin_drilldown_shows_ranked_product_sales(self):
+        callback = SimpleNamespace(
+            from_user=SimpleNamespace(id=7), data="admin:monthly_stats:2026:10",
+            message=SimpleNamespace(edit_text=AsyncMock()), answer=AsyncMock(),
+        )
+        products = [
+            {"name": "Mahsulot A", "qty": 3, "revenue": 450_000},
+            {"name": "Mahsulot B", "qty": 2, "revenue": 300_000},
+        ]
+        month = {
+            "year": 2026, "month": 10, "is_current": False,
+            "orders": 2, "booked_value": 750_000, "delivered_orders": 1,
+            "delivered_revenue": 450_000, "revenue": 450_000, "b2b_revenue": 0,
+        }
+        with patch.object(admin_handlers, "is_admin", return_value=True), \
+             patch.object(admin_handlers, "get_user_language", AsyncMock(return_value="uz")), \
+             patch.object(admin_handlers, "get_month_stats", AsyncMock(return_value=month)), \
+             patch.object(admin_handlers, "get_monthly_product_sales", AsyncMock(return_value=products)), \
+             patch.object(admin_handlers, "get_month_name", return_value="Oktabr"):
+            asyncio.run(admin_handlers.show_specific_month_stats(callback))
+
+        text = callback.message.edit_text.await_args.args[0]
+        self.assertIn("Mahsulotlar", text)
+        self.assertLess(text.index("Mahsulot A"), text.index("Mahsulot B"))
+        self.assertIn("3 ta", text)
+        self.assertIn("450 000 so'm", text)
 
 
 class FinanceExcelReportTest(unittest.TestCase):
