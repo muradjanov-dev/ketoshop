@@ -142,6 +142,11 @@ async def send_morning(bot: Bot, now: datetime | None = None) -> int:
         return 0
     settings = await call_centre.get_settings()
     joke = call_centre_content.joke_of_day(today.toordinal())
+    try:
+        stale = sum(1 for lead in await call_centre.call_leads() if lead.get("stale"))
+    except Exception:
+        logger.warning("stale leads count failed", exc_info=True)
+        stale = 0
     tip = call_centre_content.MOTIVATION[today.toordinal() % len(call_centre_content.MOTIVATION)]
     sent = 0
     for operator_id in list(OPERATOR_IDS):
@@ -157,6 +162,7 @@ async def send_morning(bot: Bot, now: datetime | None = None) -> int:
             "",
             _plan_line(settings),
             f"📅 Bugun qayta qo'ng'iroq qilinadiganlar: <b>{len(due)}</b> ta",
+            *([f"🔔 30 kundan beri hech kim bog'lanmagan mijozlar: <b>{stale}</b> ta"] if stale else []),
             "",
             f"💡 {html.escape(tip)}",
             "",

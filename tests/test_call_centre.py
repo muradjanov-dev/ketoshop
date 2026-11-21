@@ -4,7 +4,7 @@ Telegram'ga ulanmaydi."""
 import asyncio
 import os
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test/test")
@@ -251,6 +251,47 @@ class AdminRoleHandlersTest(unittest.TestCase):
         self.assertEqual(apply.call_args.args[1:], (4343, "operator", self.me))
         cb, apply = self.call(self.admin.admin_add_with_role, "admin:addrole:4343:root")
         apply.assert_not_awaited()
+
+
+class LeadStateTest(unittest.TestCase):
+    NOW = datetime(2026, 11, 22, 8, 0)          # 13:00 Toshkent
+
+    def test_never_contacted_is_stale(self):
+        self.assertEqual(cc.lead_state(None, None, self.NOW), {"idle_days": None, "stale": True})
+
+    def test_thirty_days_without_any_action_is_stale(self):
+        last = self.NOW - timedelta(days=31)
+        self.assertEqual(cc.lead_state(last, last, self.NOW), {"idle_days": 31, "stale": True})
+        last = self.NOW - timedelta(days=20)
+        self.assertEqual(cc.lead_state(last, None, self.NOW), {"idle_days": 20, "stale": False})
+
+    def test_answered_rests_14_days(self):
+        last = self.NOW - timedelta(days=5)
+        self.assertIsNone(cc.lead_state(last, last, self.NOW))
+        last = self.NOW - timedelta(days=15)
+        self.assertEqual(cc.lead_state(last, last, self.NOW)["stale"], False)
+
+    def test_no_answer_hides_only_until_tomorrow(self):
+        this_morning = datetime(2026, 11, 22, 4, 30)      # 09:30 Toshkent
+        self.assertIsNone(cc.lead_state(this_morning, None, self.NOW))
+        yesterday = datetime(2026, 11, 21, 12, 0)
+        self.assertEqual(cc.lead_state(yesterday, None, self.NOW), {"idle_days": 0, "stale": False})
+
+
+class UndoRightsTest(unittest.TestCase):
+    TODAY = date(2026, 11, 22)
+
+    def call(self, op=5, day="2026-11-22"):
+        return {"operator_id": op, "called_at_local": day + "T10:00"}
+
+    def test_operator_only_own_today(self):
+        self.assertIsNone(cc.can_touch(self.call(), 5, "operator", self.TODAY))
+        self.assertIn("bugungi", cc.can_touch(self.call(op=6), 5, "operator", self.TODAY))
+        self.assertIn("bugungi", cc.can_touch(self.call(day="2026-11-21"), 5, "operator", self.TODAY))
+        self.assertEqual(cc.can_touch(None, 5, "operator", self.TODAY), "Topilmadi")
+
+    def test_admin_any(self):
+        self.assertIsNone(cc.can_touch(self.call(op=6, day="2026-10-01"), 1, "admin", self.TODAY))
 
 
 class ContentTest(unittest.TestCase):

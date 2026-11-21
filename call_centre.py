@@ -358,6 +358,9 @@ async def ensure_schema() -> None:
                 updated_at TIMESTAMP
             )
         """)
+        # Bekor qilish (2026-11-22): yozuv o'chirilmaydi, yashiriladi — xato
+        # bosilgan bo'lsa «↩️ Qaytarish» bilan tiklanadi.
+        await conn.execute("ALTER TABLE cc_calls ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS cc_calls_op_time ON cc_calls (operator_id, called_at)")
         await conn.execute(
@@ -438,7 +441,7 @@ async def save_settings(values: dict) -> dict:
 
 _CALL_COLS = ("id, operator_id, called_at, call_type, customer_name, phone, duration_sec, "
               "meaningful, product, order_amount, status, follow_up_on, follow_up_done, "
-              "order_id, note")
+              "order_id, note, deleted_at IS NOT NULL AS deleted")
 
 
 def _call_json(r) -> dict:
@@ -462,7 +465,8 @@ async def day_counts(operator_id: int, day: date) -> dict:
                       COUNT(*) FILTER (WHERE status = 'followup') AS followups,
                       COALESCE(SUM(order_amount) FILTER (WHERE status = 'sold'), 0) AS sales
                  FROM cc_calls
-                WHERE operator_id = $1 AND called_at >= $2 AND called_at < $3""",
+                WHERE operator_id = $1 AND called_at >= $2 AND called_at < $3
+                  AND deleted_at IS NULL""",
             operator_id, start, end)
     return {k: (float(v) if k == "sales" else int(v)) for k, v in dict(r).items()}
 
@@ -472,8 +476,22 @@ async def list_calls(operator_id: int, start: datetime, end: datetime, limit: in
         rows = await conn.fetch(
             f"""SELECT {_CALL_COLS} FROM cc_calls
                  WHERE operator_id = $1 AND called_at >= $2 AND called_at < $3
+                   AND deleted_at IS NULL
                  ORDER BY called_at DESC LIMIT $4""",
             operator_id, start, end, limit)
+    return [_call_json(r) for r in rows]
+
+
+async def cancelled_calls(operator_id: int, day: date) -> list[dict]:
+    """Bugun bekor qilingan (yashirilgan) yozuvlar — qaytarish uchun."""
+    start, end = day_range_utc(day)
+    async with database.pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT {_CALL_COLS} FROM cc_calls
+                 WHERE operator_id = $1 AND called_at >= $2 AND called_at < $3
+                   AND deleted_at IS NOT NULL
+                 ORDER BY deleted_at DESC LIMIT 50""",
+            operator_id, start, end)
     return [_call_json(r) for r in rows]
 
 
@@ -481,7 +499,7 @@ async def due_followups(operator_id: int, day: date) -> list[dict]:
     async with database.pool.acquire() as conn:
         rows = await conn.fetch(
             f"""SELECT {_CALL_COLS} FROM cc_calls
-                 WHERE operator_id = $1 AND follow_up_on IS NOT NULL
+                 WHERE operator_id = $1 AND follow_up_on IS NOT NULL AND deleted_at IS NULL
                    AND NOT follow_up_done AND follow_up_on <= $2
                  ORDER BY follow_up_on, called_at""",
             operator_id, day)
@@ -493,6 +511,7 @@ async def upcoming_followups(operator_id: int, day: date, limit: int = 30) -> li
         rows = await conn.fetch(
             f"""SELECT {_CALL_COLS} FROM cc_calls
                  WHERE operator_id = $1 AND follow_up_on > $2 AND NOT follow_up_done
+                   AND deleted_at IS NULL
                  ORDER BY follow_up_on, called_at LIMIT $3""",
             operator_id, day, limit)
     return [_call_json(r) for r in rows]
@@ -502,7 +521,8 @@ async def order_owner(order_id: int) -> int | None:
     """Buyurtmani CRMda birinchi bo'lib biriktirgan operator."""
     async with database.pool.acquire() as conn:
         return await conn.fetchval(
-            "SELECT operator_id FROM cc_calls WHERE order_id = $1 ORDER BY called_at LIMIT 1",
+            "SELECT operator_id FROM cc_calls WHERE order_id = $1 AND deleted_at IS NULL "
+            "ORDER BY called_at LIMIT 1",
             order_id)
 
 
@@ -569,11 +589,13 @@ async def month_counts(operator_id: int, month: str) -> dict:
                           WHERE c.status = 'sold' AND COALESCE(o.status, '') <> 'cancelled'), 0) AS sales
                  FROM cc_calls c
                  LEFT JOIN orders o ON o.id = c.order_id
-                WHERE c.operator_id = $1 AND c.called_at >= $2 AND c.called_at < $3""",
+                WHERE c.operator_id = $1 AND c.called_at >= $2 AND c.called_at < $3
+                  AND c.deleted_at IS NULL""",
             operator_id, start, end)
         calls = await conn.fetch(
             """SELECT customer_name, phone, status, order_amount, order_id, follow_up_on
-                 FROM cc_calls WHERE operator_id = $1 AND called_at >= $2 AND called_at < $3""",
+                 FROM cc_calls WHERE operator_id = $1 AND called_at >= $2 AND called_at < $3
+                  AND deleted_at IS NULL""",
             operator_id, start, end)
     out = {k: (float(v) if k == "sales" else int(v)) for k, v in dict(r).items()}
     out["crm_fill"] = crm_fill_percent([dict(c) for c in calls])
@@ -589,7 +611,7 @@ async def gross_profit(operator_id: int, month: str) -> dict:
         rows = await conn.fetch(
             """WITH owners AS (
                    SELECT DISTINCT ON (order_id) order_id, operator_id
-                     FROM cc_calls WHERE order_id IS NOT NULL
+                     FROM cc_calls WHERE order_id IS NOT NULL AND deleted_at IS NULL
                     ORDER BY order_id, called_at)
                SELECT o.id, o.total, o.items
                  FROM orders o JOIN owners w ON w.order_id = o.id
@@ -678,7 +700,8 @@ async def lookup_phone(raw: str) -> dict:
                 ORDER BY created_at DESC LIMIT 20""", tail)
         calls = await conn.fetch(
             """SELECT called_at, status, note, product, operator_id FROM cc_calls
-                WHERE right(COALESCE(phone, ''), 9) = $1 ORDER BY called_at DESC LIMIT 5""", tail)
+                WHERE right(COALESCE(phone, ''), 9) = $1 AND deleted_at IS NULL
+                ORDER BY called_at DESC LIMIT 5""", tail)
     products: dict[str, int] = {}
     for o in orders:
         try:
@@ -702,7 +725,7 @@ async def lookup_phone(raw: str) -> dict:
     }
 
 
-async def call_leads(limit: int = 40) -> list[dict]:
+async def call_leads(limit: int = 200) -> list[dict]:
     """«Kimga qo'ng'iroq qilay?» — 30+ kun xarid qilmagan, yetkazilgan
     buyurtmasi bor mijozlar; oxirgi 14 kunda CRMda qo'ng'iroq qilinganlar,
     ichki akkauntlar, xodimlar va B2B chiqariladi."""
@@ -724,20 +747,47 @@ async def call_leads(limit: int = 40) -> list[dict]:
                 ORDER BY COUNT(*) DESC, MAX(o.created_at) DESC
                 LIMIT 400""",
             exclude, now - timedelta(days=30))
-        recent = {r["t"] for r in await conn.fetch(
-            "SELECT DISTINCT right(phone, 9) AS t FROM cc_calls "
-            "WHERE phone IS NOT NULL AND called_at > $1", now - timedelta(days=14))}
+        history = {r["t"]: r for r in await conn.fetch(
+            """SELECT right(phone, 9) AS t, MAX(called_at) AS last_any,
+                      MAX(called_at) FILTER (WHERE status <> 'no_answer') AS last_answered
+                 FROM cc_calls WHERE phone IS NOT NULL AND deleted_at IS NULL
+                GROUP BY 1""")}
     out = []
     for r in rows:
         tail = phone_tail(r["phone"])
-        if not tail or tail in recent:
+        if not tail:
+            continue
+        h = history.get(tail)
+        state = lead_state(h and h["last_any"], h and h["last_answered"], now)
+        if state is None:
             continue
         out.append({"name": r["name"], "phone": "+998" + tail, "orders": int(r["orders"]),
                     "spent": round(float(r["spent"] or 0)),
-                    "days": (now - r["last_at"]).days})
+                    "days": (now - r["last_at"]).days, **state})
         if len(out) >= limit:
             break
     return out
+
+
+STALE_DAYS = 30        # shuncha kun hech qanday amal bo'lmasa — 🔔 alohida toifa
+ANSWERED_PAUSE = 14    # javob bergan mijoz shuncha kun bezovta qilinmaydi
+
+
+def lead_state(last_any: datetime | None, last_answered: datetime | None,
+               now: datetime) -> dict | None:
+    """Navbatdagi mijoz holati yoki None (hozir ko'rsatilmaydi).
+
+    * javob bergan — 14 kun dam;
+    * bugun har qanday urinish (ko'tarmadi ham) — bugunga yashirinadi,
+      ertaga qaytadi (bugungi qayta urinish «📵 Javobsiz»da);
+    * 30 kun (yoki hech qachon) hech qanday amal yo'q — stale: 🔔 toifa."""
+    today_start, _ = day_range_utc(today_local(now))
+    if last_answered and last_answered > now - timedelta(days=ANSWERED_PAUSE):
+        return None
+    if last_any and last_any >= today_start:
+        return None
+    idle = (now - last_any).days if last_any else None
+    return {"idle_days": idle, "stale": idle is None or idle >= STALE_DAYS}
 
 
 # ───────────────────────────── HTTP ──────────────────────────────────────────
@@ -829,6 +879,7 @@ async def api_dashboard(request: web.Request):
         "calls": await list_calls(target, start, end),
         "due": await due_followups(target, today),
         "upcoming": await upcoming_followups(target, today),
+        "cancelled": await cancelled_calls(target, today),
         "report": dict(report) if report else None,
         "month": await month_view(target, month),
         "tiers": {"kpi": KPI_BONUS_TIERS, "commission": COMMISSION_TIERS},
@@ -860,7 +911,7 @@ async def _write_call(request: web.Request, call_id: int | None):
     owner = uid
     if call_id is not None:
         existing = await get_call(call_id)
-        if not existing or (existing["operator_id"] != uid and role != "admin"):
+        if not existing or existing.get("deleted") or (existing["operator_id"] != uid and role != "admin"):
             return _json({"error": "Topilmadi"}, 404)
         owner = existing["operator_id"]
 
@@ -905,17 +956,45 @@ async def api_call_delete(request: web.Request):
         call_id = int(request.match_info["id"])
     except ValueError:
         return _json({"error": "id"}, 400)
-    call = await get_call(call_id)
+    return await _set_cancelled(call_id, uid, role, True)
+
+
+def can_touch(call: dict | None, uid: int, role: str, today: date) -> str | None:
+    """Bekor qilish/qaytarish huquqi: admin — har qanday; operator — faqat
+    o'zining BUGUNGI yozuvi (o'tgan kunlar KPI). Xato matni yoki None."""
     if not call:
-        return _json({"error": "Topilmadi"}, 404)
-    # Operator faqat o'zining BUGUNGI yozuvini o'chiradi — o'tgan kunlar KPI.
-    if role != "admin":
-        local_day = call.get("called_at_local", "")[:10]
-        if call["operator_id"] != uid or local_day != today_local().isoformat():
-            return _json({"error": "Faqat bugungi o'z yozuvingizni o'chira olasiz"}, 403)
+        return "Topilmadi"
+    if role == "admin":
+        return None
+    if call["operator_id"] != uid or (call.get("called_at_local") or "")[:10] != today.isoformat():
+        return "Faqat bugungi o'z yozuvingizni o'zgartira olasiz"
+    return None
+
+
+async def _set_cancelled(call_id: int, uid: int, role: str, cancel: bool):
+    call = await get_call(call_id)
+    err = can_touch(call, uid, role, today_local())
+    if err:
+        return _json({"error": err}, 404 if err == "Topilmadi" else 403)
+    if cancel:
+        sql = "UPDATE cc_calls SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1"
+    else:
+        sql = "UPDATE cc_calls SET deleted_at = NULL WHERE id = $1"
     async with database.pool.acquire() as conn:
-        await conn.execute("DELETE FROM cc_calls WHERE id = $1", call_id)
-    return _json({"ok": True})
+        await conn.execute(sql, call_id)
+    return _json({"ok": True, "day": await day_counts(call["operator_id"], today_local())})
+
+
+async def api_call_restore(request: web.Request):
+    auth = _auth(request)
+    if isinstance(auth, web.Response):
+        return auth
+    uid, role, _ = auth
+    try:
+        call_id = int(request.match_info["id"])
+    except ValueError:
+        return _json({"error": "id"}, 400)
+    return await _set_cancelled(call_id, uid, role, False)
 
 
 async def api_followup_done(request: web.Request):
@@ -930,9 +1009,14 @@ async def api_followup_done(request: web.Request):
     call = await get_call(call_id)
     if not call or (call["operator_id"] != uid and role != "admin"):
         return _json({"error": "Topilmadi"}, 404)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    done = not (isinstance(body, dict) and body.get("done") is False)   # {done:false} — qaytarish
     async with database.pool.acquire() as conn:
-        await conn.execute("UPDATE cc_calls SET follow_up_done = TRUE WHERE id = $1", call_id)
-    return _json({"ok": True})
+        await conn.execute("UPDATE cc_calls SET follow_up_done = $2 WHERE id = $1", call_id, done)
+    return _json({"ok": True, "done": done})
 
 
 async def api_lookup(request: web.Request):
@@ -1068,6 +1152,7 @@ def add_routes(app: web.Application) -> None:
     app.router.add_post("/cc/api/calls", api_call_create)
     app.router.add_post("/cc/api/calls/{id}", api_call_update)
     app.router.add_post("/cc/api/calls/{id}/delete", api_call_delete)
+    app.router.add_post("/cc/api/calls/{id}/restore", api_call_restore)
     app.router.add_post("/cc/api/followups/{id}/done", api_followup_done)
     app.router.add_get("/cc/api/lookup", api_lookup)
     app.router.add_get("/cc/api/order/{id}", api_order)
