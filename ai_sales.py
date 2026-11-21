@@ -287,6 +287,36 @@ def _script(text: str | None) -> str | None:
     return "cyr" if cyrillic > latin else "lat"
 
 
+# O'zbekchani rus klaviaturasida yozganlar ў/қ/ғ/ҳ ishlatmaydi ("Мана шу Кето сомса
+# ретцептиздан нечта сомса чикади") — 2026-11-21 dagi suhbatlar tahlilida 56 ta javob
+# shu sabab lotinda yoki aralash ketgan. Rus tili esa ы/щ/ь va "что, как, это..." bilan
+# ajraladi.
+_RU_HINTS = re.compile(r"(?<![а-яё])(что|как|это|можно|есть|пожалуйста|здравствуйте|спасибо|сколько|где|"
+                       r"когда|почему|нужно|хочу|если|для|мне|меня|вы|ваш|мой|моя|она|он|не|по|и|в|на|у|с)"
+                       r"(?![а-яё])|[ыщ]", re.IGNORECASE)
+_UZ_CYR_HINTS = re.compile(r"(?<![а-яё])(ассалому|алейкум|алайкум|рахмат|раҳмат|мана|шу|бу|керак|кере|керакмас|"
+                           r"булади|бўлади|болади|бор|йук|йўқ|йуку|канча|қанча|нечта|кандай|қандай|нима|нимага|"
+                           r"уни|менга|манга|ман|мен|сиз|биз|сизда|бизда|экан|эди|болса|бўлса|хоп|хуп|яна|беринг|"
+                           r"булди|бўлди|тугри|тўғри|махалла|маҳалла|нархи|нархичи|таркиби|ташланг|ташанг)(?![а-яё])"
+                           r"|[а-яё]{2,}(лар|ларни|ни|дан|га|да|ми|миз|сиз|ган|ганман|дим|дик|инг|ланг|сак|сек|сам|"
+                           r"япман|вотти|мокчиман|моқчиман|ади|ими|чи)(?![а-яё])", re.IGNORECASE)
+
+
+def writes_uzbek_cyrillic(text: str | None, lang: str | None = None) -> bool:
+    """Mijoz o'zbekcha kirillda yozdimi — rus klaviaturasida ham (2026-11-21: 56 ta javob
+    shu sabab lotin/aralash ketgan)? O'zbekcha va ruscha belgilar sanaladi; teng bo'lsa
+    (masalan "Хоп", "Наргиза") — mijozning bot tili hal qiladi."""
+    text = text or ""
+    if _script(text) != "cyr":
+        return False
+    if _UZ_CYR_LETTERS.search(text):
+        return True
+    uz, ru = len(_UZ_CYR_HINTS.findall(text)), len(_RU_HINTS.findall(text))
+    if uz != ru:
+        return uz > ru
+    return lang != "ru"
+
+
 def polish_reply(text: str, lang: str | None = None, customer_text: str | None = None) -> str:
     """Mijozga ketishdan oldingi oxirgi tekshiruv (jonli sinov, 2026-10-13):
       * aralash lotin/kirill so'zlar — fix_mixed_script;
@@ -305,8 +335,7 @@ def polish_reply(text: str, lang: str | None = None, customer_text: str | None =
         # kirill bo'lak qolgan ("Саватга қўшамизми?") — hammasi lotinga.
         from translit import cyr_to_lat
         text = _CYR_RUN.sub(lambda run: cyr_to_lat(run.group(0)), text)
-    elif (customer == "cyr" and _UZ_CYR_LETTERS.search(customer_text or "")
-          and latin > cyrillic):
+    elif customer == "cyr" and writes_uzbek_cyrillic(customer_text, lang) and latin:
         # Mijoz o'zbekcha kirillda yozdi, model lotinda javob berdi — kirillga.
         from translit import lat_to_cyr
         text = lat_to_cyr(text)
@@ -4813,7 +4842,7 @@ async def _group_answer(bot: Bot, message: Message, text: str) -> None:
         return
     if not reply:
         return
-    reply = naturalize(thank_politely(strip_name_address(polish_reply(reply),
+    reply = naturalize(thank_politely(strip_name_address(polish_reply(reply, customer_text=question),
                                                          customer_names(message.from_user, text))))
     reply = ai_tone.vary(reply, None)          # "... farqini ham aytib beramiz" — bo'sh va'da
     await message.reply(reply)

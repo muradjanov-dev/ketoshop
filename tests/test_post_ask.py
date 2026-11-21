@@ -69,6 +69,17 @@ class LineTest(unittest.TestCase):
         long = "x" * 1000
         self.assertEqual(post_ask.with_line(long, line, 1024), long)
 
+    def test_shop_link_sometimes_reads_healthy_products_world(self):
+        import channel_link
+        text = "Fakt\n\n" + channel_link.link_line(channel_link.SHOP_URL, channel_link.SHOP_LABEL)
+        with patch.object(post_ask._rng, "random", lambda: 0.1):
+            out = post_ask.vary_shop_link(text)
+        self.assertIn("🛍️ <b>Соғлом маҳсулотлар дунёси:</b>", out)
+        self.assertIn(channel_link.SHOP_URL, out)
+        self.assertNotIn(channel_link.SHOP_LABEL, out)
+        with patch.object(post_ask._rng, "random", lambda: 0.9):
+            self.assertEqual(post_ask.vary_shop_link(text), text)
+
     def test_languages(self):
         self.assertIn("istalgan savolingizni", post_ask.dm_line("uz"))
         self.assertIn("исталган саволингизни", post_ask.dm_line("uz_cyr"))
