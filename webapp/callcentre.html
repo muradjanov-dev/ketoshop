@@ -144,6 +144,34 @@ table.t td:last-child{text-align:right;font-weight:600;font-variant-numeric:tabu
 .toast{position:fixed;left:50%;top:12px;transform:translateX(-50%);background:var(--ink);color:var(--bg);
   padding:10px 16px;border-radius:12px;z-index:60;font-size:14px;display:none;max-width:90vw;box-shadow:var(--shadow)}
 
+.undo{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translate(-50%,20px);opacity:0;
+  pointer-events:none;z-index:40;background:var(--ink);color:var(--bg);border-radius:14px;padding:6px 6px 6px 14px;
+  display:flex;align-items:center;gap:10px;font-size:14px;box-shadow:var(--shadow);transition:all .2s;width:max-content;max-width:calc(100vw - 32px);white-space:nowrap}
+.undo.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.undo button{border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-weight:700;padding:9px 12px;cursor:pointer;white-space:nowrap}
+.card.alert{border:1.5px solid var(--bad);cursor:pointer;background:linear-gradient(0deg,var(--card),var(--card))}
+.link{border:0;background:none;color:var(--accent);font-weight:600;cursor:pointer;padding:8px 0 0;font-size:14px}
+
+/* ▦ kanban */
+.board{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;margin:12px -16px 0;padding:0 16px 10px;scrollbar-width:none}
+.board::-webkit-scrollbar{display:none}
+.col{flex:0 0 80%;max-width:290px;scroll-snap-align:start;background:var(--soft);border-radius:18px;padding:10px;min-height:260px;
+  transition:outline-color .15s;outline:2px dashed transparent;outline-offset:-2px}
+.col.over{outline-color:var(--accent)}
+.col-h{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;padding:2px 4px 4px}
+.col-h .dot{width:9px;height:9px;border-radius:50%}
+.col-h .cnt{margin-left:auto;color:var(--muted);font-weight:600;font-size:13px}
+.kcard{background:var(--card);border-radius:13px;padding:10px 11px;margin-top:8px;box-shadow:var(--shadow);cursor:pointer;
+  border-left:3px solid var(--k, var(--line))}
+.kcard:active{transform:scale(.98)}
+.kcard.drag{opacity:.4}
+.kcard .n{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kcard .s{color:var(--muted);font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.col .more{color:var(--muted);font-size:12px;text-align:center;padding:8px 0 2px}
+.dots{display:flex;justify-content:center;gap:6px;margin-top:2px}
+.dots i{width:6px;height:6px;border-radius:50%;background:var(--line)}
+.dots i.on{background:var(--accent);width:16px;border-radius:9px}
+
 /* 🎆 bayram */
 #fx{position:fixed;inset:0;pointer-events:none;z-index:50}
 .party{position:fixed;inset:0;z-index:55;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(8,10,6,.35)}
@@ -190,6 +218,7 @@ table.t td:last-child{text-align:right;font-weight:600;font-variant-numeric:tabu
 <canvas id="fx"></canvas>
 <div class="party" id="party"></div>
 <div class="toast" id="toast"></div>
+<div class="undo" id="undo"></div>
 
 <script>
 (function(){
@@ -208,6 +237,13 @@ function money(n){ return num(n) + " so'm"; }
 function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
 function toast(t){ var el=$('toast'); el.textContent=t; el.style.display='block';
   clearTimeout(toast._t); toast._t=setTimeout(function(){ el.style.display='none'; }, 2400); }
+/* Xato bosildimi? 8 soniya ichida «↩️ Qaytarish». */
+function undoToast(t, fn){
+  var el = $('undo'); el.innerHTML = '<span>'+esc(t)+'</span><button id="undoBtn">↩️ Qaytarish</button>';
+  el.classList.add('show');
+  clearTimeout(undoToast._t); undoToast._t = setTimeout(function(){ el.classList.remove('show'); }, 8000);
+  $('undoBtn').onclick = function(){ clearTimeout(undoToast._t); el.classList.remove('show'); tap(); fn(); };
+}
 function haptic(k){ try { tg.HapticFeedback.notificationOccurred(k||'success'); } catch(e){} }
 function tap(){ try { tg.HapticFeedback.selectionChanged(); } catch(e){} }
 function store(k, v){ try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch(e){ return null; } }
@@ -278,8 +314,8 @@ function renderTop(){
       return '<option value="'+o.id+'">📞 '+esc(o.name)+'</option>'; }).join('');
     $('opSel').value = String(S.operator);
   }
-  var due = d.due.length, b = $('qBadge');
-  b.textContent = due; b.classList.toggle('hidden', !due);
+  var due = d.due.length + (isMe() ? staleCount() : 0), b = $('qBadge');
+  b.textContent = due > 99 ? '99+' : due; b.classList.toggle('hidden', !due);
   $('plus').classList.toggle('hidden', !isMe());
   document.querySelectorAll('.nav [data-tab]').forEach(function(x){ x.classList.toggle('on', x.getAttribute('data-tab') === S.tab); });
 }
@@ -292,10 +328,35 @@ function queue(){
   var d = S.data, out = [];
   d.due.forEach(function(c){ out.push({key:'f'+c.id, name:c.customer_name, phone:c.phone, product:c.product, followup:c.id,
     why:'📅 Qayta aloqa' + (c.follow_up_on < d.today ? ' · kechikkan' : '') + (c.note ? ' · ' + c.note : '')}); });
-  (S.leads||[]).forEach(function(l){ out.push({key:'l'+l.phone, name:l.name, phone:l.phone,
-    why:'🛍 ' + l.orders + ' ta xarid · ' + l.days + ' kundan beri olmagan'}); });
+  // 🔔 30+ kun hech kim bog'lanmaganlar — qayta aloqalardan keyin birinchi.
+  leadItems(true).forEach(function(l){ out.push(l); });
+  leadItems(false).forEach(function(l){ out.push(l); });
+  // Javobsizlar oxirida — bir oz vaqt o'tib qayta urinish uchun.
+  unanswered().forEach(function(u){ out.push(u); });
   return out;
 }
+/* Bugun ko'tarmaganlar: shu raqamga keyin javob bo'lgan qo'ng'iroq bo'lmasa. */
+function unanswered(){
+  var calls = (S.data.calls || []).slice().reverse(), by = {}, order = [];   // eskidan yangiga
+  calls.forEach(function(c){
+    if (!c.phone) return;
+    if (c.status === 'no_answer') {
+      if (!by[c.phone]) { by[c.phone] = {key:'u'+c.phone, name:c.customer_name, phone:c.phone, tries:0, unanswered:true}; order.push(c.phone); }
+      by[c.phone].tries += 1; by[c.phone].last = (c.called_at_local || '').slice(11,16);
+      if (c.customer_name) by[c.phone].name = c.customer_name;
+    } else if (by[c.phone]) { by[c.phone].answered = true; }
+  });
+  return order.map(function(p){ return by[p]; }).filter(function(u){ return !u.answered; }).map(function(u){
+    u.why = '📵 ' + u.tries + ' marta ko\'tarmadi · oxirgisi ' + u.last; return u; });
+}
+function skippedCount(){ return Object.keys(S.skip).length; }
+function leadItems(stale){
+  return (S.leads || []).filter(function(l){ return !!l.stale === stale; }).map(function(l){
+    return {key:'l'+l.phone, name:l.name, phone:l.phone, stale:!!l.stale,
+      why:(l.stale ? '🔔 ' + (l.idle_days == null ? 'Hech qachon bog\'lanilmagan' : l.idle_days + ' kundan beri aloqa yo\'q') + ' · '
+                   : '🛍 ') + l.orders + ' ta xarid · ' + l.days + ' kun xaridsiz'}; });
+}
+function staleCount(){ return (S.leads || []).filter(function(l){ return l.stale; }).length; }
 function nextUp(){ var q = queue().filter(function(x){ return !S.skip[x.key]; }); return q[0] || null; }
 
 function startCall(it){
@@ -306,7 +367,26 @@ function startCall(it){
 function noAnswer(it){
   tap();
   api('/cc/api/calls', {call_type:'out', status:'no_answer', phone:it.phone, customer_name:it.name, duration_sec:0})
-    .then(function(j){ S.skip[it.key] = 1; toast('📵 Yozildi · keyingisi'); afterSave(j, 'no_answer'); })
+    .then(function(j){
+      S.skip[it.key] = 1; afterSave(j, 'no_answer');
+      undoToast('📵 «Ko\'tarmadi» yozildi', function(){ delete S.skip[it.key]; cancelCall(j.call.id, true); });
+    })
+    .catch(function(e){ toast(e.message); });
+}
+function skip(it){
+  S.skip[it.key] = 1; tap(); render();
+  undoToast('⏭ O\'tkazib yuborildi', function(){ delete S.skip[it.key]; render(); });
+}
+/* Yozuvni bekor qilish (yashirish) va qaytarish — ikkalasi ham qaytariladigan. */
+function cancelCall(id, silent){
+  return api('/cc/api/calls/' + id + '/delete', {}).then(function(){
+    if (!silent) undoToast('↩️ Yozuv bekor qilindi', function(){ restoreCall(id); });
+    else toast('↩️ Qaytarildi');
+    S.leads = null; load();
+  }).catch(function(e){ toast(e.message); });
+}
+function restoreCall(id){
+  return api('/cc/api/calls/' + id + '/restore', {}).then(function(){ toast('✅ Qaytarildi'); S.leads = null; load(); })
     .catch(function(e){ toast(e.message); });
 }
 
@@ -338,7 +418,7 @@ function bindEdit(root, pool){
 function queueCard(it, big){
   return '<div class="'+(big ? 'card next' : 'item')+'" style="'+(big ? '' : 'cursor:default')+'">' +
     (big ? '<h3>Keyingi qo\'ng\'iroq</h3>' : '') +
-    '<div class="m"><div class="'+(big ? 'who' : 'n')+'">'+esc(it.name || 'Mijoz')+'</div>' +
+    '<div class="m"><div class="'+(big ? 'who' : 'n')+'">'+esc(it.name || 'Ismi noma\'lum')+'</div>' +
     '<a class="phone"'+(big ? '' : ' style="font-size:15px"')+' href="tel:'+esc(it.phone)+'">'+esc(fmtPhone(it.phone))+'</a><div class="'+(big ? 'why' : 's')+'">'+esc(it.why)+'</div></div>' +
     (big ? '<div class="actions"><button class="btn primary" data-call>📞 Qo\'ng\'iroq</button>' +
        '<button class="btn" data-na>📵 Ko\'tarmadi</button><button class="btn" data-skip>⏭</button></div>'
@@ -348,19 +428,22 @@ function bindQueue(el, it){
   var c = el.querySelector('[data-call]'), n = el.querySelector('[data-na]'), k = el.querySelector('[data-skip]');
   if (c) c.onclick = function(){ startCall(it); };
   if (n) n.onclick = function(){ noAnswer(it); };
-  if (k) k.onclick = function(){ S.skip[it.key] = 1; tap(); VIEWS.today(); };
+  if (k) k.onclick = function(){ skip(it); };
 }
 
 var VIEWS = {
   today: function(){
     var d = S.data, calls = d.calls;
-    if (isMe() && S.leads === null) { loadLeads().then(function(){ if (S.tab === 'today') VIEWS.today(); }); }
+    if (isMe() && S.leads === null) { loadLeads().then(function(){ if (S.tab === 'today') render(); }); }
     var nx = isMe() ? nextUp() : null;
     var html = '<div class="card"><div class="row between" style="margin-bottom:12px"><h3 style="margin:0">Bugungi reja</h3>' +
       '<span class="muted">💰 '+money(d.day.sales)+'</span></div><div class="prog">'+bars()+'</div></div>';
     if (isMe()) html += nx ? '<div id="nx">'+queueCard(nx, true)+'</div>'
       : '<div class="card next"><h3>Keyingi qo\'ng\'iroq</h3><div class="muted">' +
         (S.leads === null ? 'Navbat tayyorlanmoqda…' : 'Navbat bo\'sh. Kiruvchi qo\'ng\'iroqlarni ＋ orqali yozing.') + '</div></div>';
+    if (isMe() && staleCount()) html += '<div class="card alert" id="staleBan"><div class="row between"><div><b>🔔 '+staleCount()+' ta mijoz</b>' +
+      '<div class="muted">30 kundan beri ular bilan hech kim bog\'lanmagan</div></div><button class="btn sm primary">Ko\'rish</button></div></div>';
+    if (isMe() && skippedCount()) html += '<button class="link" id="unskip">⏭ O\'tkazib yuborilganlar · '+skippedCount()+' — navbatga qaytarish</button>';
     var shown = S.showAll ? calls : calls.slice(0, 6);
     html += '<div class="card"><div class="row between"><h3 style="margin:0">Bugungi yozuvlar · '+calls.length+'</h3>' +
       (d.day.inbound ? '<span class="muted">📥 '+d.day.inbound+'</span>' : '') + '</div><div id="log" style="margin-top:6px">' +
@@ -368,6 +451,11 @@ var VIEWS = {
       (calls.length > 6 && !S.showAll ? '<button class="btn sm ghost" id="all" style="width:100%;margin-top:6px">Hammasi ('+calls.length+')</button>' : '') + '</div>';
     html += '<div class="card"><div class="row between"><h3 style="margin:0">😄 Kun latifasi</h3>' +
       '<button class="btn sm ghost" id="joke2">Yana</button></div><div class="joke" id="joke" style="margin-top:8px">'+esc(S.joke || d.joke_of_day)+'</div></div>';
+    var gone = d.cancelled || [];
+    if (gone.length) html += '<details class="card"><summary>↩️ Bekor qilingan yozuvlar · '+gone.length+'</summary><div id="gone" style="margin-top:6px">' +
+      gone.map(function(c){ return '<div class="item" style="cursor:default"><div class="time">'+esc((c.called_at_local||'').slice(11,16))+'</div>' +
+        '<div class="m"><div class="n">'+esc(c.customer_name || fmtPhone(c.phone) || 'Mijoz')+'</div><div class="s">'+esc(d.statuses[c.status] || c.status)+'</div></div>' +
+        '<button class="btn sm" data-restore="'+c.id+'">↩️ Qaytarish</button></div>'; }).join('') + '</div></details>';
     if (isMe()) html += '<button class="btn ghost" id="rep" style="width:100%;margin-top:12px">📝 Kun yakuni hisoboti' + (d.report ? ' · ✅ yuborilgan' : '') + '</button>';
     $('view').innerHTML = html;
     if (nx) bindQueue($('nx'), nx);
@@ -375,21 +463,43 @@ var VIEWS = {
     if ($('all')) $('all').onclick = function(){ S.showAll = true; VIEWS.today(); };
     $('joke2').onclick = function(){ S.joke = pick(d.fun.jokes); $('joke').textContent = S.joke; tap(); };
     if ($('rep')) $('rep').onclick = openReport;
+    if ($('staleBan')) $('staleBan').onclick = function(){ S.tab = 'queue'; S.qseg = 'stale'; tap(); render(); window.scrollTo(0,0); };
+    if ($('unskip')) $('unskip').onclick = function(){ S.skip = {}; tap(); toast('↩️ Hammasi navbatga qaytdi'); VIEWS.today(); };
+    document.querySelectorAll('[data-restore]').forEach(function(b){ b.onclick = function(){ tap(); restoreCall(Number(b.getAttribute('data-restore'))); }; });
   },
   queue: function(){
     var d = S.data;
-    if (S.qseg === 'leads' && S.leads === null) loadLeads().then(function(){ if (S.tab === 'queue') VIEWS.queue(); });
-    var items = S.qseg === 'due' ? queue().filter(function(x){ return x.followup; }) : queue().filter(function(x){ return !x.followup; });
-    var html = '<div class="seg"><button data-q="due" class="'+(S.qseg==='due'?'on':'')+'">📅 Qayta aloqa · '+d.due.length+'</button>' +
-      '<button data-q="leads" class="'+(S.qseg==='leads'?'on':'')+'">🛍 Eski mijozlar</button></div>';
+    if (S.qseg === 'leads' && S.leads === null) loadLeads().then(function(){ if (S.tab === 'queue') render(); });
+    var viewSeg = '<div class="seg"><button data-v="list" class="'+(S.qview!=='board'?'on':'')+'">☰ Ro\'yxat</button>' +
+      '<button data-v="board" class="'+(S.qview==='board'?'on':'')+'">▦ Kanban</button></div>';
+    if (S.qview === 'board') {
+      if (S.leads === null) loadLeads().then(function(){ if (S.tab === 'queue') render(); });
+      $('view').innerHTML = viewSeg + renderBoard();
+      bindViewSeg(); bindBoard(); return;
+    }
+    var miss = unanswered();
+    // Navbat bo'limida hech narsa yashirilmaydi — ⏭ faqat «Keyingi qo'ng'iroq»ni o'zgartiradi.
+    if (S.qseg !== 'due' && S.qseg !== 'miss' && S.leads === null) loadLeads().then(function(){ if (S.tab === 'queue') render(); });
+    var items = S.qseg === 'due' ? queue().filter(function(x){ return x.followup; })
+      : S.qseg === 'miss' ? miss : leadItems(S.qseg === 'stale');
+    var sc = staleCount();
+    var html = viewSeg + '<div class="seg">' +
+      '<button data-q="due" class="'+(S.qseg==='due'?'on':'')+'">📅 Qayta '+d.due.length+'</button>' +
+      '<button data-q="stale" class="'+(S.qseg==='stale'?'on':'')+'">🔔 30+ kun'+(S.leads === null ? '' : ' '+sc)+'</button>' +
+      '<button data-q="miss" class="'+(S.qseg==='miss'?'on':'')+'">📵 '+miss.length+'</button>' +
+      '<button data-q="leads" class="'+(S.qseg==='leads'?'on':'')+'">🛍 Eski</button></div>';
     html += '<div class="card" id="ql">' + (items.length ? items.map(function(it, i){ return '<div data-i="'+i+'">'+queueCard(it, false)+'</div>'; }).join('')
       : '<div class="empty">' + (S.qseg === 'due' ? 'Bugungi qayta aloqalar yo\'q — toza stol ✨' :
+         S.qseg === 'miss' ? 'Bugun ko\'tarmaganlar yo\'q 👍' :
          S.leads === null ? 'Yuklanmoqda…' : 'Hozircha ro\'yxat bo\'sh') + '</div>') + '</div>';
-    if (S.qseg === 'leads') html += '<div class="muted" style="margin-top:8px">30+ kun xarid qilmagan, oxirgi 14 kunda qo\'ng\'iroq qilinmagan mijozlar. Ko\'p xarid qilganlar yuqorida.</div>';
+    if (S.qseg === 'leads') html += '<div class="muted" style="margin-top:8px">30+ kun xarid qilmagan, oxirgi 30 kunda bog\'lanilgan mijozlar. Javob berganlar 14 kun, ko\'tarmaganlar faqat bugun ro\'yxatdan chiqadi.</div>';
+    if (S.qseg === 'stale') html += '<div class="muted" style="margin-top:8px">🔔 30 kun ichida biror marta ham qo\'ng\'iroq qilinmagan (yoki hech qachon bog\'lanilmagan) mijozlar. Har qanday yozuv — hatto «ko\'tarmadi» — ularni bu ro\'yxatdan chiqaradi.</div>';
+    if (S.qseg === 'miss') html += '<div class="muted" style="margin-top:8px">Bugun telefonni ko\'tarmaganlar. 11:00–11:30 va kun oxirida yana urinib ko\'ring.</div>';
     if (S.qseg === 'due' && d.upcoming.length) html += '<div class="card"><h3>Keyingi kunlar · '+d.upcoming.length+'</h3><div id="up">' +
       d.upcoming.map(function(c){ return callRow(c).replace('<div class="time">'+esc((c.called_at_local||'').slice(11,16)),
         '<div class="time">'+esc(c.follow_up_on.split('-').reverse().slice(0,2).join('.'))); }).join('') + '</div></div>';
     $('view').innerHTML = html;
+    bindViewSeg();
     document.querySelectorAll('[data-q]').forEach(function(b){ b.onclick = function(){ S.qseg = b.getAttribute('data-q'); tap(); VIEWS.queue(); }; });
     document.querySelectorAll('#ql [data-i]').forEach(function(el){ bindQueue(el, items[Number(el.getAttribute('data-i'))]); });
     if ($('up')) bindEdit($('up'), d.upcoming);
@@ -428,6 +538,84 @@ var VIEWS = {
     if (d.me.role === 'admin') bindAdmin();
   }
 };
+
+/* ───────── ▦ Kanban: mijoz qaysi bosqichda ───────── */
+S.qview = store('cc_qview') === 'board' ? 'board' : 'list';
+function bindViewSeg(){
+  document.querySelectorAll('[data-v]').forEach(function(b){ b.onclick = function(){
+    S.qview = b.getAttribute('data-v'); store('cc_qview', S.qview); tap(); VIEWS.queue(); }; });
+}
+var BOARD_LIMIT = 30;
+function boardColumns(){
+  var d = S.data, today = d.calls || [];
+  var asItem = function(c){ return {key:'c'+c.id, call:c, name:c.customer_name, phone:c.phone,
+    why:[c.product, c.order_amount ? money(c.order_amount) : null, c.note].filter(Boolean).join(' · ') || (c.called_at_local||'').slice(11,16)}; };
+  var follow = d.due.concat(d.upcoming).map(function(c){ var it = asItem(c); it.followup = c.id;
+    it.why = '📅 ' + (c.follow_up_on||'').split('-').reverse().slice(0,2).join('.') + (c.follow_up_on < d.today ? ' · kechikkan' : c.follow_up_on === d.today ? ' · bugun' : '') +
+      (c.note ? ' · ' + c.note : ''); return it; });
+  return [
+    {key:'stale', title:'🔔 30+ kun', color:'var(--bad)', status:null, items:leadItems(true),
+     hint: S.leads === null ? 'Yuklanmoqda…' : 'Unutilgan mijoz yo\'q 👏'},
+    {key:'queue', title:'Navbat', color:'var(--c-out)', status:null, items:leadItems(false),
+     hint: S.leads === null ? 'Yuklanmoqda…' : 'Eski mijozlar tugadi 🎉'},
+    {key:'miss', title:'Javobsiz', color:'var(--muted)', status:'no_answer', items:unanswered(), hint:'Hammasi javob berdi 👍'},
+    {key:'follow', title:'Qayta aloqa', color:'var(--warn)', status:'followup', items:follow, hint:'Rejada hech kim yo\'q'},
+    {key:'sold', title:'Sotildi', color:'var(--c-ord)', status:'sold',
+     items:today.filter(function(c){ return c.status === 'sold'; }).map(asItem), hint:'Birinchi sotuv sizni kutyapti 🛒'},
+    {key:'declined', title:'Rad etdi', color:'var(--bad)', status:'declined',
+     items:today.filter(function(c){ return c.status === 'declined'; }).map(asItem), hint:'Bugun rad etganlar yo\'q'}
+  ];
+}
+function renderBoard(){
+  var cols = boardColumns();
+  S.board = cols;
+  return '<div class="board" id="board">' + cols.map(function(col, ci){
+    var shown = col.items.slice(0, BOARD_LIMIT);
+    return '<div class="col" data-col="'+ci+'"><div class="col-h"><span class="dot" style="background:'+col.color+'"></span>'+col.title +
+      '<span class="cnt">'+col.items.length+'</span></div>' +
+      (shown.length ? shown.map(function(it, i){
+        return '<div class="kcard" draggable="true" data-k="'+ci+':'+i+'" style="--k:'+col.color+'"><div class="n">'+esc(it.name || fmtPhone(it.phone) || 'Mijoz')+'</div>' +
+          '<div class="s">'+esc(it.name ? fmtPhone(it.phone) : '')+(it.name && it.why ? ' · ' : '')+esc(it.why || '')+'</div></div>'; }).join('')
+        : '<div class="empty" style="padding:30px 6px">'+col.hint+'</div>') +
+      (col.items.length > BOARD_LIMIT ? '<div class="more">yana '+(col.items.length - BOARD_LIMIT)+' ta — Ro\'yxatda</div>' : '') + '</div>';
+  }).join('') + '</div><div class="dots" id="bdots">' + cols.map(function(c, i){ return '<i class="'+(i?'':'on')+'"></i>'; }).join('') + '</div>' +
+  '<div class="muted" style="margin-top:8px;text-align:center">Kartani bosing — qo\'ng\'iroq yoki tahrir. Kompyuterda boshqa ustunga sudrab tashlash mumkin.</div>';
+}
+function boardItem(ref){ var p = ref.split(':'); return S.board[Number(p[0])].items[Number(p[1])]; }
+/* Kartadan forma: yozuv bo'lsa tahrir, bo'lmasa yangi qo'ng'iroq (navbat/javobsiz/qayta aloqa). */
+function openFromBoard(it, status){
+  if (it.call && !it.followup) { openForm(Object.assign({}, it.call, status ? {status:status} : {})); return; }
+  openForm(null, {customer_name:it.name, phone:it.phone, product:it.call && it.call.product, call_type:'out',
+    _done:it.followup, _key:it.key, status:status || null});
+}
+function bindBoard(){
+  var board = $('board'); if (!board) return;
+  board.querySelectorAll('.kcard').forEach(function(card){
+    var it = boardItem(card.getAttribute('data-k'));
+    card.onclick = function(){ tap(); openFromBoard(it, null); };
+    card.addEventListener('dragstart', function(e){ card.classList.add('drag'); e.dataTransfer.setData('text/plain', card.getAttribute('data-k')); });
+    card.addEventListener('dragend', function(){ card.classList.remove('drag'); });
+  });
+  board.querySelectorAll('.col').forEach(function(col){
+    var target = S.board[Number(col.getAttribute('data-col'))];
+    col.addEventListener('dragover', function(e){ if (target.status) { e.preventDefault(); col.classList.add('over'); } });
+    col.addEventListener('dragleave', function(){ col.classList.remove('over'); });
+    col.addEventListener('drop', function(e){
+      e.preventDefault(); col.classList.remove('over');
+      var ref = e.dataTransfer.getData('text/plain'); if (!ref || !target.status) return;
+      if (Number(ref.split(':')[0]) === Number(col.getAttribute('data-col'))) return;
+      var it = boardItem(ref);
+      if (target.status === 'no_answer' && !it.call) { noAnswer(it); return; }
+      openFromBoard(it, target.status);
+    });
+  });
+  var dots = $('bdots').children;
+  board.addEventListener('scroll', function(){
+    var w = board.firstElementChild ? board.firstElementChild.offsetWidth + 10 : 1;
+    var i = Math.min(dots.length - 1, Math.round(board.scrollLeft / w));
+    for (var k = 0; k < dots.length; k++) dots[k].classList.toggle('on', k === i);
+  }, {passive:true});
+}
 
 function rulesHtml(){
   var s = S.data.settings, t = S.data.tiers;
@@ -517,7 +705,7 @@ function openForm(call, preset, autostart){
     '<input id="fNote" placeholder="Izoh (ixtiyoriy)" style="margin-top:10px" value="'+esc(f.note || '')+'">' +
     '<div class="err" id="fErr"></div>' +
     '<div class="save row"><button class="btn primary" id="fSave" style="flex:1">Saqlash</button>' +
-    (call ? '<button class="btn ghost" id="fDel" aria-label="O\'chirish">🗑</button>' : '') + '</div>');
+    (call ? '<button class="btn ghost" id="fDel">↩️ Bekor qilish</button>' : '') + '</div>');
 
   document.querySelectorAll('[data-ct]').forEach(function(b){ b.onclick = function(){
     S.form.call_type = b.getAttribute('data-ct'); document.querySelectorAll('[data-ct]').forEach(function(x){ x.classList.toggle('on', x === b); }); tap(); }; });
@@ -530,11 +718,7 @@ function openForm(call, preset, autostart){
   if (!known) $('fPhone').onblur = lookup;
   $('fOrd').onblur = orderInfo;
   $('fSave').onclick = saveForm;
-  if (call) $('fDel').onclick = function(){
-    if (!confirm('Yozuv o\'chirilsinmi?')) return;
-    api('/cc/api/calls/' + call.id + '/delete', {}).then(function(){ closeSheet(); toast('🗑 O\'chirildi'); load(); })
-      .catch(function(e){ $('fErr').textContent = e.message; });
-  };
+  if (call) $('fDel').onclick = function(){ closeSheet(); cancelCall(call.id, false); };
   if (f.status) setStatus(f.status);
   setDur(f.duration_sec || 0);
   if (f.phone) lookup();
@@ -602,9 +786,19 @@ function saveForm(){
   $('fSave').disabled = true;
   api(S.editing ? '/cc/api/calls/' + S.editing : '/cc/api/calls', body).then(function(j){
     // Qayta aloqa bajarildi — mijoz javob bergan bo'lsa (ko'tarmasa navbatda qoladi).
-    var done = f._done && f.status !== 'no_answer' ? api('/cc/api/followups/' + f._done + '/done', {}) : Promise.resolve();
+    var closes = f._done && f.status !== 'no_answer';
+    var done = closes ? api('/cc/api/followups/' + f._done + '/done', {}) : Promise.resolve();
+    var wasNew = !S.editing;
     if (f._key) S.skip[f._key] = 1;
-    return done.then(function(){ closeSheet(); toast('✅ Saqlandi'); afterSave(j, f.status); });
+    return done.then(function(){
+      closeSheet(); afterSave(j, f.status);
+      if (!wasNew) { toast('✅ Saqlandi'); return; }
+      undoToast('✅ Saqlandi · ' + (S.data.statuses[f.status] || ''), function(){
+        if (f._key) delete S.skip[f._key];
+        if (closes) api('/cc/api/followups/' + f._done + '/done', {done:false}).catch(function(){});
+        cancelCall(j.call.id, true);
+      });
+    });
   }).catch(function(e){ $('fErr').textContent = e.message; var b = $('fSave'); if (b) b.disabled = false; });
 }
 function afterSave(j, status){
