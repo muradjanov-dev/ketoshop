@@ -121,3 +121,29 @@ def vary(reply: str, previous: str | None) -> str:
             if pattern.search(previous) and pattern.search(out):
                 out = _cut(out, pattern)
     return out if re.search(r"\w", out) else reply
+
+
+# Mijoz salom bersa — javobda salom albatta bo'lsin (egasi, 2026-11-22: "20% ga
+# odobliroq qil"; jonli sinovda ruscha "Здравствуйте, где мой заказ?" ga javob
+# salomsiz boshlangan). Prompt so'raydi, kod kafolatlaydi.
+_CUSTOMER_GREETING = re.compile(
+    r"^\W*(?:(?P<ru>здравствуй\w*|привет\w*|добр(?:ый|ое|ого)\s+(?:день|утро|вечер)|доброго\s+времени)"
+    r"|(?P<cyr>ассалому?\s*алайкум|ассалом|салом)"
+    r"|(?P<lat>as+alomu?\s*alaykum|as+alom|salom|assalamu\s*alaykum)"
+    r"|(?P<en>hello|hi|good\s+(?:morning|afternoon|evening)))\b",
+    re.IGNORECASE)
+_REPLY_GREETING = re.compile(
+    r"^\W*(?:va\s*alaykum|vaalaykum|as+alomu?|salom|ва\s*алайкум|ваалайкум|ассалом|салом|"
+    r"здравствуй|добр(?:ый|ое|ого)|привет|hello|hi\b|good\s+(?:morning|afternoon|evening))",
+    re.IGNORECASE)
+_GREETING_BACK = {"ru": "Здравствуйте!", "cyr": "Ва алайкум ассалом!", "lat": "Va alaykum assalom!",
+                  "en": "Hello!"}
+
+
+def greet_back(reply: str, customer_text: str | None) -> str:
+    """Mijoz salom bilan boshlagan, javob esa salomsiz bo'lsa — salomni qo'shadi."""
+    match = _CUSTOMER_GREETING.match(customer_text or "")
+    if not reply or not match or _REPLY_GREETING.match(reply):
+        return reply
+    kind = next(k for k, v in match.groupdict().items() if v)
+    return f"{_GREETING_BACK[kind]}\n\n{reply}"

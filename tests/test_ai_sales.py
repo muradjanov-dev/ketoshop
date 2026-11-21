@@ -1740,6 +1740,13 @@ class AiOffTopicTest(unittest.TestCase):
         self.assertIn("raqamimizni BERMA", rules)
         self.assertIn("MAVZUDAN TASHQARI", ai_sales._group_rules())
 
+    def test_bot_site_and_group_share_the_politeness_habits(self):
+        # Egasi, 2026-11-22: "ai chat botimizni 20% ga odobliroq qil".
+        for rules in (ai_sales._sales_rules(), ai_sales._group_rules()):
+            self.assertIn("ODOB, ANIQ ODATLAR", rules)
+            self.assertIn("yozib yuborsangiz", rules)
+            self.assertIn("afsuski, hozircha", rules)
+
 
 class AiNaturalToneTest(unittest.TestCase):
     """Egasi, 2026-10-24: "odamlar sun'iy intellekt bilan gaplashayotganlarini
