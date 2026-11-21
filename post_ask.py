@@ -22,7 +22,9 @@ remember it:
 from __future__ import annotations
 
 import contextvars
+import html
 import logging
+import random
 
 from aiogram.client.session.middlewares.base import BaseRequestMiddleware
 from aiogram.methods import SendAnimation, SendDocument, SendMessage, SendPhoto, SendVideo
@@ -59,6 +61,29 @@ def dm_line(lang: str | None) -> str:
         from translit import lat_to_cyr
         return lat_to_cyr(DM["uz"])
     return DM["uz"]
+
+
+# Owner, 2026-11-21: "🛍️ Соғлом маҳсулотлар дунёси: saytga link (postlar oxirida ...
+# bazida shu iborani ishlat bu yoqimliroq)". About every second channel post, the plain
+# «🛒 Дўконни очиш» shop link reads like this instead — same link.
+WORLD_CHANCE = 0.5
+_rng = random.Random()
+
+
+def world_line(url: str) -> str:
+    shown = url.replace("https://", "")
+    return (f'🛍️ <b>Соғлом маҳсулотлар дунёси:</b> '
+            f'<a href="{html.escape(url, quote=True)}">{html.escape(shown, quote=False)}</a>')
+
+
+def vary_shop_link(text: str | None) -> str | None:
+    import channel_link
+    if not text:
+        return text
+    plain = channel_link.link_line(channel_link.SHOP_URL, channel_link.SHOP_LABEL)
+    if plain not in text or _rng.random() >= WORLD_CHANCE:
+        return text
+    return text.replace(plain, world_line(channel_link.SHOP_URL), 1)
 
 
 def mark(user_id: int) -> None:
@@ -101,7 +126,7 @@ async def add_line(method):
         return method
     text = getattr(method, field)
     if is_channel(method.chat_id):
-        new = with_line(text, channel_line(), limit)
+        new = with_line(vary_shop_link(text), channel_line(), limit)
     elif _pending.get() is not None and method.chat_id == _pending.get():
         _pending.set(None)
         new = with_line(text, dm_line(await _lang(method.chat_id)), limit)
