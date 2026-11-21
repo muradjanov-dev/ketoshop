@@ -2322,6 +2322,9 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     import push
     push.add_routes(app)
     app_release.add_routes(app)
+    # 📞 Call Centre CRM: /callcentre + /cc/api/* (o'z initData tekshiruvi).
+    import call_centre
+    call_centre.add_routes(app)
 
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/", index)

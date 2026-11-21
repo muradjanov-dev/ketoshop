@@ -10,7 +10,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from config import ADMIN_IDS
+from config import ADMIN_IDS, OPERATOR_IDS, PERMANENT_ADMIN_IDS
 from database import (
     get_user_language, get_admin_stats, get_monthly_breakdown, get_month_stats, get_top_products, get_top_viewed_products,
     get_daily_active_users, get_top_actions, get_top_active_users,
@@ -594,6 +594,8 @@ async def _render_admin_list(viewer_id: int | None = None) -> tuple[str, InlineK
     profiles = await get_admin_profiles(ADMIN_IDS)
     permanent = [p for p in profiles if p["granted_at"] is None]
     granted = [p for p in profiles if p["granted_at"] is not None]
+    # 📞 Call Centre operatorlari (2026-11-22) — admin emas, alohida bo'lim.
+    operators = await get_admin_profiles(list(OPERATOR_IDS))
 
     async def _block(number: int, profile: dict) -> list[str]:
         name = profile.get("full_name") or "botga hali kirmagan"
@@ -614,7 +616,8 @@ async def _render_admin_list(viewer_id: int | None = None) -> tuple[str, InlineK
             out.append(f"   ➕ {html.escape(by)} qo'shgan · {_msg_when(profile['granted_at'])}")
         return out
 
-    lines = [f"👥 <b>Adminlar</b> — jami {len(profiles)} ta", ""]
+    lines = [f"👥 <b>Adminlar</b> — jami {len(profiles)} ta"
+             + (f" · 📞 operatorlar: {len(operators)} ta" if operators else ""), ""]
     if permanent:
         lines.append("🔒 <b>Doimiy</b> (kod/env orqali — botdan o'chirib bo'lmaydi):")
         for i, profile in enumerate(permanent, 1):
@@ -626,10 +629,16 @@ async def _render_admin_list(viewer_id: int | None = None) -> tuple[str, InlineK
             lines += await _block(i, profile)
         lines.append("")
 
-    unreachable = [p for p in profiles if not p.get("full_name")]
+    if operators:
+        lines.append("📞 <b>Call Centre operatorlari</b> (faqat CRM ko'radi):")
+        for i, profile in enumerate(operators, 1):
+            lines += await _block(i, profile)
+        lines.append("")
+
+    unreachable = [p for p in profiles + operators if not p.get("full_name")]
     if unreachable:
         lines.append(
-            f"⚠️ {len(unreachable)} ta admin botni hali ochmagan — "
+            f"⚠️ {len(unreachable)} ta xodim botni hali ochmagan — "
             "ularga xabar (mijoz savollari, hisobotlar) bora olmaydi. "
             "Ular botga kirib /start bossin."
         )
@@ -638,14 +647,15 @@ async def _render_admin_list(viewer_id: int | None = None) -> tuple[str, InlineK
         [InlineKeyboardButton(text=get_text("btn_admin_add_admin", "uz"),
                               callback_data="admin:add_admin")],
     ]
-    # Only bot-granted admins can be revoked from here — the permanent ones
+    # Only bot-granted staff can be changed from here — the permanent admins
     # live in config/env — and never yourself, so nobody locks themselves out.
-    for profile in granted:
-        if profile["user_id"] == viewer_id:
+    for profile in granted + operators:
+        if profile["user_id"] == viewer_id or profile["user_id"] in PERMANENT_ADMIN_IDS:
             continue
         label = profile.get("full_name") or profile.get("username") or str(profile["user_id"])
-        rows.append([InlineKeyboardButton(text=f"🗑 {label[:30]} — olib tashlash",
-                                          callback_data=f"admin:rm_admin:{profile['user_id']}")])
+        icon = "📞" if profile["user_id"] in OPERATOR_IDS else "👑"
+        rows.append([InlineKeyboardButton(text=f"⚙️ {icon} {label[:28]} — huquq",
+                                          callback_data=f"admin:role:{profile['user_id']}")])
     rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin_menu:users")])
     return "\n".join(lines).strip(), InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -677,13 +687,15 @@ async def admin_remove_confirm(callback: CallbackQuery):
     name = await _admin_name(target)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Ha, olib tashlash", callback_data=f"admin:rm_admin_yes:{target}")],
-        [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin:admins")],
+        [InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"admin:role:{target}")],
     ])
+    what = ("U Call Centre CRM ni boshqa ocha olmaydi (yozuvlari va KPI tarixi saqlanadi)."
+            if target in OPERATOR_IDS else
+            "U admin panelni, buyurtma va mijoz xabarlarini, hisobotlarni boshqa ko'rmaydi.")
     await _support_show(
         callback,
-        f"🗑 <b>{html.escape(name)}</b> (<code>{target}</code>) adminlikdan olib tashlansinmi?\n\n"
-        "U admin panelni, buyurtma va mijoz xabarlarini, hisobotlarni boshqa ko'rmaydi. "
-        "Keyin xohlasangiz, qaytadan qo'shish mumkin.",
+        f"🗑 <b>{html.escape(name)}</b> (<code>{target}</code>) dan barcha huquqlar olinsinmi?\n\n"
+        f"{what} Keyin xohlasangiz, qaytadan qo'shish mumkin.",
         keyboard,
     )
     await callback.answer()
@@ -699,31 +711,23 @@ async def admin_remove_do(callback: CallbackQuery, bot: Bot):
         await callback.answer("O'zingizni olib tashlay olmaysiz.", show_alert=True)
         return
     name = await _admin_name(target)
-    if not await remove_admin_db(target):
+    if target in PERMANENT_ADMIN_IDS:
+        await callback.answer("Bu doimiy admin (kod/server sozlamasida) — botdan olib tashlab bo'lmaydi.",
+                              show_alert=True)
+        return
+    was_operator = target in OPERATOR_IDS
+    # Shared lists + "/" menu (bloggers keep theirs) — call_centre_bot.py.
+    import call_centre_bot
+    if not await call_centre_bot.revoke_staff(bot, target):
         # Not in the admins table: a permanent admin from config/env.
         await callback.answer("Bu doimiy admin (kod/server sozlamasida) — botdan olib tashlab bo'lmaydi.",
                               show_alert=True)
         return
-    # Same shared list every module reads — takes effect immediately.
-    while target in ADMIN_IDS:
-        ADMIN_IDS.remove(target)
 
-    # Their "/" menu loses the admin commands (bloggers keep theirs).
     log = logging.getLogger(__name__)
-    try:
-        from aiogram.types import BotCommandScopeChat
-        from keyboards import BUYER_COMMANDS, BLOGGER_COMMAND
-        from database import get_blogger_user_ids
-        scope = BotCommandScopeChat(chat_id=target)
-        if target in await get_blogger_user_ids():
-            await bot.set_my_commands(BUYER_COMMANDS + [BLOGGER_COMMAND], scope=scope)
-        else:
-            await bot.delete_my_commands(scope=scope)
-    except Exception:
-        log.warning("Could not reset commands for removed admin %s", target, exc_info=True)
-
-    log.info("Admin %s removed by %s", target, callback.from_user.id)
-    await callback.answer(f"✅ {name} adminlikdan olib tashlandi")
+    log.info("Staff %s removed by %s", target, callback.from_user.id)
+    role_word = "operatorlikdan" if was_operator else "adminlikdan"
+    await callback.answer(f"✅ {name} {role_word} olib tashlandi")
     text, keyboard = await _render_admin_list(callback.from_user.id)
     await _support_show(callback, text, keyboard)
 
@@ -736,11 +740,110 @@ async def admin_remove_do(callback: CallbackQuery, bot: Bot):
             await bot.send_message(
                 admin_id,
                 f"🗑 {html.escape(by)} <b>{html.escape(name)}</b> (<code>{target}</code>) "
-                "ni adminlikdan olib tashladi.",
+                f"ni {role_word} olib tashladi.",
                 parse_mode="HTML",
             )
         except Exception:
             pass
+
+
+# ===== HUQUQLAR / ROLLAR =====
+# Egasi, 2026-11-22: qo'shishda rol tanlanadi (to'liq admin yoki Call Centre
+# operatori) va istalgan bot orqali qo'shilgan xodimning huquqi keyin
+# o'zgartiriladi. Doimiy (kod/env) adminlar va o'zingiz — o'zgarmaydi.
+
+_ROLE_TEXT = {
+    "admin": "👑 <b>To'liq admin</b> — admin panel, buyurtmalar, mijoz xabarlari, "
+             "hisobotlar va Call Centre (hamma operatorlar, baholash).",
+    "operator": "📞 <b>Call Centre operatori</b> — faqat Call Centre CRM: o'z qo'ng'iroqlari, "
+                "qayta aloqalar, kunlik hisobot, KPI va daromadi. Admin panel, "
+                "buyurtma kartochkalari va hisobotlar unga bormaydi.",
+}
+
+
+def _role_buttons(target: int, current: str | None, prefix: str) -> list[list[InlineKeyboardButton]]:
+    rows = []
+    for role, label in (("admin", "👑 To'liq admin"), ("operator", "📞 Call Centre operatori")):
+        mark = "✅ " if role == current else ""
+        rows.append([InlineKeyboardButton(text=f"{mark}{label}",
+                                          callback_data=f"{prefix}:{target}:{role}")])
+    return rows
+
+
+def _current_role(target: int) -> str | None:
+    if target in ADMIN_IDS:
+        return "admin"
+    if target in OPERATOR_IDS:
+        return "operator"
+    return None
+
+
+@router.callback_query(F.data.startswith("admin:role:"))
+async def admin_role_screen(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    await state.clear()
+    target = int(callback.data.rsplit(":", 1)[1])
+    if target == callback.from_user.id or target in PERMANENT_ADMIN_IDS:
+        await callback.answer("Bu huquqni botdan o'zgartirib bo'lmaydi.", show_alert=True)
+        return
+    current = _current_role(target)
+    name = await _admin_name(target)
+    lines = [f"⚙️ <b>{html.escape(name)}</b> (<code>{target}</code>) — huquqlar", ""]
+    lines.append("Hozir: " + (_ROLE_TEXT[current] if current else "huquqi yo'q"))
+    lines += ["", "Yangi rolni tanlang:"]
+    rows = _role_buttons(target, current, "admin:setrole")
+    if current:
+        rows.append([InlineKeyboardButton(text="🗑 Barcha huquqlarni olib tashlash",
+                                          callback_data=f"admin:rm_admin:{target}")])
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin:admins")])
+    await _support_show(callback, "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows))
+    await callback.answer()
+
+
+async def _grant_role(callback: CallbackQuery, bot: Bot, target: int, role: str) -> None:
+    import call_centre_bot
+    before = _current_role(target)
+    await call_centre_bot.apply_role(bot, target, role, callback.from_user.id)
+    name = await _admin_name(target)
+    by = await _admin_name(callback.from_user.id)
+    role_name = "to'liq admin" if role == "admin" else "Call Centre operatori"
+    verb = "qo'shdi" if before is None else "huquqini o'zgartirdi"
+    note = (f"{html.escape(by)} <b>{html.escape(name)}</b> (<code>{target}</code>) ni "
+            f"<b>{role_name}</b> sifatida {verb}." if before is None else
+            f"{html.escape(by)} <b>{html.escape(name)}</b> (<code>{target}</code>) "
+            f"{verb}: endi <b>{role_name}</b>.")
+    # Admin rights are sensitive — every other admin hears about it.
+    for admin_id in list(ADMIN_IDS):
+        if admin_id in (callback.from_user.id, target):
+            continue
+        try:
+            await bot.send_message(admin_id, "⚙️ " + note, parse_mode="HTML")
+        except Exception:
+            pass
+
+
+@router.callback_query(F.data.startswith("admin:setrole:"))
+async def admin_set_role(callback: CallbackQuery, bot: Bot):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    _, _, raw_target, role = callback.data.split(":")
+    target = int(raw_target)
+    if role not in ("admin", "operator"):
+        await callback.answer()
+        return
+    if target == callback.from_user.id or target in PERMANENT_ADMIN_IDS:
+        await callback.answer("Bu huquqni botdan o'zgartirib bo'lmaydi.", show_alert=True)
+        return
+    if _current_role(target) == role:
+        await callback.answer("Rol allaqachon shunday.")
+        return
+    await _grant_role(callback, bot, target, role)
+    await callback.answer("✅ Huquq yangilandi")
+    text, keyboard = await _render_admin_list(callback.from_user.id)
+    await _support_show(callback, text, keyboard)
 
 
 # ===== MAQSADLAR / TARGETS =====
@@ -908,24 +1011,40 @@ async def admin_add_admin_process(message: Message, state: FSMContext, bot: Bot)
         )
         return
 
-    await add_admin_db(new_admin_id, message.from_user.id)
-    # Mutate the shared list in place — every module that imported
-    # ADMIN_IDS at startup sees this immediately, no restart needed.
-    ADMIN_IDS.append(new_admin_id)
-
+    # Rol tanlash (2026-11-22): to'liq admin yoki Call Centre operatori.
     await state.clear()
-    await message.answer(
-        get_text("add_admin_done", lang, user_id=new_admin_id),
-        reply_markup=admin_panel_keyboard(lang),
-        parse_mode="HTML",
-    )
+    name = await _admin_name(new_admin_id)
+    current = _current_role(new_admin_id)
+    lines = [f"➕ <b>{html.escape(name)}</b> (<code>{new_admin_id}</code>)", ""]
+    if current == "operator":
+        lines += ["Hozir u Call Centre operatori. Rolni o'zgartirish mumkin:", ""]
+    lines += ["Qaysi rolda qo'shamiz?", "", _ROLE_TEXT["admin"], "", _ROLE_TEXT["operator"]]
+    rows = _role_buttons(new_admin_id, current, "admin:addrole")
+    rows.append([InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_menu:users")])
+    await message.answer("\n".join(lines), parse_mode="HTML",
+                         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
-    # Best-effort — the new admin may never have started a chat with the bot.
-    try:
-        new_admin_lang = await get_user_language(new_admin_id)
-        await bot.send_message(new_admin_id, get_text("you_are_now_admin", new_admin_lang), parse_mode="HTML")
-    except Exception:
-        pass
+
+@router.callback_query(F.data.startswith("admin:addrole:"))
+async def admin_add_with_role(callback: CallbackQuery, bot: Bot):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    _, _, raw_target, role = callback.data.split(":")
+    target = int(raw_target)
+    if role not in ("admin", "operator") or target in PERMANENT_ADMIN_IDS:
+        await callback.answer()
+        return
+    if target == callback.from_user.id:
+        await callback.answer("O'zingizning huquqingizni o'zgartira olmaysiz.", show_alert=True)
+        return
+    if _current_role(target) == role:
+        await callback.answer("Rol allaqachon shunday.")
+        return
+    await _grant_role(callback, bot, target, role)
+    await callback.answer("✅ Qo'shildi")
+    text, keyboard = await _render_admin_list(callback.from_user.id)
+    await _support_show(callback, text, keyboard)
 
 
 # ===== ORDERS =====

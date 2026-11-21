@@ -188,6 +188,11 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Rol (egasi, 2026-11-22): 'admin' — to'liq admin panel; 'operator' —
+        # faqat Call Centre CRM (call_centre.py). Eski qatorlar 'admin' bo'lib
+        # qoladi, shuning uchun hech kimning huquqi o'zgarmaydi.
+        await conn.execute(
+            "ALTER TABLE admins ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin'")
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS product_media (
@@ -6610,16 +6615,36 @@ async def get_extra_admin_ids() -> list[int]:
     """Admins added at runtime (on top of config.ADMIN_IDS' hardcoded/env
     set) — loaded once at bot startup and merged into that same list."""
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT user_id FROM admins")
+        rows = await conn.fetch("SELECT user_id FROM admins WHERE role = 'admin'")
         return [r["user_id"] for r in rows]
 
 
-async def add_admin_db(user_id: int, added_by: int) -> None:
+# Rollar: bot orqali beriladigan huquqlar. Operator ADMIN_IDS ga hech qachon
+# tushmaydi — admin panel, buyurtma kartochkalari va hisobotlar unga bormaydi.
+STAFF_ROLES = ("admin", "operator")
+
+
+async def get_operator_ids() -> list[int]:
+    """Call Centre operatorlari (config.OPERATOR_IDS ga startda yuklanadi)."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT user_id FROM admins WHERE role = 'operator'")
+        return [r["user_id"] for r in rows]
+
+
+async def get_staff_role(user_id: int) -> str | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchval("SELECT role FROM admins WHERE user_id = $1", user_id)
+
+
+async def add_admin_db(user_id: int, added_by: int, role: str = "admin") -> None:
+    """Qo'shadi yoki rolini almashtiradi (huquqni o'zgartirish ham shu)."""
+    if role not in STAFF_ROLES:
+        raise ValueError(f"unknown role {role!r}")
     async with pool.acquire() as conn:
         await conn.execute(
-            """INSERT INTO admins (user_id, added_by) VALUES ($1, $2)
-               ON CONFLICT (user_id) DO NOTHING""",
-            user_id, added_by
+            """INSERT INTO admins (user_id, added_by, role) VALUES ($1, $2, $3)
+               ON CONFLICT (user_id) DO UPDATE SET role = EXCLUDED.role""",
+            user_id, added_by, role
         )
 
 
@@ -6648,7 +6673,7 @@ async def get_admin_profiles(admin_ids: list[int]) -> list[dict]:
             """
             SELECT i.user_id,
                    u.full_name, u.username, u.phone, u.created_at AS joined_at,
-                   a.added_by, a.created_at AS granted_at,
+                   a.added_by, a.created_at AS granted_at, a.role,
                    COALESCE(r.replies, 0) AS replies,
                    r.last_reply_at
               FROM unnest($1::bigint[]) AS i(user_id)

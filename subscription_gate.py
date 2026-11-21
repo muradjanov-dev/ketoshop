@@ -20,7 +20,7 @@ import time
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
-from config import ADMIN_IDS, REQUIRED_CHANNEL_ID, REQUIRED_CHANNEL_USERNAME
+from config import ADMIN_IDS, OPERATOR_IDS, REQUIRED_CHANNEL_ID, REQUIRED_CHANNEL_USERNAME
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +149,8 @@ def _continue_keyboard(lang: str) -> InlineKeyboardMarkup:
 class SubscriptionGateMiddleware(BaseMiddleware):
     async def __call__(self, handler, event: TelegramObject, data: dict):
         user = getattr(event, "from_user", None)
-        if user is None or user.id in ADMIN_IDS:
+        # Call Centre operatorlari ham xodim: /callcentre ga kanalsiz kirsin.
+        if user is None or user.id in ADMIN_IDS or user.id in OPERATOR_IDS:
             return await handler(event, data)
         # The gate is about using the bot one-on-one. In a group the bot also
         # sees every member's message (link_guard.py) — nagging each of them
