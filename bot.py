@@ -100,6 +100,17 @@ async def _register_commands(bot: Bot, logger) -> None:
         except Exception:
             logger.warning("Could not set admin commands for %s", admin_id, exc_info=True)
 
+    from config import OPERATOR_IDS
+    from keyboards import OPERATOR_COMMAND
+    for operator_id in OPERATOR_IDS:
+        if operator_id in ADMIN_IDS:
+            continue
+        try:
+            await bot.set_my_commands(BUYER_COMMANDS + [OPERATOR_COMMAND],
+                                      scope=BotCommandScopeChat(chat_id=operator_id))
+        except Exception:
+            logger.warning("Could not set operator commands for %s", operator_id, exc_info=True)
+
     try:
         from database import get_blogger_user_ids
         for blogger_id in await get_blogger_user_ids():
@@ -150,6 +161,10 @@ async def main():
             ADMIN_IDS.append(admin_id)
     if extra_admins:
         logger.info("Loaded %d extra admin(s) from DB", len(extra_admins))
+    # 📞 Call Centre: jadvallar + operatorlar ro'yxati (call_centre.py).
+    import call_centre
+    await call_centre.ensure_schema()
+    await call_centre.load_operators()
 
     from config import WEBAPP_URL
     logger.info("WEBAPP_URL = '%s'", WEBAPP_URL)
@@ -283,6 +298,9 @@ async def main():
     from gemini_compare import router as gemini_compare_router
     dp.include_router(gemini_compare_router)
     dp.include_router(webapp_data_router)
+    # 📞 /callcentre — operator va adminlar uchun CRM eshigi (call_centre_bot.py).
+    from call_centre_bot import router as call_centre_router
+    dp.include_router(call_centre_router)
     dp.include_router(start_router)
     # 🔐 /malumotlarim — mijoz o'zi haqida saqlanganini ko'radi va o'chiradi.
     dp.include_router(customer_portrait_router)
@@ -423,6 +441,9 @@ async def main():
     # 🔥 07:30 — the daily games' streak reminder (game_reminder.py).
     from game_reminder import scheduler_loop as game_reminder_loop
     asyncio.create_task(game_reminder_loop(bot))
+    # 📞 09:00 — Call Centre operatorlariga ish kuni boshlanishi (faqat xodimlar).
+    from call_centre_bot import morning_loop as call_centre_morning_loop
+    asyncio.create_task(call_centre_morning_loop(bot))
 
     # Aksiya / Bonus — closes a campaign out the moment its window ends (so
     # bonuses stop being granted without anyone touching the admin panel) and
