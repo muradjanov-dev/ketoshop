@@ -90,6 +90,9 @@ RECHECK_KEY_C = "meta_comments_recheck_2026_11_12c"
 RECHECK_KEY_D = "meta_comments_recheck_2026_11_13d"
 # Hech bir izoh javobsiz qolmasin (2026-11-16) — «topa olmadi» deganlar oraliq javob oladi.
 RECHECK_KEY_E = "meta_comments_recheck_2026_11_16e"
+# Egasi, 2026-11-24: "javob berilmagan izohlarga javob berib chiq" — HAMMA javobsiz (AI ko'rmagan,
+# topa olmagan va yuborib bo'lmagan) do'konga yangi yo'l bilan bir marta qayta.
+RECHECK_KEY_F = "meta_comments_recheck_2026_11_24f"
 MAX_ADS = 100
 TEXT_MAX = 1500
 REPLY_MAX = 900                       # Instagram izohi ~2200 belgi; javob qisqa
@@ -1140,6 +1143,9 @@ async def scheduler_loop(bot: Bot) -> None:
             if await database.claim_release_notes(key):
                 n = await database.reset_meta_comments_unconfident()
                 logger.info("comments: %d unanswerable comment(s) queued for a re-check (%s)", n, key)
+        if await database.claim_release_notes(RECHECK_KEY_F):
+            n = await database.reset_meta_comments_open()
+            logger.info("comments: %d open comment(s) queued for a re-answer (%s)", n, RECHECK_KEY_F)
     except Exception:
         logger.exception("comments re-check reset failed")
     try:

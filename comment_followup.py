@@ -48,6 +48,11 @@ EVERY = max(300, int(os.getenv("COMMENT_FOLLOWUP_EVERY", "600")))
 GAP = max(30, int(os.getenv("COMMENT_FOLLOWUP_GAP", "90")))
 GAP_MAX = max(GAP, int(os.getenv("COMMENT_FOLLOWUP_GAP_MAX", "150")))
 HOURS = (8, 23)                  # Toshkent: 08:00–22:59
+# Ikkinchi qayta yozish (egasi, 2026-11-24: "javob berilmagan izohlarga javob berib va qayta
+# yozib chiq … telegramdan ketoshop_uz deb yozsalar chiqadi, yoki direct'dan yozishsa biz
+# tashlab beramiz"): javob olgan har bir odamga yana bir marta, do'konga shu yo'l bilan.
+# Izohi yoki birinchi qayta xabari ROUND2_MIN_DAYS kundan yangi bo'lsa — hali emas.
+ROUND2_MIN_DAYS = max(1, int(os.getenv("COMMENT_FOLLOWUP2_MIN_DAYS", "3")))
 NEW_PRODUCT_DAYS = 45
 TRIES_PER_TICK = 3               # AI "yozmaymiz" desa — keyingi odam
 
@@ -106,14 +111,37 @@ def _days_ago(row: dict) -> int:
     return max(DAYS, (datetime.utcnow() - when.replace(tzinfo=None)).days)
 
 
-async def compose(row: dict, kb: dict | None = None, extra: tuple[str, str] | None = None) -> str | None:
-    """Shu odamga qayta aloqa matni yoki None (yozmaymiz)."""
+def _age_days(row: dict) -> int:
+    when = row.get("created_at") or row.get("received_at")
+    if not isinstance(when, datetime):
+        return ROUND2_MIN_DAYS
+    return max(0, (datetime.utcnow() - when.replace(tzinfo=None)).days)
+
+
+async def compose(row: dict, kb: dict | None = None, extra: tuple[str, str] | None = None,
+                  second: bool = False) -> str | None:
+    """Shu odamga qayta aloqa matni yoki None (yozmaymiz). second — ikkinchi
+    bosqich: izoh yoshi haqiqiy, birinchi qayta xabarimiz (bo'lsa) AI'ga
+    beriladi — takrorlamasin."""
     if kb is None:
         kb = comment_ai.kb_with_defaults((await database.get_meta_comments_state()).get("kb"))
     new, offers = extra if extra is not None else (await new_products_text(), await offers_text())
     caption, image = await mc.post_context(row)
     row = dict(row, post_caption=caption, post_image=image)
-    return await comment_ai.followup(row, kb, _days_ago(row), new, offers)
+    return await comment_ai.followup(row, kb, _age_days(row) if second else _days_ago(row), new, offers)
+
+
+async def _candidates() -> tuple[list[dict], bool]:
+    """Avval birinchi bosqich navbati; u bo'sh bo'lsa — ikkinchi bosqich."""
+    rows = await database.meta_comment_followup_candidates(DAYS, TRIES_PER_TICK)
+    if rows:
+        return rows, False
+    return await database.meta_comment_followup2_candidates(ROUND2_MIN_DAYS, TRIES_PER_TICK), True
+
+
+async def _sent_today() -> int:
+    return ((await database.meta_comment_followup_stats(DAYS))["today"]
+            + (await database.meta_comment_followup2_stats(ROUND2_MIN_DAYS))["today"])
 
 
 async def send_one(bot: Bot | None, now: datetime | None = None) -> str:
@@ -123,25 +151,26 @@ async def send_one(bot: Bot | None, now: datetime | None = None) -> str:
         return "off"
     if not in_hours(now):
         return "quiet"
-    if (await database.meta_comment_followup_stats(DAYS))["today"] >= DAILY:
+    if await _sent_today() >= DAILY:
         return "cap"
     await mc.load_token()
     if not mc.token():
         return "no_token"
-    candidates = await database.meta_comment_followup_candidates(DAYS, TRIES_PER_TICK)
+    candidates, second = await _candidates()
     if not candidates:
         return "none"
+    mark = database.mark_meta_comment_followup2 if second else database.mark_meta_comment_followup
     kb = comment_ai.kb_with_defaults(state.get("kb"))
     extra = (await new_products_text(), await offers_text())
     for row in candidates:
         try:
-            text = await compose(row, kb, extra)
+            text = await compose(row, kb, extra, second)
         except Exception:
             logger.exception("follow-up: compose failed for %s", row.get("comment_id"))
             text = None
         if not text:
             # AI yozmaslikni tanladi (yoki xato) — bu odamni qayta tanlamaymiz.
-            await database.mark_meta_comment_followup(row["id"], "")
+            await mark(row["id"], "")
             continue
         try:
             async with aiohttp.ClientSession() as session:
@@ -154,9 +183,9 @@ async def send_one(bot: Bot | None, now: datetime | None = None) -> str:
                 return "throttled"
             # Izoh o'chirilgan yoki yopilgan — keyingi safar ham bo'lmaydi.
             logger.info("follow-up to %s failed: %s", row.get("comment_id"), e)
-            await database.mark_meta_comment_followup(row["id"], "")
+            await mark(row["id"], "")
             continue
-        await database.mark_meta_comment_followup(row["id"], text)
+        await mark(row["id"], text)
         logger.info("follow-up sent to %s (%s)", row.get("username"), row.get("comment_id"))
         return "sent"
     return "skipped"
@@ -221,13 +250,16 @@ async def loop(bot: Bot) -> None:
 async def status_text() -> str:
     state = await database.get_meta_comments_state()
     st = await database.meta_comment_followup_stats(DAYS)
+    st2 = await database.meta_comment_followup2_stats(ROUND2_MIN_DAYS)
     on = state.get("followup_on", True)
     lines = [
         "🔁 <b>Qayta aloqa</b> — bir oy oldin izoh qoldirganlarga samimiy qayta yozish",
         "",
         f"Holat: <b>{'yoqilgan ✅' if on else 'o‘chiq ⏸'}</b>",
-        f"Bugun: <b>{st['today']}</b> / {DAILY} ta · jami: {st['total']} ta · AI yozmagan: {st['skipped']} ta",
+        f"Bugun (1-bosqich): <b>{st['today']}</b> / {DAILY} ta · jami: {st['total']} ta · AI yozmagan: {st['skipped']} ta",
         f"Navbatda: {st['queue']} kishi ({DAYS} kundan eski izohlar, har biriga bir marta)",
+        f"2-bosqich (do'konga yangi yo'l, javob olgan har kimga bir marta): bugun {st2['today']} · "
+        f"jami {st2['total']} · navbatda {st2['queue']} kishi",
         f"Har {EVERY // 60} daqiqada navbatdagilarning hammasiga, orasida {GAP}–{GAP_MAX} soniya, "
         f"Toshkent {HOURS[0]:02d}:00–{HOURS[1]:02d}:00; Instagram cheklasa — to'xtab, o'zi davom etadi",
     ]
@@ -245,10 +277,13 @@ async def status_text() -> str:
 async def samples(limit: int = 3) -> list[tuple[dict, str | None]]:
     """Navbatdagi odamlarga nima yozilishi — yuborilmaydi va belgilanmaydi."""
     rows = await database.meta_comment_followup_candidates(DAYS, limit)
+    second = not rows
+    if second:
+        rows = await database.meta_comment_followup2_candidates(ROUND2_MIN_DAYS, limit)
     state = await database.get_meta_comments_state()
     kb = comment_ai.kb_with_defaults(state.get("kb"))
     extra = (await new_products_text(), await offers_text())
-    return [(row, await compose(row, kb, extra)) for row in rows]
+    return [(row, await compose(row, kb, extra, second)) for row in rows]
 
 
 @router.message(Command("izoh_qayta"))

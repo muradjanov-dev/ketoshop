@@ -83,7 +83,7 @@ class HoldingTest(unittest.TestCase):
     def test_holding_texts_follow_the_house_rules(self):
         for text in comment_ai.HOLDING.values():
             self.assertNotIn("agar sir", text.lower())
-            self.assertIn("Telegram botimiz @ketoshopbot", text)
+            self.assertIn("Direct", text)
 
 
 if __name__ == "__main__":

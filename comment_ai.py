@@ -62,6 +62,11 @@ AI_MODES = ("avto", "tasdiq", "off")
 # ?startapp=instagram: a tracked shop link (shop_links.py), so orders from people
 # who came through an Instagram comment or Direct are marked 📸 Instagram (order_origin.py).
 SHOP_LINK = os.getenv("META_COMMENTS_SHOP_LINK", "https://t.me/ketoshopbot/shop?startapp=instagram").strip()
+# Izohda do'konga yo'l (egasi, 2026-11-24): Instagram izohida havola va @username bosilmaydi —
+# "sog'lom mahsulotlarni katta assortimentini botimiz va saytimiz orqali, unga esa telegramdan
+# ketoshop_uz deb yozsalar chiqadi, yoki direct (shaxsiydan) yozishsa biz tashlab beramiz".
+SHOP_CTA = ("Sog'lom mahsulotlarimizning katta assortimenti Telegram botimiz va saytimizda: Telegram'da "
+            "«ketoshop_uz» deb qidirsangiz chiqadi, yoki Direct'ga yozsangiz — havolasini tashlab beramiz 🌿")
 DEFAULT_DM = ("Izohingiz uchun katta rahmat! 🌿 Barcha sog'lom keto va PP mahsulotlarimizni "
               "shu yerdan bemalol ko'rib chiqishingiz mumkin:")
 # ai_usage da izohlar sarfi AI sotuvchinikidan alohida qatorda turadi.
@@ -110,7 +115,7 @@ def default_kb() -> dict:
         "manzil": (f"{SHOP_STREET}, mo'ljal: {SHOP_LANDMARK}. Ish vaqti (kelib olib ketish uchun): "
                    f"{SHOP_HOURS}. Aniq manzil profildagi aktual storisda ✅"),
         "yetkazish": delivery,
-        "buyurtma": "Telegram botimiz orqali: @ketoshopbot → «🛍 Do'konni ochish»",
+        "buyurtma": SHOP_CTA,
         "optom": "Optom bo'yicha: 94 618 05 07",
         "glyuten": ("Glyuten — bug'doy, arpa va javdar unidagi oqsil; aynan u xamirni cho'ziluvchan qiladi. "
                     "Ba'zi odamlarda hazm bo'lmay, qorin dam bo'lishi, holsizlik kabi muammolar beradi. "
@@ -119,9 +124,11 @@ def default_kb() -> dict:
                     "Batafsil — profilimizdagi «Glyuten nima? 2-qism» videosida."),
         "kepak": "",
         "boshqa": "",
-        "tpl_narx": "Assalomu alaykum! Narxlar va to'liq ro'yxat Telegram botimizda: @ketoshopbot 🌿",
+        "tpl_narx": ("Assalomu alaykum! Narxlari bilan barcha mahsulotlarimiz Telegram botimiz va saytimizda: "
+                     "Telegram'da «ketoshop_uz» deb qidirsangiz chiqadi, yoki Direct'ga yozsangiz — havolasini "
+                     "tashlab beramiz 🌿"),
         "tpl_yetkazish": f"Assalomu alaykum! {delivery} 🚚",
-        "tpl_bot": "Assalomu alaykum! Buyurtma Telegram botimiz orqali: @ketoshopbot → «🛍 Do'konni ochish» 🌿",
+        "tpl_bot": f"Assalomu alaykum! Buyurtmani bot va saytimiz orqali berasiz. {SHOP_CTA}",
     }
 
 
@@ -142,11 +149,11 @@ _TEMPLATE_FOR = {"narx": "tpl_narx", "mavjudlik": "tpl_narx", "buyurtma": "tpl_b
 # AI aniq javob topa olmagan sog'liq / shikoyat / boshqa savolga — iliq oraliq javob (keyin odam qaraydi).
 HOLDING = {
     "salomatlik": "Yaxshi savol 🌿 Bu borada aniq maslahatni shifokor beradi; mahsulot tarkibi va qanday "
-                  "ishlatilishi haqida Telegram botimiz @ketoshopbot da batafsil yozib beramiz.",
-    "shikoyat": "Kechirasiz, noqulaylik uchun 🙏 Iltimos, Direct'ga yoki Telegram botimiz @ketoshopbot ga "
-                "yozing — tezda hal qilamiz.",
-    "boshqa": "Savolingiz uchun rahmat 😊 Aniq javobni Telegram botimiz @ketoshopbot da beramiz — u yerga "
-              "yozsangiz, xodimimiz yordam beradi.",
+                  "ishlatilishi haqida Direct'ga yozsangiz, batafsil aytib beramiz.",
+    "shikoyat": "Kechirasiz, noqulaylik uchun 🙏 Iltimos, Direct'ga yozsangiz — tezda hal qilamiz.",
+    "boshqa": ("Savolingiz uchun rahmat 😊 Direct'ga yozsangiz, xodimimiz aniq javob beradi va do'konimiz "
+               "havolasini ham tashlab beradi. Mahsulotlarimizni Telegram'da «ketoshop_uz» deb qidirib ham "
+               "topasiz 🌿"),
 }
 
 
@@ -312,6 +319,12 @@ FAKTLAR
 - Instagram izohida havola bosilmaydi: havola yozma, "@ketoshopbot" deb yoz yoki "profildagi havola orqali" de.
 - @ketoshopbot va {kanal} — TELEGRAM'da, Instagram'da bunday sahifa yo'q (egasi, 2026-11-13). Har safar
   Telegram'da ekanini ayt: "Telegram botimiz @ketoshopbot", "Telegram kanalimiz {kanal}".
+- DO'KONGA YO'L (egasi, 2026-11-24 — yuqoridagi "narxlar @ketoshopbot da" kabi gaplar O'RNIGA): narx, to'liq
+  ro'yxat, mahsulotlarni ko'rish yoki buyurtma haqida — bunday ayt: sog'lom mahsulotlarimizning katta
+  assortimenti Telegram botimiz va saytimizda; Telegram'da «ketoshop_uz» deb qidirsangiz chiqadi, yoki
+  Direct'ga yozsangiz havolasini tashlab beramiz. O'z so'zing bilan, lekin uchala qism ham bo'lsin
+  (bot va sayt · Telegram'da «ketoshop_uz» · Direct'ga yozsa havola). Rahmat va maqtovga ham, oxirida
+  bitta gap bilan yumshoq qo'shsang bo'ladi; shikoyat va sog'liq savolida — qo'shma.
 - BEPUL RETSEPTLAR (egasi, 2026-11-13): mos holatlarda — retsept, qanday pishirish yoki ishlatish so'ralganda,
   maqtov va rahmatda, narx yoki bor-yo'qligiga javob bergach — oxirida bitta iliq gap qo'sh: Telegram botimiz
   @ketoshopbot va kanalimiz {kanal} da bepul retseptlarni joylab boryapmiz, obuna bo'lishga taklif (masalan,
@@ -680,9 +693,14 @@ async def draft(comment: dict, kb: dict) -> Draft | None:
 
 # ─────────────────────────── qayta aloqa (follow-up) ────────────────────────
 
-FOLLOWUP_RULES = """Sen Keto shop jamoasi nomidan Instagram yoki Facebook'da bir oy va undan ham oldin izoh
-qoldirgan odamga o'sha izohi ostida qayta, samimiy yozasan (egasi, 2026-11-13). Maqsad — munosabatni iliq
-davom ettirish va unga foydali yangilikni aytish; sotish emas. Odam bizni eslab, o'zi qiziqsin.
+FOLLOWUP_RULES = """Sen Keto shop jamoasi nomidan Instagram yoki Facebook'da avvalroq izoh qoldirgan odamga o'sha
+izohi ostida qayta, samimiy yozasan (egasi, 2026-11-13). Maqsad — munosabatni iliq davom ettirish va unga
+foydali yangilikni aytish; sotish emas. Odam bizni eslab, o'zi qiziqsin.
+
+DO'KONGA YO'L (egasi, 2026-11-24) — xabarda albatta bitta gap bilan, o'z so'zing bilan: sog'lom
+mahsulotlarimizning katta assortimenti Telegram botimiz va saytimizda; Telegram'da «ketoshop_uz» deb
+qidirsangiz chiqadi, yoki Direct'ga yozsangiz havolasini tashlab beramiz. Pastdagi "@ketoshopbot da" degan
+gaplar o'rniga shuni ayt. "OLDINGI QAYTA XABARIMIZ" berilgan bo'lsa — uni takrorlama, boshqacha yoz.
 
 KIM NOMIDAN: har doim "biz" — Keto shop jamoasi ("ko'rdingizmi", "xursand bo'lamiz", "bizda bor").
 
@@ -738,7 +756,9 @@ def followup_prompt(c: dict, days_ago: int) -> str:
     return (f"{platform} · {where}\nIzoh muallifi: {c.get('username') or 'mijoz'}\n"
             f"Izoh yozilgan: taxminan {days_ago} kun oldin\n\n{post}"
             f"ESKI IZOH:\n{(c.get('text') or '').strip()[:1000]}\n\n"
-            f"O'SHANDA BIZ YOZGAN JAVOB:\n{ours[:500] or '—'}")
+            f"O'SHANDA BIZ YOZGAN JAVOB:\n{ours[:500] or '—'}"
+            + (f"\n\nOLDINGI QAYTA XABARIMIZ:\n{(c.get('followup_text') or '').strip()[:500]}"
+               if (c.get("followup_text") or "").strip() else ""))
 
 
 async def followup(comment: dict, kb: dict, days_ago: int, new_products: str, offers: str) -> str | None:
@@ -786,9 +806,19 @@ def in_script_of(comment_text: str | None, reply: str) -> str:
         from translit import lat_to_cyr
         # «Direct'ga» → «Диреcтъга» edi (13.11): c ning o'zbekcha harfi yo'q.
         reply = _DIRECT.sub("Direkt", reply.translate(_APOS)).replace("Direkt'", "Direkt")
+        reply = reply.replace("Telegram'", "Телеграм")    # «Telegramъда» bo'lmasin
         # Avval kirilldagi «о'» → «ў» (aks holda translit «'» ni «ъ» qiladi).
-        return _fix_cyr_apos(lat_to_cyr(_fix_cyr_apos(reply)))
-    return reply
+        return keep_search_name(_fix_cyr_apos(lat_to_cyr(_fix_cyr_apos(reply))))
+    return keep_search_name(reply)
+
+
+# «ketoshop_uz» — Telegram qidiruvida yoziladigan nom (SHOP_CTA): kirillga o'girilsa
+# («кетошоп_уз») Telegram uni topmaydi — doim lotinda qoladi.
+_SEARCH_NAME = re.compile(r"[кk][еe][тt][оo](?:ш|sh)[оo][пp][_ ]?[уu][зz]", re.IGNORECASE)
+
+
+def keep_search_name(text: str) -> str:
+    return _SEARCH_NAME.sub("ketoshop_uz", text or "")
 
 
 # 1-shaxs birlik → "biz" (egasi, 2026-11-11: "aytaman demasin aytamiz desin").
@@ -799,7 +829,7 @@ _SINGULAR_VERB = re.compile(r"\b(\w{3,}?)(a|а|ya|я)(y|й)?(man|ман)\b", re.
 _ASK = re.compile(r"(nomini|номини|qaysi|қайси|kerakligini|кераклигини).{0,80}"
                   r"(yozing|ёзинг|ayting|айтинг|yuboring|юборинг|yozsangiz|ёзсангиз|aytsangiz|айтсангиз)",
                   re.IGNORECASE)
-_ASK_FALLBACK = "Barcha narxlar va mahsulotlarimiz Telegram botimiz @ketoshopbot da 🌿"
+_ASK_FALLBACK = SHOP_CTA
 
 
 def _plural(text: str) -> str:

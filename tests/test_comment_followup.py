@@ -41,8 +41,14 @@ class SendOneTest(unittest.IsolatedAsyncioTestCase):
             self.sent.append((c["comment_id"], text))
             return "r1"
 
-        async def compose(r, kb=None, extra=None):
+        async def compose(r, kb=None, extra=None, second=False):
             return self.texts.get(r["comment_id"])
+
+        self.round2 = []
+        self.marked2 = []
+
+        async def mark2(key, text):
+            self.marked2.append((key, text))
 
         for p in [
             patch.object(database, "get_meta_comments_state", AsyncMock(side_effect=lambda: dict(self.state))),
@@ -50,6 +56,11 @@ class SendOneTest(unittest.IsolatedAsyncioTestCase):
             patch.object(database, "meta_comment_followup_candidates",
                          AsyncMock(side_effect=lambda d, n: self.candidates[:n])),
             patch.object(database, "mark_meta_comment_followup", mark),
+            patch.object(database, "meta_comment_followup2_stats",
+                         AsyncMock(return_value={"today": 0, "total": 0, "skipped": 0, "queue": 0})),
+            patch.object(database, "meta_comment_followup2_candidates",
+                         AsyncMock(side_effect=lambda d, n: self.round2[:n])),
+            patch.object(database, "mark_meta_comment_followup2", mark2),
             patch.object(mc, "load_token", AsyncMock()), patch.object(mc, "token", lambda: "T"),
             patch.object(mc, "identity", AsyncMock(return_value={"page_token": "T"})),
             patch.object(mc, "reply_public", reply_public),
@@ -127,6 +138,16 @@ class SendOneTest(unittest.IsolatedAsyncioTestCase):
     async def test_empty_queue(self):
         self.candidates = []
         self.assertEqual(await cf.send_one(None, NOON), "none")
+
+    async def test_second_round_once_everyone_old_got_the_first(self):
+        # Egasi, 2026-11-24: "qayta yozib chiq … telegramdan ketoshop_uz deb yozsalar chiqadi".
+        self.candidates = []
+        self.round2 = [row(7, "c7")]
+        self.texts = {"c7": "Telegram'da «ketoshop_uz» deb qidirsangiz chiqadi 🌿"}
+        self.assertEqual(await cf.send_one(None, NOON), "sent")
+        self.assertEqual(self.sent, [("c7", self.texts["c7"])])
+        self.assertEqual(self.marked2, [(7, self.texts["c7"])])
+        self.assertEqual(self.marked, [])                       # first-round marks untouched
 
 
 class PaceTest(unittest.TestCase):
