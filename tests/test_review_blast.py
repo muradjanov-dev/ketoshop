@@ -48,12 +48,16 @@ class PicksTest(unittest.TestCase):
 
 class TextTest(unittest.TestCase):
     def test_each_language(self):
-        uz = rb.message_text("uz", "Dilnoza Karimova", True)
+        uz = rb.message_text("uz", "Dilnoza Karimova", True, ["Bodom uni 1000gr", "Eritritol", "Chia", "Psillium"])
         self.assertTrue(uz.startswith("Assalomu alaykum, Dilnoza! 🌿"))
-        self.assertIn("ma'qul keldimi", uz)
-        self.assertIn("izoh", uz)
-        ru = rb.message_text("ru", "Ольга", True)
-        self.assertIn("понравились ли вам наши продукты", ru)
+        # Round 2026-11-25: what they bought, «olgan ekansiz», results, a polite ask.
+        self.assertIn("<b>Bodom uni 1000gr, Eritritol, Chia</b> olgan ekansiz", uz)        # three at most
+        self.assertIn("natijangizni biz bilan bo'lisha olasizmi", uz)
+        self.assertIn("nima pishirdingiz", uz)
+        self.assertIn("juda minnatdor bo'lamiz", uz)
+        ru = rb.message_text("ru", "Ольга", True, ["Миндальная мука"])
+        self.assertIn("поделитесь, пожалуйста, своим результатом", ru)
+        self.assertIn("<b>Миндальная мука</b>", ru)
         cyr = rb.message_text("uz_cyr", "Dilnoza", False)
         self.assertTrue(cyr.startswith("Ассалому алайкум, Dilnoza! 🌿"))
         self.assertNotIn("{", cyr)
@@ -64,7 +68,10 @@ class TextTest(unittest.TestCase):
                          ["Dilnoza", "Ketoshop"])
 
     def test_general_text_when_everything_is_reviewed(self):
-        self.assertIn("baho qo'yganingiz uchun", rb.message_text("uz", None, False))
+        general = rb.message_text("uz", None, False, ["Eritritol"])
+        self.assertIn("Fikringizni shu chatga yozib yuborsangiz", general)
+        self.assertNotIn("quyidagi mahsulotlardan", general)              # no buttons in this one
+        self.assertIn("<b>mahsulotlar</b>", rb.message_text("uz", None, False))
         self.assertTrue(rb.message_text("uz", None, False).startswith("Assalomu alaykum! 🌿"))
 
     def test_name_is_escaped(self):
@@ -98,21 +105,22 @@ class KeyboardTest(unittest.TestCase):
 
 class WindowTest(unittest.TestCase):
     def test_daytime_until_last_day(self):
-        self.assertTrue(rb.in_window(datetime(2026, 10, 24, 17, 30)))
-        self.assertFalse(rb.in_window(datetime(2026, 10, 24, 21, 0)))
-        self.assertFalse(rb.in_window(datetime(2026, 10, 25, 8, 59)))
-        self.assertTrue(rb.in_window(datetime(2026, 10, 26, 9, 0)))
-        self.assertFalse(rb.in_window(datetime(2026, 10, 27, 12, 0)))
+        self.assertFalse(rb.in_window(datetime(2026, 11, 23, 12, 0)))     # not before the owner's day
+        self.assertTrue(rb.in_window(datetime(2026, 11, 24, 9, 21)))
+        self.assertFalse(rb.in_window(datetime(2026, 11, 24, 21, 0)))
+        self.assertFalse(rb.in_window(datetime(2026, 11, 25, 8, 59)))
+        self.assertTrue(rb.in_window(datetime(2026, 11, 26, 17, 30)))
+        self.assertFalse(rb.in_window(datetime(2026, 11, 27, 12, 0)))
 
     def test_outside_window_touches_nothing(self):
         with patch.object(rb, "_round_finished", AsyncMock()) as finished:
-            self.assertEqual(run(rb.run_once(MagicMock(), datetime(2026, 10, 24, 22, 0))), 0)
+            self.assertEqual(run(rb.run_once(MagicMock(), datetime(2026, 11, 25, 22, 0))), 0)
             finished.assert_not_called()
 
     def test_switch_off(self):
         with patch.dict(os.environ, {"REVIEW_BLAST": "0"}), \
                 patch.object(rb, "_round_finished", AsyncMock()) as finished:
-            self.assertEqual(run(rb.run_once(MagicMock(), datetime(2026, 10, 24, 12, 0))), 0)
+            self.assertEqual(run(rb.run_once(MagicMock(), datetime(2026, 11, 25, 12, 0))), 0)
             finished.assert_not_called()
 
 
@@ -135,7 +143,7 @@ class RunTest(unittest.TestCase):
             claims.append((uid, n))
             return uid != 11          # 11 was claimed by an earlier tick
 
-        noon = datetime(2026, 10, 24, 12, 0)
+        noon = datetime(2026, 11, 25, 12, 0)
         with patch.object(rb, "_round_finished", AsyncMock(return_value=False)), \
                 patch.object(rb, "_load_audience", AsyncMock(return_value=(orders, users, reviewed, CATALOG))), \
                 patch.object(rb, "_claim", side_effect=claim), \
@@ -164,7 +172,7 @@ class RunTest(unittest.TestCase):
         from aiogram.exceptions import TelegramForbiddenError
         bot = MagicMock()
         bot.send_message = AsyncMock(side_effect=TelegramForbiddenError(MagicMock(), "blocked"))
-        noon = datetime(2026, 10, 24, 12, 0)
+        noon = datetime(2026, 11, 25, 12, 0)
         with patch.object(rb, "_round_finished", AsyncMock(return_value=False)), \
                 patch.object(rb, "_load_audience", AsyncMock(return_value=(
                     {10: [order(20, {"product_id": 1})]},
