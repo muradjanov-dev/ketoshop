@@ -1312,6 +1312,10 @@ async def init_db():
         # bir odamga bir marta; followup_text '' — AI yozmaslikni tanlagan yoki yuborilmagan.
         await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup_at TIMESTAMP")
         await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup_text TEXT")
+        # 2026-11-24: ikkinchi qayta yozish — do'konga yangi yo'l bilan (comment_followup.py).
+        # Birinchisi (followup_*) o'zgarmaydi — hammasi saqlanadi.
+        await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup2_at TIMESTAMP")
+        await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup2_text TEXT")
         # Izohlar tokeni (ads_read tokenidan ALOHIDA), AI rejimi, bilim bazasi.
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS meta_comments_state (
@@ -8824,7 +8828,7 @@ async def meta_comment_followup_candidates(days: int, limit: int = 10) -> list[d
                      AND NOT EXISTS (
                          SELECT 1 FROM meta_comments o
                          WHERE lower(o.username) = lower(m.username)
-                           AND (o.followup_at IS NOT NULL
+                           AND (o.followup_at IS NOT NULL OR o.followup2_at IS NOT NULL
                                 OR COALESCE(o.created_at, o.received_at)
                                    > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)))
                    ORDER BY lower(m.username), COALESCE(m.created_at, m.received_at) DESC
@@ -8832,6 +8836,75 @@ async def meta_comment_followup_candidates(days: int, limit: int = 10) -> list[d
                ORDER BY COALESCE(t.created_at, t.received_at) DESC
                LIMIT $2""", days, limit)
     return [_comment_row(r) for r in rows]
+
+
+async def meta_comment_followup2_candidates(min_days: int, limit: int = 10) -> list[dict]:
+    """Ikkinchi qayta yozish (egasi, 2026-11-24: "qayta yozib chiq"): javob olgan
+    har bir odamga bir marta — uning oxirgi izohi ostiga. Izohi `min_days` kundan
+    yangi bo'lsa (hozirgina javob oldi) yoki birinchi qayta xabar shu muddatda
+    ketgan bo'lsa — hali emas. Yangiroqlari oldin."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT * FROM (
+                   SELECT DISTINCT ON (lower(m.username)) m.*
+                   FROM meta_comments m
+                   WHERE m.username IS NOT NULL AND m.username <> ''
+                     AND m.status IN ('answered', 'ai_answered')
+                     AND COALESCE(m.category, '') <> 'spam'
+                     AND NOT EXISTS (
+                         SELECT 1 FROM meta_comments o
+                         WHERE lower(o.username) = lower(m.username)
+                           AND (o.followup2_at IS NOT NULL
+                                OR o.followup_at > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)
+                                OR COALESCE(o.created_at, o.received_at)
+                                   > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)))
+                   ORDER BY lower(m.username), COALESCE(m.created_at, m.received_at) DESC
+               ) t
+               ORDER BY COALESCE(t.created_at, t.received_at) DESC
+               LIMIT $2""", min_days, limit)
+    return [_comment_row(r) for r in rows]
+
+
+async def mark_meta_comment_followup2(key: int, text: str) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE meta_comments SET followup2_at = NOW() AT TIME ZONE 'UTC', followup2_text = $2 WHERE id = $1",
+            key, text)
+
+
+async def meta_comment_followup2_stats(min_days: int) -> dict:
+    """Ikkinchi bosqich: bugun, jami, AI yozmagan va navbatdagilar soni."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) FILTER (WHERE followup2_text <> ''
+                         AND followup2_at >= date_trunc('day', NOW() AT TIME ZONE 'Asia/Tashkent')
+                                             - INTERVAL '5 hours') AS today,
+                      COUNT(*) FILTER (WHERE followup2_text <> '') AS total,
+                      COUNT(*) FILTER (WHERE followup2_at IS NOT NULL AND followup2_text = '') AS skipped
+               FROM meta_comments""")
+        queue = await conn.fetchval(
+            """SELECT COUNT(DISTINCT lower(m.username)) FROM meta_comments m
+               WHERE m.username IS NOT NULL AND m.username <> ''
+                 AND m.status IN ('answered', 'ai_answered') AND COALESCE(m.category, '') <> 'spam'
+                 AND NOT EXISTS (
+                     SELECT 1 FROM meta_comments o WHERE lower(o.username) = lower(m.username)
+                       AND (o.followup2_at IS NOT NULL
+                            OR o.followup_at > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)
+                            OR COALESCE(o.created_at, o.received_at)
+                               > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)))""", min_days)
+    out = {k: int(row[k] or 0) for k in ("today", "total", "skipped")}
+    out["queue"] = int(queue or 0)
+    return out
+
+
+async def reset_meta_comments_open() -> int:
+    """Hamma javobsiz izoh (AI ko'rmagan, topa olmagan yoki yuborib bo'lmagan)
+    yangi qoidalar bilan qayta ko'rishga (egasi, 2026-11-24: "javob berilmagan
+    izohlarga javob berib chiq")."""
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE meta_comments SET ai_confident = NULL WHERE status IN ('new', 'pending')")
+    return int(result.split()[-1]) if result else 0
 
 
 async def mark_meta_comment_followup(key: int, text: str) -> None:
@@ -8858,7 +8931,7 @@ async def meta_comment_followup_stats(days: int) -> dict:
                  AND COALESCE(m.created_at, m.received_at) <= (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)
                  AND NOT EXISTS (
                      SELECT 1 FROM meta_comments o WHERE lower(o.username) = lower(m.username)
-                       AND (o.followup_at IS NOT NULL
+                       AND (o.followup_at IS NOT NULL OR o.followup2_at IS NOT NULL
                             OR COALESCE(o.created_at, o.received_at)
                                > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)))""", days)
         last = await conn.fetch(

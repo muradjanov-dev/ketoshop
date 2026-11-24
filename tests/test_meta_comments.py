@@ -242,7 +242,7 @@ class SubReplyCheckTest(unittest.IsolatedAsyncioTestCase):
 
     def test_template_for_plain_questions_only(self):
         kb = comment_ai.kb_with_defaults({})
-        self.assertIn("@ketoshopbot", comment_ai.template_reply("narx", kb))
+        self.assertIn("«ketoshop_uz»", comment_ai.template_reply("narx", kb))
         self.assertIn("Oqsoy", comment_ai.template_reply("manzil", kb))
         self.assertIn("pochta", comment_ai.template_reply("yetkazish", kb))
         for cat in ("salomatlik", "shikoyat", "boshqa", "spam", None):
@@ -271,7 +271,10 @@ class ReplyShapeTest(unittest.TestCase):
     def test_finalize_never_asks_for_the_product_in_our_own_post(self):
         out = comment_ai.finalize("Нархи канча", "Кепак — 10 000 со‘м 😊 Агар бошқа маҳсулот бўлса, "
                                                  "номини ёзинг — аниқ нархини айтаман.")
-        self.assertEqual(out, "Кепак — 10 000 сўм 😊 Барча нархлар ва маҳсулотларимиз Telegram ботимиз @ketoshopbot да 🌿")
+        self.assertTrue(out.startswith("Кепак — 10 000 сўм 😊 Соғлом маҳсулотларимиз"), out)
+        self.assertIn("Телеграмда", out)              # «Telegramъда» emas
+        self.assertIn("«ketoshop_uz»", out)            # Telegram qidiruvidagi nom kirillga o'girilmaydi
+        self.assertNotIn("номини", out)
 
 
 class PolicyTest(unittest.TestCase):
@@ -544,7 +547,7 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
         await mc.ingest(self.bot, self.comment(text="Narxi qancha"), source="webhook")
         await self.settle()
         self.assertEqual(len(self.public), 1)
-        self.assertIn("@ketoshopbot", self.public[0][1])
+        self.assertIn("ketoshop_uz", self.public[0][1])
         self.assertEqual(self.bot.sent, [])
         self.assertEqual(self.db.rows[1]["status"], "ai_answered")
 
@@ -616,7 +619,7 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
         await self.settle()
         self.assertEqual([p[0] for p in self.public], ["a", "b"])  # the unsure old one gets a holding reply
         self.assertEqual(self.public[0], ("a", "Раҳмат!"))
-        self.assertIn("Telegram ботимиз", self.public[1][1])
+        self.assertIn("Телеграмда «ketoshop_uz»", self.public[1][1])   # do'konga yangi yo'l (2026-11-24)
         self.assertEqual(self.private, [])                      # older than 7 days: Meta allows no Direct
         statuses = {r["comment_id"]: r["status"] for r in self.db.rows.values()}
         self.assertEqual(statuses, {"a": "ai_answered", "b": "ai_answered", "c": "answered"})
