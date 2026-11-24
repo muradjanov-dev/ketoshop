@@ -26,6 +26,13 @@ if not DATABASE_URL:
 _HARDCODED_ADMINS = {917456291, 1035429145}
 _env_admins = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()}
 ADMIN_IDS = list(_HARDCODED_ADMINS | _env_admins)
+# Kod/env adminlari — botdan rolini o'zgartirib ham, olib tashlab ham bo'lmaydi.
+PERMANENT_ADMIN_IDS = frozenset(_HARDCODED_ADMINS | _env_admins)
+
+# Call Centre operatorlari (egasi, 2026-11-22): faqat /callcentre CRM ni
+# ko'radi, admin emas. Bazadagi admins.role='operator' qatorlaridan startda
+# to'ldiriladi (bot.py) va ADMIN_IDS kabi joyida o'zgartiriladi.
+OPERATOR_IDS: list[int] = []
 
 # Buyurtma kuzatuvchilari (owner, 2026-11-06): these accounts get only the
 # new-order card and every order status card (order_admin_feed.recipients,

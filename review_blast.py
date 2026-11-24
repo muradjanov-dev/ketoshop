@@ -57,8 +57,11 @@ from translit import lat_to_cyr
 logger = logging.getLogger(__name__)
 router = Router(name="review_blast")
 
-ROUND = "2026-10-24"
-LAST_DAY = date(2026, 10, 26)
+# Round 2 (owner, 2026-11-24: "hoziroq hammaga yubor"): «natijangizni biz bilan bo'lisha olasizmi?»
+ROUND = "2026-11-24"
+FIRST_DAY = date(2026, 11, 24)
+LAST_DAY = date(2026, 11, 26)
+ITEMS_IN_TEXT = 3
 SEND_FROM = 9
 SEND_UNTIL = 21
 REPLY_WINDOW_HOURS = 48
@@ -71,26 +74,33 @@ _PLACEHOLDER = re.compile(r"(\{\w+\})")
 
 _TEXT = {
     "uz": {
+        # Round 2026-11-25 (owner, 2026-11-24: "xar bir mijoz bir marotaba bo'lsa ham olgan
+        # maxsulotidan kelib chiqib ... qanday bo'lgani, sifati yoqdimi? nimalar pishirdilar,
+        # qanday chiqdi? biz bilan bo'lisha olasizmi ..."; "olgansiz -> olgan ekansiz").
         "products": (
             "Assalomu alaykum{name}! 🌿\n\n"
-            "Ketoshop do'konidan xarid qilganingiz uchun katta rahmat 💚 Bugun sizdan bitta "
-            "iltimosimiz bor: <b>olgan mahsulotlarimiz sizga ma'qul keldimi?</b>\n\n"
-            "Har biri haqida qisqa izoh yozib qoldiring: ta'mi, sifati, qadog'i, "
-            "nima tayyorladingiz, yana olasizmi. Maqtov ham, tanqid ham biz uchun "
-            "birdek qimmatli — har bir izohni o'zimiz o'qib chiqamiz.\n\n"
-            "👇 Mahsulotni tanlang, baho qo'ying va izohingizni yozing.\n"
-            "Umumiy fikringiz bo'lsa, shu chatga matn bilan yozib yuboring.\n\n"
+            "Siz Ketoshop do'konidan <b>{items}</b> olgan ekansiz — bizni tanlaganingiz uchun katta rahmat 💚\n\n"
+            "Sizdan bir iltimosimiz bor — natijangizni biz bilan bo'lisha olasizmi?\n"
+            "• Mahsulot qanday bo'ldi — sifati, ta'mi yoqdimi?\n"
+            "• U bilan nima pishirdingiz, qanday chiqdi?\n\n"
+            "Rasm bilan yuborsangiz — yanada xursand bo'lamiz 📸\n\n"
+            "Xaridorlarimiz natijalari bizni chin dildan quvontiradi va sog'lom mahsulotlarni ko'proq "
+            "odamlarga yetkazish, mahsulotlarimizni yanada sifatli qilish va qulayroq yetkazib berish "
+            "uchun bizga katta kuch beradi.\n\n"
+            "👇 Iltimos, quyidagi mahsulotlardan birini tanlab baho qo'yib bersangiz yoki fikringizni shu chatga yozib yuborsangiz, juda minnatdor bo'lamiz.\n\n"
             "Hurmat bilan, Ketoshop jamoasi"
         ),
         "general": (
             "Assalomu alaykum{name}! 🌿\n\n"
-            "Ketoshop do'konidan xarid qilganingiz va mahsulotlarimizga baho "
-            "qo'yganingiz uchun katta rahmat 💚\n\n"
-            "Bugun umumiy fikringizni bilmoqchimiz: <b>mahsulotlarimiz sizga "
-            "ma'qul keldimi?</b> Nimasi yoqdi, nimani yaxshilashimiz kerak, yana "
-            "qaysi mahsulotlarni ko'rishni xohlaysiz?\n\n"
-            "Shu chatga matn bilan yozib yuboring — har bir izohni o'zimiz o'qib "
-            "chiqamiz.\n\n"
+            "Siz Ketoshop do'konidan <b>{items}</b> olgan ekansiz — bizni tanlaganingiz uchun katta rahmat 💚\n\n"
+            "Sizdan bir iltimosimiz bor — natijangizni biz bilan bo'lisha olasizmi?\n"
+            "• Mahsulot qanday bo'ldi — sifati, ta'mi yoqdimi?\n"
+            "• U bilan nima pishirdingiz, qanday chiqdi?\n\n"
+            "Rasm bilan yuborsangiz — yanada xursand bo'lamiz 📸\n\n"
+            "Xaridorlarimiz natijalari bizni chin dildan quvontiradi va sog'lom mahsulotlarni ko'proq "
+            "odamlarga yetkazish, mahsulotlarimizni yanada sifatli qilish va qulayroq yetkazib berish "
+            "uchun bizga katta kuch beradi.\n\n"
+            "👇 Fikringizni shu chatga yozib yuborsangiz, juda minnatdor bo'lamiz.\n\n"
             "Hurmat bilan, Ketoshop jamoasi"
         ),
         "stars": "<b>{product}</b>\n\n⭐ Mahsulot sizga qanchalik ma'qul keldi? Baho qo'ying:",
@@ -105,22 +115,26 @@ _TEXT = {
     "ru": {
         "products": (
             "Здравствуйте{name}! 🌿\n\n"
-            "Большое спасибо, что покупаете в Ketoshop 💚 Сегодня у нас к вам одна "
-            "просьба: <b>понравились ли вам наши продукты?</b>\n\n"
-            "Напишите о каждом пару слов: вкус, качество, упаковка, что "
-            "приготовили, возьмёте ли ещё. И похвала, и критика для нас одинаково "
-            "ценны — каждый отзыв мы читаем сами.\n\n"
-            "👇 Выберите продукт, поставьте оценку и напишите отзыв.\n"
-            "Если хотите поделиться общим впечатлением — напишите текстом прямо в этот чат.\n\n"
+            "Вы покупали в Ketoshop <b>{items}</b> — большое спасибо, что выбрали нас 💚\n\n"
+            "У нас к вам просьба — поделитесь, пожалуйста, своим результатом:\n"
+            "• Каким оказался продукт — понравились ли качество и вкус?\n"
+            "• Что вы из него приготовили, как получилось?\n\n"
+            "Если пришлёте фото — будем ещё больше рады 📸\n\n"
+            "Результаты наших покупателей искренне радуют нас и дают силы доносить полезные "
+            "продукты до ещё большего числа людей, делать их качественнее и доставлять удобнее.\n\n"
+            "👇 Будем очень благодарны, если вы выберете продукт ниже и поставите оценку или напишете свой отзыв прямо в этот чат.\n\n"
             "С уважением, команда Ketoshop"
         ),
         "general": (
             "Здравствуйте{name}! 🌿\n\n"
-            "Большое спасибо за покупки в Ketoshop и за ваши оценки 💚\n\n"
-            "Сегодня хотим узнать ваше общее впечатление: <b>понравились ли вам "
-            "наши продукты?</b> Что понравилось, что нам стоит улучшить, какие "
-            "ещё продукты вы хотели бы у нас видеть?\n\n"
-            "Напишите текстом прямо в этот чат — каждый отзыв мы читаем сами.\n\n"
+            "Вы покупали в Ketoshop <b>{items}</b> — большое спасибо, что выбрали нас 💚\n\n"
+            "У нас к вам просьба — поделитесь, пожалуйста, своим результатом:\n"
+            "• Каким оказался продукт — понравились ли качество и вкус?\n"
+            "• Что вы из него приготовили, как получилось?\n\n"
+            "Если пришлёте фото — будем ещё больше рады 📸\n\n"
+            "Результаты наших покупателей искренне радуют нас и дают силы доносить полезные "
+            "продукты до ещё большего числа людей, делать их качественнее и доставлять удобнее.\n\n"
+            "👇 Будем очень благодарны, если вы напишете свой отзыв прямо в этот чат.\n\n"
             "С уважением, команда Ketoshop"
         ),
         "stars": "<b>{product}</b>\n\n⭐ Насколько вам понравился продукт? Поставьте оценку:",
@@ -145,7 +159,7 @@ def _now_tk() -> datetime:
 
 def in_window(now_tk: datetime) -> bool:
     """Daytime on a day the round is still valid."""
-    return now_tk.date() <= LAST_DAY and SEND_FROM <= now_tk.hour < SEND_UNTIL
+    return FIRST_DAY <= now_tk.date() <= LAST_DAY and SEND_FROM <= now_tk.hour < SEND_UNTIL
 
 
 def _lang(lang: str | None) -> str:
@@ -168,10 +182,15 @@ def _first_name(full_name: str | None) -> str:
     return (full_name or "").strip().split(" ")[0][:40]
 
 
-def message_text(lang: str, full_name: str | None, has_products: bool) -> str:
+def message_text(lang: str, full_name: str | None, has_products: bool, items: list[str] | None = None) -> str:
+    """`items` — what the buyer bought, newest first (names in their language)."""
     first = _first_name(full_name)
+    names = [html.escape(_short(n), quote=False) for n in (items or [])[:ITEMS_IN_TEXT]]
+    if not names:
+        names = [{"ru": "продукты", "uz_cyr": "маҳсулотлар"}.get(_lang(lang), "mahsulotlar")]
     return say("products" if has_products else "general", lang,
-                name=f", {html.escape(first, quote=False)}" if first else "")
+                name=f", {html.escape(first, quote=False)}" if first else "",
+                items=", ".join(names))
 
 
 def _short(name: str) -> str:
@@ -408,7 +427,8 @@ async def run_once(bot: Bot, now_tk: datetime | None = None) -> int:
         pids = picks_for(user_orders, reviewed.get(user_id, set()), catalog)
         if not await _claim(user_id, len(pids)):
             continue
-        body = message_text(lang, user.get("full_name"), bool(pids))
+        bought = [product_name(catalog[p], lang) for p in picks_for(user_orders, set(), catalog)]
+        body = message_text(lang, user.get("full_name"), bool(pids), bought)
         if await _send(bot, user_id, body, keyboard(pids, catalog, lang)):
             await _set_delivered(user_id)
             _pause_ai(user_id, REPLY_WINDOW_HOURS * 3600)

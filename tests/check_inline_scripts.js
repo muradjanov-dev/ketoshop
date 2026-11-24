@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 
-for (const file of ['webapp/index.html', 'webapp/admin.html']) {
+for (const file of ['webapp/index.html', 'webapp/admin.html', 'webapp/callcentre.html']) {
   const html = fs.readFileSync(file, 'utf8');
   assert.doesNotMatch(html, /working_hours|pickupHours|Ish vaqti:|Часы работы/,
     `${file} must not expose pickup working hours`);

@@ -31,6 +31,7 @@ BUYER_COMMANDS = [
 
 ADMIN_COMMANDS = [
     BotCommand(command="admin", description="🛠 Admin panel"),
+    BotCommand(command="callcentre", description="📞 Call Centre CRM"),
     BotCommand(command="mahsulot_savdosi", description="📦 Barcha mahsulotlar savdosi — 15/30 kun"),
     BotCommand(command="blogerlar", description="📢 Blogerlar (hamkorlar)"),
     BotCommand(command="referallar", description="📊 Referal statistikasi"),
@@ -91,6 +92,8 @@ ADMIN_COMMANDS = [
 ]
 
 BLOGGER_COMMAND = BotCommand(command="bloger", description="📢 Bloger kabinetim")
+# Call Centre operatori (call_centre_bot.py) — admin emas, faqat shu bo'lim.
+OPERATOR_COMMAND = BotCommand(command="callcentre", description="📞 Call Centre CRM — ish joyim")
 
 
 def persistent_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
@@ -772,6 +775,15 @@ def admin_products_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def admin_users_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
+    kb = _admin_users_rows(lang)
+    # 📞 Call Centre CRM (call_centre.py) — Telegram WebApp, faqat WEBAPP_URL bilan.
+    if WEBAPP_URL:
+        kb.inline_keyboard.insert(2, [InlineKeyboardButton(
+            text="📞 Call Centre CRM", web_app=WebAppInfo(url=f"{WEBAPP_URL}/callcentre"))])
+    return kb
+
+
+def _admin_users_rows(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text=get_text("btn_admin_users", lang), callback_data="admin:users"),

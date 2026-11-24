@@ -2176,8 +2176,10 @@ TEXTS = {
         "ru": "🚫 Вы заблокированы. Свяжитесь с администратором.",
     },
     "add_admin_prompt": {
-        "uz": "➕ Yangi admin qo'shish uchun uning Telegram ID raqamini yuboring:",
-        "ru": "➕ Отправьте Telegram ID пользователя, чтобы сделать его администратором:",
+        "uz": "➕ Yangi admin yoki Call Centre operatori qo'shish uchun uning Telegram ID raqamini yuboring "
+              "(rolni keyingi qadamda tanlaysiz):",
+        "ru": "➕ Отправьте Telegram ID пользователя — роль (администратор или оператор Call Centre) "
+              "выберете на следующем шаге:",
     },
     "add_admin_invalid": {
         "uz": "❌ Noto'g'ri ID. Faqat raqam yuboring (masalan: 123456789):",

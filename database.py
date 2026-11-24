@@ -188,6 +188,11 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Rol (egasi, 2026-11-22): 'admin' — to'liq admin panel; 'operator' —
+        # faqat Call Centre CRM (call_centre.py). Eski qatorlar 'admin' bo'lib
+        # qoladi, shuning uchun hech kimning huquqi o'zgarmaydi.
+        await conn.execute(
+            "ALTER TABLE admins ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin'")
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS product_media (
@@ -1307,6 +1312,10 @@ async def init_db():
         # bir odamga bir marta; followup_text '' — AI yozmaslikni tanlagan yoki yuborilmagan.
         await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup_at TIMESTAMP")
         await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup_text TEXT")
+        # 2026-11-24: ikkinchi qayta yozish — do'konga yangi yo'l bilan (comment_followup.py).
+        # Birinchisi (followup_*) o'zgarmaydi — hammasi saqlanadi.
+        await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup2_at TIMESTAMP")
+        await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup2_text TEXT")
         # Izohlar tokeni (ads_read tokenidan ALOHIDA), AI rejimi, bilim bazasi.
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS meta_comments_state (
@@ -5218,34 +5227,54 @@ async def get_month_stats(year: int, month: int) -> dict:
 # ===== Rejali xabarlar chegarasi (push_cap.py) =====
 
 async def claim_user_push(user_id: int, kind: str, active_max: int, quiet_max: int, quiet_days: int,
-                          unless: list[str] | None = None) -> bool:
+                          unless: list[str] | None = None, active_week: int = 1000,
+                          quiet_week: int = 1000, reserve: int = 0, gap_days: int = 0) -> bool:
     """Toshkent kuni bo'yicha shu userga yana bitta rejali xabar mumkinmi —
     mumkin bo'lsa hisobga yozadi (bitta atomik so'rov, parallel yuboruvchilar
     ham chegarani oshirolmaydi). Chegara: xaridor va oxirgi `quiet_days` kunda
-    botda yoki saytda faol — `active_max`, qolganlar — `quiet_max`. `unless` —
-    bugun shu turlardan biri ketgan bo'lsa, bu xabar yuborilmaydi (masalan,
-    fikr so'ralgan kuni umumiy maslahat ketmaydi)."""
+    botda yoki saytda faol — kuniga `active_max`, haftasiga `active_week`;
+    qolganlar — `quiet_max` / `quiet_week`. Hafta — bugun bilan oxirgi 7 kun.
+    `reserve` — haftalik chegaradan shuncha o'rin muhimroq xabarlarga qoldiriladi
+    (past ustunlikdagi xabar uni ishlatmaydi). `gap_days` — oxirgi shuncha kunda
+    (bugundan oldin) xabar ketgan bo'lsa, bugun yo'q: odam sog'insin (egasi,
+    2026-11-24). `unless` — bugun shu turlardan biri ketgan bo'lsa, bu xabar
+    yuborilmaydi."""
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            """WITH lim AS (
-                   SELECT CASE WHEN EXISTS (SELECT 1 FROM orders o
-                                            WHERE o.user_id = $1 AND o.status <> 'cancelled'
-                                              AND COALESCE(o.source, '') NOT IN ('manual', 'b2b', 'test'))
-                                AND (EXISTS (SELECT 1 FROM bot_activity a WHERE a.user_id = $1
-                                               AND a.created_at > NOW() - make_interval(days => $5::int))
-                                     OR EXISTS (SELECT 1 FROM site_events s WHERE s.user_id = $1
-                                               AND s.created_at > NOW() - make_interval(days => $5::int)))
-                               THEN $3::int ELSE $4::int END AS n
+            """WITH act AS (
+                   SELECT EXISTS (SELECT 1 FROM orders o
+                                  WHERE o.user_id = $1 AND o.status <> 'cancelled'
+                                    AND COALESCE(o.source, '') NOT IN ('manual', 'b2b', 'test'))
+                      AND (EXISTS (SELECT 1 FROM bot_activity a WHERE a.user_id = $1
+                                     AND a.created_at > NOW() - make_interval(days => $5::int))
+                           OR EXISTS (SELECT 1 FROM site_events s WHERE s.user_id = $1
+                                     AND s.created_at > NOW() - make_interval(days => $5::int))) AS active
+               ), lim AS (
+                   SELECT CASE WHEN active THEN $3::int ELSE $4::int END AS n,
+                          CASE WHEN active THEN $7::int ELSE $8::int END - $9::int AS week_n
+                   FROM act
+               ), prev AS (
+                   SELECT COALESCE(SUM(count), 0)::int AS used,
+                          COALESCE(BOOL_OR(day >= (NOW() AT TIME ZONE 'Asia/Tashkent')::date - $10::int), FALSE)
+                              AS recent
+                   FROM user_push_day
+                   WHERE user_id = $1 AND count > 0
+                     AND day > (NOW() AT TIME ZONE 'Asia/Tashkent')::date - 7
+                     AND day < (NOW() AT TIME ZONE 'Asia/Tashkent')::date
                )
                INSERT INTO user_push_day (user_id, day, count, kinds)
                SELECT $1, (NOW() AT TIME ZONE 'Asia/Tashkent')::date, 1, ARRAY[$2::text]
-               FROM lim WHERE lim.n >= 1
+               FROM lim, prev
+               WHERE lim.n >= 1 AND prev.used < lim.week_n AND NOT prev.recent
                ON CONFLICT (user_id, day) DO UPDATE
                    SET count = user_push_day.count + 1, kinds = user_push_day.kinds || $2::text
                    WHERE user_push_day.count < (SELECT n FROM lim)
+                     AND user_push_day.count + (SELECT used FROM prev) < (SELECT week_n FROM lim)
+                     AND NOT (SELECT recent FROM prev)
                      AND NOT (user_push_day.kinds && $6::text[])
                RETURNING count""",
-            user_id, kind, active_max, quiet_max, quiet_days, list(unless or []))
+            user_id, kind, active_max, quiet_max, quiet_days, list(unless or []),
+            active_week, quiet_week, reserve, gap_days)
     return row is not None
 
 
@@ -6610,16 +6639,36 @@ async def get_extra_admin_ids() -> list[int]:
     """Admins added at runtime (on top of config.ADMIN_IDS' hardcoded/env
     set) — loaded once at bot startup and merged into that same list."""
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT user_id FROM admins")
+        rows = await conn.fetch("SELECT user_id FROM admins WHERE role = 'admin'")
         return [r["user_id"] for r in rows]
 
 
-async def add_admin_db(user_id: int, added_by: int) -> None:
+# Rollar: bot orqali beriladigan huquqlar. Operator ADMIN_IDS ga hech qachon
+# tushmaydi — admin panel, buyurtma kartochkalari va hisobotlar unga bormaydi.
+STAFF_ROLES = ("admin", "operator")
+
+
+async def get_operator_ids() -> list[int]:
+    """Call Centre operatorlari (config.OPERATOR_IDS ga startda yuklanadi)."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT user_id FROM admins WHERE role = 'operator'")
+        return [r["user_id"] for r in rows]
+
+
+async def get_staff_role(user_id: int) -> str | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchval("SELECT role FROM admins WHERE user_id = $1", user_id)
+
+
+async def add_admin_db(user_id: int, added_by: int, role: str = "admin") -> None:
+    """Qo'shadi yoki rolini almashtiradi (huquqni o'zgartirish ham shu)."""
+    if role not in STAFF_ROLES:
+        raise ValueError(f"unknown role {role!r}")
     async with pool.acquire() as conn:
         await conn.execute(
-            """INSERT INTO admins (user_id, added_by) VALUES ($1, $2)
-               ON CONFLICT (user_id) DO NOTHING""",
-            user_id, added_by
+            """INSERT INTO admins (user_id, added_by, role) VALUES ($1, $2, $3)
+               ON CONFLICT (user_id) DO UPDATE SET role = EXCLUDED.role""",
+            user_id, added_by, role
         )
 
 
@@ -6648,7 +6697,7 @@ async def get_admin_profiles(admin_ids: list[int]) -> list[dict]:
             """
             SELECT i.user_id,
                    u.full_name, u.username, u.phone, u.created_at AS joined_at,
-                   a.added_by, a.created_at AS granted_at,
+                   a.added_by, a.created_at AS granted_at, a.role,
                    COALESCE(r.replies, 0) AS replies,
                    r.last_reply_at
               FROM unnest($1::bigint[]) AS i(user_id)
@@ -8799,7 +8848,7 @@ async def meta_comment_followup_candidates(days: int, limit: int = 10) -> list[d
                      AND NOT EXISTS (
                          SELECT 1 FROM meta_comments o
                          WHERE lower(o.username) = lower(m.username)
-                           AND (o.followup_at IS NOT NULL
+                           AND (o.followup_at IS NOT NULL OR o.followup2_at IS NOT NULL
                                 OR COALESCE(o.created_at, o.received_at)
                                    > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)))
                    ORDER BY lower(m.username), COALESCE(m.created_at, m.received_at) DESC
@@ -8807,6 +8856,75 @@ async def meta_comment_followup_candidates(days: int, limit: int = 10) -> list[d
                ORDER BY COALESCE(t.created_at, t.received_at) DESC
                LIMIT $2""", days, limit)
     return [_comment_row(r) for r in rows]
+
+
+async def meta_comment_followup2_candidates(min_days: int, limit: int = 10) -> list[dict]:
+    """Ikkinchi qayta yozish (egasi, 2026-11-24: "qayta yozib chiq"): javob olgan
+    har bir odamga bir marta — uning oxirgi izohi ostiga. Izohi `min_days` kundan
+    yangi bo'lsa (hozirgina javob oldi) yoki birinchi qayta xabar shu muddatda
+    ketgan bo'lsa — hali emas. Yangiroqlari oldin."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT * FROM (
+                   SELECT DISTINCT ON (lower(m.username)) m.*
+                   FROM meta_comments m
+                   WHERE m.username IS NOT NULL AND m.username <> ''
+                     AND m.status IN ('answered', 'ai_answered')
+                     AND COALESCE(m.category, '') <> 'spam'
+                     AND NOT EXISTS (
+                         SELECT 1 FROM meta_comments o
+                         WHERE lower(o.username) = lower(m.username)
+                           AND (o.followup2_at IS NOT NULL
+                                OR o.followup_at > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)
+                                OR COALESCE(o.created_at, o.received_at)
+                                   > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)))
+                   ORDER BY lower(m.username), COALESCE(m.created_at, m.received_at) DESC
+               ) t
+               ORDER BY COALESCE(t.created_at, t.received_at) DESC
+               LIMIT $2""", min_days, limit)
+    return [_comment_row(r) for r in rows]
+
+
+async def mark_meta_comment_followup2(key: int, text: str) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE meta_comments SET followup2_at = NOW() AT TIME ZONE 'UTC', followup2_text = $2 WHERE id = $1",
+            key, text)
+
+
+async def meta_comment_followup2_stats(min_days: int) -> dict:
+    """Ikkinchi bosqich: bugun, jami, AI yozmagan va navbatdagilar soni."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) FILTER (WHERE followup2_text <> ''
+                         AND followup2_at >= date_trunc('day', NOW() AT TIME ZONE 'Asia/Tashkent')
+                                             - INTERVAL '5 hours') AS today,
+                      COUNT(*) FILTER (WHERE followup2_text <> '') AS total,
+                      COUNT(*) FILTER (WHERE followup2_at IS NOT NULL AND followup2_text = '') AS skipped
+               FROM meta_comments""")
+        queue = await conn.fetchval(
+            """SELECT COUNT(DISTINCT lower(m.username)) FROM meta_comments m
+               WHERE m.username IS NOT NULL AND m.username <> ''
+                 AND m.status IN ('answered', 'ai_answered') AND COALESCE(m.category, '') <> 'spam'
+                 AND NOT EXISTS (
+                     SELECT 1 FROM meta_comments o WHERE lower(o.username) = lower(m.username)
+                       AND (o.followup2_at IS NOT NULL
+                            OR o.followup_at > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)
+                            OR COALESCE(o.created_at, o.received_at)
+                               > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)))""", min_days)
+    out = {k: int(row[k] or 0) for k in ("today", "total", "skipped")}
+    out["queue"] = int(queue or 0)
+    return out
+
+
+async def reset_meta_comments_open() -> int:
+    """Hamma javobsiz izoh (AI ko'rmagan, topa olmagan yoki yuborib bo'lmagan)
+    yangi qoidalar bilan qayta ko'rishga (egasi, 2026-11-24: "javob berilmagan
+    izohlarga javob berib chiq")."""
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE meta_comments SET ai_confident = NULL WHERE status IN ('new', 'pending')")
+    return int(result.split()[-1]) if result else 0
 
 
 async def mark_meta_comment_followup(key: int, text: str) -> None:
@@ -8833,7 +8951,7 @@ async def meta_comment_followup_stats(days: int) -> dict:
                  AND COALESCE(m.created_at, m.received_at) <= (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)
                  AND NOT EXISTS (
                      SELECT 1 FROM meta_comments o WHERE lower(o.username) = lower(m.username)
-                       AND (o.followup_at IS NOT NULL
+                       AND (o.followup_at IS NOT NULL OR o.followup2_at IS NOT NULL
                             OR COALESCE(o.created_at, o.received_at)
                                > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)))""", days)
         last = await conn.fetch(

@@ -60,7 +60,12 @@ async def nps_reason(message: Message, state: FSMContext):
         await set_nps_comment(response_id, comment)
     await state.clear()
 
-    await message.answer(get_text("nps_thanks_reason", lang), parse_mode="HTML")
+    text = get_text("nps_thanks_reason", lang)
+    if comment and (score or 0) >= 8:
+        # Iliq izoh — samimiy tashakkur (egasi, 2026-11-24; gratitude.py).
+        import gratitude
+        text = gratitude.reply(lang, comment)
+    await message.answer(text, parse_mode="HTML")
 
     user = await get_user(user_id)
     await notify_admins_reason(message.bot, user, user_id, score, comment)
