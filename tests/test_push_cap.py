@@ -25,7 +25,15 @@ class ClaimTest(unittest.TestCase):
         claim = AsyncMock(return_value=True)
         with patch.object(database, "claim_user_push", claim):
             self.assertTrue(run(push_cap.claim(7, "tips")))
-        self.assertEqual(claim.await_args.args, (7, "tips", 2, 1, 3))
+        # Egasi, 2026-11-24: kuniga 1, haftasiga 3 / 2, orasida 1 kun bo'sh; maslahat — past ustunlik.
+        self.assertEqual(claim.await_args.args, (7, "tips", 1, 1, 3, None, 3, 2, 2, 1))
+
+    def test_personal_messages_keep_their_weekly_slots(self):
+        self.assertEqual(push_cap.reserve_for("reco"), 0)
+        self.assertEqual(push_cap.reserve_for("fikr"), 0)
+        self.assertEqual(push_cap.reserve_for("kun_mahsuloti"), 1)
+        self.assertEqual(push_cap.reserve_for("tips"), 2)
+        self.assertEqual(push_cap.reserve_for("keto_savol"), 2)
 
     def test_a_database_error_never_lets_a_message_through(self):
         with patch.object(database, "claim_user_push", AsyncMock(side_effect=RuntimeError("down"))):

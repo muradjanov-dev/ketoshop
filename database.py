@@ -5223,34 +5223,54 @@ async def get_month_stats(year: int, month: int) -> dict:
 # ===== Rejali xabarlar chegarasi (push_cap.py) =====
 
 async def claim_user_push(user_id: int, kind: str, active_max: int, quiet_max: int, quiet_days: int,
-                          unless: list[str] | None = None) -> bool:
+                          unless: list[str] | None = None, active_week: int = 1000,
+                          quiet_week: int = 1000, reserve: int = 0, gap_days: int = 0) -> bool:
     """Toshkent kuni bo'yicha shu userga yana bitta rejali xabar mumkinmi —
     mumkin bo'lsa hisobga yozadi (bitta atomik so'rov, parallel yuboruvchilar
     ham chegarani oshirolmaydi). Chegara: xaridor va oxirgi `quiet_days` kunda
-    botda yoki saytda faol — `active_max`, qolganlar — `quiet_max`. `unless` —
-    bugun shu turlardan biri ketgan bo'lsa, bu xabar yuborilmaydi (masalan,
-    fikr so'ralgan kuni umumiy maslahat ketmaydi)."""
+    botda yoki saytda faol — kuniga `active_max`, haftasiga `active_week`;
+    qolganlar — `quiet_max` / `quiet_week`. Hafta — bugun bilan oxirgi 7 kun.
+    `reserve` — haftalik chegaradan shuncha o'rin muhimroq xabarlarga qoldiriladi
+    (past ustunlikdagi xabar uni ishlatmaydi). `gap_days` — oxirgi shuncha kunda
+    (bugundan oldin) xabar ketgan bo'lsa, bugun yo'q: odam sog'insin (egasi,
+    2026-11-24). `unless` — bugun shu turlardan biri ketgan bo'lsa, bu xabar
+    yuborilmaydi."""
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            """WITH lim AS (
-                   SELECT CASE WHEN EXISTS (SELECT 1 FROM orders o
-                                            WHERE o.user_id = $1 AND o.status <> 'cancelled'
-                                              AND COALESCE(o.source, '') NOT IN ('manual', 'b2b', 'test'))
-                                AND (EXISTS (SELECT 1 FROM bot_activity a WHERE a.user_id = $1
-                                               AND a.created_at > NOW() - make_interval(days => $5::int))
-                                     OR EXISTS (SELECT 1 FROM site_events s WHERE s.user_id = $1
-                                               AND s.created_at > NOW() - make_interval(days => $5::int)))
-                               THEN $3::int ELSE $4::int END AS n
+            """WITH act AS (
+                   SELECT EXISTS (SELECT 1 FROM orders o
+                                  WHERE o.user_id = $1 AND o.status <> 'cancelled'
+                                    AND COALESCE(o.source, '') NOT IN ('manual', 'b2b', 'test'))
+                      AND (EXISTS (SELECT 1 FROM bot_activity a WHERE a.user_id = $1
+                                     AND a.created_at > NOW() - make_interval(days => $5::int))
+                           OR EXISTS (SELECT 1 FROM site_events s WHERE s.user_id = $1
+                                     AND s.created_at > NOW() - make_interval(days => $5::int))) AS active
+               ), lim AS (
+                   SELECT CASE WHEN active THEN $3::int ELSE $4::int END AS n,
+                          CASE WHEN active THEN $7::int ELSE $8::int END - $9::int AS week_n
+                   FROM act
+               ), prev AS (
+                   SELECT COALESCE(SUM(count), 0)::int AS used,
+                          COALESCE(BOOL_OR(day >= (NOW() AT TIME ZONE 'Asia/Tashkent')::date - $10::int), FALSE)
+                              AS recent
+                   FROM user_push_day
+                   WHERE user_id = $1 AND count > 0
+                     AND day > (NOW() AT TIME ZONE 'Asia/Tashkent')::date - 7
+                     AND day < (NOW() AT TIME ZONE 'Asia/Tashkent')::date
                )
                INSERT INTO user_push_day (user_id, day, count, kinds)
                SELECT $1, (NOW() AT TIME ZONE 'Asia/Tashkent')::date, 1, ARRAY[$2::text]
-               FROM lim WHERE lim.n >= 1
+               FROM lim, prev
+               WHERE lim.n >= 1 AND prev.used < lim.week_n AND NOT prev.recent
                ON CONFLICT (user_id, day) DO UPDATE
                    SET count = user_push_day.count + 1, kinds = user_push_day.kinds || $2::text
                    WHERE user_push_day.count < (SELECT n FROM lim)
+                     AND user_push_day.count + (SELECT used FROM prev) < (SELECT week_n FROM lim)
+                     AND NOT (SELECT recent FROM prev)
                      AND NOT (user_push_day.kinds && $6::text[])
                RETURNING count""",
-            user_id, kind, active_max, quiet_max, quiet_days, list(unless or []))
+            user_id, kind, active_max, quiet_max, quiet_days, list(unless or []),
+            active_week, quiet_week, reserve, gap_days)
     return row is not None
 
 
