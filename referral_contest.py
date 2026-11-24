@@ -247,9 +247,66 @@ async def notify_admins_new_user(bot: Bot, new_user_id: int, username: str | Non
         shop_line = None
     else:
         ref_line = "🔗 Taklif qilgan: — (to'g'ridan-to'g'ri qo'shildi)"
-    text = f"🆕 <b>Yangi foydalanuvchi qo'shildi!</b>\n👤 {who} (ID {new_user_id})\n{ref_line}"
+    entry = f"👤 {who} (ID {new_user_id})\n{ref_line}"
     if shop_line:
-        text += "\n" + shop_line
+        entry += "\n" + shop_line
+    # Har 5 ta yangi foydalanuvchi — bitta jamlangan xabar (owner, 2026-11-24: "bunday
+    # yangi user xaqidagi xabarlar endi har safar +5 ta odam qo'shilganida hammasini
+    # jamlab tashlagin, bo'lmasa bittalab juda ko'p kelyapti").
+    await queue_new_user(bot, entry)
+
+
+DIGEST_SIZE = 5
+DIGEST_MAX_WAIT = timedelta(hours=24)     # a quiet day: whatever waits goes out after a day
+_digest_ready = False
+_digest_lock = asyncio.Lock()
+
+
+async def _ensure_digest(conn) -> None:
+    global _digest_ready
+    if _digest_ready:
+        return
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS new_user_digest (
+            id SERIAL PRIMARY KEY,
+            entry TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+            sent_at TIMESTAMP
+        )""")
+    _digest_ready = True
+
+
+def digest_text(entries: list[str]) -> str:
+    n = len(entries)
+    head = f"🆕 <b>{n} ta yangi foydalanuvchi qo'shildi!</b>" if n > 1 else "🆕 <b>Yangi foydalanuvchi qo'shildi!</b>"
+    return head + "\n\n" + "\n\n".join(f"{i}. {e}" if n > 1 else e for i, e in enumerate(entries, 1))
+
+
+async def queue_new_user(bot: Bot, entry: str) -> None:
+    """Keep the line; when DIGEST_SIZE are waiting (or the oldest has waited a
+    day) send them all to every admin as one message. Claimed in the database,
+    so two joins at once or a restart never send a line twice or lose one."""
+    try:
+        async with _digest_lock:
+            async with database.pool.acquire() as conn:
+                await _ensure_digest(conn)
+                await conn.execute("INSERT INTO new_user_digest (entry) VALUES ($1)", entry)
+                waiting = await conn.fetchrow(
+                    "SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM new_user_digest WHERE sent_at IS NULL")
+                due = waiting["n"] >= DIGEST_SIZE or (
+                    waiting["oldest"] is not None and datetime.utcnow() - waiting["oldest"] >= DIGEST_MAX_WAIT)
+                if not due:
+                    return
+                rows = await conn.fetch(
+                    """UPDATE new_user_digest SET sent_at = NOW() AT TIME ZONE 'UTC'
+                       WHERE sent_at IS NULL RETURNING id, entry""")
+    except Exception:
+        logger.exception("new-user digest failed — sending this one alone")
+        rows = [{"id": 0, "entry": entry}]
+    entries = [r["entry"] for r in sorted(rows, key=lambda r: r["id"])]
+    if not entries:
+        return
+    text = digest_text(entries)
     for admin_id in ADMIN_IDS:
         try:
             await bot.send_message(admin_id, text, parse_mode=ParseMode.HTML)
