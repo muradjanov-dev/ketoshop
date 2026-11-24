@@ -139,6 +139,10 @@ async def process_comment(message: Message, state: FSMContext):
     await state.clear()
 
     text = get_text("review_saved", lang)
+    if comment and int(data["rating"]) >= 4:
+        # Iliq izoh — samimiy tashakkur (egasi, 2026-11-24; gratitude.py).
+        import gratitude
+        text = gratitude.reply(lang, comment) + "\n\n" + text
     if data.get("src") == "blast":
         import review_blast
         await review_blast.notify_review(message.bot, message.from_user, data["product_id"],

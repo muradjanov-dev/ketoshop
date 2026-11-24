@@ -119,6 +119,7 @@ import random
 import re
 import time
 
+import gratitude
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -1100,6 +1101,13 @@ def _sales_rules() -> str:
         "Bu Telegram chat, maqola emas. Ro'yxat kerak bo'lsa — 3 qatordan oshmasin.\n"
         "- MINNATDORCHILIK — 'Sizga rahmat' / 'Sizga katta rahmat' shaklida; yolg'iz 'Rahmat' "
         "yoki 'Bobur, rahmat' emas (egasi, 2026-10-14).\n"
+        "- MIJOZ MINNATDORCHILIK BILDIRSA YOKI MAQTASA (egasi, 2026-11-24: 'samimiy chiqsin'): "
+        "javobni 'Assalomu alaykum!' bilan boshla, mijoz salom bergan bo'lsa — 'Va alaykum "
+        "assalom!' (alik). Keyin o'z so'zing bilan samimiy tashakkur ayt va bunday fikrlar bizni "
+        "va jamoamizni ko'proq insonlarga sog'lom va 100% tabiiy mahsulotlar yetkazishga "
+        "ilhomlantirishini, insonlar sog'lomroq bo'lishi uchun qo'limizdan kelgancha harakat "
+        "qilishimizni ayt. Qolip emas, har safar boshqacha; savdo taklifi qo'shma. Savoli ham "
+        "bo'lsa — keyin savoliga javob ber.\n"
         "- TELEGRAM ISMI BILAN MUROJAAT QILMA ('Rahmat, Bobur', 'Hurmatli Dilnoza' — yo'q; "
         "egasi, 2026-10-14). Faqat mijoz o'zi aytgan murojaat ismi bilan (PORTRET da yoki "
         "suhbatda 'menga X deb murojaat qiling' desa) — ba'zan, tabiiy joyda (egasi, 2026-11-15).\n"
@@ -4280,6 +4288,17 @@ def is_thanks_only(text: str) -> bool:
     return bool(_THANKS_RE.match(text or ""))
 
 
+async def _thank_back(bot: Bot | None, message: Message) -> None:
+    """Mijoz faqat rahmat aytdi — samimiy tashakkur (gratitude.py), mijoz tilida."""
+    user_id = message.from_user.id
+    lang = gratitude.language(message.text, await _lang(user_id))
+    text = gratitude.reply(lang, message.text, user_id)
+    await _typing_pause(bot, message.chat.id, text)
+    await message.answer(text)
+    await ai_dialog.record(user_id, "bot", message.text, text)
+    await _mirror(bot, message, message.text, text)
+
+
 # Mavzudan tashqari — do'konga aloqasi yo'q narsa YARATISHni so'rash (egasi,
 # 2026-10-17: "mavzudan tashqari savollarga javob bermasliging kerak"). Jonli
 # sinovda model she'r yozdi va uy vazifasini yechdi. Shu turdagi so'rov modelga
@@ -4338,8 +4357,10 @@ async def on_text(message: Message, bot: Bot, state: FSMContext | None = None):
     avvalgidek ishlayveradi, faqat hech kim ushlamagan matn AI ga tushadi."""
     _keep_fsm(message, state)
     _heard(message)
-    if is_thanks_only(message.text):
-        return   # "rahmat" ga javob shart emas — token ham ketmaydi
+    if is_thanks_only(message.text) or gratitude.is_thanks(message.text):
+        # Egasi, 2026-11-24: minnatdorchilikka samimiy tashakkur (modelsiz, token ketmaydi).
+        await _thank_back(bot, message)
+        return
     if _card_fresh(message.from_user.id) and await ai_card_open(state):
         # Karta ochiq: "ha" — tasdiq, "karta bilan" / "naqd" — to'lov tugmasi.
         # Ikkalasi ham modelsiz, tugmali checkout ning o'z kodi bilan.
