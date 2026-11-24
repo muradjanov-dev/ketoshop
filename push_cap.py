@@ -2,10 +2,17 @@
 "kuniga 3–3,5 ta bu juda ko'p, maximum 2 ta, 3 kun ichida botda umuman tugma
 bosmasa unda 1 ta kuniga" va "Hali xarid qilmagan user … maximum 1 ta").
 
-Chegara (Toshkent kuni bo'yicha):
+2026-11-24, egasi: "xabarlarni qisqartirish kerak, ular sog'inishlari kerak" —
+haftasiga 3 / 2, kuniga 1, orasida kamida 1 kun bo'sh, shaxsiylari oldin.
+
+Chegara (Toshkent kuni, hafta — bugun bilan oxirgi 7 kun):
   * xaridor (bekor qilinmagan buyurtmasi bor) va oxirgi QUIET_AFTER_DAYS kunda
-    botda tugma bosgan, yozgan yoki saytni ishlatgan — ACTIVE_BUYER_MAX (2);
-  * qolgan hamma — xarid qilmaganlar va 3 kundan beri jimlar — QUIET_MAX (1).
+    botda tugma bosgan, yozgan yoki saytni ishlatgan — kuniga ACTIVE_BUYER_MAX (1),
+    haftasiga ACTIVE_BUYER_WEEK (3);
+  * qolgan hamma — xarid qilmaganlar va 3 kundan beri jimlar — kuniga QUIET_MAX (1),
+    haftasiga QUIET_WEEK (2);
+  * kecha xabar ketgan bo'lsa — bugun yo'q (GAP_DAYS);
+  * ustunlik (reserve_for): past turlar haftalik o'rinni muhimlariga qoldiradi.
 
 Rejali, hammaga boradigan xabarlar shu darvozadan o'tadi (claim): maslahat,
 shaxsiy tavsiya, aksiya ko'rgazmasi/e'loni, kun mahsuloti, qiziqish eslatmasi,
@@ -26,21 +33,35 @@ import database
 
 logger = logging.getLogger(__name__)
 
-ACTIVE_BUYER_MAX = 2
+# Egasi, 2026-11-24: "ularga boradigan xabarlarni qisqartirish kerak, ular sog'inishlari kerak" —
+# tanlovi: haftasiga 3 / 2, kuniga 1, orasida kamida 1 kun bo'sh; shaxsiylari oldin.
+ACTIVE_BUYER_MAX = 1           # kuniga
 QUIET_MAX = 1
+ACTIVE_BUYER_WEEK = 3          # oxirgi 7 kunda
+QUIET_WEEK = 2
+GAP_DAYS = 1                   # kecha xabar ketgan bo'lsa — bugun yo'q
 QUIET_AFTER_DAYS = 3
+
+# Ustunlik: haftalik o'rinlarning bir qismi muhimroq xabarlarga qoldiriladi.
+# Yuqori — shaxsiy va kerakli (AI tavsiya, fikr so'rash, aksiya, savat, qayta sotuv,
+# sovg'a): haftalik chegaragacha. O'rta (kun mahsuloti, o'yin seriyasi) — 1 o'rin
+# yuqorilarga qolsa. Past (umumiy maslahat, qiziqish, Keto savol) — 2 o'rin qolsa.
+HIGH = {"reco", "fikr", "aksiya", "savat", "qayta_sotuv", "sovga"}
+LOW = {"tips", "qiziqish", "keto_savol"}
+
+
+def reserve_for(kind: str) -> int:
+    return 0 if kind in HIGH else 2 if kind in LOW else 1
 
 
 async def claim(user_id: int, kind: str, unless: tuple[str, ...] = ()) -> bool:
     """True — shu xabar bugun yuborilishi mumkin (va hisobga yozildi);
-    False — bugungi chegara to'lgan. Baza xatosida False: chegara
-    hech qachon oshib ketmasin."""
+    False — kunlik yoki haftalik chegara to'lgan, kecha xabar ketgan yoki bu
+    turga o'rin qolmagan. Baza xatosida False: chegara hech qachon oshib ketmasin."""
     try:
-        if unless:
-            ok = await database.claim_user_push(user_id, kind, ACTIVE_BUYER_MAX, QUIET_MAX, QUIET_AFTER_DAYS,
-                                                list(unless))
-        else:
-            ok = await database.claim_user_push(user_id, kind, ACTIVE_BUYER_MAX, QUIET_MAX, QUIET_AFTER_DAYS)
+        ok = await database.claim_user_push(
+            user_id, kind, ACTIVE_BUYER_MAX, QUIET_MAX, QUIET_AFTER_DAYS, list(unless) if unless else None,
+            ACTIVE_BUYER_WEEK, QUIET_WEEK, reserve_for(kind), GAP_DAYS)
         if ok:
             # The post that follows ends with «savolingiz bo'lsa — yozing» (post_ask.py).
             import post_ask
@@ -69,8 +90,10 @@ def stats_text(st: dict, days: int) -> str:
     lines = [f"📨 <b>Rejali xabarlar — oxirgi {days} kun</b>", "",
              f"Jami: <b>{st['total']}</b> ta, {st['users']} ta userga",
              f"Xabar olgan userga kuniga o'rtacha: <b>{per_user_day:.1f}</b> ta",
-             f"Chegara: faol xaridorga kuniga {ACTIVE_BUYER_MAX} ta, xarid qilmagan va "
-             f"{QUIET_AFTER_DAYS} kundan beri jimlarga {QUIET_MAX} ta", ""]
+             f"Chegara: faol xaridorga haftasiga {ACTIVE_BUYER_WEEK} ta, xarid qilmagan va "
+             f"{QUIET_AFTER_DAYS} kundan beri jimlarga {QUIET_WEEK} ta; kuniga ko'pi bilan "
+             f"{ACTIVE_BUYER_MAX} ta, ikki xabar orasida kamida {GAP_DAYS} kun bo'sh; "
+             "shaxsiy xabarlar umumiylardan oldin", ""]
     for kind, n in st["kinds"].items():
         lines.append(f"• {KIND_NAMES.get(kind, kind)}: {n}")
     lines.append("")
