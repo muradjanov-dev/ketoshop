@@ -1065,6 +1065,17 @@ _POLITE_RULES = (
     "  • Bilmasang — o'ylab topma, 'aniqlab aytaman' de. Mijoz to'g'ridan-to'g'ri 'siz robotmisiz?' "
     "deb so'rasa — yolg'on gapirma: Keto shopning yordamchisi ekaningni ayt, kerak bo'lsa "
     "xodimimiz ham yozishini qo'sh.\n"
+    "- MIJOZ AYTGANINI ESLA (egasi, 2026-11-26: mijoz 'shu kahva choyga' dedi, AI yana 'choy uchunmi, "
+    "qahvami?' deb so'radi; mijoz 'bitta gapni nechi marta takrorlash mumkin?' dedi — AI buni so'zma-so'z "
+    "tushunib qoida tushuntirdi, 'huddi kesatiqdek tuyiladi'):\n"
+    "  • Savol berishdan oldin mijozning oldingi xabarlarini o'qi: javobini allaqachon aytgan bo'lsa — "
+    "qayta so'rama, o'sha javobdan foydalan. Mijoz ikkalasini aytsa ('choy va qahvaga', 'ikkalasiga') — "
+    "'qaysi biri?', 'choymi yoki qahvami?' kabi tanlov savoli BERMA, ikkalasiga javob ber. Yangi, foydali "
+    "savol topilmasa — savolsiz, bitta foydali taklif bilan yakunla (savol shart emas).\n"
+    "  • Mijoz gina qilsa yoki takrorlashga majbur bo'lsa ('necha marta aytaman', 'aytdim-ku', 'yana?', "
+    "'tushunmadingizmi', 'bitta gapni ... takrorlash') — bu BIZGA gina: uni so'zma-so'z talqin qilma, qoida "
+    "yoki 'necha marta' haqida tushuntirma. Birinchi gapda samimiy, qisqa uzr ('Kechirasiz, siz aytgandingiz — "
+    "choy va qahva uchun'), keyin u aytgan narsa bo'yicha aniq javob; o'sha savolni qayta berma.\n"
 )
 
 
@@ -3209,9 +3220,10 @@ async def _answer(bot: Bot, message: Message, user_text: str, late: bool = False
         # Bog'lanmagan chek egasining javobi — adminlarga ham, AI'ga esa kontekst bilan.
         await _cheque_reply_to_admins(bot, message.from_user, user_text)
         user_text = CHEQUE_CONTEXT + user_text
+    gina = frustration_hint(user_text)       # "necha marta aytaman" — uzr va eslash (2026-11-26)
     try:
         async with _typing(bot, message.chat.id):
-            reply = await _respond(bot, message, user_text)
+            reply = await _respond(bot, message, f"{gina}\n{user_text}" if gina else user_text)
     except Exception:
         logger.exception("AI sales turn failed for user %s", user_id)
         ai_provider.reset(_session(user_id).setdefault("ai", {}))
@@ -5177,6 +5189,27 @@ async def _group_memory(user_id: int, turns: list[dict]) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
+# Mijoz gina qilyapti / takrorlashga majbur bo'ldi (egasi, 2026-11-26 — guruhdagi suhbat).
+_APOSTROPHE_RE = re.compile(r"[ʻʼ‘’`´]")
+_FRUSTRATION = re.compile(
+    r"necha marta|nechi marta|nechchi marta|takrorla|aytdim[- ]?(ku|-ku|qu)?\b|aytgandim|yozdim[- ]?ku|"
+    r"yozgandim|tushunmayapsiz|tushunmadingizmi|tushunmaysizmi|yana so'rayapsiz|yana bir marta aytaymi|"
+    r"нечи марта|неча марта|такрорла|айтдим|айтгандим|тушунмаяпсиз|"
+    r"сколько (раз|можно)|я же (сказал|написал)|уже (сказал|писал|ответил)|повторя|не понимаете",
+    re.IGNORECASE)
+
+
+def frustration_hint(text: str, turns: list[dict] | None = None) -> str:
+    """Mijoz norozi — modelga aniq eslatma: uzr, oldingi gapini esla, qayta so'rama."""
+    if not _FRUSTRATION.search(_APOSTROPHE_RE.sub("'", text or "")):
+        return ""
+    said = [t.get("question") for t in (turns or [])[-4:] if (t.get("question") or "").strip()]
+    recall = (" Uning oldingi xabarlari: " + " | ".join(f"«{_short(s, 120)}»" for s in said)) if said else ""
+    return ("[DIQQAT: mijoz takrorlashga majbur bo'lganidan norozi — bu bizga gina, so'zma-so'z savol emas. "
+            "Qisqa samimiy uzr so'ra, u avval aytgan narsani o'zing esla va shunga aniq javob ber; "
+            "o'sha savolni qayta berma, qoida tushuntirma." + recall + "]")
+
+
 def _group_thread_hint(turns: list[dict]) -> str:
     """Bu odam shu guruhda hozirgina savol bergan bo'lsa — yangi xabar yonida
     aniq eslatma. Jonli sinov (2026-11-17): suhbat tarixi promptda bo'lsa ham,
@@ -5216,7 +5249,7 @@ async def _group_answer(bot: Bot, message: Message, text: str, late_background: 
     text = f"{background}\n{question}" if background else question    # statistika uchun, avvalgidek
     turns = await ai_dialog.recent(user_id)
     context = "\n\n".join(p for p in (background, await _group_memory(user_id, turns)) if p)
-    hint = _group_thread_hint(turns)
+    hint = "\n".join(h for h in (_group_thread_hint(turns), frustration_hint(question, turns)) if h)
     author = message.from_user.first_name or "Mijoz"
     try:
         reply = await _group_respond(chat_id, author, f"{hint}\n{question}" if hint else question, context)
