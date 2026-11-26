@@ -1540,6 +1540,26 @@ def _period_label(period: str | dict) -> str:
 
 
 @require_auth
+async def api_demand(request: web.Request):
+    """🧭 Talab — dashboard tepasidagi bo'lim (demand.py): nimani so'rashdi,
+    qaysi mavzularda, saytda nima topilmadi; dashboard davri bilan bir oyna."""
+    import demand
+    period = _dashboard_period(request)
+    stats = await demand.collect(period)
+    stats["period_label"] = _period_label(period)
+    return _json(stats)
+
+
+@require_auth
+async def api_demand_advice(request: web.Request):
+    """AI takliflari — shu davr uchun 6 soat keshlanadi."""
+    import demand
+    period = _dashboard_period(request)
+    stats = await demand.collect(period)
+    return _json({"advice": await demand.advice(demand.period_key(period), stats)})
+
+
+@require_auth
 async def api_product_sales(request: web.Request):
     """«📦 Mahsulot savdosi» — every product and set sold in the dashboard's
     window: quantity, money, profit, stock pace (database.get_product_sales)."""
@@ -2541,6 +2561,8 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/orders/{id:\\d+}/costs", api_order_line_costs)
     app.router.add_post("/admin/api/orders/{id:\\d+}/lines/{line:\\d+}/cost", api_order_line_cost_update)
     app.router.add_get("/admin/api/dashboard", api_dashboard)
+    app.router.add_get("/admin/api/demand", api_demand)
+    app.router.add_post("/admin/api/demand/advice", api_demand_advice)
     app.router.add_get("/admin/api/product-sales", api_product_sales)
     app.router.add_get("/admin/api/product-sales.xlsx", api_product_sales_xlsx)
     app.router.add_get("/admin/api/reviews", api_reviews)

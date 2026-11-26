@@ -263,6 +263,18 @@
   .trend-lab{font-size:10.5px;color:var(--ink-3);font-weight:700;text-align:center}
 
   .hbar-list{display:flex;flex-direction:column;gap:11px}
+  .dm-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .dm-chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12.5px;color:var(--ink-2)}
+  .dm-chip b{color:var(--ink)}
+  .dm-h{margin:6px 0 8px;font-size:14px}
+  .dm-table td,.dm-table th{font-size:13px;padding:6px 8px;vertical-align:top}
+  .dm-sig{font-size:12px;color:var(--ink-2);margin-top:2px}
+  .dm-ex{font-size:11.5px;color:var(--ink-2);font-style:italic;margin-top:2px}
+  .dm-advice{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-top:10px}
+  .dm-advice li{margin:4px 0;font-size:13.5px}
+  .dm-unmet{display:flex;flex-wrap:wrap;gap:6px;font-size:12.5px}
+  .dm-topic summary{cursor:pointer}
+  .dm-topic ul{margin:4px 0 0 16px;font-size:12px;color:var(--ink-2)}
   .hbar-row{display:flex;align-items:center;gap:10px}
   .hbar-row .hb-lab{width:112px;flex:0 0 auto;font-size:12.5px;font-weight:700;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .hbar-row .hb-track{flex:1;background:var(--chip-bg);border-radius:4px;height:13px;overflow:hidden}
@@ -854,6 +866,30 @@ body.kuryer-mode .kb-admin-only{display:none!important}
     </div>
 
     <div class="kpi-grid" id="kpiGrid"></div>
+
+    <!-- 🧭 Talab (demand.py, egasi 2026-11-26): nimani so'rashdi, qaysi mavzuda, AI takliflari -->
+    <div class="dash-card dm-card" style="margin-bottom:16px" id="demandCard">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h3 style="margin:0">🧭 Talab — mijozlar nimani so'rayapti <span id="dmSummary" class="b2b-sum"></span></h3>
+        <button class="btn btn-p btn-sm" type="button" id="dmAdviceBtn">🤖 AI takliflari</button>
+      </div>
+      <p class="ps-note">Bot, sayt yordamchisi, guruh, Instagram izohlari, Direct va saytdagi qidiruvlar — yuqoridagi davr bo'yicha.
+        «So'radi» — xabarda shu mahsulot nomi uchragan; «odam» — necha xil mijoz.</p>
+      <div id="dmAdvice" class="dm-advice" hidden></div>
+      <div class="dm-chips" id="dmChannels"></div>
+      <div class="dash-grid" style="margin-top:12px">
+        <div>
+          <h4 class="dm-h">📦 Ko'p so'ralgan mahsulotlar</h4>
+          <div style="overflow-x:auto"><table class="data-table dm-table" id="dmProducts"></table></div>
+        </div>
+        <div>
+          <h4 class="dm-h">💬 Savol mavzulari</h4>
+          <div class="hbar-list" id="dmTopics"></div>
+          <h4 class="dm-h" style="margin-top:16px">🔎 Saytda qidirib topilmagan</h4>
+          <div id="dmUnmet" class="dm-unmet"></div>
+        </div>
+      </div>
+    </div>
 
     <div class="dash-card" style="margin-bottom:16px">
       <h3>📅 Kunlar bo'yicha buyurtmalar <span id="dailySummary" class="b2b-sum"></span></h3>
@@ -2366,9 +2402,42 @@ function prevLabel(){
   return {today:'kecha shu vaqtgacha','7d':'oldingi 7 kun','30d':'oldingi 30 kun',custom:'oldingi shuncha kun'}[p]||'';
 }
 
+/* 🧭 Talab — demand.py. Davr — dashboard bilan bir xil (dashQuery). */
+async function loadDemand(q){
+  const box=$('#demandCard'); if(!box)return;
+  const adv=$('#dmAdvice'); adv.hidden=true; adv.innerHTML='';
+  let d; try{d=await api('/admin/api/demand?'+q);}catch(e){$('#dmSummary').textContent='— yuklab bo\'lmadi';return;}
+  const e=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  $('#dmSummary').textContent=`· ${d.messages} xabar · ${d.people} kishi · ${d.period_label||''}`;
+  $('#dmChannels').innerHTML=(d.channels||[]).map(c=>`<span class="dm-chip">${e(c.title)} <b>${c.n}</b></span>`).join('')||'<span class="hint">Bu davrda xabar yo\'q</span>';
+  const rows=(d.products||[]);
+  $('#dmProducts').innerHTML=rows.length?`<thead><tr><th style="text-align:left">Mahsulot</th><th>So'radi / odam</th><th>Saytda ochildi / savatga</th><th>Sotildi</th><th>Qoldiq</th></tr></thead><tbody>`+
+    rows.map(g=>`<tr><td style="text-align:left"><b>${e(g.name)}</b>${g.signal?`<div class="dm-sig">${e(g.signal)}</div>`:''}${(g.examples||[])[0]?`<div class="dm-ex">«${e(g.examples[0])}»</div>`:''}</td>
+      <td style="text-align:center">${g.asked} / ${g.asked_users}</td><td style="text-align:center">${g.opens} / ${g.cart_adds}</td>
+      <td style="text-align:center">${g.sold}</td><td style="text-align:center">${g.stock}</td></tr>`).join('')+'</tbody>'
+    :'<tbody><tr><td class="hint">Mahsulot nomi tilga olingan xabar yo\'q</td></tr></tbody>';
+  const max=Math.max(1,...(d.topics||[]).map(t=>t.n));
+  $('#dmTopics').innerHTML=(d.topics||[]).map(t=>`<details class="dm-topic"><summary><div style="display:flex;justify-content:space-between;gap:8px"><span>${e(t.title)}</span><b>${t.n}</b></div>
+      <div style="height:6px;background:var(--line);border-radius:4px;margin-top:4px"><div style="height:6px;width:${Math.round(100*t.n/max)}%;background:var(--accent,#2e7d32);border-radius:4px"></div></div></summary>
+      <ul>${(t.samples||[]).map(s=>`<li>«${e(s)}»</li>`).join('')}</ul></details>`).join('')||'<span class="hint">—</span>';
+  $('#dmUnmet').innerHTML=(d.unmet||[]).map(u=>`<span class="dm-chip">${e(u.q)} <b>${u.n}</b></span>`).join('')||'<span class="hint">Hammasi topilgan</span>';
+}
+document.addEventListener('click',async ev=>{
+  if(!ev.target.closest||!ev.target.closest('#dmAdviceBtn'))return;
+  const btn=$('#dmAdviceBtn'), adv=$('#dmAdvice');
+  btn.disabled=true; btn.textContent='⏳ AI o\'ylayapti…'; adv.hidden=false; adv.innerHTML='<span class="hint">Talabni tahlil qilyapti…</span>';
+  const e=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  try{
+    const d=await api('/admin/api/demand/advice?'+dashQuery(),{method:'POST',body:'{}'});
+    adv.innerHTML='<b>🤖 Talabdan kelib chiqib takliflar</b><ul>'+(d.advice||[]).map(a=>`<li>${e(a)}</li>`).join('')+'</ul>';
+  }catch(err){adv.innerHTML='<span class="hint">AI javob bermadi: '+e(err.message||err)+'</span>';}
+  btn.disabled=false; btn.textContent='🤖 AI takliflari';
+});
+
 async function loadDashboard(){
   const q=dashQuery();
   loadProductSales(q);
+  loadDemand(q);
   const d=await api('/admin/api/dashboard?'+q);
   renderKpis(d.stats, d.prev_stats);
   renderDaily(d.daily||[]);
