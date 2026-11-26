@@ -130,6 +130,17 @@ async def recipe_given_recently(user_id: int, product_id: int, hours: int = 24) 
                 LIMIT 1""", user_id, RECIPE_KIND, product_id, hours))
 
 
+async def recipes_since(user_id: int, hours: int) -> int:
+    """Oxirgi `hours` soatda shu mijozga berilgan retseptlar soni (har qanday mahsulot)."""
+    async with database.pool.acquire() as conn:
+        await _ensure(conn)
+        return int(await conn.fetchval(
+            """SELECT COUNT(*) FROM ai_customer_notes
+                WHERE user_id = $1 AND kind = $2
+                  AND created_at > (NOW() AT TIME ZONE 'UTC') - make_interval(hours => $3)""",
+            user_id, RECIPE_KIND, hours) or 0)
+
+
 async def record_recipe(user_id: int, product_id: int, text: str) -> None:
     """Berilgan retseptni yozadi — takrorni tekshirmaydi (har berilgani alohida)."""
     async with database.pool.acquire() as conn:

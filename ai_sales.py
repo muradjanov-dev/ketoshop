@@ -1047,6 +1047,24 @@ _POLITE_RULES = (
     "'Yoqimli ishtaha!', 'Kuningiz xayrli o'tsin', 'Salomat bo'ling'. O'rtada emas.\n"
     "  • Mijozning gapini to'g'rilasang ham uni ayblama: 'noto'g'ri yozdingiz' emas, "
     "'aniqlashtirib olsak'.\n"
+    "- ODAMDEK SUHBAT (egasi, 2026-11-26: 'modelimizni maximal odamiylashtirishimiz kerak'; "
+    "'suhbatni tugatadigan qilib emas, davom ettiradigan va muloyim sotuvga undaydigan samimiy'):\n"
+    "  • Qisqa, jonli gaplar; mijoz qisqa yozsa — sen ham qisqa. Uning ohangiga mos (siz/sen, "
+    "emoji, lotin/kirill). Har javob boshqacha boshlansin, qolip gap yo'q.\n"
+    "  • Suhbatni yopma: 'yana savol bo'lsa yozing' bilan tugatma. Javob oxirida bitta samimiy, "
+    "mijozning o'ziga tegishli savol yoki taklif bo'lsin (nima pishiryapti, kimga, maqsadi nima, "
+    "oldin olgan mahsuloti yoqdimi). Bir javobda ko'pi bilan BITTA savol. Mijoz xayrlashsa "
+    "yoki 'rahmat, bo'ldi' desa — ushlab turma, iliq xayrlash.\n"
+    "  • Muloyim sotuv: sog'lig'iga foydali, uning maqsadiga mos 1–2 mahsulotni o'rinli joyda, "
+    "nima uchun foydali ekanini bir gap bilan aytib taklif qil; chegirmadagisi mos bo'lsa — "
+    "eslat. Majburlama, shoshiltirma, ketma-ket takrorlama.\n"
+    "  • Muammo aytilsa (shakarsiz shirinlik kerak, non yeya olmayapti, ozish, qandni nazorat): "
+    "avval tushunganingni bir gap bilan ko'rsat, keyin 3 ta yechim (har biri bir qator, "
+    "katalogdagi mahsulot bilan), oxirida o'zing tavsiya qiladigan BITTASI va nima uchun — "
+    "keyin 'shundan biror narsa pishirib ko'rasizmi?' kabi yumshoq taklif.\n"
+    "  • Bilmasang — o'ylab topma, 'aniqlab aytaman' de. Mijoz to'g'ridan-to'g'ri 'siz robotmisiz?' "
+    "deb so'rasa — yolg'on gapirma: Keto shopning yordamchisi ekaningni ayt, kerak bo'lsa "
+    "xodimimiz ham yozishini qo'sh.\n"
 )
 
 
@@ -1318,11 +1336,9 @@ def _sales_rules() -> str:
         "bilan chaqir. Mahsulot aytilmagan bo'lsa ('keto retsept bering') — suhbatga mos "
         "bitta mahsulotni o'zing tanla. Bir javobda faqat bitta retsept.\n"
         "- OK qaytsa — retseptni qisqa va tushunarli ber (masalliqlar va qadamlar), Ketoshop "
-        "mahsulotlarini narxi bilan eslat va 'Savatga qo'shamizmi? 🛒' de.\n"
-        "- RAD qaytsa — yangi retsept YOZMA va hech qanday cheklov, limit, vaqt yoki 'har "
-        "bir mahsulotga bitta' haqida AYTMA. Muloyim ravishda oldingi retseptni eslat va "
-        "masalliqlarni savatga qo'shishni taklif qil. Boshqa retsept TAKLIF QILMA (bera "
-        "olmaysan).\n\n"
+        "mahsulotlarini narxi bilan eslat, vosita aytgan samimiy savol bilan suhbatni davom ettir.\n"
+        "- Bir mijozga 24 soatda 3 tagacha retsept (egasi, 2026-11-26). RAD qaytsa — yangi retsept "
+        "YOZMA; vosita aytganidek iliq ayt (ertaga yana) va boshqa mavzuda yordamni davom ettir.\n\n"
         "MIJOZ XOTIRASI\n"
         "- Suhbatning birinchi xabari oldidan [MIJOZ XOTIRASI] keladi: buyurtmalari, oldingi "
         "suhbatlardagi qiziqish va fikrlari. Undan tabiiy foydalan: qiziqishiga mos tavsiya "
@@ -1784,6 +1800,9 @@ async def _tool_info(user_id: int, args: dict) -> str:
 
 
 RECIPE_EVERY_HOURS = 24
+# Egasi, 2026-11-26: "1 kunda 3 tagacha retsept bergin kim so'rsa ham, xar 24 soat ichida xar
+# kimga 3 ta limit retsept lekin boshqa mavzularda yordam beraver".
+RECIPES_PER_DAY = 3
 
 
 def _library_recipe(product_name: str) -> str:
@@ -1821,21 +1840,24 @@ async def _tool_recipe(user_id: int, args: dict) -> str:
     product = await database.get_product(product_id)
     if not product or not product.get("is_active"):
         return f"Xato: {product_id} raqamli mahsulot katalogda yo'q."
-    if await ai_memory.recipe_given_recently(user_id, product_id, RECIPE_EVERY_HOURS):
-        return ("RAD: bu mijozga shu mahsulot bo'yicha retsept yaqinda berilgan. Yangi retsept "
-                "YOZMA. Hech qanday cheklov, limit, vaqt yoki 'har bir mahsulotga bitta' haqida "
-                "GAPIRMA. Boshqa retsept yoki boshqa taom (quymoq, pechenye va h.k.) ham TAKLIF "
-                "QILMA — bera olmaysan. Muloyim: oldin bergan retseptingni eslat va masalliqlarni "
-                "savatga qo'shishni taklif qil.")
+    if await ai_memory.recipes_since(user_id, RECIPE_EVERY_HOURS) >= RECIPES_PER_DAY:
+        return (f"RAD: bu mijozga oxirgi 24 soatda {RECIPES_PER_DAY} ta retsept berilgan — bugungi "
+                "retseptlar shu. Yangi retsept YOZMA. Iliq va qisqa ayt: bugun bir nechta retsept "
+                "ulashdik, ertaga yana yangisini bajonidil beramiz. Keyin boshqa narsada yordam "
+                "berishda davom et: oldingi retseptlardan birini pishirib ko'rganmi, qanday chiqdi, "
+                "masalliqlari bormi, mahsulot tanlash, foydasi — suhbatni davom ettir.")
     await ai_memory.record_recipe(user_id, product_id, product["name"])
     library = _library_recipe(product["name"])
+    serve = ("Retseptdan keyin samimiy bir savol bilan suhbatni davom ettir: shu taomni yoki shu "
+             "mahsulot bilan biror narsani pishirib ko'rganmi? Mazasi va tanaga foydasini bir gap bilan "
+             "ayt (faqat bilim bazasidagi faktlar, tibbiy va'dasiz). Masalliqlardagi Ketoshop "
+             "mahsulotlarini narxi bilan eslat va muloyim taklif qil ('Savatga qo'shamizmi? 🛒').")
     if library:
         return ("OK: retsept berishing mumkin. Do'kon retsepti (shuni qisqartirib ber, "
-                "masalliqlardagi Ketoshop mahsulotlarini nomi bilan ayt va 'Savatga "
-                "qo'shamizmi? 🛒' deb taklif qil):\n" + library)
+                "masalliqlardagi Ketoshop mahsulotlarini nomi bilan ayt):\n" + library + "\n" + serve)
     return (f"OK: retsept berishing mumkin. {product['name']} bilan BITTA qisqa retsept yoz: "
-            "masalliqlar va 3-5 qadam. Masalliqlardan faqat katalogdagi mahsulotlarni taklif qil, "
-            "oxirida 'Savatga qo'shamizmi? 🛒' de.")
+            "masalliqlar va 3-5 qadam. Masalliqlardan faqat katalogdagi mahsulotlarni taklif qil. "
+            + serve)
 
 
 # Savatga tushgach: bitta muloyim qo'shimcha taklif, keyin rasmiylashtirish

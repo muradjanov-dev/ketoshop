@@ -247,15 +247,16 @@ class AiSalesToolLoopTest(_ProviderSwap):
 
 
 class AiRecipeLimitTest(unittest.TestCase):
-    """Retsept: bitta mijozga bitta mahsulot bo'yicha 24 soatda bitta, cheklov
-    mijozga aytilmaydi; do'kon kutubxonasidagi retsept birinchi."""
+    """Retsept: bitta mijozga 24 soatda 3 tagacha, har qanday mahsulot (egasi,
+    2026-11-26); keyin iliq "ertaga yana" va suhbat davom etadi; do'kon
+    kutubxonasidagi retsept birinchi."""
 
     def setUp(self):
         _patch(self, database, "get_product", AsyncMock(return_value={
             "id": 12, "name": "Bodom uni 500gr", "is_active": 1}))
-        self.recent = AsyncMock(return_value=False)
+        self.count = AsyncMock(return_value=0)
         self.record = AsyncMock()
-        _patch(self, ai_memory, "recipe_given_recently", self.recent)
+        _patch(self, ai_memory, "recipes_since", self.count)
         _patch(self, ai_memory, "record_recipe", self.record)
 
     def test_first_request_gets_the_shop_recipe_and_is_recorded(self):
@@ -263,14 +264,20 @@ class AiRecipeLimitTest(unittest.TestCase):
         self.assertTrue(out.startswith("OK:"), out)
         self.assertIn("Masalliqlar:", out)                  # kutubxonadagi bodom noni
         self.assertIn("Bodom uni", out)
-        self.recent.assert_awaited_once_with(777, 12, 24)
+        self.assertIn("pishirib ko'rganmi", out)             # suhbat davom etadi
+        self.count.assert_awaited_once_with(777, 24)
         self.record.assert_awaited_once_with(777, 12, "Bodom uni 500gr")
 
-    def test_second_request_within_a_day_is_refused_without_naming_the_rule(self):
-        self.recent.return_value = True
+    def test_up_to_three_a_day_then_a_warm_no_and_the_chat_goes_on(self):
+        self.count.return_value = 2
+        self.assertTrue(_run(ai_sales._run_tool(None, _FakeMessage(), "retsept",
+                                                {"mahsulot_id": 12})).startswith("OK:"))
+        self.record.reset_mock()
+        self.count.return_value = 3
         out = _run(ai_sales._run_tool(None, _FakeMessage(), "retsept", {"mahsulot_id": 12}))
         self.assertTrue(out.startswith("RAD:"), out)
-        self.assertIn("GAPIRMA", out)
+        self.assertIn("ertaga yana", out)
+        self.assertIn("davom ettir", out)
         self.record.assert_not_awaited()
 
     def test_a_product_without_a_library_recipe_lets_the_model_write_one(self):
@@ -284,7 +291,9 @@ class AiRecipeLimitTest(unittest.TestCase):
     def test_rules_route_recipes_through_the_tool_and_the_group_to_the_bot(self):
         rules = ai_sales._sales_rules()
         self.assertIn("RETSEPT", rules)
-        self.assertIn("har bir mahsulotga bitta' haqida AYTMA", rules)
+        self.assertIn("24 soatda 3 tagacha retsept", rules)
+        self.assertIn("ODAMDEK SUHBAT", rules)
+        self.assertIn("3 ta yechim", rules)
         self.assertIn("Retseptni @", ai_sales._group_rules())
         self.assertTrue(ai_sales.looks_like_question("retsept bering"))
         self.assertTrue(ai_sales.looks_like_question("рецепт есть"))
