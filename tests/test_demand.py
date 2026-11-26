@@ -66,7 +66,7 @@ class CollectTest(unittest.TestCase):
         ask = AsyncMock(return_value={"advice": ["📦 Bodom unini keltiring — 12 kishi so'radi, tugagan"]})
         demand._advice_cache.clear()
         with patch.object(comment_ai, "_openai_key", AsyncMock(return_value="sk")), \
-                patch.object(comment_ai, "_ask_openai", ask):
+                patch.object(demand, "_ask", ask):
             first = asyncio.run(demand.advice("k", stats))
             second = asyncio.run(demand.advice("k", stats))
         self.assertEqual(first, second)
