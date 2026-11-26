@@ -278,6 +278,7 @@ async def ask(bot, tg_user: dict, text: str, lang: str) -> dict:
             ai_sales.finish_address(reply, message.from_user, text, session)))
         reply = ai_tone.vary(reply, session.get("last_reply"))   # botdagidek — takror qolip yo'q
         reply = ai_tone.greet_back(reply, text)                   # salom berganga salom qaytadi
+        reply = ai_tone.drop_midchat_greeting(reply, text, await ai_sales.mid_conversation(user_id, session))
         session["last_reply"] = reply
         await ai_dialog.record(user_id, "site", text, reply)     # bot va guruh ham ko'radi
         # "javdar uni kelmagan edi" (2026-11-26) — shikoyat adminlarga kartochka bo'lib boradi.
