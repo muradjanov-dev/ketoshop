@@ -849,6 +849,7 @@ class AiChequeTest(unittest.TestCase):
     def test_unlinked_receipt_in_an_open_conversation_goes_to_the_admins(self):
         ai_sales._session(777)
         message = self._photo()
+        message.caption = "to'lov cheki"      # 2026-11-26: chek savoli faqat to'lov konteksti bo'lsa
         self.assertEqual(_run(ai_sales._cheque_filter(message)), {"cheque_order": None})
         bot = NS(send_message=AsyncMock(), send_photo=AsyncMock())
         self._ask_then_tap(message, "ha", bot)
@@ -2634,3 +2635,32 @@ class FrustrationTest(unittest.TestCase):
         self.assertIn("MIJOZ AYTGANINI ESLA", rules)
         self.assertIn("tanlov savoli BERMA", rules)
         self.assertIn("MIJOZ AYTGANINI ESLA", ai_sales._group_rules())
+
+
+class BakingPhotoTest(unittest.TestCase):
+    """Egasi, 2026-11-26: "fikr so'raganimizdan yuborgan pishiriq rasmlari bizga kelmadiku?"."""
+
+    def test_photo_without_any_payment_context_is_not_asked_as_a_cheque(self):
+        ai_sales._sessions.clear()
+        self.addCleanup(ai_sales._sessions.clear)
+        ai_sales._session(777)
+        _patch(self, ai_sales, "ADMIN_IDS", [1])
+        _settings()
+        _patch(self, database, "get_user_orders", AsyncMock(return_value=[]))
+        _patch(self, database, "get_pending_checkout", AsyncMock(return_value=None))
+        msg = _FakeMessage(None, user_id=777)
+        msg.photo, msg.document, msg.caption = [NS(file_id="pie")], None, "mana pishirdim"
+        self.assertFalse(_run(ai_sales._cheque_filter(msg)))
+        msg.caption = "to'lov cheki"
+        self.assertEqual(_run(ai_sales._cheque_filter(msg)), {"cheque_order": None})
+
+    def test_free_photo_goes_to_admins_with_thanks(self):
+        import handlers.support_relay as sr
+        relay = AsyncMock()
+        _patch(self, sr, "relay_media", relay)
+        _patch(self, sr, "get_user_language", AsyncMock(return_value="uz"))
+        msg = _FakeMessage(None, user_id=777)
+        msg.photo, msg.document, msg.caption = [NS(file_id="s"), NS(file_id="big")], None, "qatlama pishirdim"
+        _run(sr.relay_free_media(msg, object()))
+        self.assertEqual(relay.await_args.args[2:], ("photo", "big", "qatlama pishirdim"))
+        self.assertIn("rahmat", msg.answer.await_args.args[0])

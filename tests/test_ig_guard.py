@@ -103,11 +103,12 @@ if __name__ == "__main__":
 class SafePaceTest(unittest.TestCase):
     """Egasi, 2026-11-26: "o'zing xavfsizlik ... har necha daqiqada yozish kerakligini aniqla"."""
 
-    def test_careful_pace_after_the_warning(self):
-        self.assertGreaterEqual(ig_guard.MIN_GAP, 180)
+    def test_about_one_a_minute_never_faster(self):
+        # Egasi, 2026-11-26: "to'xtab qolma, blok qilmaydigan oraliqda, aytaylik xar 1 daqiqada".
+        self.assertGreaterEqual(ig_guard.MIN_GAP, 50)
         self.assertGreater(ig_guard.MAX_GAP, ig_guard.MIN_GAP)
-        self.assertLessEqual(ig_guard.HOURLY, 10)
-        self.assertLessEqual(ig_guard.DAILY, 60)
+        self.assertLessEqual(ig_guard.HOURLY, 60)
+        self.assertEqual(ig_guard.PAUSE_HOURS, 48)               # ogohlantirishda baribir to'xtaydi
 
     def test_resume_once_turns_everything_back_on(self):
         import comment_followup as cf

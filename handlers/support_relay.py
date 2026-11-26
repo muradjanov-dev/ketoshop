@@ -32,6 +32,7 @@ from aiogram import Router, Bot, F
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.filters import StateFilter
 
 import html
 import logging
@@ -291,6 +292,33 @@ async def relay_freeform_text(message: Message, bot: Bot):
     if not text or text.startswith("/"):
         return
     await relay_text(message, bot, text)
+
+
+_MEDIA_THANKS = {
+    "uz": "Rasmingiz uchun katta rahmat! 😍 Jamoamizga yetkazdik — bo'lishganingiz biz uchun juda qadrli 🌿",
+    "ru": "Спасибо большое за фото! 😍 Передали нашей команде — нам очень приятно 🌿",
+}
+
+
+@router.message(F.photo | F.document, F.chat.type == "private", StateFilter(None))
+async def relay_free_media(message: Message, bot: Bot):
+    """Mijozning rasmi/fayli (chek emas, hech qaysi forma kutmayapti) — adminlarga
+    (egasi, 2026-11-26: "fikr so'raganimizdan yuborgan pishiriq rasmlari bizga
+    kelmadiku?" — AI suhbati ochiq bo'lmasa rasm hech qayerga bormas edi)."""
+    user = message.from_user
+    if user is None or user.id in ADMIN_IDS:
+        return
+    if message.photo:
+        kind, file_id = "photo", message.photo[-1].file_id
+    else:
+        kind, file_id = "document", message.document.file_id
+    await relay_media(bot, user, kind, file_id, message.caption or "")
+    lang = await get_user_language(user.id) or "uz"
+    text = _MEDIA_THANKS["ru" if lang == "ru" else "uz"]
+    if lang == "uz_cyr":
+        from translit import lat_to_cyr
+        text = lat_to_cyr(text)
+    await message.answer(text)
 
 
 async def relay_text(message: Message, bot: Bot, text: str) -> None:
