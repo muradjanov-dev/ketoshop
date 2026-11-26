@@ -252,6 +252,39 @@ def advice_input(stats: dict) -> str:
     return "\n".join(lines)[:12000]
 
 
+USAGE_TAG = " · talab"
+
+
+async def _ask(key: str, model: str, user: str) -> dict | None:
+    import ai_provider
+    import openai
+    try:
+        client = openai.AsyncOpenAI(api_key=key, timeout=90.0, max_retries=1)
+        resp = await client.responses.create(
+            model=model, instructions=ADVICE_RULES,
+            input=[{"role": "user", "content": [{"type": "input_text", "text": user}]}],
+            reasoning={"effort": "low"}, max_output_tokens=3000,
+            text={"format": {"type": "json_schema", "name": "talab_taklif", "schema": ADVICE_SCHEMA,
+                             "strict": True}})
+    except Exception as exc:
+        import ai_balance
+        ai_balance.note_error(exc)
+        logger.warning("demand advice: AI failed: %s", exc)
+        return None
+    try:
+        usage = ai_provider._openai_usage(getattr(resp, "usage", None))
+        await database.record_ai_usage(model + USAGE_TAG, "openai", usage.input, usage.cached, usage.output,
+                                       ai_provider.estimate_cost(model, usage.input, usage.cached, usage.output))
+    except Exception:
+        logger.debug("demand advice usage not recorded", exc_info=True)
+    try:
+        data = json.loads(getattr(resp, "output_text", "") or "{}")
+    except (TypeError, ValueError):
+        logger.warning("demand advice: non-JSON answer (status %s)", getattr(resp, "status", "?"))
+        return None
+    return data if isinstance(data, dict) else None
+
+
 async def advice(period_key: str, stats: dict) -> list[str]:
     cached = _advice_cache.get(period_key)
     if cached and time.time() - cached[0] < ADVICE_TTL:
@@ -260,8 +293,9 @@ async def advice(period_key: str, stats: dict) -> list[str]:
     key = await comment_ai._openai_key()
     if not key:
         return ["AI kaliti yo'q — /ai_kalit"]
-    data = await comment_ai._ask_openai(key, comment_ai.openai_model(), ADVICE_RULES, advice_input(stats),
-                                        effort="low", schema=ADVICE_SCHEMA)
+    # comment_ai._ask_openai faqat "reply" maydonli javobni qabul qiladi — takliflar uchun
+    # o'z chaqiruvimiz (egasi, 2026-11-26: "ai taklifi ishlamayapti").
+    data = await _ask(key, comment_ai.openai_model(), advice_input(stats))
     items = [a.strip() for a in ((data or {}).get("advice") or []) if (a or "").strip()][:8]
     if items:
         _advice_cache[period_key] = (time.time(), items)
