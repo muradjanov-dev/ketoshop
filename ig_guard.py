@@ -25,10 +25,14 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 PAUSE_HOURS = 48
-MIN_GAP, MAX_GAP = 60.0, 150.0       # ikki yozish orasida, soniya
-HOURLY = 15
-DAILY = 120
-HOURS = (9, 22)                      # Toshkent
+# Egasi, 2026-11-26 ("o'zing xavfsizlik va ... har necha daqiqada yozish kerakligini aniqla"):
+# Meta ogohlantirishidan keyingi kunlar uchun ehtiyotkor, odamdek ritm — 3–7 daqiqada bitta,
+# soatiga 10, kuniga 60, faqat 09–21. Hamma yozish (yangi izohga javob, qayta yozish, Direct)
+# shu bitta navbatda.
+MIN_GAP, MAX_GAP = 180.0, 420.0      # ikki yozish orasida, soniya
+HOURLY = 10
+DAILY = 60
+HOURS = (9, 21)                      # Toshkent
 SETTING = "ig_pause_until"
 WARNING_CODES = {4, 17, 32, 368, 613}
 WARNING_WORDS = ("suspicious", "unusual", "checkpoint", "action blocked", "temporarily blocked", "spam",

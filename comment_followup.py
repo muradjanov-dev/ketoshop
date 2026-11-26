@@ -46,7 +46,7 @@ DAYS = max(7, int(os.getenv("COMMENT_FOLLOWUP_DAYS", "30")))
 # Egasi, 2026-11-26: "instagramga suspicious action deb keldi, juda ko'p bir vaqtda yozma, akauntni
 # 100% xavfsiz holatda ulanib yozgin" — kuniga 20 ta, orasida 10–20 daqiqa, 10:00–21:00; ustiga
 # ig_guard (hamma yozishlar uchun umumiy tezlik va ogohlantirishda 48 soat pauza).
-DAILY = max(0, int(os.getenv("COMMENT_FOLLOWUP_DAILY", "20")))
+DAILY = max(0, int(os.getenv("COMMENT_FOLLOWUP_DAILY", "15")))
 EVERY = max(300, int(os.getenv("COMMENT_FOLLOWUP_EVERY", "1200")))
 GAP = max(30, int(os.getenv("COMMENT_FOLLOWUP_GAP", "600")))
 GAP_MAX = max(GAP, int(os.getenv("COMMENT_FOLLOWUP_GAP_MAX", "1200")))
@@ -247,8 +247,29 @@ def next_wait(throttles: int) -> int:
     return EVERY if throttles <= 0 else min(MAX_BACKOFF, EVERY * 2 ** throttles)
 
 
+RESUME_KEY = "ig_resume_safe_2026_11_26"
+
+
+async def resume_safely_once() -> bool:
+    """Egasi, 2026-11-26: "... shuni ishga tushir, izohlarga javob yozishni boshla" — yangi
+    ehtiyotkor tezlik (ig_guard) bilan bir marta: qayta yozish va Direct yoqiladi, pauza olinadi."""
+    if not await database.claim_release_notes(RESUME_KEY):
+        return False
+    import ig_direct
+    import ig_guard
+    await database.set_meta_comments_followup(True)
+    await ig_direct.set_enabled(True)
+    await ig_guard.resume()
+    logger.info("Instagram writes resumed at the safe pace (%s)", RESUME_KEY)
+    return True
+
+
 async def loop(bot: Bot) -> None:
     await asyncio.sleep(120)
+    try:
+        await resume_safely_once()
+    except Exception:
+        logger.exception("Instagram resume failed")
     logger.info("Comment follow-up loop started (every %ds, everyone waiting, %ds apart)", EVERY, GAP)
     throttles = 0
     while True:
