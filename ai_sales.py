@@ -924,7 +924,12 @@ async def _catalog_text() -> str:
 async def _step(state: dict, rules: str, catalog: str, tools, **kwargs):
     """PROVIDER.step + sarfni bazaga yozish. Hisob yozilmay qolsa ham suhbat
     to'xtamasin — xarajat statistikasi javobdan muhim emas."""
-    turn = await PROVIDER.step(state, rules, catalog, tools, **kwargs)
+    try:
+        turn = await PROVIDER.step(state, rules, catalog, tools, **kwargs)
+    except Exception as exc:
+        import ai_balance          # kredit tugagan bo'lsa — darhol adminlarga
+        ai_balance.note_error(exc)
+        raise
     usage = getattr(turn, "usage", None)
     if usage and (usage.input or usage.output):
         try:
@@ -3710,6 +3715,10 @@ async def _status_text() -> str:
                                     await database.get_ai_usage_month())
     except Exception:
         logger.warning("AI usage lookup failed", exc_info=True)
+    import ai_balance
+    balance = await ai_balance.status_line()
+    if balance:
+        lines.append("   " + balance)
     lines += [
         "",
         "<i>Tugmalar bir zumda yoqadi/o'chiradi va modelni almashtiradi (narx — "

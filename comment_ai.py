@@ -605,8 +605,10 @@ async def _ask_openai(key: str, model: str, instructions: str, user: str, effort
             text={"format": {"type": "json_schema", "name": "izoh_javob" if schema is None else "izoh_qayta",
                              "schema": schema or SCHEMA, "strict": True}},
         )
-    except openai.RateLimitError:
+    except openai.RateLimitError as e:
         logger.warning("comment AI rate-limited (%s)", model)
+        import ai_balance          # 429 "kredit tugadi" — darhol adminlarga
+        ai_balance.note_error(e)
         return None
     except openai.BadRequestError as e:
         if image:   # post rasmi ochilmadi (muddati o'tgan havola) — rasmsiz
