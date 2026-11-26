@@ -1540,6 +1540,17 @@ def _period_label(period: str | dict) -> str:
 
 
 @require_auth
+async def api_kpi_detail(request: web.Request):
+    """KPI kartochkasi bosilganda — ichki tafsilot (kpi_detail.py), dashboard davri bilan."""
+    import kpi_detail
+    kpi = (request.query.get("kpi") or "").strip()
+    period = _dashboard_period(request)
+    data = await kpi_detail.detail(kpi, period)
+    data["period_label"] = _period_label(period)
+    return _json(data)
+
+
+@require_auth
 async def api_demand(request: web.Request):
     """🧭 Talab — dashboard tepasidagi bo'lim (demand.py): nimani so'rashdi,
     qaysi mavzularda, saytda nima topilmadi; dashboard davri bilan bir oyna."""
@@ -2562,6 +2573,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_post("/admin/api/orders/{id:\\d+}/lines/{line:\\d+}/cost", api_order_line_cost_update)
     app.router.add_get("/admin/api/dashboard", api_dashboard)
     app.router.add_get("/admin/api/demand", api_demand)
+    app.router.add_get("/admin/api/kpi-detail", api_kpi_detail)
     app.router.add_post("/admin/api/demand/advice", api_demand_advice)
     app.router.add_get("/admin/api/product-sales", api_product_sales)
     app.router.add_get("/admin/api/product-sales.xlsx", api_product_sales_xlsx)

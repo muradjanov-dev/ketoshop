@@ -223,6 +223,20 @@
   .period-switch button.active{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
   .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
   .kpi-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:15px 17px}
+  .kpi-card.kpi-click{cursor:pointer;transition:transform .12s,border-color .12s}
+  .kpi-card.kpi-click:hover,.kpi-card.kpi-click:focus{transform:translateY(-2px);border-color:var(--accent,#c9a227);outline:none}
+  .kpi-more{margin-top:8px;font-size:12px;font-weight:700;color:var(--accent,#c9a227)}
+  .kd-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:1000;align-items:flex-start;justify-content:center;padding:4vh 12px;overflow-y:auto}
+  .kd-overlay.show{display:flex}
+  .kd-box{background:var(--panel);border:1px solid var(--line);border-radius:14px;max-width:980px;width:100%;padding:18px 20px;box-shadow:var(--shadow)}
+  .kd-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .kd-head h3{margin:0}
+  .kd-sums{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}
+  .kd-sum{border:1px solid var(--line);border-radius:10px;padding:8px 12px;display:flex;flex-direction:column;gap:2px;font-size:12.5px}
+  .kd-sum b{font-size:16px}
+  .kd-note{background:rgba(255,170,0,.12);border-radius:8px;padding:8px 12px;font-size:13px}
+  .kd-h{margin:16px 0 6px;font-size:14px}
+  .kd-table td,.kd-table th{font-size:13px;padding:6px 8px}
   .kpi-card .lab{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px}
   .kpi-card .val{font-size:22px;font-weight:800;color:var(--ink)}
   .kpi-card .sub{font-size:11.5px;color:var(--ink-2);margin-top:4px}
@@ -866,6 +880,13 @@ body.kuryer-mode .kb-admin-only{display:none!important}
     </div>
 
     <div class="kpi-grid" id="kpiGrid"></div>
+    <div class="kd-overlay" id="kpiDetail" role="dialog" aria-modal="true">
+      <div class="kd-box">
+        <div class="kd-head"><h3 id="kpiDetailTitle"></h3>
+          <button class="btn btn-o btn-sm" type="button" id="kpiDetailClose">✕ Yopish</button></div>
+        <div id="kpiDetailBody"></div>
+      </div>
+    </div>
 
     <!-- 🧭 Talab (demand.py, egasi 2026-11-26): nimani so'rashdi, qaysi mavzuda, AI takliflari -->
     <div class="dash-card dm-card" style="margin-bottom:16px" id="demandCard">
@@ -2516,6 +2537,40 @@ function renderDashKpiCard(lab,val,sub,delta=''){
   return `<div class="kpi-card"><div class="lab">${esc(lab)}</div><div class="val tnum">${esc(val)}</div>${delta}<div class="sub">${esc(sub)}</div></div>`;
 }
 
+/* KPI tafsiloti (kpi_detail.py, egasi 2026-11-26: "har bir tugmani ... bosilganda ichki
+   detallarini ko'ra olaylik, qayerga va qayerdan"). renderKpis tartibi bilan bir xil. */
+const KPI_KEYS=['booked_value','orders_sold','delivered_revenue','b2b_revenue','product_cost','expenses',
+  'keto_discount','gross_profit','profit','missing_cost','aov','users_new','orders_total'];
+function markKpiCards(){
+  document.querySelectorAll('#kpiGrid .kpi-card').forEach((c,i)=>{
+    if(!KPI_KEYS[i])return;
+    c.dataset.kpi=KPI_KEYS[i]; c.classList.add('kpi-click'); c.setAttribute('role','button'); c.tabIndex=0;
+    if(!c.querySelector('.kpi-more'))c.insertAdjacentHTML('beforeend','<div class="kpi-more">Batafsil →</div>');
+  });
+}
+async function openKpiDetail(kpi){
+  const box=$('#kpiDetail'), body=$('#kpiDetailBody');
+  box.classList.add('show'); $('#kpiDetailTitle').textContent='⏳ Yuklanmoqda…'; body.innerHTML='';
+  let d; try{d=await api('/admin/api/kpi-detail?kpi='+encodeURIComponent(kpi)+'&'+dashQuery());}
+  catch(e){$('#kpiDetailTitle').textContent='Yuklab bo\'lmadi'; body.innerHTML='<p class="hint">'+esc(e.message||e)+'</p>'; return;}
+  $('#kpiDetailTitle').textContent=(d.title||'')+(d.period_label?' · '+d.period_label:'');
+  const sum=(d.summary||[]).map(s=>`<div class="kd-sum"><span>${esc(s[0])}</span><b>${esc(s[1])}</b></div>`).join('');
+  const groups=(d.groups||[]).map(g=>`<h4 class="kd-h">${esc(g.title)}</h4><div style="overflow-x:auto"><table class="data-table kd-table">
+    <thead><tr>${(g.head||[]).map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
+    <tbody>${(g.rows||[]).map(r=>`<tr>${r.map((c,i)=>`<td${i?' class="tnum"':''}>${esc(c)}</td>`).join('')}</tr>`).join('')||'<tr><td class="hint">—</td></tr>'}</tbody></table></div>`).join('');
+  body.innerHTML=(sum?`<div class="kd-sums">${sum}</div>`:'')+(d.note?`<p class="kd-note">${esc(d.note)}</p>`:'')+groups;
+}
+document.addEventListener('click',ev=>{
+  const card=ev.target.closest&&ev.target.closest('#kpiGrid .kpi-card[data-kpi]');
+  if(card){openKpiDetail(card.dataset.kpi);return;}
+  if(ev.target.id==='kpiDetail'||(ev.target.closest&&ev.target.closest('#kpiDetailClose')))$('#kpiDetail').classList.remove('show');
+});
+document.addEventListener('keydown',ev=>{
+  if(ev.key==='Escape')$('#kpiDetail')?.classList.remove('show');
+  const card=ev.target.closest&&ev.target.closest('#kpiGrid .kpi-card[data-kpi]');
+  if(card&&(ev.key==='Enter'||ev.key===' ')){ev.preventDefault();openKpiDetail(card.dataset.kpi);}
+});
+
 /* ▲ 12% against the window just before. `bad` flips the colours for a
    figure where up is worse (expenses). Nothing when there is no earlier
    window (all-time) or both are zero. */
@@ -2574,6 +2629,7 @@ function renderKpis(st,pv){
     renderDashKpiCard('Jami Buyurtmalar',st.orders_total+' ta','Yangi: '+st.orders_pending+' / Tasdiqlangan: '+st.orders_confirmed),
   ].join('');
   $('#kpiGrid').innerHTML=cards;
+  markKpiCards();
 }
 
 function renderTrend(monthly){
