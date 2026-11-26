@@ -69,6 +69,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="leads", description="📋 Yangi leadlar"),
     BotCommand(command="ai_holat", description="🤖 AI sotuvchi: holat, yoqish/o'chirish, model"),
     BotCommand(command="ai_kalit", description="🔑 OpenAI (GPT) kaliti — serverga kirmasdan"),
+    BotCommand(command="ai_balans", description="💳 OpenAI balansi — $1 qolganda ogohlantirish"),
     BotCommand(command="ai_mavzu", description="💬 Mijoz suhbatlari shu guruh mavzusiga (topic ichida yozing)"),
     BotCommand(command="yurist_mavzu", description="⚖️ Yurist-agentni shu guruh mavzusiga ulash (topic ichida yozing)"),
     BotCommand(command="yurist_yangi", description="⚖️ Yurist bilan yangi suhbat"),

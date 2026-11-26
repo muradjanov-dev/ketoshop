@@ -297,6 +297,8 @@ async def main():
     dp.include_router(feedback_ask_router)
     from gemini_compare import router as gemini_compare_router
     dp.include_router(gemini_compare_router)
+    from ai_balance import router as ai_balance_router
+    dp.include_router(ai_balance_router)
     dp.include_router(webapp_data_router)
     # 📞 /callcentre — operator va adminlar uchun CRM eshigi (call_centre_bot.py).
     from call_centre_bot import router as call_centre_router
@@ -594,6 +596,9 @@ async def main():
     # AI sotuvchi: har kuni 23:58 da adminlarga o'sha kungi token va $ sarfi.
     from ai_sales import usage_report_loop as ai_usage_report_loop
     ai_usage_report_task = asyncio.create_task(ai_usage_report_loop(bot))
+    # ⚠️ OpenAI balansi ~$1 qolganda yoki kredit tugaganda — hamma adminlarga (ai_balance.py).
+    from ai_balance import loop as ai_balance_loop
+    asyncio.create_task(ai_balance_loop(bot))
     # 🧑‍🤝‍🧑 Mijoz portreti: har kuni 23:30 da adminlarga qaysi ma'lumot nechta
     # mijozdan yig'ilgani (customer_portrait.py). PORTRAIT_REPORT=0 — o'chiq.
     from customer_portrait import report_loop as portrait_report_loop
