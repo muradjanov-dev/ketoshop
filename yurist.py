@@ -217,6 +217,8 @@ def _client_and_model():
     key, model = "", ""
     if provider is not None and getattr(provider, "name", "") == "openai":
         key, model = provider.api_key, provider.model
+    elif provider is not None and getattr(provider, "name", "") == "gemini":
+        key, model = ai_sales.openai_credentials()       # yurist GPT'da qoladi
     key = key or ai_provider.OPENAI_KEY
     model = os.getenv("YURIST_MODEL", "").strip() or model or ai_provider.DEFAULT_MODELS["openai"]
     if not key:

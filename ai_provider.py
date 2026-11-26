@@ -47,6 +47,17 @@ PRICES = {
     "gpt-5.4": (2.50, 0.25, 15.00),
     "gpt-5.4-mini": (0.75, 0.075, 4.50),
     "gpt-5.4-nano": (0.20, 0.02, 1.25),
+    # 2026-11-26 da shu sahifadan qo'shildi (egasi: "gpt da yanada optimalroq
+    # variant bormi?") — tugma bo'lib chiqadi, tanlashda sinov so'rovi o'tadi.
+    "gpt-6.1-terra": (1.00, 0.05, 5.00),
+    "gpt-6-luna": (0.10, 0.01, 0.50),
+    "gpt-5.6-luna": (0.20, 0.02, 1.20),
+    # Gemini — aistudio.google.com/docs/pricing, 2026-11-26. Kesh avtomatik
+    # (implicit), narxi kirishning 10%. gemini-3.8-flash 2027-01-01 dan
+    # 1.50 / 0.15 / 7.50 ga oshadi — o'shanda shu qatorni yangilang.
+    "gemini-3.1-flash-lite": (0.25, 0.025, 1.50),
+    "gemini-3.5-flash-lite": (0.30, 0.03, 2.50),
+    "gemini-3.8-flash": (0.75, 0.075, 3.75),
     "claude-opus-5": (5.00, 0.50, 25.00),
     "claude-sonnet-5": (2.00, 0.20, 10.00),
     "claude-haiku-4-5": (1.00, 0.10, 5.00),
@@ -315,12 +326,126 @@ def _openai_usage(u) -> Usage:
                  output=int(getattr(u, "output_tokens", 0) or 0))
 
 
+class GeminiProvider:
+    """Gemini generateContent REST (aiohttp, yangi kutubxona yo'q). Tarix
+    bizda (state["contents"]); modelning javobi qanday kelsa shunday
+    saqlanadi — Gemini 3 vosita chaqiruvidagi thoughtSignature keyingi
+    so'rovda qaytmasa API 400 beradi. Qoidalar + katalog doim boshida
+    (systemInstruction) — Gemini'ning avtomatik keshi shu boshni ushlaydi."""
+    name = "gemini"
+    API = "https://generativelanguage.googleapis.com/v1beta"
+    _REFUSED = {"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION"}
+
+    def __init__(self, api_key: str, model: str, effort: str):
+        self.api_key, self.model, self.effort = api_key, model, effort
+
+    @staticmethod
+    def render_tools(tools: list[Tool]) -> list[dict]:
+        return [{"functionDeclarations": [
+            {"name": t.name, "description": t.description, "parametersJsonSchema": t.schema}
+            for t in tools]}]
+
+    def _thinking(self) -> dict:
+        # Hamma flash / flash-lite "low" ni qabul qiladi; "minimal" 3.8 da xato.
+        level = self.effort if self.effort in ("low", "medium", "high") else "low"
+        return {"thinkingLevel": level}
+
+    async def _post(self, body: dict) -> dict:
+        import aiohttp
+        url = f"{self.API}/models/{self.model}:generateContent"
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=body, headers={"x-goog-api-key": self.api_key},
+                                    timeout=aiohttp.ClientTimeout(total=90)) as resp:
+                data = await resp.json(content_type=None)
+                if resp.status != 200:
+                    msg = ((data or {}).get("error") or {}).get("message") or f"HTTP {resp.status}"
+                    raise RuntimeError(f"Gemini {resp.status}: {msg[:200]}")
+                return data or {}
+
+    async def step(self, state: dict, rules: str, catalog: str, tools: list[Tool] | None,
+                   *, user: str | None = None, results: list[ToolResult] | None = None,
+                   max_tokens: int = 800, history_limit: int = 40) -> Turn:
+        contents = state.setdefault("contents", [])
+        names = state.setdefault("gem_names", {})
+        if user is not None:
+            contents.append({"role": "user", "parts": [{"text": user}]})
+            _trim_gemini(contents, history_limit)
+        if results is not None:
+            contents.append({"role": "user", "parts": [
+                {"functionResponse": {**({} if r.id.startswith("g:") else {"id": r.id}),
+                                      "name": names.get(r.id, ""),
+                                      "response": {"error" if r.is_error else "output": r.output}}}
+                for r in results]})
+
+        body = {
+            "systemInstruction": {"parts": [{"text": rules + "\n\n" + catalog}]},
+            "contents": contents,
+            "generationConfig": {"maxOutputTokens": max_tokens,
+                                 "thinkingConfig": self._thinking()},
+        }
+        if tools:
+            body["tools"] = self.render_tools(tools)
+        data = await self._post(body)
+        usage = _gemini_usage(data.get("usageMetadata"))
+
+        if (data.get("promptFeedback") or {}).get("blockReason"):
+            return Turn(refused=True, usage=usage)
+        cands = data.get("candidates") or []
+        if not cands:
+            return Turn(refused=True, usage=usage)
+        cand = cands[0]
+        content = cand.get("content") or {}
+        parts = content.get("parts") or []
+        reason = cand.get("finishReason") or ""
+        if parts:
+            contents.append({"role": "model", "parts": parts})
+        calls = []
+        for i, part in enumerate(parts):
+            fc = part.get("functionCall")
+            if not fc:
+                continue
+            # id ni model bermasa o'zimiz qo'yamiz ("g:" — API ga qaytarilmaydi).
+            call_id = fc.get("id") or f"g:{len(contents)}_{i}"
+            names[call_id] = fc.get("name", "")
+            calls.append(ToolCall(call_id, fc.get("name", ""), dict(fc.get("args") or {})))
+        if reason in self._REFUSED and not calls:
+            return Turn(refused=True, usage=usage)
+        text = "".join(p.get("text", "") for p in parts
+                       if "text" in p and not p.get("thought")).strip()
+        return Turn(text=text, calls=calls, usage=usage, truncated=reason == "MAX_TOKENS")
+
+
+def _gemini_usage(u: dict | None) -> Usage:
+    """promptTokenCount keshlanganini ham o'z ichiga oladi; fikrlash
+    (thoughtsTokenCount) chiqish sifatida to'lanadi."""
+    u = u or {}
+    return Usage(input=int(u.get("promptTokenCount") or 0),
+                 cached=int(u.get("cachedContentTokenCount") or 0),
+                 output=int(u.get("candidatesTokenCount") or 0) + int(u.get("thoughtsTokenCount") or 0))
+
+
+def _trim_gemini(contents: list, limit: int) -> None:
+    """Faqat oddiy user matni boshlanadigan joydan kesadi — functionCall ni
+    o'z functionResponse idan ajratib qo'ymaslik uchun."""
+    if len(contents) <= limit:
+        return
+    cut = len(contents) - limit
+    while cut < len(contents):
+        c = contents[cut]
+        if c["role"] == "user" and any("text" in p for p in c["parts"]):
+            break
+        cut += 1
+    del contents[:cut]
+
+
 def reset(state: dict) -> None:
     """Xato bo'lgan suhbatni tozalaydi. OpenAI da muhim: javobsiz qolgan
     function_call bor zanjirga keyingi xabar yuborilsa API 400 qaytaradi."""
     state.pop("prev_id", None)
     state.pop("turns", None)
     state.pop("messages", None)
+    state.pop("contents", None)
+    state.pop("gem_names", None)
 
 
 def build(model: str = "", effort: str = "low"):

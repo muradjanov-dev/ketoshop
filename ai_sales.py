@@ -662,6 +662,9 @@ def _apply_key(key: str | None) -> None:
     if not key:
         return
     _key_source["from_bot"] = True
+    _key_source["key"] = key
+    if PROVIDER is not None and PROVIDER.name == "gemini":
+        return                  # egasi Gemini'ni tanlagan — GPT kaliti zaxirada turadi
     if PROVIDER is not None and PROVIDER.name == "openai" and getattr(PROVIDER, "api_key", "") == key:
         return
     PROVIDER = ai_provider.OpenAIProvider(key, _openai_model(), EFFORT)
@@ -675,6 +678,7 @@ def _drop_bot_key() -> None:
     """Bot orqali berilgan kalit o'chirildi — serverdagi env ga qaytamiz."""
     global PROVIDER, MODEL
     _key_source["from_bot"] = False
+    _key_source.pop("key", None)
     PROVIDER = ai_provider.build(os.getenv("AI_SALES_MODEL", "").strip(), EFFORT)
     MODEL = PROVIDER.model if PROVIDER else ""
     for session in _sessions.values():
@@ -685,8 +689,53 @@ def _key_status() -> str:
     if PROVIDER is None:
         return "yo'q — /ai_kalit bilan bering"
     tail = html.escape((getattr(PROVIDER, "api_key", "") or "")[-4:])
+    if PROVIDER.name == "gemini":
+        return f"Gemini kaliti, /gemini_kalit (…{tail})"
     where = "bot orqali berilgan" if _key_source["from_bot"] else "serverdagi env"
     return f"{where} (…{tail})"
+
+
+def openai_credentials() -> tuple[str, str]:
+    """(OpenAI kaliti, GPT modeli) — AI sotuvchi Gemini'da ishlasa ham.
+    Izohlar AI'si va yurist OpenAI'da qoladi, kalitni shu yerdan oladi."""
+    if PROVIDER is not None and PROVIDER.name == "openai":
+        return PROVIDER.api_key, PROVIDER.model
+    return (_key_source.get("key") or ai_provider.OPENAI_KEY), _openai_model()
+
+
+def _gemini_key() -> str:
+    return (_settings["values"].get("gemini_key") or os.getenv("GEMINI_API_KEY", "")).strip()
+
+
+def _provider_for(name: str):
+    """Tugmadagi model uchun provayder obyekti (kalit yo'q bo'lsa None)."""
+    if name.startswith("gemini"):
+        key = _gemini_key()
+        return ai_provider.GeminiProvider(key, name, EFFORT) if key else None
+    if name.startswith("gpt"):
+        key = openai_credentials()[0]
+        return ai_provider.OpenAIProvider(key, name, EFFORT) if key else None
+    if PROVIDER is not None and PROVIDER.name == "anthropic":
+        return ai_provider.AnthropicProvider(PROVIDER.api_key, name, EFFORT)
+    return None
+
+
+async def _probe(name: str) -> str | None:
+    """Model tanlanganda bitta kichik haqiqiy so'rov (vositalar bilan) — model
+    mavjud emas, kalit noto'g'ri yoki parametr qo'llanmasa, mijozlarga emas,
+    egasiga xato chiqadi va model almashmaydi. Narxi — sentning ulushi."""
+    provider = _provider_for(name)
+    if provider is None:
+        return ("Gemini kaliti yo'q — avval /gemini_kalit KALIT yuboring"
+                if name.startswith("gemini") else "Kalit yo'q — /ai_kalit")
+    try:
+        turn = await provider.step({}, "Sen do'kon yordamchisisan. Qisqa javob ber.", "", TOOLS,
+                                   user="Salom", max_tokens=400)
+    except Exception as exc:
+        return f"{type(exc).__name__}: {str(exc)[:200]}"
+    if turn.refused or not (turn.text or turn.calls):
+        return "model bo'sh javob qaytardi"
+    return None
 
 
 async def _verify_key(key: str, model: str) -> str | None:
@@ -705,19 +754,40 @@ def model_options() -> list[str]:
     da tugma bo'lib chiqadi, egasi dasturchisiz almashtiradi."""
     if not PROVIDER:
         return []
-    prefix = "gpt" if PROVIDER.name == "openai" else "claude"
-    return [m for m in ai_provider.PRICES if m.startswith(prefix)]
+    # Gemini tanlangan bo'lsa ham GPT tugmalari qoladi — orqaga bir bosishda.
+    prefix = "claude" if PROVIDER.name == "anthropic" else "gpt"
+    # Gemini tugmalari doim (egasi, 2026-11-26) — kalitsiz bosilsa /gemini_kalit so'raladi.
+    return [m for m in ai_provider.PRICES if m.startswith(prefix) or m.startswith("gemini")]
 
 
 def _apply_model(name: str | None) -> None:
     """Bazadagi tanlangan modelni ishga tushiradi. Ochiq suhbatlarning
     provayder zanjiri tozalanadi (boshqa model zanjiri), lekin sessiya —
-    lokatsiya, telefon, chek kutish — qoladi; savat bazada."""
-    global MODEL
-    if not PROVIDER or not name or name == PROVIDER.model or name not in model_options():
+    lokatsiya, telefon, chek kutish — qoladi; savat bazada. GPT ↔ Gemini
+    o'tishda provayder obyekti almashadi."""
+    global PROVIDER, MODEL
+    if not PROVIDER or not name or name not in model_options():
         return
-    logger.info("AI model %s -> %s", PROVIDER.model, name)
-    PROVIDER.model = name
+    if name.startswith("gemini"):
+        if PROVIDER.name == "gemini" and name == PROVIDER.model and PROVIDER.api_key == _gemini_key():
+            return
+        new = _provider_for(name)
+        if new is None:
+            logger.warning("AI model %s: no Gemini key, staying on %s", name, PROVIDER.model)
+            return
+        logger.info("AI model %s -> %s", PROVIDER.model, name)
+        PROVIDER = new
+    elif PROVIDER.name == "gemini":
+        new = _provider_for(name)
+        if new is None:
+            return
+        logger.info("AI model %s -> %s", PROVIDER.model, name)
+        PROVIDER = new
+    else:
+        if name == PROVIDER.model:
+            return
+        logger.info("AI model %s -> %s", PROVIDER.model, name)
+        PROVIDER.model = name
     MODEL = name
     for session in _sessions.values():
         ai_provider.reset(session.setdefault("ai", {}))
@@ -3696,6 +3766,13 @@ async def cb_model(callback: CallbackQuery):
     if name not in model_options():
         await callback.answer("Bu model mavjud emas.", show_alert=True)
         return
+    await _load_settings()
+    if name != MODEL:
+        error = await _probe(name)
+        if error:
+            await callback.answer(f"❌ {name} ishlamadi, model almashmadi:\n{error}"[:200],
+                                  show_alert=True)
+            return
     try:
         await set_setting("model", name, callback.from_user.id)
     except Exception:
