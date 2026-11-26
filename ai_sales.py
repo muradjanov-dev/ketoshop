@@ -3271,6 +3271,7 @@ async def _answer(bot: Bot, message: Message, user_text: str, late: bool = False
         reply += "\n🧾 [buyurtma kartasi ko'rsatildi]"
     await ai_dialog.record(user_id, "bot", user_text, reply)   # guruh va sayt ham ko'radi
     await _mirror(bot, message, user_text, reply)
+    await _escalate_complaint(bot, message.from_user, "bot", user_text, reply)
     if user_id not in ADMIN_IDS and user_id not in database.LEADERBOARD_EXCLUDED_USER_IDS:
         await ai_stats.record_turn(user_id, "bot", user_text)   # /ai_hisobot
 
@@ -5232,6 +5233,15 @@ def _group_thread_hint(turns: list[dict]) -> str:
             "haqida EMAS.]")
 
 
+async def _escalate_complaint(bot, user, channel: str, text: str, reply: str | None) -> None:
+    """Shikoyat bo'lsa — adminlarga kartochka (complaints.py). Hech qachon xato ko'tarmaydi."""
+    try:
+        import complaints
+        await complaints.escalate(bot, user, channel, text, reply)
+    except Exception:
+        logger.exception("complaint escalation failed")
+
+
 async def _group_answer(bot: Bot, message: Message, text: str, late_background: str | None = None) -> None:
     """late_background — kechikkan javob (missed_replies.py): o'sha paytdagi
     fon (kanal posti) saqlangani; xato bo'lsa yuqoriga ketadi."""
@@ -5272,6 +5282,7 @@ async def _group_answer(bot: Bot, message: Message, text: str, late_background: 
     reply = ai_tone.vary(reply, None)          # "... farqini ham aytib beramiz" — bo'sh va'da
     reply = ai_tone.greet_back(reply, question)   # salom berganga salom qaytadi
     await message.reply(reply)
+    await _escalate_complaint(bot, message.from_user, "group", question, reply)
     now = time.time()
     for key in [k for k, at in _group_followups.items() if now - at >= GROUP_FOLLOWUP]:
         _group_followups.pop(key, None)

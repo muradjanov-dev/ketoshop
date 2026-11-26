@@ -280,6 +280,8 @@ async def ask(bot, tg_user: dict, text: str, lang: str) -> dict:
         reply = ai_tone.greet_back(reply, text)                   # salom berganga salom qaytadi
         session["last_reply"] = reply
         await ai_dialog.record(user_id, "site", text, reply)     # bot va guruh ham ko'radi
+        # "javdar uni kelmagan edi" (2026-11-26) — shikoyat adminlarga kartochka bo'lib boradi.
+        await ai_sales._escalate_complaint(bot, message.from_user, "site", text, reply)
     try:
         cards = await build_cards(user_id, lang, message.web_cards)
     except Exception:
