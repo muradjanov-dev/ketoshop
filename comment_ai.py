@@ -467,6 +467,8 @@ async def _openai_key() -> str:
         prov = ai_sales.PROVIDER
         if prov is not None and getattr(prov, "name", "") == "openai" and getattr(prov, "api_key", ""):
             return prov.api_key
+        if prov is not None and getattr(prov, "name", "") == "gemini":
+            return ai_sales.openai_credentials()[0]      # sotuvchi Gemini'da — GPT kaliti zaxirada
     except Exception:
         logger.warning("comment AI: AI seller settings unreadable", exc_info=True)
     return os.getenv("OPENAI_API_KEY", "").strip()
