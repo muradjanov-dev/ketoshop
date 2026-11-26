@@ -38,7 +38,35 @@ NOTICES = [
      "• карта рақами, СМС код ва паролни ҳеч кимга берманг;\n"
      "• жарима ростми — банк иловангизда ёки my.gov.uz да текширинг.\n\n"
      "Ноқулайлик учун узр. Саволингиз бўлса, шу ерга ёзинг, ёрдам берамиз 🤝"),
+    # 2026-11-26: mijoz karta bilan 229 900 so'm to'lagan (egasi chekni tekshirdi: "to'lov
+    # cheki to'g'ri ekan"), lekin buyurtma yaratilmagan — to'lov qadamida savat broni tugab,
+    # chek keyin chatga fayl bo'lib kelgan. Egasi: "shuni o'zing yoz ... mijoz to'lov
+    # qilgan shundan kelib chiqib gaplash".
+    ("notice-2026-11-26-tolov-229900", 2020857190,
+     "Здравствуйте! Пишем из Ketoshop.\n\n"
+     "Извините, пожалуйста, за неудобство. Ваша оплата <b>229 900 сум</b> получена — деньги "
+     "не потерялись, всё в порядке.\n\n"
+     "Заказ не оформился автоматически: пока шла оплата, бронь корзины закончилась, а чек "
+     "пришёл отдельным файлом. Поэтому вы и увидели сообщение, что товары «вернулись в продажу».\n\n"
+     "Подскажите, пожалуйста, какие товары вы заказывали — мы оформим заказ вручную на эту сумму "
+     "и сразу сообщим вам номер заказа. Повторно платить ничего не нужно 🙏"),
 ]
+
+# Shu mijozlar uchun AI shu vaqtgacha (UTC) jim: javobi to'g'ridan-to'g'ri adminlarga
+# boradi — AI yangi buyurtma tuzib, qayta to'lov so'rab yubormasin. Har ishga tushishda
+# qayta qo'yiladi (pauza xotirada saqlanadi).
+AI_HOLD = {2020857190: datetime(2026, 11, 29, 19, 0)}
+
+
+def hold_ai() -> None:
+    try:
+        import ai_sales
+    except Exception:
+        return
+    now = datetime.utcnow()
+    for user_id, until in AI_HOLD.items():
+        if until > now:
+            ai_sales.pause_for_human(user_id, int((until - now).total_seconds()))
 
 
 def _now_tk() -> datetime:
@@ -68,6 +96,7 @@ async def _tick(bot: Bot) -> bool:
 
 
 async def scheduler_loop(bot: Bot) -> None:
+    hold_ai()
     await asyncio.sleep(60)
     while True:
         try:
