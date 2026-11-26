@@ -26,8 +26,11 @@ class NoticeTest(unittest.TestCase):
         done, bot = self.tick(10)
         self.assertTrue(done)
         chats = [c.args[0] for c in bot.send_message.await_args_list]
-        self.assertEqual(chats, [6908484737, 1, 2020857190, 1])
+        self.assertEqual(chats, [6908484737, 1, 2020857190, 1, 7386577240, 1])
         self.assertIn("жарима қўймайди", bot.send_message.await_args_list[0].args[1])
+        rye = bot.send_message.await_args_list[4].args[1]
+        self.assertIn("жавдар уни", rye)
+        self.assertIn("муаммо ҳал бўлдими", rye)
         paid = bot.send_message.await_args_list[2].args[1]
         self.assertIn("229 900", paid)
         self.assertIn("Повторно платить ничего не нужно", paid)
