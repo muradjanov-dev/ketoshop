@@ -3172,7 +3172,10 @@ async def _reply(bot: Bot, message: Message, user_text: str) -> None:
                  lambda msg, text: _answer(bot, msg, text))
 
 
-async def _answer(bot: Bot, message: Message, user_text: str) -> None:
+async def _answer(bot: Bot, message: Message, user_text: str, late: bool = False) -> None:
+    """late=True — AI ishlamay qolgan paytdagi javobsiz savolga kechikkan
+    javob (missed_replies.py): xato bo'lsa adminlarga qayta kartochka emas,
+    xato yuqoriga ketadi va savol navbatda qoladi."""
     user_id = message.from_user.id
     try:
         async with _typing(bot, message.chat.id):
@@ -3180,6 +3183,8 @@ async def _answer(bot: Bot, message: Message, user_text: str) -> None:
     except Exception:
         logger.exception("AI sales turn failed for user %s", user_id)
         ai_provider.reset(_session(user_id).setdefault("ai", {}))
+        if late:
+            raise
         await _fallback_to_admins(bot, message, user_text)
         return
     session = _sessions.get(user_id) or {}
@@ -3254,6 +3259,11 @@ async def _fallback_to_admins(bot: Bot | None, message: Message, user_text: str)
     """Model javob bera olmadi (API o'chiq, kalit yoki model xatosi). Mijoz
     uzr emas, odatdagi "xabaringiz qabul qilindi" ni oladi, savoli esa
     support_relay kartochkasi bo'lib adminlarga boradi — hech narsa yo'qolmaydi."""
+    try:
+        import missed_replies     # AI qaytgach, admin javob bermagan bo'lsa — kechikkan javob
+        await missed_replies.remember_bot(message.from_user.id, user_text)
+    except Exception:
+        logger.exception("missed bot question could not be stored")
     try:
         from handlers.support_relay import relay_text
         await relay_text(message, bot, user_text)
@@ -4948,13 +4958,17 @@ def _group_thread_hint(turns: list[dict]) -> str:
             "haqida EMAS.]")
 
 
-async def _group_answer(bot: Bot, message: Message, text: str) -> None:
+async def _group_answer(bot: Bot, message: Message, text: str, late_background: str | None = None) -> None:
+    """late_background — kechikkan javob (missed_replies.py): o'sha paytdagi
+    fon (kanal posti) saqlangani; xato bo'lsa yuqoriga ketadi."""
     chat_id = message.chat.id
     user_id = message.from_user.id
     question = text
     replied = message.reply_to_message
-    background = ""
-    if _is_channel_post(replied):
+    background = late_background or ""
+    if late_background is not None:
+        pass
+    elif _is_channel_post(replied):
         background = f"[Kanal postiga izoh. Post matni: «{_short(replied.text or replied.caption or '', 700)}»]"
     elif replied is not None and _addressed_to_bot(message):
         background = f"[Sening oldingi javobingga reply: «{_short(replied.text or '', 400)}»]"
@@ -4967,6 +4981,15 @@ async def _group_answer(bot: Bot, message: Message, text: str) -> None:
         reply = await _group_respond(chat_id, author, f"{hint}\n{question}" if hint else question, context)
     except Exception:
         logger.exception("AI group turn failed in chat %s", chat_id)
+        if late_background is not None:
+            raise
+        # Savol yo'qolmasin — AI qaytganda missed_replies javob beradi.
+        try:
+            import missed_replies
+            await missed_replies.remember_group(chat_id, message.message_id, user_id, author,
+                                                question, background)
+        except Exception:
+            logger.exception("missed group question could not be stored")
         return
     if not reply:
         return

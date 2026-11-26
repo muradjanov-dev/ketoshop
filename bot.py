@@ -432,6 +432,10 @@ async def main():
     # (24 soat ichida); izohlar tokeni bo'lmasa jim. /ig_direct off — to'xtatish.
     from ig_direct import loop as ig_direct_loop
     asyncio.create_task(ig_direct_loop(bot))
+    # 🔁 AI ishlamay qolgan paytdagi javobsiz bot/guruh savollariga — AI qaytgach
+    # kechikkan javob (08–23, missed_replies.py).
+    from missed_replies import loop as missed_replies_loop
+    asyncio.create_task(missed_replies_loop(bot))
     # 🗣 2 kunda bir AI xaridorlardan oldingi mahsuloti haqida qisqa fikr so'raydi.
     from feedback_ask import scheduler_loop as feedback_ask_loop
     asyncio.create_task(feedback_ask_loop(bot))
