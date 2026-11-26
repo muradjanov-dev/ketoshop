@@ -2634,3 +2634,26 @@ class FrustrationTest(unittest.TestCase):
         self.assertIn("MIJOZ AYTGANINI ESLA", rules)
         self.assertIn("tanlov savoli BERMA", rules)
         self.assertIn("MIJOZ AYTGANINI ESLA", ai_sales._group_rules())
+
+
+class LanguageAndGreetingTest(unittest.TestCase):
+    """Egasi, 2026-11-26: o'zbekcha yozganga ruscha javob; suhbat o'rtasida 'Assalomu alaykum'."""
+
+    def test_short_uzbek_cyrillic_is_uzbek_not_russian(self):
+        for text in ("Девзира гуруч жигарранг", "Булар тогри лекин ичида жавдар уни кемаган", "Стевия нечпул"):
+            self.assertEqual(ai_sales.customer_language(text), "uz_cyr", text)
+        self.assertEqual(ai_sales.customer_language("Сколько стоит миндальная мука?"), "ru")
+
+    def test_russian_reply_to_uzbek_customer_is_caught(self):
+        self.assertTrue(ai_sales.russian_reply("Девзира рис у нас есть, он не крашеный. Стоит 31 000 сум за 500 г."))
+        self.assertFalse(ai_sales.russian_reply("Девзира гуручи бизда бор, бўялмаган. 500 г - 31 000 сўм"))
+
+    def test_no_new_greeting_in_the_middle_of_a_chat(self):
+        import ai_tone
+        reply = "Assalomu alaykum! Keto shopga xush kelibsiz 😊\nDevzira guruchi tabiiy qizg'ish-jigarrang bo'ladi."
+        self.assertEqual(ai_tone.drop_midchat_greeting(reply, "devzira jigarrangmi", True),
+                         "Devzira guruchi tabiiy qizg'ish-jigarrang bo'ladi.")
+        self.assertEqual(ai_tone.drop_midchat_greeting(reply, "devzira jigarrangmi", False), reply)   # birinchi xabar
+        self.assertEqual(ai_tone.drop_midchat_greeting("Va alaykum assalom! Ha, bor.", "Assalomu alaykum, bormi?",
+                                                       True), "Va alaykum assalom! Ha, bor.")         # alik o'rinli
+        self.assertIn("SAVOLNI TUSHUN", ai_sales._sales_rules())
