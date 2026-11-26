@@ -234,7 +234,7 @@ async def statuses(message_ids: list[str]) -> dict[str, dict]:
         return {}
     async with database.pool.acquire() as conn:
         await _ensure(conn)
-        rows = await conn.fetch("SELECT message_id, status, claimed_at FROM ig_dm_messages "
+        rows = await conn.fetch("SELECT message_id, status, claimed_at, intent, note, text FROM ig_dm_messages "
                                 "WHERE message_id = ANY($1::text[])", list(message_ids))
     return {r["message_id"]: dict(r) for r in rows}
 
@@ -980,7 +980,7 @@ async def handle_conversation(bot: Bot | None, session, ident: dict, conv: dict,
         await mark(ids, "replied", ("sending",))
         await mark(ids, "human", OPEN, note="Instagram'da bizdan javob bor")
     if not trailing:
-        return "none"
+        return await late_reply(session, ident, conv, now)
     rows = await statuses([m["message_id"] for m in trailing])
     stale = [i for i, r in rows.items() if r["status"] == "sending" and
              (r.get("claimed_at") is None or now - r["claimed_at"] > STALE_CLAIM)]
@@ -1047,11 +1047,93 @@ async def handle_conversation(bot: Bot | None, session, ident: dict, conv: dict,
             raise
     _failures.pop(cid, None)
     status = "held" if plan.status == "held" else "replied"
+    extra = {"note": plan.reason} if status == "held" and plan.reason else {}
     await mark(claimed, status, ("sending",), reply_text="\n\n".join(sent), replied_at=now,
-               intent=plan.intent, catalog_sent=plan.catalog)
+               intent=plan.intent, catalog_sent=plan.catalog, **extra)
     if status == "held":
         await notify_admins(bot, card_text(conv, pending, plan.reason, sent))
     return status
+
+
+# ───────────────────── kechikkan javob (AI ishlamagan payt) ─────────────────
+# Egasi, 2026-11-26 (OpenAI krediti tugab, AI bir kun javob bermadi): "barcha
+# javob yozilmagan xabarlarga javob yozib chiqishi kerak ... instagram
+# directda". O'sha payt mijoz faqat ushlab turuvchi javob olgan (held,
+# ai_down) — AI qaytgach, 24 soatlik oyna ichida bo'lsa, haqiqiy javob.
+
+LATE_SORRY = {
+    "uz": "Javobimiz biroz kechikdi, uzr 🙏\n\n",
+    "uz_cyr": "Жавобимиз бироз кечикди, узр 🙏\n\n",
+    "ru": "Извините, что ответ немного задержался 🙏\n\n",
+}
+LATE_DONE = "kechikkan javob"
+
+
+def _held_for_ai(row: dict | None) -> bool:
+    """AI ishlamagani uchun ushlab turuvchi javob olgan xabar. Eski qatorlarda
+    sabab yozilmagan: intent bo'sh + matn bor = ai_down (nontext matnsiz,
+    unsure/odam kerak — intent bilan)."""
+    if not row or row.get("status") != "held":
+        return False
+    if row.get("note") == "ai_down":
+        return True
+    return not row.get("note") and not row.get("intent") and bool((row.get("text") or "").strip())
+
+
+def last_customer_batch(conv: dict) -> list[dict]:
+    """Oxirgi javobimizdan oldingi, ketma-ket mijoz xabarlari."""
+    msgs = conv["messages"]
+    last = max((i for i, m in enumerate(msgs) if m["ours"]), default=-1)
+    batch = []
+    for m in reversed(msgs[:max(last, 0)]):
+        if m["ours"]:
+            break
+        batch.insert(0, m)
+    return batch
+
+
+async def late_reply(session, ident: dict, conv: dict, now: datetime) -> str:
+    batch = last_customer_batch(conv)
+    if not batch or not in_window(batch, now):
+        return "none"
+    rows = await statuses([m["message_id"] for m in batch])
+    late = [m for m in batch if _held_for_ai(rows.get(m["message_id"]))]
+    if not late:
+        return "none"
+    ids = [m["message_id"] for m in late]
+    cid = conv["conversation_id"]
+    if await replies_since(cid, now - timedelta(hours=1)) >= PER_HOUR:
+        return "throttled"
+    plan = await compose(conv, late, first_contact=False,
+                         catalog_ok=not await catalog_recent(cid, now - CATALOG_EVERY), now=now)
+    if plan is None or plan.reason == "ai_down":
+        return "retry"                                  # AI hali ham ishlamayapti
+    if plan.status != "replied":
+        # Odam kerak / yakunlangan / spam — kartochka allaqachon adminlarda, qayta so'ramaymiz.
+        await mark(ids, "held", ("held",), note=f"{LATE_DONE}: {plan.status}")
+        return "none"
+    claimed = await mark(ids, "sending", ("held",), claimed_at=now)
+    if not claimed:
+        return "busy"
+    recipient = conv.get("customer_id") or late[-1]["from_id"]
+    parts = list(plan.messages)
+    parts[0] = LATE_SORRY.get(plan.lang, LATE_SORRY["uz"]) + parts[0]
+    sent: list[str] = []
+    for part in parts:
+        if sent:
+            await _pause()
+        try:
+            await send_text(session, ident, recipient, part)
+            sent.append(part)
+        except mc.GraphError as e:
+            if sent:
+                break
+            back = "unavailable" if classify(e) == "closed" else "held"
+            await mark(claimed, back, ("sending",), note=f"{LATE_DONE}: {str(e)[:250]}")
+            return "unavailable" if back == "unavailable" else "retry"
+    await mark(claimed, "replied", ("sending",), reply_text="\n\n".join(sent), replied_at=now,
+               intent=plan.intent, catalog_sent=plan.catalog, note=LATE_DONE)
+    return "replied"
 
 
 # ─────────────────────────────── tekshiruv ──────────────────────────────────
