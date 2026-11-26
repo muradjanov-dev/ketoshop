@@ -221,6 +221,9 @@ def _card(order: dict) -> dict:
         "secondary_phone": order.get("secondary_phone"),
         "address": order.get("address"),
         "address_note": order.get("address_note"),
+        # UzPost: «indeks — bo'lim, manzil» (egasi, 2026-11-26: "bazi uzpost buyurtmalarida index
+        # chiqmayapti" — doskaga umuman uzatilmagan edi).
+        "post_office": order.get("post_office"),
         "latitude": _coord(order.get("latitude")),
         "longitude": _coord(order.get("longitude")),
         "delivery_method": order.get("delivery_method"),
@@ -248,6 +251,38 @@ def _card(order: dict) -> dict:
     }
 
 
+FILL_PER_SNAPSHOT = 5
+
+
+async def fill_post_offices(orders: list[dict]) -> int:
+    """Lokatsiyasi bor, lekin bo'limi yozilmagan UzPost buyurtmalari (o'sha paytda
+    UzPost javob bermagan) — eng yaqin «Bir Qadam» bo'limi topilib bazaga yoziladi.
+    Bir ko'rishda FILL_PER_SNAPSHOT tadan ko'p emas (doska sekinlashmasin)."""
+    import uzpost
+    done = 0
+    for order in orders:
+        if done >= FILL_PER_SNAPSHOT:
+            break
+        if order.get("delivery_method") != uzpost.METHOD or (order.get("post_office") or "").strip():
+            continue
+        if order.get("latitude") is None or order.get("longitude") is None:
+            continue
+        try:
+            office = await uzpost.nearest_office(order["latitude"], order["longitude"])
+        except Exception:
+            office = None
+        line = uzpost.office_line(office)
+        if not line:
+            continue
+        try:
+            await database.set_order_post_office(order["id"], line)
+            order["post_office"] = line
+            done += 1
+        except Exception:
+            break
+    return done
+
+
 async def board_snapshot(delivered_hours: int = DELIVERED_WINDOW_HOURS,
                          scope: str = "active") -> dict:
     """The whole board in one payload: every column with its cards, counts and
@@ -259,6 +294,7 @@ async def board_snapshot(delivered_hours: int = DELIVERED_WINDOW_HOURS,
     Bekor qilindi column to put them in).
     """
     orders = await database.get_courier_board_orders(delivered_hours, scope)
+    await fill_post_offices(orders)
     shown = [c for c in COLUMNS if c.get("scope") in (None, scope)]
     buckets: dict[str, list[dict]] = {c["key"]: [] for c in shown}
     for order in orders:
