@@ -16,6 +16,25 @@ import database  # noqa: E402
 vary = ai_tone.vary
 
 
+class GreetBackTest(unittest.TestCase):
+    """Egasi, 2026-11-22: "20% ga odobliroq qil" — salom berganga salom qaytadi."""
+
+    def test_a_missing_greeting_is_added_in_the_customer_script(self):
+        g = ai_tone.greet_back
+        self.assertEqual(g("Заказ #5010 уже готов.", "Здравствуйте, где мой заказ?"),
+                         "Здравствуйте!\n\nЗаказ #5010 уже готов.")
+        self.assertEqual(g("Buyurtmangiz yo'lda.", "assalomu alaykum, buyurtmam qayerda?"),
+                         "Va alaykum assalom!\n\nBuyurtmangiz yo'lda.")
+        self.assertEqual(g("Буюртмангиз йўлда.", "Ассалому алайкум"), "Ва алайкум ассалом!\n\nБуюртмангиз йўлда.")
+
+    def test_nothing_changes_when_greeted_already_or_not_greeted_at_all(self):
+        g = ai_tone.greet_back
+        self.assertEqual(g("Va alaykum assalom! Bor.", "salom, bormi"), "Va alaykum assalom! Bor.")
+        self.assertEqual(g("Здравствуйте! Есть.", "Добрый день, есть?"), "Здравствуйте! Есть.")
+        self.assertEqual(g("Bor, 68 000 so'm.", "eritritol bormi"), "Bor, 68 000 so'm.")
+        self.assertEqual(g("Bor.", "salomatlik uchun nima bor"), "Bor.")       # "salomatlik" — salom emas
+
+
 class YesOpenerTest(unittest.TestCase):
     def test_second_yes_in_a_row_is_dropped(self):
         prev = "Ha, kompot uchun ham mumkin. Faqat oz-ozdan solinadi."

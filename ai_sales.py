@@ -947,6 +947,34 @@ async def _dynamic_block(catalog: str) -> str:
     return "\n\n".join(parts)
 
 
+# Egasi, 2026-11-22: "ai chat botimizni 20% ga odobliroq qil". Umumiy "maksimal odob"
+# qoidasi bor edi, lekin model "yozing", "bosing" kabi buyruq shaklini ishlatardi.
+# Bu yerda — aniq, ko'rinadigan odatlar; tabiiylik qoidalari (har xabarda rahmat
+# yo'q, "Ha, ..." yo'q) o'z kuchida. Bot, sayt va guruh — bir xil.
+_POLITE_RULES = (
+    "- ODOB, ANIQ ODATLAR (egasi, 2026-11-22: 'ai chat botimizni 20% ga odobliroq qil'):\n"
+    "  • So'rovni buyruq bilan emas, iltimos bilan ayt: 'yozing' o'rniga 'yozib yuborsangiz', "
+    "'yuboring' o'rniga 'yuborib qo'ysangiz', 'kutib turing' o'rniga 'biroz kutib tursangiz', "
+    "'bosing' o'rniga 'bosib qo'ying, iltimos'; "
+    "ruschada 'напишите, пожалуйста', 'будьте добры'.\n"
+    "  • Mijoz salom bersa — salomiga albatta javob qaytar, uning tilida ('Va alaykum "
+    "assalom!', 'Здравствуйте!'), keyin ishga o't.\n"
+    "  • Yo'q narsani yumshoq ayt: 'yo'q' o'rniga 'afsuski, hozircha ... yo'q' va darrov "
+    "yaqin muqobilini taklif qil.\n"
+    "  • Mijoz norozi bo'lsa, kutib qolgan bo'lsa yoki biz adashgan bo'lsak — birinchi gapda "
+    "qisqa uzr yoki tushunish: 'Noqulaylik uchun uzr so'raymiz', 'Kutib qolganingiz uchun "
+    "uzr'. Keyin darrov yechim. Uzr bir suhbatda BIR MARTA yetadi — keyingi javoblarda "
+    "takrorlama; telefon raqamini ham ketma-ket javoblarda qayta yozma (takror uzr va takror "
+    "raqam robotdek eshitiladi).\n"
+    "  • Mijoz biror narsa aytib bersa (raqam, manzil, fikr) yoki sabr qilsa — qisqa "
+    "minnatdorchilik: 'Sizga rahmat', 'Sabringiz uchun rahmat'. Har xabarda emas.\n"
+    "  • Suhbat yakunida (buyurtma tushganda, mijoz xayrlashganda) — bitta iliq tilak: "
+    "'Yoqimli ishtaha!', 'Kuningiz xayrli o'tsin', 'Salomat bo'ling'. O'rtada emas.\n"
+    "  • Mijozning gapini to'g'rilasang ham uni ayblama: 'noto'g'ri yozdingiz' emas, "
+    "'aniqlashtirib olsak'.\n"
+)
+
+
 # ──────────────────────────────── bilim ─────────────────────────────────────
 
 def _keto_knowledge() -> str:
@@ -1119,6 +1147,7 @@ def _sales_rules() -> str:
         "bildir. Bir so'zli "
         "quruq javob ('Ha, bor.'), buyruq ohangi, to'mtoq yoki sovuq gap yo'q — mijoz "
         "norozi bo'lsa ham.\n"
+        + _POLITE_RULES +
         "- MIJOZ TOMONIDAN O'YLA: u nima uchun so'rayapti, unga nima eng qulay? Bir nechta "
         "variant bo'lsa, har birini narxi va nimaga mosligi bilan bir qatorda ayt, keyin "
         "maqsadini bitta savol bilan aniqlab, ENG MOSINI tavsiya qil ('pishiriq uchun "
@@ -3110,7 +3139,7 @@ async def _answer(bot: Bot, message: Message, user_text: str) -> None:
         reply = naturalize(thank_politely(finish_address(reply, message.from_user, user_text, session)))
         # Ketma-ket "Ha, ..." va har safar "Savatga qo'shamizmi?" — robotning
         # belgisi (egasi, 2026-11-08). Oldingi javobdagi qolip qaytarilmaydi.
-        reply = ai_tone.vary(reply, session.get("last_reply"))
+        reply = ai_tone.greet_back(ai_tone.vary(reply, session.get("last_reply")), user_text)
     if not reply:
         return
     session = _sessions.get(user_id)
@@ -4639,6 +4668,7 @@ def _group_rules() -> str:
         "- Hech kimga ismi bilan murojaat qilma.\n"
         "- MAKSIMAL ODOB: odamdek, muloyim va samimiy yoz — 'siz' deb murojaat, "
         "'albatta', 'marhamat', 'rahmat'. Quruq bir so'zli javob ('Ha, bor.') yo'q.\n"
+        + _POLITE_RULES +
         "- Mijoz tomonidan o'yla: variantlar bo'lsa narxi va nimaga mosligini qisqa ayt, "
         "eng mosini tavsiya qil. Adabiy, grammatik to'g'ri o'zbek tilida yoz.\n"
         "- QISQA: 2-3 jumla. Guruhda uzun matn o'qilmaydi. HTML/markdown yo'q.\n"
@@ -4866,6 +4896,7 @@ async def _group_answer(bot: Bot, message: Message, text: str) -> None:
     reply = naturalize(thank_politely(strip_name_address(polish_reply(reply, customer_text=question),
                                                          customer_names(message.from_user, text))))
     reply = ai_tone.vary(reply, None)          # "... farqini ham aytib beramiz" — bo'sh va'da
+    reply = ai_tone.greet_back(reply, question)   # salom berganga salom qaytadi
     await message.reply(reply)
     now = time.time()
     for key in [k for k, at in _group_followups.items() if now - at >= GROUP_FOLLOWUP]:

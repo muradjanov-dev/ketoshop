@@ -277,6 +277,7 @@ async def ask(bot, tg_user: dict, text: str, lang: str) -> dict:
         reply = ai_sales.naturalize(ai_sales.thank_politely(
             ai_sales.finish_address(reply, message.from_user, text, session)))
         reply = ai_tone.vary(reply, session.get("last_reply"))   # botdagidek — takror qolip yo'q
+        reply = ai_tone.greet_back(reply, text)                   # salom berganga salom qaytadi
         session["last_reply"] = reply
         await ai_dialog.record(user_id, "site", text, reply)     # bot va guruh ham ko'radi
     try:
