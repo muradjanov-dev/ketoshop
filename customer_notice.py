@@ -50,12 +50,22 @@ NOTICES = [
      "пришёл отдельным файлом. Поэтому вы и увидели сообщение, что товары «вернулись в продажу».\n\n"
      "Подскажите, пожалуйста, какие товары вы заказывали — мы оформим заказ вручную на эту сумму "
      "и сразу сообщим вам номер заказа. Повторно платить ничего не нужно 🙏"),
+    # 2026-11-26: 19.11 da saytdagi «Yordamchi»ga #828 (30.10) buyurtmada javdar uni kelmagani,
+    # "olib kelib beramiz" deyilib hech kim olib kelmagani haqida yozgan — adminlarga bormagan.
+    # Egasi: "mijozni o'zidan so'ra muammo hal qilindimi yoki yo'q, muloyim ohangda".
+    ("notice-2026-11-26-javdar-uni", 7386577240,
+     "Ассалому алайкум! Кето шопдан ёзяпмиз 🌿\n\n"
+     "19 ноябрда сайтимизда ўтган сафарги буюртмангизда жавдар уни келмагани ҳақида ёзган экансиз. "
+     "Бу ноқулайлик учун чин дилдан узр сўраймиз 🙏\n\n"
+     "Айтингчи, муаммо ҳал бўлдими? Агар ҳали ҳал бўлмаган бўлса, шу ерга ёзиб қолдиринг — "
+     "ўзимиз тезда ҳал қиламиз."),
 ]
 
 # Shu mijozlar uchun AI shu vaqtgacha (UTC) jim: javobi to'g'ridan-to'g'ri adminlarga
 # boradi — AI yangi buyurtma tuzib, qayta to'lov so'rab yubormasin. Har ishga tushishda
 # qayta qo'yiladi (pauza xotirada saqlanadi).
-AI_HOLD = {2020857190: datetime(2026, 11, 29, 19, 0)}
+AI_HOLD = {2020857190: datetime(2026, 11, 29, 19, 0),
+           7386577240: datetime(2026, 11, 28, 19, 0)}     # javdar uni — javobini admin ko'rsin
 
 
 def hold_ai() -> None:
