@@ -1090,6 +1090,47 @@
   /* ── Aksiya / perks ────────────────────────────────────────────────────
      The aksiya banner is a ticket: notches cut into both sides with a
      mask, a perforation line before the arrow. */
+  /* ⭐ TOP takliflar — eng tepada, ko'zga tashlanadigan animatsiya (2026-11-26). */
+  .top-offer {
+    position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px;
+    width: calc(100% - 24px); margin: 10px 12px 6px; padding: 12px 14px; border: 0; border-radius: 16px;
+    color: #fff; font: inherit; font-weight: 700; text-align: left; cursor: pointer;
+    background: linear-gradient(110deg, #ff6a00, #ee0979, #ff6a00); background-size: 220% 100%;
+    box-shadow: 0 6px 18px rgba(238, 9, 121, .35);
+    animation: toSlide 4s linear infinite, toPulse 2.2s ease-in-out infinite;
+  }
+  .top-offer[hidden] { display: none; }
+  .top-offer::after {
+    content: ""; position: absolute; inset: 0; transform: translateX(-120%);
+    background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.45) 50%, transparent 70%);
+    animation: toShine 2.8s ease-in-out infinite;
+  }
+  .top-offer .to-badge { flex: none; background: rgba(255,255,255,.22); border-radius: 999px; padding: 3px 9px;
+    font-size: 12px; letter-spacing: .04em; animation: toStar 1.6s ease-in-out infinite; }
+  .top-offer .to-text { flex: 1; font-size: 14px; line-height: 1.3; }
+  .top-offer .to-go { font-size: 22px; line-height: 1; }
+  @keyframes toSlide { to { background-position: -220% 0; } }
+  @keyframes toPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.015); } }
+  @keyframes toShine { 0%, 40% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+  @keyframes toStar { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-6deg) scale(1.08); } }
+  @media (prefers-reduced-motion: reduce) {
+    .top-offer, .top-offer::after, .top-offer .to-badge { animation: none; }
+  }
+  .top-offer-sheet .to-sub { font-weight: 600; margin-bottom: 12px; }
+  .top-offer-sheet .to-list { display: flex; flex-direction: column; gap: 12px; }
+  .top-offer-sheet .to-card { display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: 14px;
+    border: 1px solid var(--hairline, rgba(0,0,0,.08)); }
+  .top-offer-sheet .to-card img, .top-offer-sheet .to-noimg { width: 84px; height: 84px; object-fit: cover;
+    border-radius: 12px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 34px; }
+  .top-offer-sheet .to-name { font-weight: 700; }
+  .top-offer-sheet .to-price { margin: 4px 0 8px; }
+  .top-offer-sheet .to-price s { opacity: .6; }
+  .top-offer-sheet .to-pct { background: #ee0979; color: #fff; border-radius: 999px; padding: 1px 7px; font-size: 12px; }
+  .top-offer-sheet .to-btns { display: flex; gap: 8px; }
+  .top-offer-sheet .to-add, .top-offer-sheet .to-view { border: 0; border-radius: 10px; padding: 8px 12px;
+    font: inherit; font-weight: 700; cursor: pointer; }
+  .top-offer-sheet .to-add { background: #ee0979; color: #fff; }
+  .top-offer-sheet .to-view { background: var(--hairline, rgba(0,0,0,.08)); color: inherit; }
   .promo-banner {
     display: flex;
     align-items: center;
@@ -4258,6 +4299,14 @@
        "barcha mahsulotlarni saytda eng tepada"). Filled by renderHomePage. -->
   <!-- A new recipe every 2 days, first thing on the page (owner, 2026-10-08:
        "retseptni eng yuqoriga qo'shishimiz kerak"). Filled by loadRecipes. -->
+  <!-- ⭐ TOP takliflar (owner, 2026-11-26: "steviyalarni saytda top mahsulotlar deb pop up
+       chiqar va saytni eng tepasida animatsiya bilan tursin"). /api/top-offers; aksiya
+       tugasa yoki tugasa — o'zi yashirinadi. -->
+  <button class="top-offer" id="top-offer-banner" type="button" hidden onclick="openTopOffers()">
+    <span class="to-badge">⭐ TOP</span>
+    <span class="to-text" id="top-offer-text"></span>
+    <span class="to-go">›</span>
+  </button>
   <div id="home-recipe"></div>
   <div id="home-top-carousel"></div>
   <!-- 10% for ordering through the bot (bot_discount.py) — right under the
@@ -4512,6 +4561,19 @@
 </div>
 
 <!-- ===== AKSIYA SHEET ===== -->
+<div class="modal-overlay" id="top-offer-modal" onclick="if(event.target===this)closeTopOffers()">
+  <div class="modal top-offer-sheet">
+    <div class="modal-header">
+      <h2 id="top-offer-title"></h2>
+      <button class="modal-close" onclick="closeTopOffers()">&times;</button>
+    </div>
+    <div class="detail-body">
+      <div class="to-sub" id="top-offer-sub"></div>
+      <div class="to-list" id="top-offer-list"></div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="promo-modal">
   <div class="modal">
     <div class="modal-header">
@@ -5716,6 +5778,11 @@ const L = {
     promoDaysLeft: '{n} kun qoldi',
     promoStrip: '🎁 Aksiya: {name} — batafsil',
     promoRules: 'Bonus mahsulotlar',
+    topOfferTitle: '⭐ TOP mahsulotlar',
+    topOfferSub: 'Eng ko\'p olinadigan steviyalar — hozir katta chegirmada. Ulgurib qoling!',
+    topOfferAdd: '🛒 Savatga',
+    topOfferView: 'Batafsil',
+    topOfferOff: 'chegirma',
     promoAuto: 'Bonus savatga avtomatik qo\'shiladi — hech narsa qilishingiz shart emas.',
     cartBonusFree: 'BEPUL',
     cartGiftsTitle: '🎁 Sizga sovg\'alar',
@@ -5954,6 +6021,11 @@ const L = {
     promoDaysLeft: 'осталось {n} дн.',
     promoStrip: '🎁 Акция: {name} — подробнее',
     promoRules: 'Бонусные товары',
+    topOfferTitle: '⭐ ТОП товары',
+    topOfferSub: 'Самая популярная стевия — сейчас с большой скидкой. Успейте!',
+    topOfferAdd: '🛒 В корзину',
+    topOfferView: 'Подробнее',
+    topOfferOff: 'скидка',
     promoAuto: 'Бонус добавляется в корзину автоматически — ничего делать не нужно.',
     cartBonusFree: 'БЕСПЛАТНО',
     cartGiftsTitle: '🎁 Ваши подарки',
@@ -7230,6 +7302,7 @@ async function checkStartGate(manual) {
     categories = await api('/api/categories');
     await ketoRatePromise;
     await loadPromo();
+    loadTopOffers();
     renderCatalogCategories();
     renderViewSwitch();
     loadCatalogTiles();
@@ -7797,6 +7870,68 @@ const SiteTime = (() => {
 // the 🎁 badges on cards, and the aksiya sheet. Refreshed after every cart
 // change too, so a campaign that ends mid-session stops advertising itself.
 let promo = { active: false, trigger_ids: [] };
+
+// ⭐ TOP takliflar — eng tepadagi animatsiyali banner + kuniga bir marta popup.
+let topOffers = [];
+const TOP_SEEN_KEY = 'ks_top_offer_seen';
+
+function topOfferDay() { return new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10); }
+
+async function loadTopOffers() {
+  try { topOffers = await api('/api/top-offers'); } catch (e) { topOffers = []; }
+  const banner = document.getElementById('top-offer-banner');
+  if (!banner) return;
+  if (!Array.isArray(topOffers) || !topOffers.length) { banner.hidden = true; return; }
+  document.getElementById('top-offer-text').textContent = topOffers.map(p =>
+    p.name + (p.discount_percent ? ' −' + p.discount_percent + '%' : '')).join(' · ');
+  banner.hidden = false;
+  let seen = '';
+  try { seen = localStorage.getItem(TOP_SEEN_KEY) || ''; } catch (e) {}
+  if (seen !== topOfferDay()) {
+    setTimeout(() => {
+      if (document.querySelector('.modal-overlay.show')) return;     // boshqa oyna ochiq — xalaqit bermaymiz
+      const home = document.getElementById('page-home');
+      if (home && !home.classList.contains('active')) return;
+      openTopOffers(true);
+    }, 2500);
+  }
+}
+
+function openTopOffers(auto) {
+  if (!topOffers.length) return;
+  try { localStorage.setItem(TOP_SEEN_KEY, topOfferDay()); } catch (e) {}
+  trk(() => Trk.open('top_offer', auto ? 'auto' : 'banner'));
+  document.getElementById('top-offer-title').textContent = t.topOfferTitle;
+  document.getElementById('top-offer-sub').textContent = t.topOfferSub;
+  document.getElementById('top-offer-list').innerHTML = topOffers.map(p => {
+    const img = p.photo_url ? '<img src="' + p.photo_url + '" alt="" loading="lazy">' : '<div class="to-noimg">🌿</div>';
+    const old = p.original_price && p.original_price !== p.price
+      ? '<s>' + formatPrice(p.original_price) + '</s> ' : '';
+    return '<div class="to-card">' + img +
+      '<div class="to-info"><div class="to-name">' + escapeHtml(p.name) + '</div>' +
+      '<div class="to-price">' + old + '<b>' + formatPrice(p.price) + ' UZS</b>' +
+      (p.discount_percent ? ' <span class="to-pct">−' + p.discount_percent + '%</span>' : '') + '</div>' +
+      '<div class="to-btns"><button class="to-add" type="button" data-pid="' + p.id + '">' + t.topOfferAdd + '</button>' +
+      '<button class="to-view" type="button" data-view="' + p.id + '">' + t.topOfferView + '</button></div></div></div>';
+  }).join('');
+  document.getElementById('top-offer-modal').classList.add('show');
+}
+
+function closeTopOffers() {
+  document.getElementById('top-offer-modal').classList.remove('show');
+}
+
+document.addEventListener('click', ev => {
+  const add = ev.target.closest && ev.target.closest('#top-offer-list .to-add');
+  const view = ev.target.closest && ev.target.closest('#top-offer-list .to-view');
+  if (add) {
+    const p = topOffers.find(x => String(x.id) === add.dataset.pid);
+    if (p) quickAddToCart(p, add, 'top_offer');
+  } else if (view) {
+    closeTopOffers();
+    openDetail(Number(view.dataset.view));
+  }
+});
 
 async function loadPromo() {
   try {
