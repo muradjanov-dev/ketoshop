@@ -560,10 +560,25 @@ def _composition_fields(b: dict) -> dict:
     return out
 
 
+def discount_until_stale(product: dict, new_percent: int) -> bool:
+    """Should saving `new_percent` from the panel clear the product's end date?"""
+    until = product.get("discount_until")
+    if until is None:
+        return False
+    if int(product.get("discount_percent") or 0) != int(new_percent or 0):
+        return True
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if getattr(until, "tzinfo", None) is not None:
+        until = until.astimezone(timezone.utc).replace(tzinfo=None)
+    return until <= now
+
+
 @require_auth
 async def api_products_update(request: web.Request):
     pid = int(request.match_info["id"])
-    if not await database.get_product(pid):
+    current = await database.get_product(pid)
+    if not current:
         return _json({"error": "not found"}, status=404)
     try:
         b = await request.json()
@@ -586,7 +601,16 @@ async def api_products_update(request: web.Request):
     if "b2b_price" in b:        fields["b2b_price"] = float(b["b2b_price"] or 0)
     if "quantity" in b:         fields["quantity"] = float(b["quantity"] or 0)
     if "unit" in b:             fields["unit"] = _clean_str(b["unit"], 20) or "kg"
-    if "discount_percent" in b: fields["discount_percent"] = int(b["discount_percent"] or 0)
+    if "discount_percent" in b:
+        fields["discount_percent"] = int(b["discount_percent"] or 0)
+        # The panel has no end date. A percent set here must not inherit an old,
+        # already-passed discount_until from an earlier timed discount — it hid
+        # the discount (owner, 2026-11-26: "admin paneldan e'lon qilingan
+        # chegirmalarni hammasi ham chiqmadi": Ksantan kamedi 200gr/500g had
+        # 07.11 left on them). A new percent, or a stale date, clears it; a
+        # still-running timed discount with the same percent keeps its date.
+        if discount_until_stale(current, fields["discount_percent"]):
+            fields["discount_until"] = None
     if "image_url" in b:        fields["image_url"] = _clean_str(b["image_url"], 300)
     if "is_active" in b:        fields["is_active"] = 1 if b["is_active"] else 0
     fields.update(_composition_fields(b))
