@@ -26,8 +26,19 @@ class NoticeTest(unittest.TestCase):
         done, bot = self.tick(10)
         self.assertTrue(done)
         chats = [c.args[0] for c in bot.send_message.await_args_list]
-        self.assertEqual(chats, [6908484737, 1])
+        self.assertEqual(chats, [6908484737, 1, 2020857190, 1])
         self.assertIn("жарима қўймайди", bot.send_message.await_args_list[0].args[1])
+        paid = bot.send_message.await_args_list[2].args[1]
+        self.assertIn("229 900", paid)
+        self.assertIn("Повторно платить ничего не нужно", paid)
+
+    def test_paid_customer_ai_is_held_until_the_admins_answer(self):
+        import ai_sales
+        from datetime import datetime
+        with patch.object(cn, "AI_HOLD", {555: datetime(2099, 1, 1)}):
+            cn.hold_ai()
+        self.addCleanup(ai_sales.resume, 555)
+        self.assertTrue(ai_sales._is_paused(555))
 
     def test_not_at_night_not_twice(self):
         done, bot = self.tick(7)
