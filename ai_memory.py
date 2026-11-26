@@ -55,7 +55,9 @@ PROFILE_ORDERS = 5           # promptga tushadigan oxirgi buyurtmalar
 NOTE_MAX_CHARS = 300
 DEDUP_DAYS = 30              # bir xil gap shu muddat ichida qayta yozilmaydi
 FEEDBACK_AFTER_DAYS = 2      # yetkazilgach ishlatib ko'rishga vaqt
-FEEDBACK_WINDOW_DAYS = 60    # bundan eski xarid haqida so'ralmaydi
+# Egasi, 2026-11-26: "avval olgan mahsulotlaridan hali so'ralmaganini yana qayta hammadan so'rab
+# chiqsin" — 60 kun emas, butun xarid tarixi (bir mahsulot haqida baribir bir marta).
+FEEDBACK_WINDOW_DAYS = 365   # bundan eski xarid haqida so'ralmaydi
 
 _STATUS_LABEL = {
     "pending": "qabul qilingan", "confirmed": "tasdiqlangan", "preparing": "tayyorlanmoqda",

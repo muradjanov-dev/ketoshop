@@ -51,26 +51,27 @@ LAST_HOUR = 11                 # undan keyin boshlanmaydi (kechikkan deploy)
 PARITY = 0                     # date.toordinal() % 2 == PARITY kunlari
 SEND_DELAY = 0.06
 SETTING = "feedback_ask"
-TEXT_MAX = 300
+TEXT_MAX = 170
 GENERAL_NOTE = "Taklif so'raldi"   # ai_memory dedup — oyiga bir marta
 USAGE_TAG = " · fikr so'rash"
 
+# Egasi, 2026-11-26: "avval bizdan faloncha mahsulot olgan ekansiz, sifati Sizga ma'qul keldimi? ulardan
+# qanday mahsulotlar tayyorladingiz, biz bilan ham bo'lisha olasizmi?" — "qisqaroq xabar bo'lishi kerak".
 RULES = """Sen Keto shop jamoasi nomidan (keto, PP va glyutensiz mahsulotlar do'koni) mijozga Telegram botda
-qisqa xabar yozasan. Maqsad — u olgan mahsulot qanday bo'lganini va do'konga taklifi bormi — so'rash.
+juda qisqa xabar yozasan: u bizdan olgan mahsulot ma'qul keldimi va undan nima tayyorlaganini so'raysan.
 
-- 1–2 qisqa gap, jami 220 belgigacha. Iliq, oddiy, odamdek; «biz» nomidan. 1 ta emoji mumkin.
-- MAHSULOT berilgan bo'lsa — o'sha mahsulot nomi bilan qanday chiqqanini so'ra (masalan, nima pishirdingiz,
-  yoqdimi). MAHSULOT yo'q bo'lsa — do'konimizga qanday mahsulot qo'shishimizni yoki nimani yaxshilashimizni
-  so'ra.
-- Oxirida bir og'iz: fikri yoki taklifi biz uchun muhim, shu yerga yozsa bo'ladi.
-- Havola, narx, chegirma va'dasi, shoshiltirish yo'q. «Hurmatli mijoz», «iltimos» bilan boshlama.
+- BITTA yoki ikkita juda qisqa gap, jami 150 belgigacha. Iliq, oddiy, odamdek; «biz» nomidan. 1 ta emoji.
+- MAHSULOT berilgan bo'lsa — mazmuni shu: "Avval bizdan {mahsulot} olgandingiz — ma'qul keldimi? Nima
+  tayyorladingiz, bo'lishasizmi? 😊". O'z so'zing bilan, har safar biroz boshqacha.
+- MAHSULOT yo'q bo'lsa — do'konimizga qanday mahsulot qo'shishimizni qisqa so'ra.
+- Havola, narx, chegirma, sotuv taklifi yo'q (bu faqat savol). «Hurmatli mijoz», «iltimos» bilan boshlama.
 - Til: TIL berilgan. uz — o'zbek lotin; ru — rus. Ismini bilmaymiz — ism yozma."""
 SCHEMA = {"type": "object", "properties": {"text": {"type": "string"}},
           "required": ["text"], "additionalProperties": False}
 
 TEMPLATE = {
-    "product": ("{name} qanday chiqdi? 😊 Fikringiz yoki taklifingiz bo'lsa, shu yerga yozing — biz uchun muhim.",
-                "Как вам {name}? 😊 Если есть отзыв или пожелание — напишите сюда, нам это важно."),
+    "product": ("Avval bizdan {name} olgandingiz — ma'qul keldimi? Nima tayyorladingiz, bo'lishasizmi? 😊",
+                "Вы брали у нас {name} — понравилось? Что приготовили, поделитесь? 😊"),
     "general": ("Do'konimizga yana qanday mahsulot qo'shsak, xursand bo'lardingiz? 😊 Taklifingizni shu yerga yozing.",
                 "Какие товары нам стоит добавить в магазин? 😊 Напишите сюда — нам важно ваше мнение."),
 }
@@ -192,8 +193,14 @@ async def _mark(uid: int, topic: dict | None) -> None:
         if topic:
             await ai_memory.remember(uid, "asked", topic["name"] or str(topic["product_id"]),
                                      product_id=topic["product_id"])
-            await ai_memory.remember(uid, "eslatma", f"Biz botda «{topic['name']}» qanday chiqqanini va "
-                                                     "taklifini so'radik — javob yozsa, shunga javob ber.")
+            # Egasi, 2026-11-26: javob yozgach — yangi narsa pishirib ko'rishga, foydasini aytib
+            # sotuvga; ora-orada chegirmadan foydalanib qolishga.
+            await ai_memory.remember(uid, "eslatma", f"Biz botda «{topic['name']}» ma'qul kelganini va nima "
+                                                     "tayyorlaganini so'radik. Javob yozsa: samimiy rahmat; "
+                                                     "shu mahsulot bilan yangi bir taom g'oyasi va foydasi "
+                                                     "(bir gap); mos 1 mahsulotni muloyim taklif qil; "
+                                                     "chegirmadagisi mos bo'lsa — eslat; bitta savol bilan "
+                                                     "suhbatni davom ettir.")
         else:
             await ai_memory.remember(uid, "asked", GENERAL_NOTE)
             await ai_memory.remember(uid, "eslatma", "Biz botda do'konga qanday mahsulot qo'shishimiz haqida "

@@ -31,9 +31,13 @@ class TextTest(unittest.TestCase):
 
     def test_templates_in_every_language(self):
         topic = {"product_id": 7, "name": "Bodom uni 500gr"}
-        self.assertIn("Bodom uni 500gr qanday chiqdi?", fa.template(topic, "uz"))
-        self.assertIn("Как вам Bodom uni 500gr?", fa.template(topic, "ru"))
-        self.assertIn("қандай чиқди", fa.template(topic, "uz_cyr"))
+        # Egasi, 2026-11-26: "avval bizdan … olgan ekansiz, ma'qul keldimi? … qisqaroq".
+        uz, ru = fa.template(topic, "uz"), fa.template(topic, "ru")
+        self.assertIn("Avval bizdan Bodom uni 500gr olgandingiz — ma'qul keldimi?", uz)
+        self.assertIn("Вы брали у нас Bodom uni 500gr — понравилось?", ru)
+        self.assertLessEqual(len(uz), fa.TEXT_MAX)
+        self.assertLessEqual(len(ru), fa.TEXT_MAX)
+        self.assertIn("маъқул келдими", fa.template(topic, "uz_cyr"))
         self.assertIn("qanday mahsulot qo'shsak", fa.template(None, "uz"))
 
     def test_ai_text_is_checked(self):
