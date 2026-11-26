@@ -50,6 +50,11 @@ class SendOneTest(unittest.IsolatedAsyncioTestCase):
         async def mark2(key, text):
             self.marked2.append((key, text))
 
+        self.round3, self.marked3 = [], []
+
+        async def mark3(key, text):
+            self.marked3.append((key, text))
+
         for p in [
             patch.object(database, "get_meta_comments_state", AsyncMock(side_effect=lambda: dict(self.state))),
             patch.object(database, "meta_comment_followup_stats", AsyncMock(side_effect=lambda d: self.stats)),
@@ -61,6 +66,11 @@ class SendOneTest(unittest.IsolatedAsyncioTestCase):
             patch.object(database, "meta_comment_followup2_candidates",
                          AsyncMock(side_effect=lambda d, n: self.round2[:n])),
             patch.object(database, "mark_meta_comment_followup2", mark2),
+            patch.object(database, "meta_comment_followup3_stats",
+                         AsyncMock(return_value={"today": 0, "total": 0})),
+            patch.object(database, "meta_comment_followup3_candidates",
+                         AsyncMock(side_effect=lambda d, n: self.round3[:n])),
+            patch.object(database, "mark_meta_comment_followup3", mark3),
             patch.object(mc, "load_token", AsyncMock()), patch.object(mc, "token", lambda: "T"),
             patch.object(mc, "identity", AsyncMock(return_value={"page_token": "T"})),
             patch.object(mc, "reply_public", reply_public),
@@ -148,6 +158,15 @@ class SendOneTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sent, [("c7", self.texts["c7"])])
         self.assertEqual(self.marked2, [(7, self.texts["c7"])])
         self.assertEqual(self.marked, [])                       # first-round marks untouched
+
+    async def test_third_round_bilasizmi_after_the_second(self):
+        # Egasi, 2026-11-26: "avvalgi 1 oy avval yozilganlar yoki umuman yozilmaganlarga ham ... qayta yoz".
+        self.candidates, self.round2 = [], []
+        self.round3 = [dict(row(9, "c9"), followup2_text="Telegram'da «ketoshop_uz» ...")]
+        self.texts = {"c9": "Bilasizmi? Kepak tolaga boy 🌿 Yangiliklar @ketoshop_uz kanalimizda."}
+        self.assertEqual(await cf.send_one(None, NOON), "sent")
+        self.assertEqual(self.marked3, [(9, self.texts["c9"])])
+        self.assertEqual(self.marked2, [])
 
 
 class PaceTest(unittest.TestCase):

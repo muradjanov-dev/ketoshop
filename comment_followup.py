@@ -53,6 +53,9 @@ HOURS = (8, 23)                  # Toshkent: 08:00–22:59
 # tashlab beramiz"): javob olgan har bir odamga yana bir marta, do'konga shu yo'l bilan.
 # Izohi yoki birinchi qayta xabari ROUND2_MIN_DAYS kundan yangi bo'lsa — hali emas.
 ROUND2_MIN_DAYS = max(1, int(os.getenv("COMMENT_FOLLOWUP2_MIN_DAYS", "3")))
+# Uchinchi (egasi, 2026-11-26): «Bilasizmi?» + aksiyalar + kanal — ikkinchisini olganlarga
+# ROUND3_MIN_DAYS kundan keyin, umuman javob olmaganlarga ham (database.*followup3*).
+ROUND3_MIN_DAYS = max(1, int(os.getenv("COMMENT_FOLLOWUP3_MIN_DAYS", "5")))
 NEW_PRODUCT_DAYS = 45
 TRIES_PER_TICK = 3               # AI "yozmaymiz" desa — keyingi odam
 
@@ -136,12 +139,19 @@ async def _candidates() -> tuple[list[dict], bool]:
     rows = await database.meta_comment_followup_candidates(DAYS, TRIES_PER_TICK)
     if rows:
         return rows, False
-    return await database.meta_comment_followup2_candidates(ROUND2_MIN_DAYS, TRIES_PER_TICK), True
+    rows = await database.meta_comment_followup2_candidates(ROUND2_MIN_DAYS, TRIES_PER_TICK)
+    if rows:
+        return rows, True
+    rows = await database.meta_comment_followup3_candidates(ROUND3_MIN_DAYS, TRIES_PER_TICK)
+    # Uchinchi bosqich: oldingi qayta xabar AI'ga beriladi — takrorlamasin.
+    return [dict(r, followup_text=r.get("followup2_text") or r.get("followup_text"), round=3)
+            for r in rows], True
 
 
 async def _sent_today() -> int:
     return ((await database.meta_comment_followup_stats(DAYS))["today"]
-            + (await database.meta_comment_followup2_stats(ROUND2_MIN_DAYS))["today"])
+            + (await database.meta_comment_followup2_stats(ROUND2_MIN_DAYS))["today"]
+            + (await database.meta_comment_followup3_stats())["today"])
 
 
 async def send_one(bot: Bot | None, now: datetime | None = None) -> str:
@@ -160,6 +170,8 @@ async def send_one(bot: Bot | None, now: datetime | None = None) -> str:
     if not candidates:
         return "none"
     mark = database.mark_meta_comment_followup2 if second else database.mark_meta_comment_followup
+    if candidates and candidates[0].get("round") == 3:
+        mark = database.mark_meta_comment_followup3
     kb = comment_ai.kb_with_defaults(state.get("kb"))
     extra = (await new_products_text(), await offers_text())
     for row in candidates:
@@ -260,6 +272,9 @@ async def status_text() -> str:
         f"Navbatda: {st['queue']} kishi ({DAYS} kundan eski izohlar, har biriga bir marta)",
         f"2-bosqich (do'konga yangi yo'l, javob olgan har kimga bir marta): bugun {st2['today']} · "
         f"jami {st2['total']} · navbatda {st2['queue']} kishi",
+        f"3-bosqich («Bilasizmi?», aksiyalar, kanal; javob olmaganlarga ham): bugun "
+        f"{(await database.meta_comment_followup3_stats())['today']} · "
+        f"jami {(await database.meta_comment_followup3_stats())['total']}",
         f"Har {EVERY // 60} daqiqada navbatdagilarning hammasiga, orasida {GAP}–{GAP_MAX} soniya, "
         f"Toshkent {HOURS[0]:02d}:00–{HOURS[1]:02d}:00; Instagram cheklasa — to'xtab, o'zi davom etadi",
     ]
@@ -280,6 +295,9 @@ async def samples(limit: int = 3) -> list[tuple[dict, str | None]]:
     second = not rows
     if second:
         rows = await database.meta_comment_followup2_candidates(ROUND2_MIN_DAYS, limit)
+    if not rows:
+        rows = [dict(r, followup_text=r.get("followup2_text") or r.get("followup_text"), round=3)
+                for r in await database.meta_comment_followup3_candidates(ROUND3_MIN_DAYS, limit)]
     state = await database.get_meta_comments_state()
     kb = comment_ai.kb_with_defaults(state.get("kb"))
     extra = (await new_products_text(), await offers_text())

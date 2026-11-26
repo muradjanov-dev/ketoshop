@@ -174,7 +174,10 @@ async def dm_text_full(comment_text: str | None, dm: str | None, limit: int = DM
     ro'yxati — sig'gancha. Meta izohga faqat bitta shaxsiy xabarga ruxsat beradi;
     davomini odam javob yozgach Direct AI'si yuboradi."""
     body = _URL.sub("", (dm or "").strip()).strip() or DEFAULT_DM
-    head = f"{body}\n\n🛍 Barcha mahsulotlarimiz va narxlari: {SHOP_LINK}"
+    # Egasi, 2026-11-26: sayt havolasi — kirishda bot va kanalga ham ulanadi (bitta o'q bilan uchta mo'ljal).
+    head = (f"{body}\n\n🛍 Barcha mahsulotlarimiz va narxlari: {SHOP_LINK}\n"
+            f"Kirganingizda Telegram kanalimizga ham ulanasiz — yangiliklar, aksiyalar va bepul retseptlar "
+            f"o'sha yerda 🌿")
     lines = []
     try:
         import database
@@ -312,6 +315,13 @@ FAKTLAR
 - Narx so'ralsa: mahsulot (izohdan, POST MATNIdan yoki rasmdan) katalogda aniq topilsa — nomi va narxini
   ayt. Aniqlab bo'lmasa — narxlar @ketoshopbot da ekanini va Direct'ga havola yuborganimizni ayt
   (confident=true). Narxni taxmin qilma.
+- AKSIYA VA CHEGIRMA (egasi, 2026-11-26): KATALOG qatorida «CHEGIRMA» bo'lsa — narxni oddiy narx deb
+  ("narxi 45 000 so'm") aytma: hozir aksiyada ekanini ayt — eski narx → yangi narx va foiz (masalan "hozir
+  aksiyada: 56 000 emas, 45 000 so'm, −20%"); muddati yozilgan bo'lsa — qachongacha. So'ng CHEGIRMADAGILAR
+  ro'yxatidan yana 1–3 tasini qisqa aytib o't (nomi va foizi) va iliq CTA ber — aksiya tugaguncha ulgurib
+  qolishsin ("aksiya {sana} gacha — ulgurib qoling 🌿"). Mahsulot aksiyada bo'lmasa ham, narx, bor-yo'qligi
+  yoki mahsulot so'ralganda CHEGIRMADAGILARdan 1–2 tasini bir gap bilan eslatsang bo'ladi. Faqat ro'yxatdagi
+  chegirmalar; muddat yo'q bo'lsa sana o'ylab topma, "tez tugaydi" kabi yolg'on shoshilish yo'q.
 - Bitta odam bir xil matnni boshqalarni belgilab (@...) ko'p marta yozgan bo'lsa — mazmuniga bir marta
   javob ber; reklama yoki tarqatma bo'lsa — spam.
 - Tibbiy va'da berma ("davolaydi", "kasallikka yordam beradi", "qandni tushiradi" kabi). Sog'liq savoliga —
@@ -399,6 +409,25 @@ def product_facts(p: dict) -> str:
     return "".join(f" · {b}" for b in bits)
 
 
+def _som(n) -> str:
+    return f"{int(round(float(n or 0))):,}".replace(",", " ")
+
+
+def discount_note(p: dict) -> str:
+    """" (CHEGIRMA −20%: avval 56 000 so'm; 30.11 gacha)" yoki "" — modelga
+    narx chegirmali ekanini ko'rsatadi (oddiy narx deb aytmasin)."""
+    import database
+    pct = database.active_discount(p.get("discount_percent"), p.get("discount_until"))
+    if not pct:
+        return ""
+    until = p.get("discount_until")
+    when = ""
+    if until is not None:
+        from datetime import timedelta
+        when = f"; {(until + timedelta(hours=5)):%d.%m} gacha"
+    return f" (CHEGIRMA −{int(pct)}%: avval {_som(p.get('price'))} so'm{when})"
+
+
 async def catalog_text() -> str:
     """Jonli katalog: faol, chakana mahsulotlar va bugungi narxi (chegirma bilan)."""
     global _catalog_cache
@@ -407,14 +436,20 @@ async def catalog_text() -> str:
     import database
     import manual_order
     products = await database.admin_list_products(include_inactive=False)
-    rows = []
+    rows, sale = [], []
     for p in sorted(products, key=lambda p: (p.get("category") or "", p.get("name") or "")):
         if p.get("b2b_only"):
             continue
-        price = f"{int(round(manual_order.shelf_price(p))):,}".replace(",", " ")
-        stock = "" if float(p.get("quantity") or 0) > 0 else " (tugagan)"
-        rows.append(f"- {p.get('name')} — {price} so'm{stock}{product_facts(p)}")
+        price = _som(manual_order.shelf_price(p))
+        in_stock = float(p.get("quantity") or 0) > 0
+        stock = "" if in_stock else " (tugagan)"
+        note = discount_note(p)
+        rows.append(f"- {p.get('name')} — {price} so'm{note}{stock}{product_facts(p)}")
+        if note and in_stock:
+            sale.append(f"- {p.get('name')} — {price} so'm{note}")
     text = "\n".join(rows)
+    # Egasi, 2026-11-26: aksiyadagini oddiy narx deb aytmasin, boshqa aksiyadagilarni ham aytsin.
+    text += "\n\nCHEGIRMADAGILAR (hozir, sotuvda)\n" + ("\n".join(sale) if sale else "hozir yo'q")
     _catalog_cache = (time.monotonic(), text)
     return text
 
@@ -704,6 +739,13 @@ mahsulotlarimizning katta assortimenti Telegram botimiz va saytimizda; Telegram'
 qidirsangiz chiqadi, yoki Direct'ga yozsangiz havolasini tashlab beramiz. Pastdagi "@ketoshopbot da" degan
 gaplar o'rniga shuni ayt. "OLDINGI QAYTA XABARIMIZ" berilgan bo'lsa — uni takrorlama, boshqacha yoz.
 
+BILASIZMI (egasi, 2026-11-26): ko'p xabarni «Bilasizmi?» bilan boshla va eski izoh yoki post mavzusiga mos
+bitta qiziqarli, foydali fakt ayt — mahsulot qanday ishlatiladi, nimasi bilan foydali, qaysi taomga mos
+(faqat BILIM BAZASI va KATALOGdagi faktlar: «100 g: …», «tarkibi: …»). Keyin bepul retsept va do'konga yo'l:
+yangiliklar, yangi mahsulotlar va aksiyalarni asosan Telegram kanalimiz {kanal}, botimiz va saytimizda e'lon
+qilyapmiz — o'tkazib yubormaslik uchun ulanib olishga iliq taklif; Direct'ga yozsa sayt havolasini tashlab
+beramiz. Har safar boshqacha yoz; shikoyat va sog'liq savolida «Bilasizmi?» ishlatma.
+
 KIM NOMIDAN: har doim "biz" — Keto shop jamoasi ("ko'rdingizmi", "xursand bo'lamiz", "bizda bor").
 
 NIMA YOZISH — ESKI IZOH mazmuniga qarab bittasini tanla:
@@ -722,13 +764,17 @@ NIMA YOZISH — ESKI IZOH mazmuniga qarab bittasini tanla:
 - Sog'liq savoli bo'lsa: javob topdimi deb so'ra, yana savoli bo'lsa yozishini ayt. Tibbiy va'da yo'q,
   mahsulot reklamasi yo'q.
 - AKSIYA berilgan bo'lsa va odamning qiziqishiga mos kelsa — bir gap bilan ayt. Boshqa chegirma o'ylab topma.
+- CHEGIRMA (egasi, 2026-11-26): eslatilgan mahsulot KATALOGda «CHEGIRMA» bilan bo'lsa — oddiy narx deb aytma:
+  "hozir aksiyada: eski → yangi narx, −N%" (muddati bo'lsa — qachongacha). CHEGIRMADAGILARdan yana 1–2 tasini
+  qisqa aytib o't va iliq CTA: aksiya tugaguncha ulgurib qolishsin. Faqat ro'yxatdagi chegirmalar va sanalar.
 
 MANIPULYATSIYASIZ
 - Shoshiltirma ("faqat bugun", "tez tugaydi", "oxirgi imkoniyat" yo'q), qo'rqitma, aybdor his qildirma.
+  Istisno: CHEGIRMADAGILAR ro'yxatidagi haqiqiy aksiya muddatini aytib "ulgurib qoling" — mumkin.
 - "Sotib oling", "buyurtma bering" deb buyurma — faqat taklif va savol. Ortiqcha maqtov va mubolag'a yo'q.
 - Avval foyda: xabarda albatta bitta foydali narsa bo'lsin (maslahat, retsept g'oyasi, qanday ishlatish);
   mahsulot — faqat o'rinli bo'lsa, qo'shimcha sifatida.
-- Bir xabarda ko'pi bilan bitta savol. 1–3 gap, 1–2 emoji. Har xabar o'ziga xos bo'lsin, shablon emas.
+- Bir xabarda ko'pi bilan bitta savol. 2–4 qisqa gap, 1–2 emoji. Har xabar o'ziga xos bo'lsin, shablon emas.
 - Faqat KATALOG, YANGI MAHSULOTLAR, AKSIYA va BILIM BAZASIdagi faktlar. Narxni faqat so'ralgan mahsulotga ayt.
 - Tabiiy yoz: "iltimos" faqat aniq bir ish so'raganda va o'rinli bo'lsa, ko'pi bilan bir marta; taklif va
   ma'lumotda kerak emas. "Iltimos", "agar xohlasangiz", "imkoningiz bo'lsa" ni bir gapda qo'shma.
@@ -758,7 +804,7 @@ def followup_prompt(c: dict, days_ago: int) -> str:
     return (f"{platform} · {where}\nIzoh muallifi: {c.get('username') or 'mijoz'}\n"
             f"Izoh yozilgan: taxminan {days_ago} kun oldin\n\n{post}"
             f"ESKI IZOH:\n{(c.get('text') or '').strip()[:1000]}\n\n"
-            f"O'SHANDA BIZ YOZGAN JAVOB:\n{ours[:500] or '—'}"
+            f"O'SHANDA BIZ YOZGAN JAVOB:\n{ours[:500] or '— (javob bermaganmiz: kechikkanimiz uchun qisqa uzr so‘ra, savoli bo‘lsa javob ber)'}"
             + (f"\n\nOLDINGI QAYTA XABARIMIZ:\n{(c.get('followup_text') or '').strip()[:500]}"
                if (c.get("followup_text") or "").strip() else ""))
 
