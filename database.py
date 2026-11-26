@@ -2908,8 +2908,10 @@ async def add_b2b_order(admin_user_id: int, company_name: str,
     Lives in the same orders table as manual orders (source='b2b') so it
     feeds the same items-based analytics, but has no phone/address/delivery —
     a B2B sale is a company-to-company transaction the admin is just logging
-    for the books, not something Ketoshop couriers deliver. Always recorded
-    as already 'delivered' for the same reason. Excluded from top-products /
+    for the books. Since 2026-11-26 (owner: "yangi ulgurji buyurtmalar
+    kiritilganda ularni statusi darxol yetkazildi bo'lib qolyapti, ularni ham
+    statusi boshqalari kabi bo'lsin") it starts as 'confirmed' and moves on
+    through Yo'lda → Yetkazildi like any other order. Excluded from top-products /
     top-active-customer analytics the same way manual test orders are, since
     `user_id` here is the admin who logged it, not the buyer (see
     LEADERBOARD_EXCLUDED_USER_IDS) — but counted in get_admin_stats' revenue
@@ -2920,9 +2922,8 @@ async def add_b2b_order(admin_user_id: int, company_name: str,
             items_data = await _snapshot_order_costs(conn, items_data)
             order_id = await conn.fetchval(
                 """INSERT INTO orders (user_id, customer_name, phone, items, total, status,
-                                        source, confirmed_at, shipped_at, delivered_at, b2b_customer_id)
-                   VALUES ($1, $2, $3, $4, $5, 'delivered', 'b2b',
-                           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $6)
+                                        source, confirmed_at, b2b_customer_id)
+                   VALUES ($1, $2, $3, $4, $5, 'confirmed', 'b2b', CURRENT_TIMESTAMP, $6)
                    RETURNING id""",
                 admin_user_id, company_name, phone,
                 json.dumps(items_data, ensure_ascii=False), total, b2b_customer_id,
@@ -2961,9 +2962,8 @@ async def add_b2b_eritritol_order(admin_user_id: int, address: str, phone: str,
         
         order_id = await conn.fetchval(
             """INSERT INTO orders (user_id, customer_name, address, phone, items, total, status,
-                                    source, confirmed_at, shipped_at, delivered_at, b2b_customer_id)
-               VALUES ($1, $2, $3, $4, $5, $6, 'delivered', 'b2b',
-                       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $7)
+                                    source, confirmed_at, b2b_customer_id)
+               VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', 'b2b', CURRENT_TIMESTAMP, $7)
                RETURNING id""",
             admin_user_id, customer_name or 'B2B Eritritol', address, phone,
             json.dumps(items_data, ensure_ascii=False), total, b2b_customer_id,

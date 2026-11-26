@@ -1737,8 +1737,11 @@ async def handle_order_action(callback: CallbackQuery, bot: Bot):
     import order_admin_feed
     order_admin_feed.status_changed(bot, order_id, old_status, new_status, callback.from_user)
 
-    # Notify buyer with a status-specific message
-    if order:
+    # Notify buyer with a status-specific message. A manual or wholesale (B2B)
+    # order was keyed in by an admin: its user_id is that admin, not a buyer in
+    # the chat — "your order is on its way" would land on the admin (2026-11-26,
+    # B2B orders now go through the statuses too).
+    if order and (order.get("source") or "bot") not in ("manual", "b2b"):
         buyer_lang = await get_user_language(order["user_id"])
         buyer_key = {
             "confirmed": "buyer_order_confirmed",
