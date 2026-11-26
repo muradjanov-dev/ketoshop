@@ -20,6 +20,7 @@ class TextTest(unittest.TestCase):
         self.assertIn("1. 👤 A", many)
         self.assertIn("2. 👤 B", many)
         self.assertTrue(rc.digest_text(["👤 A"]).startswith("🆕 <b>Yangi foydalanuvchi qo'shildi!</b>"))
+        self.assertTrue(rc.digest_text(["👤 A"], 1234).endswith("👥 Jami foydalanuvchilar: <b>1 234</b> ta"))
 
 
 PG_URL = os.getenv("GAMES_PG_URL")
@@ -30,6 +31,7 @@ class PostgresTest(unittest.TestCase):
     def test_one_message_per_five_and_a_day_old_one_goes_alone(self):
         import asyncpg
         schema = "nu_" + uuid.uuid4().hex[:8]
+        self.assertEqual(rc.DIGEST_SIZE, 10)
         loop = asyncio.new_event_loop()
         bot = Mock()
         bot.send_message = AsyncMock()
@@ -39,13 +41,16 @@ class PostgresTest(unittest.TestCase):
             await admin.execute(f"CREATE SCHEMA {schema}")
             await admin.close()
             pool = await asyncpg.create_pool(PG_URL, min_size=1, max_size=2, server_settings={"search_path": schema})
+            async with pool.acquire() as c:
+                await c.execute("CREATE TABLE users (user_id BIGINT PRIMARY KEY);"
+                                "INSERT INTO users SELECT generate_series(1, 321);")
             try:
                 with patch.object(database, "pool", pool), patch.object(rc, "_digest_ready", False), \
                      patch.object(rc, "ADMIN_IDS", [1, 2]):
-                    for i in range(4):
+                    for i in range(9):
                         await rc.queue_new_user(bot, f"👤 U{i}")
                     before = bot.send_message.await_count
-                    await rc.queue_new_user(bot, "👤 U4")
+                    await rc.queue_new_user(bot, "👤 U9")
                     after_five = bot.send_message.await_count
                     await rc.queue_new_user(bot, "👤 U5")                 # waits again
                     async with pool.acquire() as c:
@@ -64,8 +69,9 @@ class PostgresTest(unittest.TestCase):
         self.assertEqual(before, 0)
         self.assertEqual(after_five, 2)                               # one message to each of 2 admins
         first = bot.send_message.await_args_list[0].args[1]
-        self.assertIn("5 ta yangi foydalanuvchi", first)
-        self.assertIn("5. 👤 U4", first)
+        self.assertIn("10 ta yangi foydalanuvchi", first)
+        self.assertIn("10. 👤 U9", first)
+        self.assertIn("👥 Jami foydalanuvchilar: <b>321</b> ta", first)
         self.assertEqual(end, 4)
         self.assertIn("2 ta yangi foydalanuvchi", bot.send_message.await_args_list[-1].args[1])
 

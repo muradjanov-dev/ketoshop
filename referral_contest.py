@@ -256,7 +256,7 @@ async def notify_admins_new_user(bot: Bot, new_user_id: int, username: str | Non
     await queue_new_user(bot, entry)
 
 
-DIGEST_SIZE = 5
+DIGEST_SIZE = 10          # owner, 2026-11-26: "xar 10 ta yangi qo'shilganda" (was 5)
 DIGEST_MAX_WAIT = timedelta(hours=24)     # a quiet day: whatever waits goes out after a day
 _digest_ready = False
 _digest_lock = asyncio.Lock()
@@ -276,10 +276,15 @@ async def _ensure_digest(conn) -> None:
     _digest_ready = True
 
 
-def digest_text(entries: list[str]) -> str:
+def digest_text(entries: list[str], total: int | None = None) -> str:
+    """`total` — every user the bot has now (owner, 2026-11-26: "oxirida umumiy
+    foydalanuvchilar sonini ham yozib qo'y")."""
     n = len(entries)
     head = f"🆕 <b>{n} ta yangi foydalanuvchi qo'shildi!</b>" if n > 1 else "🆕 <b>Yangi foydalanuvchi qo'shildi!</b>"
-    return head + "\n\n" + "\n\n".join(f"{i}. {e}" if n > 1 else e for i, e in enumerate(entries, 1))
+    text = head + "\n\n" + "\n\n".join(f"{i}. {e}" if n > 1 else e for i, e in enumerate(entries, 1))
+    if total:
+        text += f"\n\n👥 Jami foydalanuvchilar: <b>{total:,}</b> ta".replace(",", " ")
+    return text
 
 
 async def queue_new_user(bot: Bot, entry: str) -> None:
@@ -300,13 +305,14 @@ async def queue_new_user(bot: Bot, entry: str) -> None:
                 rows = await conn.fetch(
                     """UPDATE new_user_digest SET sent_at = NOW() AT TIME ZONE 'UTC'
                        WHERE sent_at IS NULL RETURNING id, entry""")
+                total = await conn.fetchval("SELECT COUNT(*) FROM users")
     except Exception:
         logger.exception("new-user digest failed — sending this one alone")
-        rows = [{"id": 0, "entry": entry}]
+        rows, total = [{"id": 0, "entry": entry}], None
     entries = [r["entry"] for r in sorted(rows, key=lambda r: r["id"])]
     if not entries:
         return
-    text = digest_text(entries)
+    text = digest_text(entries, total)
     for admin_id in ADMIN_IDS:
         try:
             await bot.send_message(admin_id, text, parse_mode=ParseMode.HTML)
