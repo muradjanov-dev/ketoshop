@@ -98,3 +98,28 @@ class GuardTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SafePaceTest(unittest.TestCase):
+    """Egasi, 2026-11-26: "o'zing xavfsizlik ... har necha daqiqada yozish kerakligini aniqla"."""
+
+    def test_careful_pace_after_the_warning(self):
+        self.assertGreaterEqual(ig_guard.MIN_GAP, 180)
+        self.assertGreater(ig_guard.MAX_GAP, ig_guard.MIN_GAP)
+        self.assertLessEqual(ig_guard.HOURLY, 10)
+        self.assertLessEqual(ig_guard.DAILY, 60)
+
+    def test_resume_once_turns_everything_back_on(self):
+        import comment_followup as cf
+        import database
+        import ig_direct
+        claimed = AsyncMock(side_effect=[True, False])
+        with patch.object(database, "claim_release_notes", claimed), \
+                patch.object(database, "set_meta_comments_followup", AsyncMock()) as follow, \
+                patch.object(ig_direct, "set_enabled", AsyncMock()) as direct, \
+                patch.object(ig_guard, "resume", AsyncMock()) as resume:
+            self.assertTrue(_run(cf.resume_safely_once()))
+            self.assertFalse(_run(cf.resume_safely_once()))
+        follow.assert_awaited_once_with(True)
+        direct.assert_awaited_once_with(True)
+        resume.assert_awaited_once()
