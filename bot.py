@@ -299,6 +299,8 @@ async def main():
     dp.include_router(gemini_compare_router)
     from ai_balance import router as ai_balance_router
     dp.include_router(ai_balance_router)
+    from ig_guard import router as ig_guard_router
+    dp.include_router(ig_guard_router)
     dp.include_router(webapp_data_router)
     # 📞 /callcentre — operator va adminlar uchun CRM eshigi (call_centre_bot.py).
     from call_centre_bot import router as call_centre_router

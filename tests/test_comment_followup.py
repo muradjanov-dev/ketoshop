@@ -171,17 +171,16 @@ class SendOneTest(unittest.IsolatedAsyncioTestCase):
 
 class PaceTest(unittest.TestCase):
     def test_everyone_waiting_but_at_a_human_pace(self):
-        # Egasi, 2026-11-16: "har 10 daqiqada yozilmagan hammasiga yoz" + "bloklash xavfiga yaqinlashmasin".
-        self.assertEqual(cf.EVERY, 600)
-        self.assertGreaterEqual(cf.GAP, 90)                             # ≤ ~40 replies an hour
+        # Egasi, 2026-11-26: "suspicious action deb keldi ... akauntni 100% xavfsiz holatda".
+        self.assertGreaterEqual(cf.GAP, 600)                            # ≥ 10 daqiqa orasida
         self.assertGreater(cf.GAP_MAX, cf.GAP)                          # random, not a machine rhythm
-        self.assertLessEqual(cf.DAILY, 200)
-        self.assertEqual(cf.HOURS, (8, 23))
+        self.assertLessEqual(cf.DAILY, 20)
+        self.assertEqual(cf.HOURS, (10, 21))
 
     def test_resumes_by_itself_after_an_instagram_block(self):
         # Egasi, 2026-11-16: "to'xtab qolsa avtomatik davom etishi kerak ochilgandan keyin".
-        self.assertEqual(cf.next_wait(0), cf.EVERY)                    # normal: every 10 minutes
-        self.assertEqual([cf.next_wait(n) for n in (1, 2, 3)], [1200, 2400, 4800])
+        self.assertEqual(cf.next_wait(0), cf.EVERY)
+        self.assertEqual([cf.next_wait(n) for n in (1, 2)], [cf.EVERY * 2, min(cf.MAX_BACKOFF, cf.EVERY * 4)])
         self.assertEqual(cf.next_wait(10), cf.MAX_BACKOFF)             # never longer than 2 hours
 
     def test_admin_api_shows_the_progress(self):
