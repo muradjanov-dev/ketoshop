@@ -757,6 +757,70 @@ class AiChequeTest(unittest.TestCase):
             self.orders = [order]
             self.assertFalse(_run(ai_sales._cheque_filter(self._photo())), order)
 
+    def test_button_or_site_card_order_without_a_cheque_is_the_target(self):
+        # Egasi, 2026-11-26: "nega bu mijozni cheki buyurtma bo'lib kelmadi" — online buyurtmalar
+        # ilgari umuman ko'rilmas edi.
+        self.orders = [self._order(payment_method="online", address_note="Yunusobod")]
+        self.assertEqual(_run(ai_sales._cheque_filter(self._photo())), {"cheque_order": 4242})
+
+    def _unlinked(self, pending=None, orders=()):
+        self.orders = list(orders)
+        _patch(self, database, "get_pending_checkout", AsyncMock(return_value=pending))
+        _patch(self, database, "get_cart", AsyncMock(return_value=[]))
+        _patch(self, ai_sales.ai_dialog, "recent", AsyncMock(return_value=[]))
+        bot = NS(send_photo=AsyncMock(), send_document=AsyncMock(), send_message=AsyncMock())
+        user = NS(id=777, full_name="Test", username=None)
+        buyer = NS(from_user=user, answer=AsyncMock())
+        _run(ai_sales._accept_cheque(buyer, bot, "document", "FILE", None))
+        return bot, buyer
+
+    def test_unlinked_cheque_card_offers_the_pending_checkout_and_asks_the_buyer(self):
+        pending = {"created_at": self.now, "data": {"pending_items": [{"name": "Bodom uni", "quantity": 2}],
+                                                    "pending_total": 229900}}
+        old = self._order(id=17, payment_method="cash", address_note=None)
+        bot, buyer = self._unlinked(pending, [old])
+        card = bot.send_message.await_args
+        self.assertIn("229 900", card.args[1])
+        self.assertIn("Bodom uni ×2", card.args[1])
+        buttons = [b.callback_data for row in card.kwargs["reply_markup"].inline_keyboard for b in row]
+        self.assertEqual(buttons, ["chekbog:new:777", "chekbog:17:777"])
+        self.assertIn("qanday bergandingiz", buyer.answer.await_args.args[0])
+        self.attach.assert_not_awaited()
+
+        # Mijozning javobi adminlarga boradi, AI esa qayta to'lov so'ramaydi.
+        to_admins = AsyncMock()
+        _patch(self, ai_sales, "_cheque_reply_to_admins", to_admins)
+        seen = []
+        _patch(self, ai_sales, "_respond", AsyncMock(side_effect=lambda b, m, t: seen.append(t) or ""))
+        _run(ai_sales._answer(None, _FakeMessage("Bodom uni 2 ta, tugmalar orqali", user_id=777),
+                              "Bodom uni 2 ta, tugmalar orqali"))
+        to_admins.assert_awaited_once()
+        self.assertTrue(seen[0].startswith(ai_sales.CHEQUE_CONTEXT))
+
+    def test_admin_links_the_cheque_to_an_order(self):
+        self._unlinked(None, [self._order(id=17, payment_method="cash", address_note=None)])
+        _patch(self, database, "get_order", AsyncMock(return_value={"id": 17, "user_id": 777,
+                                                                    "customer_name": "T", "address_note": ""}))
+        bot = NS(send_message=AsyncMock())
+        callback = NS(data="chekbog:17:777", from_user=NS(id=1, full_name="Admin"), answer=AsyncMock(),
+                      message=NS(html_text="card", edit_text=AsyncMock()))
+        _run(ai_sales.cb_link_cheque(callback, bot))
+        self.attach.assert_awaited_once_with(17, "FILE", "document")
+        self.forward.assert_awaited_once()
+        self.assertIn("#17", bot.send_message.await_args.args[1])
+
+    def test_admin_creates_the_order_from_the_pending_checkout(self):
+        self._unlinked({"created_at": self.now, "data": {}}, [])
+        import handlers.cart as cart
+        make = AsyncMock(return_value=99)
+        _patch(self, cart, "create_order_from_pending", make)
+        bot = NS(send_message=AsyncMock())
+        callback = NS(data="chekbog:new:777", from_user=NS(id=1, full_name="Admin"), answer=AsyncMock(),
+                      message=NS(html_text="card", edit_text=AsyncMock()))
+        _run(ai_sales.cb_link_cheque(callback, bot))
+        make.assert_awaited_once_with(bot, 777, "FILE", "document")
+        self.assertIn("#99", bot.send_message.await_args.args[1])
+
     def test_admin_photos_and_plain_text_are_not_cheques(self):
         self.orders = [self._order()]
         self.assertFalse(_run(ai_sales._cheque_filter(self._photo(user_id=1))))

@@ -994,6 +994,14 @@ async def init_db():
             import logging
             logging.getLogger(__name__).info("Half-pack cart lines rounded up: %s", fixed)
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_cart_reserved_until ON cart(reserved_until)")
+        # Karta checkout'i chek kutayotganda nusxa (save_pending_checkout).
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS pending_checkouts (
+                user_id BIGINT PRIMARY KEY,
+                data JSONB NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC')
+            )
+        """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS cart_release_notices (
                 id SERIAL PRIMARY KEY,
@@ -2122,6 +2130,38 @@ async def cart_hold_until(user_id: int):
             user_id)
 
 
+PENDING_CHECKOUT_HOURS = 24
+
+
+async def save_pending_checkout(user_id: int, data: dict) -> None:
+    """Karta checkout'i chek kutyapti — savat, summa, manzil nusxasi (FSM dan
+    tashqari). Chek keyin chatga kelsa yoki holat yo'qolsa ham, admin shu
+    ma'lumotdan buyurtma yaratadi (2026-11-26, 229 900 so'm to'lagan mijoz)."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            f"""INSERT INTO pending_checkouts (user_id, data, created_at)
+                VALUES ($1, $2::jsonb, {_NOW_UTC})
+                ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data, created_at = EXCLUDED.created_at""",
+            user_id, json.dumps(data, ensure_ascii=False, default=str))
+
+
+async def get_pending_checkout(user_id: int, max_age_hours: int = 72) -> dict | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""SELECT data, created_at FROM pending_checkouts
+                 WHERE user_id = $1 AND created_at > {_NOW_UTC} - make_interval(hours => $2)""",
+            user_id, int(max_age_hours))
+    if row is None:
+        return None
+    data = row["data"]
+    return {"data": json.loads(data) if isinstance(data, str) else dict(data), "created_at": row["created_at"]}
+
+
+async def clear_pending_checkout(user_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM pending_checkouts WHERE user_id = $1", user_id)
+
+
 async def release_expired_holds() -> list[dict]:
     """Take lines whose hold ran out out of the carts — back on sale — and
     queue one notice per buyer (cart_reservations.py sends them in daytime).
@@ -2132,6 +2172,10 @@ async def release_expired_holds() -> list[dict]:
                 WITH gone AS (
                     DELETE FROM cart
                      WHERE reserved_until IS NOT NULL AND reserved_until <= {_NOW_UTC}
+                       -- To'lov qadamida chek kutilayotgan mijozning savati bo'shatilmaydi
+                       -- (2026-11-26: "товары вернулись в продажу" xabari to'lagan mijozni chalg'itdi).
+                       AND user_id NOT IN (SELECT user_id FROM pending_checkouts
+                                            WHERE created_at > {_NOW_UTC} - INTERVAL '{PENDING_CHECKOUT_HOURS} hours')
                      RETURNING user_id, product_id, set_id, quantity)
                 SELECT g.user_id, g.quantity::float AS quantity, g.set_id IS NOT NULL AS is_set,
                        COALESCE(p.name, s.name) AS name, COALESCE(p.name_ru, s.name_ru) AS name_ru,

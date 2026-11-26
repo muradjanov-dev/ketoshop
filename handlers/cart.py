@@ -2230,6 +2230,16 @@ async def _create_and_process_order(callback: CallbackQuery, state: FSMContext, 
             pending_pickup_map_url=data.get("pickup_map_url"),
             pending_post_office=data.get("post_office_line"),
         )
+        # FSM dan tashqari nusxa: chek keyin oddiy chatga kelsa yoki holat yo'qolsa ham,
+        # admin shundan buyurtma yaratadi; shu payt savat bo'shatilmaydi (2026-11-26).
+        try:
+            from database import save_pending_checkout
+            snapshot = {k: v for k, v in (await state.get_data()).items() if k.startswith("pending_")}
+            snapshot["lang"] = lang
+            await save_pending_checkout(callback.from_user.id, snapshot)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning("pending checkout not saved", exc_info=True)
 
         cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=get_text("btn_cancel_checkout", lang),
@@ -2393,6 +2403,7 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
 
     await state.clear()
     await set_order_cheque(order_id, cheque_file_id, cheque_kind)
+    await _drop_pending_checkout(message.from_user.id)
 
     if low_stock:
         await notify_low_stock(bot, low_stock)
@@ -2424,6 +2435,72 @@ async def _finalize_online_order(message: Message, state: FSMContext, bot: Bot,
                             data.get("pending_delivery_method"))
     await _tell_ai(bot, message.from_user, data, "placed", order_id=order_id,
                    items=items_data, total=total, payment_method="online")
+
+
+async def _drop_pending_checkout(user_id: int) -> None:
+    try:
+        from database import clear_pending_checkout
+        await clear_pending_checkout(user_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("pending checkout not cleared for %s", user_id, exc_info=True)
+
+
+async def create_order_from_pending(bot: Bot, user_id: int, cheque_file_id: str, cheque_kind: str) -> int | None:
+    """Admin «📦 To'lov qadamidagi savatdan buyurtma yaratish» ni bosdi: chek
+    chatga alohida kelgan (yoki checkout holati yo'qolgan), lekin to'lov
+    qadamidagi nusxa bor — o'sha mahsulot, summa va manzil bilan karta buyurtmasi
+    yaratiladi, chek biriktiriladi, adminlarga va sotuvchilarga odatdagidek
+    boradi. None — nusxa yo'q. Ombor yetmasa InsufficientStockError ko'tariladi."""
+    from database import get_pending_checkout
+    pending = await get_pending_checkout(user_id)
+    if not pending:
+        return None
+    data = pending["data"]
+    items_data = data.get("pending_items") or []
+    if not items_data:
+        return None
+    customer_name = data.get("pending_customer_name") or "—"
+    total = data["pending_total"]
+    order_id, low_stock = await create_order(
+        user_id=user_id,
+        customer_name=customer_name,
+        phone=data.get("pending_phone") or "-",
+        address=data.get("pending_address") or "-",
+        items=items_data,
+        total=total,
+        payment_method="online",
+        latitude=data.get("pending_latitude"),
+        longitude=data.get("pending_longitude"),
+        delivery_method=data.get("pending_delivery_method"),
+        address_note=data.get("pending_address_note"),
+        secondary_phone=data.get("pending_secondary_phone"),
+        keto_redeem=0,
+        pickup_map_url=data.get("pending_pickup_map_url"),
+        post_office=data.get("pending_post_office"),
+    )
+    await set_order_cheque(order_id, cheque_file_id, cheque_kind)
+    await _drop_pending_checkout(user_id)
+    if low_stock:
+        await notify_low_stock(bot, low_stock)
+    await _forward_cheque_to_admins(bot, order_id, customer_name, cheque_kind, cheque_file_id)
+    lang = data.get("lang") or "uz"
+    await _notify_sellers(bot, order_id, items_data, {
+        "customer_name": customer_name,
+        "phone": data.get("pending_phone"),
+        "secondary_phone": data.get("pending_secondary_phone"),
+        "address": data.get("pending_address"),
+        "address_note": data.get("pending_address_note"),
+        "total": total,
+        "latitude": data.get("pending_latitude"),
+        "longitude": data.get("pending_longitude"),
+        "user_id": user_id,
+        "username": None,
+        "delivery_method": data.get("pending_delivery_method"),
+        "payment_method": "online",
+        "pickup_map_url": data.get("pending_pickup_map_url"),
+    }, lang)
+    return order_id
 
 
 @router.message(CheckoutStates.waiting_cheque, F.photo)
@@ -2514,6 +2591,7 @@ async def cancel_online_checkout(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     lang = data.get("lang", "uz")
     await state.clear()
+    await _drop_pending_checkout(callback.from_user.id)
     await _tell_ai(callback.bot, callback.from_user, data, "cancelled")
     await callback.message.edit_text(
         get_text("checkout_cancelled", lang),

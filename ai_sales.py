@@ -3182,6 +3182,11 @@ async def _answer(bot: Bot, message: Message, user_text: str, late: bool = False
     javob (missed_replies.py): xato bo'lsa adminlarga qayta kartochka emas,
     xato yuqoriga ketadi va savol navbatda qoladi."""
     user_id = message.from_user.id
+    asked = None if late else (_sessions.get(user_id) or {}).pop("cheque_unlinked", None)
+    if asked and time.time() - asked < UNLINKED_ASK_TTL:
+        # Bog'lanmagan chek egasining javobi — adminlarga ham, AI'ga esa kontekst bilan.
+        await _cheque_reply_to_admins(bot, message.from_user, user_text)
+        user_text = CHEQUE_CONTEXT + user_text
     try:
         async with _typing(bot, message.chat.id):
             reply = await _respond(bot, message, user_text)
@@ -4358,12 +4363,93 @@ async def _open_order_for_cheque(user_id: int) -> int | None:
             continue
         if order.get("status") in ("delivered", "cancelled"):
             continue
-        if order.get("payment_method") == "online" or order.get("cheque_file_id"):
+        if order.get("cheque_file_id"):
             continue
-        if "KARTA" not in (order.get("address_note") or ""):
+        # Bot tugmalari va sayt karta buyurtmasini payment_method='online' qiladi; chek
+        # checkout ichida yuklanmay qolsa (yoki mijoz chekni keyin chatga tashlasa) —
+        # shu buyurtmaniki (egasi, 2026-11-26: "nega bu mijozni cheki buyurtma bo'lib
+        # kelmadi" — ilgari online buyurtmalar umuman ko'rilmas edi).
+        note = order.get("address_note") or ""
+        if order.get("payment_method") == "online":
+            if "KARTA" in note:
+                continue      # AI karta buyurtmasi online = admin to'lovni tasdiqlagan (mark_card_paid)
+            return int(order["id"])
+        if "KARTA" not in note:
             continue   # naqd buyurtma — mijozning rasmi chek emas
         return int(order["id"])
     return None
+
+
+# Bog'lanmagan cheklar: admin kartochkasidagi «🔗 #N ga bog'lash» tugmasi uchun
+# (user_id → (kind, file_id, vaqt)). Xotirada — qayta ishga tushsa tugma eskiradi,
+# admin chekni buyurtmaga qo'lda biriktiradi.
+_unlinked_cheques: dict[int, tuple[str, str, float]] = {}
+UNLINKED_TTL = 3 * 24 * 3600
+UNLINKED_ASK_TTL = 24 * 3600
+UNLINKED_ORDER_DAYS = 14
+
+
+def _pay_label(order: dict) -> str:
+    if order.get("payment_method") == "online":
+        return "karta (tugmalar/sayt)"
+    if "KARTA" in (order.get("address_note") or ""):
+        return "karta (AI)"
+    return "naqd"
+
+
+async def _unlinked_details(user_id: int) -> tuple[str, list[dict]]:
+    """Adminga: mijozning so'nggi buyurtmalari, AI savati va oxirgi suhbati —
+    chek qaysi buyurtmaniki ekanini topish uchun. (matn, bog'lash mumkin bo'lganlar)."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    lines, linkable = [], []
+    try:
+        orders = [o for o in await database.get_user_orders(user_id)
+                  if isinstance(o.get("created_at"), datetime)
+                  and now - o["created_at"] <= timedelta(days=UNLINKED_ORDER_DAYS)]
+    except Exception:
+        logger.warning("unlinked cheque: orders unreadable for %s", user_id, exc_info=True)
+        orders = []
+    if orders:
+        lines.append(f"🔎 <b>So'nggi {UNLINKED_ORDER_DAYS} kundagi buyurtmalari:</b>")
+        for o in orders[:6]:
+            when = (o["created_at"] + timedelta(hours=5)).strftime("%d.%m %H:%M")
+            total = f"{int(round(float(o.get('total') or 0))):,}".replace(",", " ")
+            extra = " · 🧾 cheki bor" if o.get("cheque_file_id") else ""
+            lines.append(f"• #{o['id']} · {when} · {total} so'm · {_pay_label(o)} · "
+                         f"{html.escape(str(o.get('status') or '—'))}{extra}")
+            if o.get("status") != "cancelled" and not o.get("cheque_file_id"):
+                linkable.append(o)
+    else:
+        lines.append(f"🔎 So'nggi {UNLINKED_ORDER_DAYS} kunda buyurtmasi <b>yo'q</b> — buyurtma yaratilmagan "
+                     "bo'lishi mumkin (summasi chekda).")
+    try:
+        cart = await database.get_cart(user_id)
+        if cart:
+            items = ", ".join(f"{html.escape(str(c.get('name') or '—'))} ×{c.get('cart_quantity') or 1}"
+                              for c in cart[:8])
+            lines.append(f"🛒 Savatida: {items}")
+    except Exception:
+        logger.debug("unlinked cheque: cart unreadable for %s", user_id)
+    try:
+        turns = await ai_dialog.recent(user_id, limit=3)
+        if turns:
+            lines.append("💬 <b>Oxirgi suhbat:</b>")
+            for t in turns[-3:]:
+                lines.append(f"— «{html.escape(_short(t.get('question') or '', 160))}»")
+                lines.append(f"   🤖 «{html.escape(_short(t.get('answer') or '', 160))}»")
+    except Exception:
+        logger.debug("unlinked cheque: dialog unreadable for %s", user_id)
+    return "\n".join(lines), linkable
+
+
+def _link_kb(user_id: int, orders: list[dict], pending: bool = False) -> InlineKeyboardMarkup | None:
+    rows = [[InlineKeyboardButton(text=f"🔗 #{o['id']} ga bog'lash", callback_data=f"chekbog:{o['id']}:{user_id}")]
+            for o in orders[:4]]
+    if pending:
+        rows.insert(0, [InlineKeyboardButton(text="📦 To'lov qadamidagi savatdan buyurtma yaratish",
+                                             callback_data=f"chekbog:new:{user_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
 
 
 def _is_receipt(message: Message) -> bool:
@@ -4633,6 +4719,22 @@ async def _accept_cheque(buyer, bot: Bot, kind: str, file_id: str, cheque_order:
                f"👤 {html.escape(user.full_name or '')}"
                + (f" (@{html.escape(user.username)})" if user.username else "")
                + f"\n🆔 <code>{user.id}</code>\n⚠️ Buyurtmaga bog'lanmagan")
+    # Egasi, 2026-11-26 (229 900 so'm to'lagan, buyurtmasi yo'q mijoz): "shunday
+    # noaniqliklarda qanday va qaysi uslubda buyurtma qilganini ham yaxshilab aniqlab ol".
+    # Adminga: so'nggi buyurtmalari, to'lov qadamida qolgan savati, savat, suhbat va
+    # «🔗 bog'lash» / «📦 yaratish» tugmalari; mijozdan — qanday buyurtma qilgani.
+    _unlinked_cheques[user.id] = (kind, file_id, time.time())
+    try:
+        details, linkable = await _unlinked_details(user.id)
+    except Exception:
+        logger.warning("unlinked cheque details failed for %s", user.id, exc_info=True)
+        details, linkable = "", []
+    pending = await _pending_checkout(user.id)
+    if pending:
+        details = _pending_line(pending) + ("\n" + details if details else "")
+    card = (f"{caption}\n\n{details}\n\n❓ Mijozdan qanday va qaysi buyurtma uchun to'lagani so'raldi — "
+            "javobi shu yerga keladi.")
+    keyboard = _link_kb(user.id, linkable, bool(pending))
     sent = 0
     for admin_id in ADMIN_IDS:
         try:
@@ -4641,6 +4743,8 @@ async def _accept_cheque(buyer, bot: Bot, kind: str, file_id: str, cheque_order:
             else:
                 await bot.send_document(admin_id, file_id, caption=caption, parse_mode="HTML")
             sent += 1
+            await bot.send_message(admin_id, card[:4000], parse_mode="HTML", reply_markup=keyboard,
+                                   disable_web_page_preview=True)
         except Exception:
             logger.warning("Cheque forward to admin %s failed", admin_id, exc_info=True)
 
@@ -4649,8 +4753,114 @@ async def _accept_cheque(buyer, bot: Bot, kind: str, file_id: str, cheque_order:
                               "Спасибо! Чек получили, оператор скоро свяжется с вами.", lang))
         return
     await log_conversation(bot, user, "🧾 Rasm/chek yubordi (buyurtmaga bog'lanmagan)")
-    await buyer.answer(_t("✅ Sizga rahmat! Chek qabul qilindi — operatorimiz to'lovni tekshirib tasdiqlaydi.",
-                          "✅ Спасибо! Чек принят — оператор проверит оплату и подтвердит.", lang))
+    _session(user.id)["cheque_unlinked"] = time.time()
+    await buyer.answer(_t(
+        "✅ Rahmat, chekingizni oldik! Uni buyurtmangizga to'g'ri biriktirishimiz uchun ayting-chi: "
+        "buyurtmani qanday bergandingiz — botdagi tugmalar orqalimi, saytdami, shu chatda yoki operator "
+        "bilanmi? Qaysi mahsulotlar edi? 🙏",
+        "✅ Спасибо, чек получили! Чтобы правильно привязать его к заказу, подскажите: как вы оформляли "
+        "заказ — кнопками в боте, на сайте, здесь в чате или через оператора? Какие товары были? 🙏", lang))
+
+
+async def _cheque_reply_to_admins(bot: Bot | None, user, text: str) -> None:
+    """Chek egasining aniqlashtiruvchi javobi — adminlarga, chek kartochkasi yonida."""
+    if bot is None:
+        return
+    body = (f"🧾 <b>Chek egasi javob berdi</b>\n👤 {html.escape(user.full_name or '')} · "
+            f"🆔 <code>{user.id}</code>\n💬 «{html.escape(_short(text, 800))}»")
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, body, parse_mode="HTML")
+        except Exception:
+            logger.info("cheque reply → %s failed", admin_id)
+
+
+CHEQUE_CONTEXT = ("[Mijoz to'lov cheki yubordi, lekin buyurtmasi topilmadi; biz undan qanday va qaysi buyurtma "
+                  "uchun to'laganini so'radik. Bu — uning javobi. Qayta to'lov SO'RAMA va yangi buyurtma tuzma: "
+                  "rahmat ayt, ma'lumotni operatorga yetkazganimizni va to'lovni tekshirib buyurtmani "
+                  "rasmiylashtirishimizni ayt.]\n")
+
+
+async def _pending_checkout(user_id: int) -> dict | None:
+    try:
+        return await database.get_pending_checkout(user_id)
+    except Exception:
+        logger.debug("pending checkout unreadable for %s", user_id)
+        return None
+
+
+def _pending_line(p: dict) -> str:
+    data = p.get("data") or {}
+    items = ", ".join(f"{html.escape(str(i.get('name') or '—'))} ×{i.get('quantity') or 1}"
+                      for i in (data.get("pending_items") or [])[:10])
+    total = f"{int(round(float(data.get('pending_total') or 0))):,}".replace(",", " ")
+    return (f"🧺 <b>To'lov qadamida qolgan checkout</b> ({_tk_time(p.get('created_at'))}): {items} — "
+            f"<b>{total} so'm</b>, karta")
+
+
+def _tk_time(dt) -> str:
+    from datetime import datetime, timedelta
+    return (dt + timedelta(hours=5)).strftime("%d.%m %H:%M") if isinstance(dt, datetime) else "—"
+
+
+@router.callback_query(F.data.startswith("chekbog:"))
+async def cb_link_cheque(callback: CallbackQuery, bot: Bot):
+    """«🔗 #N ga bog'lash» — chek shu buyurtmaga; «📦 yaratish» — to'lov qadamida
+    qolgan checkout'dan buyurtma yaratiladi va chek biriktiriladi."""
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    _, what, uid = callback.data.split(":")
+    user_id = int(uid)
+    cheque = _unlinked_cheques.get(user_id)
+    if not cheque or time.time() - cheque[2] > UNLINKED_TTL:
+        await callback.answer("Chek eskirgan (bot qayta ishga tushgan) — buyurtma kartochkasida qo'lda "
+                              "biriktiring.", show_alert=True)
+        return
+    kind, file_id, _ = cheque
+    if what == "new":
+        from handlers.cart import create_order_from_pending
+        try:
+            order_id = await create_order_from_pending(bot, user_id, file_id, kind)
+        except Exception as exc:
+            logger.exception("order from pending checkout failed for %s", user_id)
+            await callback.answer(f"Buyurtma yaratilmadi: {type(exc).__name__}"[:190], show_alert=True)
+            return
+        if not order_id:
+            await callback.answer("To'lov qadamidagi checkout topilmadi.", show_alert=True)
+            return
+    else:
+        order_id = int(what)
+        order = await database.get_order(order_id)
+        if not order or order.get("user_id") != user_id:
+            await callback.answer("Buyurtma topilmadi.", show_alert=True)
+            return
+        await database.set_order_cheque(order_id, file_id, kind)
+        try:
+            from handlers.cart import _forward_cheque_to_admins
+            markup = _paid_kb(order_id) if "KARTA" in (order.get("address_note") or "") else None
+            await _forward_cheque_to_admins(bot, order_id, order.get("customer_name") or "—", kind, file_id,
+                                            reply_markup=markup)
+        except Exception:
+            logger.exception("linked cheque for %s not forwarded", order_id)
+    _unlinked_cheques.pop(user_id, None)
+    session = _sessions.get(user_id)
+    if session:
+        session.pop("cheque_unlinked", None)
+    lang = await _lang(user_id)
+    try:
+        await bot.send_message(user_id, _t(
+            f"✅ Chekingiz buyurtma #{order_id} ga biriktirildi — rahmat! Holatini shu yerda xabar qilamiz 🌿",
+            f"✅ Ваш чек привязан к заказу #{order_id} — спасибо! О статусе сообщим здесь 🌿", lang))
+    except Exception:
+        logger.info("cheque linked notice to %s failed", user_id)
+    try:
+        await callback.message.edit_text(callback.message.html_text + f"\n\n✅ <b>#{order_id}</b> ga bog'landi "
+                                         f"({html.escape(callback.from_user.full_name or '')})",
+                                         parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer(f"#{order_id} ✅")
 
 
 # ────────────────────────────── guruh rejimi ────────────────────────────────
