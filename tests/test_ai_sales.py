@@ -2613,3 +2613,24 @@ class AiPriceGroundingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FrustrationTest(unittest.TestCase):
+    """Egasi, 2026-11-26: mijoz 'bitta gapni nechi marta takrorlash mumkin?' dedi — AI uni
+    so'zma-so'z tushunib qoida tushuntirdi ('huddi kesatiqdek'). Endi — uzr va eslash."""
+
+    def test_complaints_are_recognised_and_recall_what_was_said(self):
+        for text in ("Bitta gapni nechi marta takrorlash mumkin ?", "aytdim-ku choyga",
+                     "Сколько можно повторять", "yozgandim-ku"):
+            self.assertTrue(ai_sales.frustration_hint(text), text)
+        for text in ("choy uchun", "bodom uni bormi", "rahmat"):
+            self.assertFalse(ai_sales.frustration_hint(text), text)
+        hint = ai_sales.frustration_hint("aytdim-ku", [{"question": "Shu kahva choyga"}])
+        self.assertIn("uzr", hint)
+        self.assertIn("Shu kahva choyga", hint)
+
+    def test_rules_forbid_asking_again(self):
+        rules = ai_sales._sales_rules()
+        self.assertIn("MIJOZ AYTGANINI ESLA", rules)
+        self.assertIn("tanlov savoli BERMA", rules)
+        self.assertIn("MIJOZ AYTGANINI ESLA", ai_sales._group_rules())
