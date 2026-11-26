@@ -43,11 +43,14 @@ DAYS = max(7, int(os.getenv("COMMENT_FOLLOWUP_DAYS", "30")))
 # Egasi, 2026-11-16: "har 10 daqiqada yozilmagan hammasiga yoz", keyin "instagram bloklash xavfiga
 # yaqinlashmasin" — har EVERY soniyada navbatdagilarning hammasiga, lekin odamdek: orasida tasodifiy
 # GAP..GAP_MAX soniya (soatiga ~30 ta), kuniga DAILY tadan oshmaydi, tunda emas.
-DAILY = max(0, int(os.getenv("COMMENT_FOLLOWUP_DAILY", "200")))
-EVERY = max(300, int(os.getenv("COMMENT_FOLLOWUP_EVERY", "600")))
-GAP = max(30, int(os.getenv("COMMENT_FOLLOWUP_GAP", "90")))
-GAP_MAX = max(GAP, int(os.getenv("COMMENT_FOLLOWUP_GAP_MAX", "150")))
-HOURS = (8, 23)                  # Toshkent: 08:00–22:59
+# Egasi, 2026-11-26: "instagramga suspicious action deb keldi, juda ko'p bir vaqtda yozma, akauntni
+# 100% xavfsiz holatda ulanib yozgin" — kuniga 20 ta, orasida 10–20 daqiqa, 10:00–21:00; ustiga
+# ig_guard (hamma yozishlar uchun umumiy tezlik va ogohlantirishda 48 soat pauza).
+DAILY = max(0, int(os.getenv("COMMENT_FOLLOWUP_DAILY", "20")))
+EVERY = max(300, int(os.getenv("COMMENT_FOLLOWUP_EVERY", "1200")))
+GAP = max(30, int(os.getenv("COMMENT_FOLLOWUP_GAP", "600")))
+GAP_MAX = max(GAP, int(os.getenv("COMMENT_FOLLOWUP_GAP_MAX", "1200")))
+HOURS = (10, 21)                 # Toshkent: 10:00–20:59
 # Ikkinchi qayta yozish (egasi, 2026-11-24: "javob berilmagan izohlarga javob berib va qayta
 # yozib chiq … telegramdan ketoshop_uz deb yozsalar chiqadi, yoki direct'dan yozishsa biz
 # tashlab beramiz"): javob olgan har bir odamga yana bir marta, do'konga shu yo'l bilan.

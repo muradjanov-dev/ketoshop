@@ -166,13 +166,30 @@ async def _graph(session: aiohttp.ClientSession, method: str, path: str, access_
                  params: dict | None = None, body: dict | None = None) -> dict:
     query = dict(params or {})
     query["access_token"] = access_token
+    write = method.upper() != "GET"
+    if write:
+        # Hamma avtomatik yozish shu darvozadan: pauza, tun, odamdek tezlik (ig_guard.py).
+        import ig_guard
+        try:
+            await ig_guard.before_write()
+        except ig_guard.Blocked as e:
+            raise GraphError(4, f"ig_guard: {e}")
     async with session.request(method, GRAPH + path, params=query, json=body,
                                timeout=aiohttp.ClientTimeout(total=45)) as resp:
         data = await resp.json(content_type=None)
     if isinstance(data, dict) and "error" in data:
         err = data["error"]
+        if write:
+            import ig_guard
+            if ig_guard.is_warning(err.get("code"), err.get("message")):
+                await ig_guard.pause(f"[{err.get('code')}] {err.get('message', '')}")
         raise GraphError(err.get("code"), err.get("message", "unknown"))
     return data if isinstance(data, dict) else {"data": data}
+
+
+def guarded(e) -> bool:
+    """Xato bizning himoyamizdan (pauza/tun/chegara) — keyinroq jim qayta urinamiz."""
+    return str(getattr(e, "message", "")).startswith("ig_guard:")
 
 
 async def identity(session: aiohttp.ClientSession, force: bool = False,
@@ -550,6 +567,8 @@ async def auto_send(bot: Bot | None, key: int, delay: float | None = None, notif
             await reply_public(session, ident, row, text)
     except GraphError as e:
         await database.claim_meta_comment(key, ("sending",), "new")
+        if guarded(e):
+            return                       # Instagram himoyasi — keyingi aylanmada jim qayta
         row = await database.update_meta_comment(key, note=f"❌ AI yubora olmadi: {e}")
         if notify:
             await send_cards(bot, row)
