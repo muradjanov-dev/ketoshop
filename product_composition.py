@@ -52,6 +52,8 @@ RULES: tuple[tuple[str, str, str], ...] = (
     (r"kokos yog'.*(virgin|vergin)", "Sovuq siqilgan, tozalanmagan kokos moyi (Extra Virgin) — 100%.",
      "Кокосовое масло холодного отжима, нерафинированное (Extra Virgin) — 100%."),
     (r"pista", "Pista mag'zi — 100%.", "Ядра фисташки — 100%."),
+    # 2026-11-26 (egasi: "tarkiblarini to'ldirib qo'y") — nomi tarkibini aytadiganlar.
+    (r"fistashka un", "Maydalangan pista mag'zi — 100%.", "Молотые ядра фисташки — 100%."),
     # oils and dairy fat
     (r"zaytun.*(virgin|vergin|sovuq siq)", "Sovuq siqilgan zaytun moyi (Extra Virgin) — 100%.",
      "Оливковое масло холодного отжима (Extra Virgin) — 100%."),
@@ -104,6 +106,9 @@ RULES: tuple[tuple[str, str, str], ...] = (
     (r"kepakli bug'doy un", "Kepagi bilan tortilgan bug'doy uni (butun don uni) — 100%.",
      "Пшеничная мука с отрубями (цельнозерновая) — 100%."),
     (r"2-nav un|ikkinchi nav", "Ikkinchi navli bug'doy uni — 100%.", "Пшеничная мука второго сорта — 100%."),
+    (r"(kukuruz|makajohori|makkajo'xori).*kepag", "Makkajo'xori kepagi — 100%.", "Кукурузные отруби — 100%."),
+    (r"psheno un|tariq un", "Tariq donidan tortilgan un — 100%.", "Пшённая мука — 100%."),
+    (r"qora guruch", "Qora guruch doni — 100%.", "Чёрный рис — 100%."),
     (r"kepak", "Bug'doy kepagi — 100%.", "Пшеничные отруби — 100%."),
     (r"basmati", "Basmati guruchi — 100%.", "Рис басмати — 100%."),
     (r"devzira", "Devzira guruchi (qizil, bo'yalmagan, yog'lanmagan) — 100%.",
@@ -117,6 +122,9 @@ RULES: tuple[tuple[str, str, str], ...] = (
     (r"kakao nibs|kakao krupka", "Maydalangan kakao loviyasi (kakao nibs) — 100%.",
      "Дроблёные какао-бобы (какао-крупка) — 100%."),
     (r"koritsa|dolchin", "Dolchin (koritsa) — 100%.", "Корица — 100%."),
+    (r"arpabodiyon|fenxel|фенхел", "Arpabodiyon (fenxel) urug'i — 100%.", "Семена фенхеля — 100%."),
+    (r"qalapir muchoq|qalampir ?munchoq", "Qalampirmunchoq — chinnigul g'unchalari (Syzygium aromaticum) — 100%.",
+     "Гвоздика — высушенные бутоны (Syzygium aromaticum) — 100%."),
     (r"ksantan", "Ksantan kamedi (E415) — 100%.", "Ксантановая камедь (E415) — 100%."),
     (r"olma sirka", "Olma sharbatini tabiiy achitish yo'li bilan olingan sirka.",
      "Уксус, полученный естественным брожением яблочного сока."),
