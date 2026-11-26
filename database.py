@@ -3278,6 +3278,14 @@ async def transition_order_status(order_id: int, expected_from, new_status: str)
     return row is not None
 
 
+async def set_order_post_office(order_id: int, line: str) -> None:
+    """UzPost bo'limi kechikib aniqlandi (courier_board.fill_post_offices) — faqat bo'sh bo'lsa yoziladi."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE orders SET post_office = $2 WHERE id = $1 AND COALESCE(post_office, '') = ''",
+            order_id, line)
+
+
 async def set_order_cheque(order_id: int, file_id: str, cheque_type: str = "photo"):
     """Persist the payment cheque file_id so the order card can show it later."""
     async with pool.acquire() as conn:

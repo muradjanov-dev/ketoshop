@@ -5634,6 +5634,7 @@ function kbRenderDetail(id,opts){
       ${tel2}
       <div class="kb-kv"><span class="k">Telegram</span><span class="v">${tg}</span></div>
       <div class="kb-kv"><span class="k">Manzil</span><span class="v">${addr}</span></div>
+      ${c.delivery_method==='uzpost'?`<div class="kb-kv"><span class="k">📮 UzPost</span><span class="v">${c.post_office?`<b>${esc(c.post_office)}</b>`:'⚠️ indeks aniqlanmagan — lokatsiya yo\'q, manzildan yoki mijozdan aniqlang'}</span></div>`:''}
       ${c.address_note?`<div class="kb-kv"><span class="k">Izoh</span><span class="v">${esc(c.address_note)}</span></div>`:''}
     </div>
     <div class="sec">
