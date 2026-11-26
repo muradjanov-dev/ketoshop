@@ -26,6 +26,13 @@ class LibraryTest(unittest.TestCase):
             "Bodom uni 1000gr": "Maydalangan bodom mag'zi — 100%.",
             "Bodom uni po‘stlog‘i billan": "Maydalangan bodom mag'zi, po'sti bilan — 100%.",
             "Eritrtitol 1000gr": "Eritritol (E968) — 100%.",
+            # 2026-11-26
+            "Kukuruz- makajohori kepagidan": "Makkajo'xori kepagi — 100%.",
+            "Psheno uni": "Tariq donidan tortilgan un — 100%.",
+            "Qora guruch 1kg Tayland": "Qora guruch doni — 100%.",
+            "Arpabodiyon (fenxel) 100gr": "Arpabodiyon (fenxel) urug'i — 100%.",
+            "Fistashka uni 500gr": "Maydalangan pista mag'zi — 100%.",
+            "Qalapir muchoq 70 gr": "Qalampirmunchoq — chinnigul g'unchalari (Syzygium aromaticum) — 100%.",
             "Toza Steviya 20gr": "Steviya barglari ekstrakti (steviol glikozidlari, E960) — 100%.",
             "Alluloza +Steviya 200gr": "Alluloza, steviya ekstrakti (steviol glikozidlari, E960).",
             "Yashil grechka uni 500gr": "Yashil (qovurilmagan) grechka donidan tortilgan un — 100%.",
