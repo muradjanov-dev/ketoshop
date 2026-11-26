@@ -1316,6 +1316,9 @@ async def init_db():
         # Birinchisi (followup_*) o'zgarmaydi — hammasi saqlanadi.
         await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup2_at TIMESTAMP")
         await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup2_text TEXT")
+        # 2026-11-26: uchinchi — «Bilasizmi?» + aksiyalar + kanal; umuman javob olmaganlarga ham.
+        await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup3_at TIMESTAMP")
+        await conn.execute("ALTER TABLE meta_comments ADD COLUMN IF NOT EXISTS followup3_text TEXT")
         # Izohlar tokeni (ads_read tokenidan ALOHIDA), AI rejimi, bilim bazasi.
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS meta_comments_state (
@@ -8883,6 +8886,59 @@ async def meta_comment_followup2_candidates(min_days: int, limit: int = 10) -> l
                ORDER BY COALESCE(t.created_at, t.received_at) DESC
                LIMIT $2""", min_days, limit)
     return [_comment_row(r) for r in rows]
+
+
+async def meta_comment_followup3_candidates(min_days: int, limit: int = 10) -> list[dict]:
+    """Uchinchi qayta yozish (egasi, 2026-11-26: "avvalgi 1 oy avval yozilganlar
+    yoki umuman yozilmaganlarga ham ... qayta yoz"), har odamga bir marta, oxirgi
+    izohi ostiga: (a) ikkinchi qayta xabarni olganlar — u `min_days` kundan eski
+    bo'lsa; (b) hech qachon javob ham, qayta xabar ham olmaganlar. Izohi yoki
+    bizning oxirgi xabarimiz `min_days` kundan yangi bo'lsa — hali emas."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT * FROM (
+                   SELECT DISTINCT ON (lower(m.username)) m.*
+                   FROM meta_comments m
+                   WHERE m.username IS NOT NULL AND m.username <> ''
+                     AND COALESCE(m.category, '') <> 'spam' AND COALESCE(m.status, '') <> 'hidden'
+                     AND NOT EXISTS (
+                         SELECT 1 FROM meta_comments o
+                         WHERE lower(o.username) = lower(m.username)
+                           AND (o.followup3_at IS NOT NULL
+                                OR o.followup2_at > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)
+                                OR o.followup_at > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)
+                                OR COALESCE(o.created_at, o.received_at)
+                                   > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)))
+                     AND (EXISTS (SELECT 1 FROM meta_comments o
+                                  WHERE lower(o.username) = lower(m.username)
+                                    AND COALESCE(o.followup2_text, '') <> '')
+                          OR NOT EXISTS (SELECT 1 FROM meta_comments o
+                                         WHERE lower(o.username) = lower(m.username)
+                                           AND (o.status IN ('answered', 'ai_answered')
+                                                OR o.followup_at IS NOT NULL OR o.followup2_at IS NOT NULL)))
+                   ORDER BY lower(m.username), COALESCE(m.created_at, m.received_at) DESC
+               ) t
+               ORDER BY COALESCE(t.created_at, t.received_at) DESC
+               LIMIT $2""", min_days, limit)
+    return [_comment_row(r) for r in rows]
+
+
+async def mark_meta_comment_followup3(key: int, text: str) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE meta_comments SET followup3_at = NOW() AT TIME ZONE 'UTC', followup3_text = $2 WHERE id = $1",
+            key, text)
+
+
+async def meta_comment_followup3_stats() -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) FILTER (WHERE followup3_text <> ''
+                         AND followup3_at >= date_trunc('day', NOW() AT TIME ZONE 'Asia/Tashkent')
+                                             - INTERVAL '5 hours') AS today,
+                      COUNT(*) FILTER (WHERE followup3_text <> '') AS total
+               FROM meta_comments""")
+    return dict(row) if row else {"today": 0, "total": 0}
 
 
 async def mark_meta_comment_followup2(key: int, text: str) -> None:
