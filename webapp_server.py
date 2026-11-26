@@ -646,6 +646,26 @@ async def api_review_delete(request: web.Request):
 _TOP_CACHE: dict[str, list] = {}
 
 
+# ⭐ TOP takliflar — saytning eng tepasidagi animatsiyali banner va popup (egasi,
+# 2026-11-26: "5 kg va 2 kg lik steviyalarni saytda top mahsulotlar deb pop up
+# chiqar va saytni eng tepasida animatsiya bilan tursin"). Faqat faol, sotuvda bor
+# va chegirmadagilari chiqadi — aksiya tugasa, banner o'zi yo'qoladi.
+TOP_OFFER_IDS = tuple(int(x) for x in os.getenv("TOP_OFFER_IDS", "173,174").split(",") if x.strip().isdigit())
+
+
+async def api_top_offers(request: web.Request):
+    lang = request.get("user_lang", "uz")
+    products = []
+    for pid in TOP_OFFER_IDS:
+        p = await database.get_product(pid)
+        if not p or not p.get("is_active") or p.get("b2b_only") or float(p.get("quantity") or 0) <= 0:
+            continue
+        if not database.active_discount(p.get("discount_percent"), p.get("discount_until")):
+            continue
+        products.append(p)
+    return _json(await _serialize_products(products, lang, request.get("user_id")) if products else [])
+
+
 async def api_top(request: web.Request):
     """Storefront podium — a daily-rotating slice of the recent bestsellers."""
     lang = request.get("user_lang", "uz")
@@ -2336,6 +2356,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/restock-wait", api_restock_wait)
     app.router.add_get("/api/top", api_top)
+    app.router.add_get("/api/top-offers", api_top_offers)
     app.router.add_get("/api/popular", api_popular)
     app.router.add_get("/api/leaderboard", api_leaderboard)
     app.router.add_get("/api/product/{id}", api_product_detail)
