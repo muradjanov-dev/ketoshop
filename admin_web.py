@@ -1200,6 +1200,9 @@ async def api_manual_order(request: web.Request):
                "latitude": order["latitude"], "longitude": order["longitude"],
                "courier": order["courier"], "courier_fee": order["courier_fee"],
                "total": order["total"]}
+    if order["delivery_method"] == "uzpost" and (not preview or body.get("full") is True):
+        summary["post_office"] = await manual_order.post_office(
+            "uzpost", order["latitude"], order["longitude"], order["address"])
     if preview:
         return _json({"ok": True, "preview": True, **summary})
 
@@ -1215,6 +1218,7 @@ async def api_manual_order(request: web.Request):
         status=order["status"],
         latitude=order["latitude"],
         longitude=order["longitude"],
+        post_office=summary.get("post_office"),
     )
     logger.info("Manual order #%s saved from the admin site (%d line(s), %s so'm)",
                 order_id, len(order["items"]), order["total"])

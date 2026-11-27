@@ -174,6 +174,21 @@ def courier_fee(subtotal: float, delivery: str, lat=None, lng=None) -> dict:
     }
 
 
+async def post_office(delivery: str, lat, lng, address) -> str | None:
+    """The UzPost office line for a manual order: the nearest «Bir Qadam»
+    office to the pin, else the index typed in the address, else None."""
+    if delivery != "uzpost":
+        return None
+    import uzpost
+    office = None
+    if lat is not None and lng is not None:
+        try:
+            office = await uzpost.nearest_office(lat, lng)
+        except Exception:
+            office = None
+    return uzpost.office_line(office) or uzpost.index_in_text(address)
+
+
 def items_total(items: list[dict]) -> float:
     return sum(float(it["price"]) * float(it["quantity"]) for it in items)
 

@@ -3581,6 +3581,9 @@ async def manual_save(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     lang = data.get("lang", "uz")
     items: list[dict] = data.get("items") or []
+    import manual_order
+    office = await manual_order.post_office(data.get("delivery"), data.get("latitude"),
+                                            data.get("longitude"), data.get("address"))
     order_id = await add_manual_order(
         admin_user_id=callback.from_user.id,
         customer_name=data["name"],
@@ -3593,6 +3596,7 @@ async def manual_save(callback: CallbackQuery, state: FSMContext):
         status=data["status"],
         latitude=data.get("latitude"),
         longitude=data.get("longitude"),
+        post_office=office,
     )
     import order_admin_feed
     order_admin_feed.manual_created(callback.bot, order_id, callback.from_user)

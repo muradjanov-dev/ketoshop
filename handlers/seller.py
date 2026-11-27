@@ -1576,8 +1576,8 @@ async def render_order_card(callback: CallbackQuery, order_id: int, ret: str = "
         delivery_fee = charged_delivery_fee(order.get("total"), order.get("keto_redeemed"), items)
         delivery_fee_block = delivery_fee_text("uzpost", delivery_fee, lang) + get_text(
             "uzpost_admin_line", lang, kg=uzpost.fmt_kg(uzpost.parcel_kg(items)),
-            office=html.escape(order.get("post_office") or get_text("uzpost_office_admin_picks", lang),
-                               quote=False))
+            office=html.escape(uzpost.index_line(order.get("post_office"), order.get("address"))[0]
+                               or get_text("uzpost_office_admin_picks", lang), quote=False))
     from handlers.cart import order_history_block
     text = get_text("new_order_notification", lang,
         order_id=order["id"],
