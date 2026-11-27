@@ -42,3 +42,18 @@ class DishTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GreetingOnlyTest(unittest.TestCase):
+    def test_rule_against_menu_and_stock_phrases(self):
+        rules = ai_sales._sales_rules()
+        self.assertIn("FAQAT SALOM", rules)
+        self.assertIn("tez aytib beramiz", rules)
+
+
+class AdminMessageRecordTest(unittest.TestCase):
+    def test_customer_message_goes_into_dialog_admins_do_not(self):
+        import admin_web
+        src = open(admin_web.__file__, encoding="utf-8").read()
+        self.assertIn("ai_dialog.record(chat_id, \"bot\", \"[Do'kon o'zi yozdi]\", text)", src)
+        self.assertIn("if chat_id in staff:", src)

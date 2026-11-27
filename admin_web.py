@@ -1122,6 +1122,17 @@ async def api_admin_message(request: web.Request):
                 break
         (delivered if ok else failed).append(chat_id)
     logger.info("admin-message: %d part(s) to %d recipient(s), %d failed", len(parts), len(recipients), len(failed))
+    # Mijozga yozilgan xabar AI suhbat tarixiga (egasi, 2026-11-27: uzr xabaridan keyin mijoz
+    # salom berdi, AI esa nima yozganimizni bilmay umumiy javob qaytardi). Adminlarga — yo'q.
+    staff = set(ADMIN_IDS)
+    for chat_id in delivered:
+        if chat_id in staff:
+            continue
+        try:
+            import ai_dialog
+            await ai_dialog.record(chat_id, "bot", "[Do'kon o'zi yozdi]", text)
+        except Exception:
+            logger.warning("admin-message to %s not recorded in ai_dialog", chat_id, exc_info=True)
     return _json({"ok": True, "parts": len(parts), "sent": len(delivered), "failed": failed,
                   "extra_reached": [i for i in extra if i in delivered]})
 
