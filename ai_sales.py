@@ -1416,6 +1416,13 @@ def _sales_rules() -> str:
         "- Mijoz retsept so'rasa — retseptni yozishdan OLDIN retsept vositasini mahsulot_id "
         "bilan chaqir. Mahsulot aytilmagan bo'lsa ('keto retsept bering') — suhbatga mos "
         "bitta mahsulotni o'zing tanla. Bir javobda faqat bitta retsept.\n"
+        "- Vositaga 'taom' ga mijoz so'ragan taomni yoz (non, pechene, tort...). Mijoz aniq taom "
+        "so'rasa — AYNAN o'sha taomni ber, boshqasini (palov o'rniga non kabi) taklif qilma va "
+        "'Kechirasiz, siz nonni nazarda tutgansiz' deb keyin tuzatishga qoldirma.\n"
+        "- DONDAN NON: grechka (ayniqsa yashil grechka), no'xat, guruch donidan non uchun un qilish "
+        "shart emas — don 6-8 soat ivitiladi, yuviladi, ozgina suv va tuz bilan blenderda bo'tqa "
+        "qilib maydalanadi, psillium yoki zig'ir uni qo'shib aralashtiriladi, qolipda 180°C da "
+        "taxminan 50-60 daqiqa pishiriladi. 'Donning o'zidan xamir chiqmaydi' dema.\n"
         "- OK qaytsa — retseptni qisqa va tushunarli ber (masalliqlar va qadamlar), Ketoshop "
         "mahsulotlarini narxi bilan eslat, vosita aytgan samimiy savol bilan suhbatni davom ettir.\n"
         "- Bir mijozga 24 soatda 3 tagacha retsept (egasi, 2026-11-26). RAD qaytsa — yangi retsept "
@@ -1475,6 +1482,12 @@ def _sales_rules() -> str:
         "  Kirillda: 'Ва алайкум ассалом!' / 'Ассалому алайкум!'; ruscha: 'Здравствуйте!'; "
         "inglizcha: 'Hi!'.\n"
         "- Ikki marta salomlashma ('Vaalaykum assalom! Assalomu alaykum, ...' — yo'q).\n"
+        "- FAQAT SALOM (egasi, 2026-11-27): mijoz faqat salom bersa — alik ol va MIJOZ PAPKASI / "
+        "XOTIRASIdagi oxirgi mavzu yoki ochiq buyurtmaga bog'lab bitta tabiiy gap ayt ('Sovg'a "
+        "haqidagi xabarimizni ko'rdingizmi?', 'Buyurtmangiz tayyorlanyapti'). Umumiy menyu "
+        "ro'yxati ('un, shirinlashtirgich yoki buyurtma bo'yicha') va 'tez aytib beramiz', "
+        "'bajonidil yordam beramiz', 'yordam kerak bo'lsa' kabi qolip gaplar YO'Q. Papka bo'sh "
+        "bo'lsa — oddiy: 'Va alaykum assalom! Qanday yordam bera olamiz?'.\n"
         "- Yangi mijozga shu birinchi javobda bir marta 'Keto shopga xush kelibsiz' deyish "
         "mumkin. Avval buyurtma bergan mijozni 'yana ko'rganimizdan xursandmiz' ohangida kutib ol "
         "(PORTRET da murojaat ismi bo'lsa — o'sha ism bilan, bo'lmasa ismsiz).\n"
@@ -1650,12 +1663,16 @@ _TOOL_SPECS = [
         "name": "retsept",
         "description": "Mijoz retsept so'rasa — retsept yozishdan OLDIN chaqir. Shu mahsulot "
                        "bo'yicha hozir retsept berish mumkinmi (OK yoki RAD) va do'kon "
-                       "retseptlar kutubxonasidan mosini qaytaradi. Bitta chaqiruv — bitta mahsulot.",
+                       "retseptlar kutubxonasidan AYNAN mijoz so'ragan taomni qaytaradi. Bitta "
+                       "chaqiruv — bitta mahsulot.",
         "input_schema": {
             "type": "object",
             "properties": {"mahsulot_id": {"type": "integer",
-                                           "description": "Retsept qaysi mahsulot bilan"}},
-            "required": ["mahsulot_id"],
+                                           "description": "Retsept qaysi mahsulot bilan"},
+                           "taom": {"type": "string",
+                                    "description": "Mijoz so'ragan taom so'zma-so'z: 'non', 'pechene', "
+                                                   "'tort', 'blin', 'palov'... Aytmagan bo'lsa ''."}},
+            "required": ["mahsulot_id", "taom"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -1906,16 +1923,51 @@ RECIPE_EVERY_HOURS = 24
 RECIPES_PER_DAY = 3
 
 
-def _library_recipe(product_name: str) -> str:
+# Taom turlari (egasi, 2026-11-27: "non retsepti so'ralsa yana adashyapsan" — "yashil grechka
+# donidan non" so'raganga kutubxonadagi birinchi mos retsept, palov, berilgan edi).
+DISH_WORDS = {
+    "non": ("non", "нон", "хлеб", "bread", "buxanka", "lepyosh", "лепёш", "лепеш", "batón", "baton"),
+    "pechene": ("pechen", "печен", "cookie"),
+    "tort": ("tort", "торт", "cake", "pirog", "пирог"),
+    "keks": ("keks", "кекс", "muffin", "маффин"),
+    "blin": ("blin", "блин", "quymoq", "қуймоқ", "oladi", "оладь", "pancake"),
+    "palov": ("palov", "палов", "плов"),
+    "somsa": ("somsa", "сомса", "самса"),
+    "pitsa": ("pitsa", "pizza", "пицца"),
+    "salat": ("salat", "салат"),
+    "shirinlik": ("shirinlik", "ширинлик", "десерт", "dessert"),
+    "bo'tqa": ("botqa", "bo'tqa", "ботқа", "каша", "kasha", "porridge"),
+}
+
+
+def dish_kind(text: str | None) -> str | None:
+    low = (text or "").lower()
+    for kind, words in DISH_WORDS.items():
+        if any(w in low for w in words):
+            return kind
+    return None
+
+
+def _recipe_is_dish(recipe: dict, kind: str) -> bool:
+    title = " ".join(str(v) for v in (recipe.get("title") or {}).values()).lower()
+    return any(w in title for w in DISH_WORDS[kind])
+
+
+def _library_recipe(product_name: str, dish: str | None = None) -> str:
     """Do'kon retseptlar kutubxonasidan (recipes_content.py — saytdagi
-    retseptlar) shu mahsulot masalliq bo'lgan retsept, o'zbekcha matn. Yo'q bo'lsa ""."""
+    retseptlar) shu mahsulot masalliq bo'lgan retsept, o'zbekcha matn. Yo'q bo'lsa "".
+    Mijoz taomni aytgan bo'lsa (non, pechene...) — faqat shu taomning retsepti; boshqa
+    taom (palov) hech qachon o'rniga berilmaydi."""
     try:
         import recipes_content
         from recipes import _norm
     except Exception:
         return ""
     name = _norm(product_name)
+    kind = dish_kind(dish)
     for recipe in recipes_content.RECIPES:
+        if kind and not _recipe_is_dish(recipe, kind):
+            continue
         for ing in recipe.get("ingredients") or []:
             groups = ing.get("match") or []
             if any(all(tok in name for tok in group) for group in groups):
@@ -1948,7 +2000,8 @@ async def _tool_recipe(user_id: int, args: dict) -> str:
                 "berishda davom et: oldingi retseptlardan birini pishirib ko'rganmi, qanday chiqdi, "
                 "masalliqlari bormi, mahsulot tanlash, foydasi — suhbatni davom ettir.")
     await ai_memory.record_recipe(user_id, product_id, product["name"])
-    library = _library_recipe(product["name"])
+    dish = (args.get("taom") or "").strip()
+    library = _library_recipe(product["name"], dish)
     serve = ("Retseptdan keyin samimiy bir savol bilan suhbatni davom ettir: shu taomni yoki shu "
              "mahsulot bilan biror narsani pishirib ko'rganmi? Mazasi va tanaga foydasini bir gap bilan "
              "ayt (faqat bilim bazasidagi faktlar, tibbiy va'dasiz). Masalliqlardagi Ketoshop "
@@ -1956,9 +2009,11 @@ async def _tool_recipe(user_id: int, args: dict) -> str:
     if library:
         return ("OK: retsept berishing mumkin. Do'kon retsepti (shuni qisqartirib ber, "
                 "masalliqlardagi Ketoshop mahsulotlarini nomi bilan ayt):\n" + library + "\n" + serve)
-    return (f"OK: retsept berishing mumkin. {product['name']} bilan BITTA qisqa retsept yoz: "
-            "masalliqlar va 3-5 qadam. Masalliqlardan faqat katalogdagi mahsulotlarni taklif qil. "
-            + serve)
+    asked = (f"Mijoz so'ragan taom: «{dish}» — AYNAN shu taomni yoz, boshqa taom taklif qilma. "
+             if dish else "")
+    return (f"OK: retsept berishing mumkin. {asked}{product['name']} bilan BITTA qisqa, aniq retsept yoz: "
+            "masalliqlar (miqdori bilan) va 3-5 qadam (harorat va vaqt bilan). Masalliqlardan faqat "
+            "katalogdagi mahsulotlarni taklif qil. " + serve)
 
 
 # Savatga tushgach: bitta muloyim qo'shimcha taklif, keyin rasmiylashtirish

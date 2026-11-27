@@ -1122,6 +1122,17 @@ async def api_admin_message(request: web.Request):
                 break
         (delivered if ok else failed).append(chat_id)
     logger.info("admin-message: %d part(s) to %d recipient(s), %d failed", len(parts), len(recipients), len(failed))
+    # Mijozga yozilgan xabar AI suhbat tarixiga (egasi, 2026-11-27: uzr xabaridan keyin mijoz
+    # salom berdi, AI esa nima yozganimizni bilmay umumiy javob qaytardi). Adminlarga — yo'q.
+    staff = set(ADMIN_IDS)
+    for chat_id in delivered:
+        if chat_id in staff:
+            continue
+        try:
+            import ai_dialog
+            await ai_dialog.record(chat_id, "bot", "[Do'kon o'zi yozdi]", text)
+        except Exception:
+            logger.warning("admin-message to %s not recorded in ai_dialog", chat_id, exc_info=True)
     return _json({"ok": True, "parts": len(parts), "sent": len(delivered), "failed": failed,
                   "extra_reached": [i for i in extra if i in delivered]})
 
@@ -1489,6 +1500,22 @@ async def api_ai_dialogs(request: web.Request):
     staff = list(set(ADMIN_IDS) | set(database.LEADERBOARD_EXCLUDED_USER_IDS))
     rows = await ai_dialog.review_page(limit, before, staff)
     return _json({"rows": rows, "next_before_id": rows[-1]["id"] if rows else None})
+
+
+@require_auth
+async def api_channel_comments(request: web.Request):
+    """GET /admin/api/channel-comments — kanal postlari va izohlar soni;
+    ?thread_id=N — shu postning hamma izohlari; ?days=N — oxirgi N kundagi
+    hamma izohlar (2026-11-27, channel_comments.py). Faqat o'qiydi."""
+    import channel_comments
+    try:
+        thread = int(request.query["thread_id"]) if request.query.get("thread_id") else None
+        days = int(request.query["days"]) if request.query.get("days") else None
+    except ValueError:
+        return _json({"error": "bad request"}, status=400)
+    if thread is None and days is None:
+        return _json({"posts": await channel_comments.posts(50)})
+    return _json({"comments": await channel_comments.comments(thread_id=thread, days=days)})
 
 
 @require_auth
@@ -2613,6 +2640,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/feedback", api_feedback)
     app.router.add_get("/admin/api/portraits", api_portraits)
     app.router.add_get("/admin/api/ai-dialogs", api_ai_dialogs)
+    app.router.add_get("/admin/api/channel-comments", api_channel_comments)
     app.router.add_get("/admin/api/ai-totals", api_ai_totals)
     app.router.add_get("/admin/api/portraits/{user_id:\\d+}", api_portrait_card)
     app.router.add_get("/admin/api/site-analytics/user/{user_id:\\d+}", api_site_user)
