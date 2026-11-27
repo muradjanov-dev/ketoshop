@@ -166,6 +166,15 @@ async def cmd_start_deep_link(message: Message, command: CommandObject, state: F
     import ad_sources
     import product_card
     import recipe_channel
+    import person_folder
+    # ?start=igu<kod> — Instagram Direct'dagi shaxsiy havola: Telegram va Instagram
+    # papkalari bog'lanadi (person_folder.py), keyin oddiy START.
+    if person_folder.parse_payload(command.args):
+        if _is_private_chat(message):
+            await person_folder.link_from_start(message.from_user.id, command.args)
+        await _handle_start(message, None, None, None)
+        await _remind_pending_cheque(message, state)
+        return
     referrer_id = referral_contest.parse_ref_payload(command.args)
     # ?start=retsept[_<slug>] — the channel's recipe link (recipe_channel.py)
     recipe_link = recipe_channel.parse_payload(command.args)
