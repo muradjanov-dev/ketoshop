@@ -81,3 +81,4 @@ class OrderRulesTest(unittest.TestCase):
         rules = ai_sales._sales_rules()
         self.assertIn("QISQA VA MANTIQLI", rules)
         self.assertIn("QAYTA BUYURTMA", rules)
+        self.assertIn("JAVOBNI ISHLAT", rules)
