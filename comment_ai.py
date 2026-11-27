@@ -380,7 +380,8 @@ def comment_prompt(c: dict) -> str:
     caption = (c.get("post_caption") or "").strip()
     post = f"POST MATNI:\n{caption[:700]}\n\n" if caption else ""
     return (f"{platform} · {where}\nIzoh muallifi: {who}\n\n{post}"
-            f"IZOH:\n{(c.get('text') or '').strip()[:1500]}" + _recipe_hint())
+            f"IZOH:\n{(c.get('text') or '').strip()[:1500]}"
+            + (("\n\n" + c["folder"]) if c.get("folder") else "") + _recipe_hint())
 
 
 def kb_block(kb: dict, catalog: str) -> str:
@@ -721,7 +722,23 @@ async def _draft_openai(comment: dict, kb: dict) -> Draft | None:
 
 
 async def draft(comment: dict, kb: dict) -> Draft | None:
-    """Javob loyihasi yoki None (kalit yo'q, xato, rad etildi — admin o'zi yozadi)."""
+    """Javob loyihasi yoki None (kalit yo'q, xato, rad etildi — admin o'zi yozadi).
+    Mijoz papkasi (egasi, 2026-11-27): shu odamning avvalgi izoh/Direct suhbatlari promptga
+    qo'shiladi; 5 soat ichida yana yozgan bo'lsa — javob boshidagi salom olib tashlanadi."""
+    folder, hours = "", None
+    if comment.get("username") and not comment.get("folder"):
+        import person_folder
+        folder, hours = await person_folder.block("ig", comment["username"])
+    result = await _draft(dict(comment, folder=folder) if folder else comment, kb)
+    if result is not None and folder:
+        import ai_tone
+        import person_folder
+        result.reply = ai_tone.drop_midchat_greeting(result.reply, comment.get("text"),
+                                                     not person_folder.needs_greeting(hours))
+    return result
+
+
+async def _draft(comment: dict, kb: dict) -> Draft | None:
     prov = await provider()
     if prov == "openai":
         return await _draft_openai(comment, kb)

@@ -873,7 +873,11 @@ async def compose(conv: dict, pending: list[dict], *, first_contact: bool, catal
     instructions = (rules() + "\n\n" + comment_ai.kb_block(kb, await comment_ai.catalog_text())
                     + "\n\nCHEGIRMALAR (hozir)\n" + discount_block(sale)
                     + "\n\nAKSIYA\n" + (await _offers() or "hozir yo'q"))
-    data = await ask_ai(instructions, user_prompt(conv, pending, first_contact))
+    # Mijoz papkasi (egasi, 2026-11-27): avvalgi izoh va Direct suhbatlari + 5 soatlik salom qoidasi.
+    import person_folder
+    folder, hours = await person_folder.block("ig", conv.get("username"))
+    user = user_prompt(conv, pending, first_contact) + ("\n\n" + folder if folder else "")
+    data = await ask_ai(instructions, user)
     if data is None:
         oldest = min((m["created_at"] for m in pending if m["created_at"]), default=now)
         return _holding(lang, first_contact, "ai_down") if now - oldest >= AI_GIVEUP else None
@@ -892,6 +896,9 @@ async def compose(conv: dict, pending: list[dict], *, first_contact: bool, catal
     if reply:
         import ai_tone
         reply = ai_tone.vary(reply, previous)
+        greet = person_folder.needs_greeting(hours) if folder else first_contact
+        reply = ai_tone.drop_midchat_greeting(reply, joined, not greet)
+        reply = ai_tone.greet_first(reply, lang, greet)
     if human:
         plan = _holding(lang, first_contact, intent if intent in HUMAN_INTENTS else "unsure", intent)
         if reply:

@@ -86,6 +86,9 @@ def database_status(status):
 class AskTest(unittest.TestCase):
     def setUp(self):
         sa._recent.clear()
+        p = patch.object(ai_sales, "mid_conversation", AsyncMock(return_value=True))  # salom qoidasi alohida (test_person_folder)
+        p.start()
+        self.addCleanup(p.stop)
 
     def run_ask(self, respond, ready=True, allowed=True, paused=False, text="Buyurtmam qayerda?"):
         async def fake_respond(bot, message, user_text, tools=None):

@@ -147,7 +147,9 @@ class AnswerPipelineTest(unittest.TestCase):
         self._orig = [(ai_stats, "record_turn", ai_stats.record_turn),
                       (database, "get_user_language", database.get_user_language),
                       (ai_sales, "_respond", ai_sales._respond),
-                      (ai_sales, "_mirror", ai_sales._mirror)]
+                      (ai_sales, "_mirror", ai_sales._mirror),
+                      (ai_sales, "mid_conversation", ai_sales.mid_conversation)]
+        ai_sales.mid_conversation = AsyncMock(return_value=True)  # salom qoidasi alohida (test_person_folder)
         ai_stats.record_turn = AsyncMock()
         database.get_user_language = AsyncMock(return_value="uz")
         ai_sales._mirror = AsyncMock()

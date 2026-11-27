@@ -3077,6 +3077,12 @@ async def _opening_context(user_id: int) -> str:
                                                    portrait=portrait or {}))
     except Exception:
         logger.warning("AI memory profile failed for %s", user_id, exc_info=True)
+    try:
+        import person_folder
+        folder, _ = await person_folder.block("tg", user_id)
+        parts.append(folder)
+    except Exception:
+        logger.warning("person folder failed for %s", user_id, exc_info=True)
     turns = await ai_dialog.recent(user_id)
     _session(user_id)["dialog_seen"] = turns[-1]["id"] if turns else 0
     parts.append(ai_dialog.context_block(turns))
@@ -3330,7 +3336,9 @@ async def _answer(bot: Bot, message: Message, user_text: str, late: bool = False
         # Ketma-ket "Ha, ..." va har safar "Savatga qo'shamizmi?" — robotning
         # belgisi (egasi, 2026-11-08). Oldingi javobdagi qolip qaytarilmaydi.
         reply = ai_tone.greet_back(ai_tone.vary(reply, session.get("last_reply")), user_text)
-        reply = ai_tone.drop_midchat_greeting(reply, user_text, await mid_conversation(user_id, session))
+        midchat = await mid_conversation(user_id, session)
+        reply = ai_tone.drop_midchat_greeting(reply, user_text, midchat)
+        reply = ai_tone.greet_first(reply, lang, midchat is False)
     if not reply:
         return
     session = _sessions.get(user_id)
@@ -5333,10 +5341,10 @@ def _group_thread_hint(turns: list[dict]) -> str:
             "haqida EMAS.]")
 
 
-MIDCHAT_HOURS = 12
+MIDCHAT_HOURS = 5     # egasi, 2026-11-27: "5 soatdan keyin gaplashsang salom ber"
 
 
-async def mid_conversation(user_id: int, session: dict | None = None) -> bool:
+async def mid_conversation(user_id: int, session: dict | None = None) -> bool | None:
     """Shu mijoz bilan yaqinda (MIDCHAT_HOURS) gaplashganmiz — bot, sayt yoki guruhda.
     Unda javob yangidan "Assalomu alaykum" bilan boshlanmaydi (egasi, 2026-11-26)."""
     if session and session.get("last_reply"):
@@ -5344,7 +5352,7 @@ async def mid_conversation(user_id: int, session: dict | None = None) -> bool:
     try:
         return bool(await ai_dialog.recent(user_id, limit=1, hours=MIDCHAT_HOURS))
     except Exception:
-        return False
+        return None     # bilmaymiz — salom qo'shilmaydi ham, olinmaydi ham
 
 
 async def _escalate_complaint(bot, user, channel: str, text: str, reply: str | None) -> None:
