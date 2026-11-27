@@ -333,9 +333,13 @@ TEXTS = {
     },
     "manual_enter_address": {
         "uz": ("📍 Yetkazib berish manzilini yozing yoki lokatsiya yuboring "
-               "(mijozdan kelgan lokatsiyani shu yerga uzatsangiz ham bo'ladi):"),
+               "(mijozdan kelgan lokatsiyani shu yerga uzatsangiz ham bo'ladi).\n"
+               "Yandex / Google / 2GIS havolasi (qisqasi ham) yoki koordinata "
+               "(41.311, 69.279) ham bo'ladi — kuryer narxi shundan hisoblanadi:"),
         "ru": ("📍 Напишите адрес доставки или отправьте локацию "
-               "(можно переслать локацию, которую прислал клиент):"),
+               "(можно переслать локацию, которую прислал клиент).\n"
+               "Подойдёт и ссылка Яндекс / Google / 2GIS (в том числе короткая) или "
+               "координаты (41.311, 69.279) — по ним считается курьер:"),
     },
     "manual_location_saved": {
         "uz": "✅ Lokatsiya qabul qilindi:\n{address}",

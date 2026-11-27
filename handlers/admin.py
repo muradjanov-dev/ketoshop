@@ -2874,7 +2874,7 @@ async def manual_address(message: Message, state: FSMContext):
     # the courier fee is read from it.
     import manual_order
     try:
-        point = manual_order.parse_location(address)
+        point = await manual_order.resolve_location(address)
     except manual_order.Invalid as exc:
         await message.answer("⚠️ " + html.escape(str(exc)), parse_mode="HTML")
         return
@@ -2889,7 +2889,7 @@ async def manual_address(message: Message, state: FSMContext):
     await _show_manual_category_picker(message, state, lang)
 
 
-@router.message(AdminStates.manual_address, F.location)
+@router.message(AdminStates.manual_address, F.location | F.venue)
 async def manual_address_location(message: Message, state: FSMContext):
     """The address as a Telegram location — sent by the admin, or forwarded
     from the buyer's chat (owner, 2026-11-06: "Ручнойда локация қабул
@@ -2901,13 +2901,21 @@ async def manual_address_location(message: Message, state: FSMContext):
         return
     data = await state.get_data()
     lang = data.get("lang", "uz")
-    lat, lng = message.location.latitude, message.location.longitude
+    # A pin, a live location, or a venue (a place picked from Telegram's
+    # search — it carries its own name and street) (2026-11-27).
+    loc = message.location or message.venue.location
+    lat, lng = loc.latitude, loc.longitude
+    venue = message.venue
     try:
         from handlers.cart import get_location_address_text
         readable = await get_location_address_text(lat, lng)
     except Exception:
         logger.warning("Manual order: reverse geocoding failed", exc_info=True)
         readable = None
+    named = [x for x in (getattr(venue, "title", None), getattr(venue, "address", None))
+             if isinstance(x, str) and x.strip()] if venue else []
+    if named:
+        readable = ", ".join(named)
     address = f"📍 {lat:.6f}, {lng:.6f}" + (f" — {readable}" if readable else "")
     await state.update_data(address=address, latitude=lat, longitude=lng, items=[])
     await message.answer(get_text("manual_location_saved", lang, address=html.escape(address)),
