@@ -446,6 +446,9 @@ async def main():
     # A one-off message to one buyer, approved by the owner (customer_notice.py).
     from customer_notice import scheduler_loop as customer_notice_loop
     asyncio.create_task(customer_notice_loop(bot))
+    # Avval yuborilib adminlarga yetmagan mijoz rasmlari — bir marta (recover_photos.py).
+    from recover_photos import scheduler_loop as recover_photos_loop
+    asyncio.create_task(recover_photos_loop(bot))
     # 🔥 07:30 — the daily games' streak reminder (game_reminder.py).
     from game_reminder import scheduler_loop as game_reminder_loop
     asyncio.create_task(game_reminder_loop(bot))
