@@ -728,7 +728,7 @@ async def draft(comment: dict, kb: dict) -> Draft | None:
     folder, hours = "", None
     if comment.get("username") and not comment.get("folder"):
         import person_folder
-        folder, hours = await person_folder.block("ig", comment["username"])
+        folder, hours = await person_folder.block("ig", comment["username"], public=True)
     result = await _draft(dict(comment, folder=folder) if folder else comment, kb)
     if result is not None and folder:
         import ai_tone

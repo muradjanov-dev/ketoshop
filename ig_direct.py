@@ -855,6 +855,22 @@ def _holding(lang: str, first_contact: bool, reason: str, intent: str = "") -> P
 
 async def compose(conv: dict, pending: list[dict], *, first_contact: bool, catalog_ok: bool,
                   now: datetime) -> Plan | None:
+    """_compose + bot havolasiga shu odamning kodi (person_folder: Telegram ↔ Instagram
+    papkalari bog'lanadi, egasi 2026-11-27)."""
+    plan = await _compose(conv, pending, first_contact=first_contact, catalog_ok=catalog_ok, now=now)
+    if plan is not None and any(BOT_LINK in m for m in plan.messages):
+        import person_folder
+        try:
+            token = await person_folder.ig_token(conv.get("username"))
+        except Exception:
+            logger.warning("ig direct: personal bot link failed", exc_info=True)
+            token = None
+        plan.messages = [person_folder.personal_links(m, token) for m in plan.messages]
+    return plan
+
+
+async def _compose(conv: dict, pending: list[dict], *, first_contact: bool, catalog_ok: bool,
+                   now: datetime) -> Plan | None:
     """Shu navbatdagi javob rejasi. None — AI hozircha javob bermadi, keyingi
     tekshiruvda yana uriniladi."""
     joined = "\n".join(m["text"] for m in pending if m["text"])
