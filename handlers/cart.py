@@ -1834,6 +1834,11 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     delivery_fee = delivery_fee_for(delivery_method, items_subtotal + bot_saved,
                                     items_data, bool(data.get("uzpost_far")),
                                     data.get("latitude"), data.get("longitude"))
+    import joint_delivery    # shu manzilga hali yo'lga chiqmagan buyurtma bor — yetkazish bitta
+    joined_with = await joint_delivery.waive(delivery_method, user_id, data.get("latitude"),
+                                             data.get("longitude"), data.get("address"))
+    if joined_with:
+        delivery_fee = 0
     total += delivery_fee
 
     # Keto-as-discount (opt-in, off by default — see gamification.is_redemption_enabled).
@@ -1894,7 +1899,9 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     payment_label = get_text("btn_pay_cash", lang) if payment_method == "cash" else get_text("btn_pay_online", lang)
     delivery_label = get_delivery_method_name(delivery_method, lang)
     delivery_fee_block = delivery_fee_text(delivery_method, delivery_fee, lang)
-    if delivery_method == "self":
+    if joined_with:
+        delivery_fee_block += "\n" + joint_delivery.note(joined_with, lang)
+    elif delivery_method == "self":
         import courier_zone      # shahardan tashqarida — mijoz hisobni oldindan ko'radi
         extra = courier_zone.extra_fee(data.get("latitude"), data.get("longitude"))
         line = courier_zone.breakdown_text(delivery_fee - extra, data.get("latitude"),
@@ -2799,10 +2806,15 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
                                            kg=uzpost.fmt_kg(uzpost.parcel_kg(items)),
                                            office=_escape_html(office or get_text("uzpost_office_admin_picks", admin_lang)))
         else:
-            delivery_fee = delivery_fee_for(data.get("delivery_method"), goods_subtotal(items),
-                                            lat=data.get("latitude"), lng=data.get("longitude"))
+            joined_with = (saved_order or {}).get("delivery_joined_with")
+            delivery_fee = 0 if joined_with else delivery_fee_for(
+                data.get("delivery_method"), goods_subtotal(items),
+                lat=data.get("latitude"), lng=data.get("longitude"))
             delivery_fee_block = delivery_fee_text(data.get("delivery_method"), delivery_fee, admin_lang)
-            if data.get("delivery_method") == "self":
+            if joined_with:
+                import joint_delivery
+                delivery_fee_block += "\n" + joint_delivery.ADMIN_NOTE.format(id=joined_with)
+            elif data.get("delivery_method") == "self":
                 import courier_zone
                 extra = courier_zone.extra_fee(data.get("latitude"), data.get("longitude"))
                 line = courier_zone.breakdown_text(delivery_fee - extra, data.get("latitude"),

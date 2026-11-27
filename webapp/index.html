@@ -5600,6 +5600,7 @@ const L = {
     subtotal: 'Mahsulotlar summasi',
     deliveryFeeLabel: 'Yetkazib berish narxi',
     courierKmLine: '📍 Shahardan {km} km tashqarida: +{extra} UZS (har km {per} so\'m)',
+    deliveryJoined: '🔗 #{id} buyurtmangiz bilan birga yetkaziladi',
     deliveryFreeLabel: 'Yetkazib berish',
     deliveryFreeValue: 'BEPUL',
     freeDeliveryHint: "Yana {left} so'mlik mahsulot qo'shsangiz — Toshkent bo'ylab yetkazib berish bepul!",
@@ -5854,6 +5855,7 @@ const L = {
     subtotal: 'Сумма товаров',
     deliveryFeeLabel: 'Стоимость доставки',
     courierKmLine: '📍 {km} км за городом: +{extra} UZS ({per} сум за км)',
+    deliveryJoined: '🔗 Доставим вместе с заказом #{id}',
     deliveryFreeLabel: 'Доставка',
     deliveryFreeValue: 'БЕСПЛАТНО',
     freeDeliveryHint: 'Добавьте товаров ещё на {left} сум — и доставка по Ташкенту бесплатно!',
@@ -11902,6 +11904,7 @@ function deliveryFee(method) {
   if (method === 'pickup') return 0;
   if (method === 'uzpost') return uzpostQuote ? uzpostQuote.fee : 0;
   if (method !== 'self') return 0;
+  if (courierQuote && courierQuote.joined) return 0;   // oldingi buyurtma bilan birga yetkaziladi
   const extra = courierQuote ? (courierQuote.extra || 0) : 0;
   return (cartData.total >= FREE_DELIVERY_FROM ? 0 : SELF_DELIVERY_FEE) + extra;
 }
@@ -12041,6 +12044,9 @@ function refreshCheckoutTotal() {
     }
   } else if (method === 'self') {
     html += '<div class="ct-line"><span>' + t.deliveryFreeLabel + '</span><span>' + t.deliveryFreeValue + '</span></div>';
+    if (courierQuote && courierQuote.joined) {
+      html += '<div class="ct-line"><span>' + t.deliveryJoined.replace('{id}', courierQuote.joined) + '</span></div>';
+    }
   }
   if (redeem > 0) {
     html += '<div class="ct-line"><span>' + t.ketoRedeemLine + '</span><span>-' + formatPrice(redeem) + ' UZS</span></div>';
