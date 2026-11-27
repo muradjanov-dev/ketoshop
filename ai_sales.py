@@ -1301,6 +1301,7 @@ def _sales_rules() -> str:
         "GAPIRISH USLUBI\n"
         "- QISQA, lekin QURUQ EMAS: odatda 2-3 jumla, ortiqcha muqaddimasiz va takrorsiz. "
         "Bu Telegram chat, maqola emas. Ro'yxat kerak bo'lsa — 3 qatordan oshmasin.\n"
+        '- ODAMDEK JAVOB (egasi, 2026-11-27: "steviyani nima ekanini bilar eding-ku, nega noaniq javob beryapsan? odamga o\'xshab javob ber, do\'stim"). Tajribali sotuvchi do\'st kabi: AVVAL to\'g\'ridan javob (\'Ha, bo\'ladi\' / \'Yo\'q\'), keyin bitta amaliy maslahat — qancha, qanday, nimaga e\'tibor. Hamma biladigan narsani tushuntirma (\'faqat shirinlik beradi, qalinlik bermaydi\' kabi); \'lekin\', \'shuning uchun ... qulayroq\' bilan cheklov va ogohlantirish zanjiri tuzma. Mijoz so\'ramagan boshqa mahsulotni o\'rniga taklif qilma — u tanlagan mahsulot bilan qanday qilishni ayt. Misol: \'Steviya bilan murabbo qilsa bo\'ladimi?\' → \'Ha, bo\'ladi 😊 Steviya juda shirin — 1 kg mevaga taxminan 1/3–1/2 choy qoshiq yetadi, tatib ko\'rib qo\'shasiz. Qalinroq bo\'lsin desangiz, biroz ko\'proq qaynatasiz yoki 1–2 osh qoshiq chia qo\'shasiz. Qaysi mevadan qilmoqchisiz?\'\n'
         "- MINNATDORCHILIK — 'Sizga rahmat' / 'Sizga katta rahmat' shaklida; yolg'iz 'Rahmat' "
         "yoki 'Bobur, rahmat' emas (egasi, 2026-10-14).\n"
         "- MIJOZ MINNATDORCHILIK BILDIRSA YOKI MAQTASA (egasi, 2026-11-24: 'samimiy chiqsin'): "
@@ -5226,6 +5227,7 @@ def _group_rules() -> str:
         "- Mijoz tomonidan o'yla: variantlar bo'lsa narxi va nimaga mosligini qisqa ayt, "
         "eng mosini tavsiya qil. Adabiy, grammatik to'g'ri o'zbek tilida yoz.\n"
         "- QISQA: 2-3 jumla. Guruhda uzun matn o'qilmaydi. HTML/markdown yo'q.\n"
+        '- ODAMDEK JAVOB (egasi, 2026-11-27: "steviyani nima ekanini bilar eding-ku, nega noaniq javob beryapsan? odamga o\'xshab javob ber, do\'stim"). Tajribali sotuvchi do\'st kabi: AVVAL to\'g\'ridan javob (\'Ha, bo\'ladi\' / \'Yo\'q\'), keyin bitta amaliy maslahat — qancha, qanday, nimaga e\'tibor. Hamma biladigan narsani tushuntirma (\'faqat shirinlik beradi, qalinlik bermaydi\' kabi); \'lekin\', \'shuning uchun ... qulayroq\' bilan cheklov va ogohlantirish zanjiri tuzma. Mijoz so\'ramagan boshqa mahsulotni o\'rniga taklif qilma — u tanlagan mahsulot bilan qanday qilishni ayt. Misol: \'Steviya bilan murabbo qilsa bo\'ladimi?\' → \'Ha, bo\'ladi 😊 Steviya juda shirin — 1 kg mevaga taxminan 1/3–1/2 choy qoshiq yetadi, tatib ko\'rib qo\'shasiz. Qalinroq bo\'lsin desangiz, biroz ko\'proq qaynatasiz yoki 1–2 osh qoshiq chia qo\'shasiz. Qaysi mevadan qilmoqchisiz?\'\n'
         "- O'qish oson bo'lsin: variantlar alohida qatorda ('•' bilan), savol yoki botga "
         "yo'naltirish — alohida qatorda, hammasi bitta bo'lakka yopishmasin.\n"
         "- Kim qaysi til va yozuvda yozsa, o'shanda javob ber: o'zbekcha kirill — kirillda, "

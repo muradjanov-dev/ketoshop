@@ -312,6 +312,8 @@ async def main():
     dp.include_router(ig_guard_router)
     from ai_review import router as ai_review_router
     dp.include_router(ai_review_router)
+    from ai_eval import router as ai_eval_router
+    dp.include_router(ai_eval_router)
     dp.include_router(webapp_data_router)
     # 📞 /callcentre — operator va adminlar uchun CRM eshigi (call_centre_bot.py).
     from call_centre_bot import router as call_centre_router
