@@ -37,6 +37,7 @@ from handlers.order_edit import router as order_edit_router
 from handlers.broadcast_admin import router as broadcast_admin_router
 from handlers.support_relay import router as support_relay_router
 from link_guard import router as link_guard_router
+import channel_comments
 from handlers.courier import router as courier_router
 from bloggers import router as bloggers_router
 from meta_leads import router as meta_leads_router
@@ -193,6 +194,10 @@ async def main():
     storage = PostgresStorage()
     dp = Dispatcher(storage=storage)
     dp.update.outer_middleware(admin_mood.CurrentUserMiddleware())
+    # Every message in the channel's discussion group is kept (owner, 2026-11-27:
+    # "kanal postlaridagi hamma izohlarni saqlaydigan qil") — first, so even a
+    # comment link_guard deletes or a later middleware stops is recorded.
+    dp.message.outer_middleware(channel_comments.ChannelCommentsMiddleware())
     # Buyers' own text back to old Latin before any handler matches it:
     # reply buttons are sent in the new alphabet («🏠 Boş menyu»), handlers
     # know the old labels (owner, 2026-11-06). First, so everything after sees it.
@@ -265,6 +270,7 @@ async def main():
     # Group link guard first — a non-admin's link in a group is deleted
     # before any other handler can react to it (see link_guard.py).
     dp.include_router(link_guard_router)
+    dp.include_router(channel_comments.router)
     # 📱 /start applogin_… — the Android app's login confirmation (app_auth.py),
     # before every private-chat router so the payload is never read as a
     # blogger/ad code or swallowed by another flow.

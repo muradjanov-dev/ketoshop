@@ -1492,6 +1492,22 @@ async def api_ai_dialogs(request: web.Request):
 
 
 @require_auth
+async def api_channel_comments(request: web.Request):
+    """GET /admin/api/channel-comments — kanal postlari va izohlar soni;
+    ?thread_id=N — shu postning hamma izohlari; ?days=N — oxirgi N kundagi
+    hamma izohlar (2026-11-27, channel_comments.py). Faqat o'qiydi."""
+    import channel_comments
+    try:
+        thread = int(request.query["thread_id"]) if request.query.get("thread_id") else None
+        days = int(request.query["days"]) if request.query.get("days") else None
+    except ValueError:
+        return _json({"error": "bad request"}, status=400)
+    if thread is None and days is None:
+        return _json({"posts": await channel_comments.posts(50)})
+    return _json({"comments": await channel_comments.comments(thread_id=thread, days=days)})
+
+
+@require_auth
 async def api_ai_totals(request: web.Request):
     """GET /admin/api/ai-totals — AI hamma joyda (bot, sayt, guruh, Direct, izohlar)
     boshidan beri nechta javob yozgani va nechta odamga. Faqat o'qiydi (ai_totals.py)."""
@@ -2613,6 +2629,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/feedback", api_feedback)
     app.router.add_get("/admin/api/portraits", api_portraits)
     app.router.add_get("/admin/api/ai-dialogs", api_ai_dialogs)
+    app.router.add_get("/admin/api/channel-comments", api_channel_comments)
     app.router.add_get("/admin/api/ai-totals", api_ai_totals)
     app.router.add_get("/admin/api/portraits/{user_id:\\d+}", api_portrait_card)
     app.router.add_get("/admin/api/site-analytics/user/{user_id:\\d+}", api_site_user)
