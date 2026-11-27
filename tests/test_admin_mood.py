@@ -120,10 +120,21 @@ class FunLinesTest(unittest.TestCase):
         seen = {admin_mood.cheer_line("Buyurtma #12 bekor qilindi", "uz", random.Random(i)) for i in range(400)}
         self.assertTrue(seen & set(admin_mood.FUN_UZ))
 
+    def test_world_and_general_lines(self):
+        import random
+        import admin_mood
+        self.assertEqual((len(admin_mood.FUN_WORLD), len(admin_mood.FUN_GENERAL)), (100, 50))
+        self.assertEqual(len(set(admin_mood.FUN_ALL)), 250)
+        for line in admin_mood.FUN_WORLD + admin_mood.FUN_GENERAL:
+            self.assertFalse(any(c in line for c in "<>&{}"), line)
+        seen = {admin_mood.cheer_line("Yangi foydalanuvchi qo'shildi", "uz", random.Random(i)) for i in range(600)}
+        self.assertTrue(seen & set(admin_mood.FUN_WORLD))
+        self.assertTrue(seen & set(admin_mood.FUN_GENERAL))
+
     def test_errors_and_russian_stay_without_uzbek_jokes(self):
         import random
         import admin_mood
-        fun = set(admin_mood.FUN_UZ)
+        fun = set(admin_mood.FUN_ALL)
         for i in range(200):
             self.assertNotIn(admin_mood.cheer_line("Backup xato bilan tugadi", "uz", random.Random(i)), fun)
             self.assertNotIn(admin_mood.cheer_line("Заказ #5 отменён", "ru", random.Random(i)), fun)
