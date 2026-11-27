@@ -154,12 +154,12 @@ const T = {
     soon: "📦 Oylik savat tez orada ochiladi.", err: "Ulanib bo'lmadi. Qayta urinib ko'ring.",
     title: "Oylik savat", lead: "Kerakli mahsulotlarni bir marta yig'ing — har oy o'zi uyingizga keladi. Qancha ko'p bo'lsa, shuncha arzon.",
     pcs: "ta", free: "+ bepul yetkazish",
-    standart: "Odamlar tanlagan 10 ta", standartSub: "Kanaldagi so'rovda eng ko'p yozilganlar · −10% va bepul yetkazish",
-    mini: "Kichik savat — 5 ta", miniSub: "Eng zarurlari · −5%", own: "O'zim yig'aman", ownSub: "Rasmlarga qarab tanlayman",
+    standart: "Odamlar tanlagan 10 ta", standartSub: "Kanaldagi so'rovda eng ko'p yozilganlar · −9% va bepul yetkazish",
+    mini: "Kichik savat — 5 ta", miniSub: "Eng zarurlari · −4%", own: "O'zim yig'aman", ownSub: "Rasmlarga qarab tanlayman",
     featured: "⭐ Ko'p oladi", all: "Hammasi", search: "Qidirish: bodom, steviya…", add: "+ Qo'shish",
     perMonth: "har oy", save: "Har oy {s} tejaysiz", needMore: "Yana {n} ta qo'shing — {p}% chegirma",
     needFree: "Yana {n} ta qo'shing — {p}% chegirma va bepul yetkazish", minNeed: "Kamida {n} ta mahsulot tanlang",
-    top: "Eng katta chegirma — 11% 🎉", next: "Davom etish →", back: "← Orqaga",
+    top: "Eng katta chegirma — 10% 🎉", next: "Davom etish →", back: "← Orqaga",
     dayH: "Har oy qaysi kuni olib kelaylik?", wayH: "Qanday olasiz?", self: "Kuryer uyga olib keladi", pickup: "Do'kondan o'zim olaman",
     uzpost: "Pochta orqali (viloyatlar)", name: "Ismingiz", phone: "Telefon", address: "Manzil",
     addressPh: "Shahar, ko'cha, uy", sumH: "Hisob", goods: "Mahsulotlar", discount: "Chegirma", delivery: "Yetkazish",
@@ -173,12 +173,12 @@ const T = {
     soon: "📦 Ежемесячная корзина скоро откроется.", err: "Не удалось подключиться. Попробуйте ещё раз.",
     title: "Ежемесячная корзина", lead: "Соберите нужные продукты один раз — каждый месяц они сами приедут к вам. Чем больше, тем выгоднее.",
     pcs: "шт", free: "+ бесплатная доставка",
-    standart: "10 продуктов, которые выбрали люди", standartSub: "Самые популярные из опроса в канале · −10% и бесплатная доставка",
-    mini: "Маленькая корзина — 5 шт", miniSub: "Самое нужное · −5%", own: "Соберу сам", ownSub: "Выберу по фото",
+    standart: "10 продуктов, которые выбрали люди", standartSub: "Самые популярные из опроса в канале · −9% и бесплатная доставка",
+    mini: "Маленькая корзина — 5 шт", miniSub: "Самое нужное · −4%", own: "Соберу сам", ownSub: "Выберу по фото",
     featured: "⭐ Часто берут", all: "Все", search: "Поиск: миндаль, стевия…", add: "+ Добавить",
     perMonth: "в месяц", save: "Экономия {s} в месяц", needMore: "Добавьте ещё {n} — скидка {p}%",
     needFree: "Добавьте ещё {n} — скидка {p}% и бесплатная доставка", minNeed: "Выберите минимум {n} товаров",
-    top: "Самая большая скидка — 11% 🎉", next: "Дальше →", back: "← Назад",
+    top: "Самая большая скидка — 10% 🎉", next: "Дальше →", back: "← Назад",
     dayH: "Какого числа привозить каждый месяц?", wayH: "Как получите?", self: "Курьер привезёт домой", pickup: "Заберу из магазина",
     uzpost: "Почтой (регионы)", name: "Ваше имя", phone: "Телефон", address: "Адрес",
     addressPh: "Город, улица, дом", sumH: "Расчёт", goods: "Товары", discount: "Скидка", delivery: "Доставка",
@@ -362,7 +362,7 @@ function paintTop() {
   const nx = lq.next;
   let msg;
   if (lq.pieces < S.data.min_pieces) msg = `<div class="next">${esc(L.minNeed.replace('{n}', S.data.min_pieces))}</div>`;
-  else if (nx) msg = `<div class="next">${esc((nx.free && pct < 10 ? L.needFree : L.needMore).replace('{n}', nx.need).replace('{p}', nx.percent))}</div>`;
+  else if (nx) msg = `<div class="next">${esc((nx.free && lq.pieces < S.data.free_courier_pieces ? L.needFree : L.needMore).replace('{n}', nx.need).replace('{p}', nx.percent))}</div>`;
   else msg = `<div class="next done">${esc(L.top)}</div>`;
   top.innerHTML = `<div class="top-row">
       <div class="basket" aria-hidden="true"><div class="heap">${heap}</div>

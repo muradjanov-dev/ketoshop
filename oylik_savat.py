@@ -4,7 +4,8 @@ Egasi, 2026-11-27: kanalda "eng ko'p ishlatadigan 10 ta mahsulotingiz" deb
 so'ralgan edi. Shundan "oylik paket obunasi" g'oyasi chiqdi, keyin: "konstruktor
 qilish imkoni bormi? saytda qilsak va botda faqat juda qulay animatsiya bilan
 bo'lishi kerak kattalar ham tushunadigan harid savatiga mahsulot rasmlarini
-qo'shib". Chegirma: "5 ta mahsulot: −5%, 8 ta: −8%, 10 ta: −10%, 10+ uchun 11%".
+qo'shib". Chegirma: avval 5/8/10/11%, keyin "chegirma summasi ko'p ekan, 11+ ga
+10%, undan avvalgisiga 9%, undan avvalgisiga kamroq" — TIERS.
 "buni hozir saytda va botda faqat adminlarga ko'rinadigan qil ommaga chiqarma",
 "ishlatib testlab ko'raylik".
 
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 PUBLIC = os.getenv("OYLIK_SAVAT_PUBLIC", "0").strip() == "1"
 
 # (kamida shuncha dona, chegirma %) — kattasidan boshlab.
-TIERS = ((11, 11), (10, 10), (8, 8), (5, 5))
+TIERS = ((11, 10), (10, 9), (8, 7), (5, 4))
 MIN_PIECES = 5
 FREE_COURIER_PIECES = 10
 MAX_LINES = 40
@@ -522,7 +523,7 @@ TEXTS = {
         "paused": "⏸ Hozir to'xtatilgan",
         "none": ("📦 <b>Oylik savat</b>\n\nKerakli mahsulotlarni bir marta yig'ing, har oy o'zi uyingizga "
                  "keladi. Qancha ko'p bo'lsa, shuncha arzon:\n"
-                 "• 5 ta — −5%\n• 8 ta — −8%\n• 10 ta — −10% va bepul yetkazish\n• 11 ta va ko'p — −11%"),
+                 "• 5 ta — −4%\n• 8 ta — −7%\n• 10 ta — −9% va bepul yetkazish\n• 11 ta va ko'p — −10%"),
         "btn_build": "📦 Savatni yig'ish",
         "btn_order": "✅ Olib keling",
         "btn_edit": "✏️ O'zgartirish",
@@ -550,7 +551,7 @@ TEXTS = {
         "paused": "⏸ Сейчас на паузе",
         "none": ("📦 <b>Ежемесячная корзина</b>\n\nСоберите нужные продукты один раз — каждый месяц они "
                  "сами приедут к вам. Чем больше, тем выгоднее:\n"
-                 "• 5 шт — −5%\n• 8 шт — −8%\n• 10 шт — −10% и бесплатная доставка\n• 11 шт и больше — −11%"),
+                 "• 5 шт — −4%\n• 8 шт — −7%\n• 10 шт — −9% и бесплатная доставка\n• 11 шт и больше — −10%"),
         "btn_build": "📦 Собрать корзину",
         "btn_order": "✅ Привезите",
         "btn_edit": "✏️ Изменить",

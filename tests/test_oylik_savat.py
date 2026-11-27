@@ -29,20 +29,20 @@ def q(pieces_1, pieces_2=0, delivery=CITY):
 
 class TierTest(unittest.TestCase):
     def test_owner_tiers(self):
-        self.assertEqual([o.tier_percent(n) for n in (4, 5, 7, 8, 9, 10, 11, 25)], [0, 5, 5, 8, 8, 10, 11, 11])
+        self.assertEqual([o.tier_percent(n) for n in (4, 5, 7, 8, 9, 10, 11, 25)], [0, 4, 4, 7, 7, 9, 10, 10])
 
     def test_next_tier_hint(self):
-        self.assertEqual(o.next_tier(3), {"need": 2, "percent": 5, "free_courier": False})
-        self.assertEqual(o.next_tier(9), {"need": 1, "percent": 10, "free_courier": True})
+        self.assertEqual(o.next_tier(3), {"need": 2, "percent": 4, "free_courier": False})
+        self.assertEqual(o.next_tier(9), {"need": 1, "percent": 9, "free_courier": True})
         self.assertIsNone(o.next_tier(11))
 
 
 class PriceTest(unittest.TestCase):
     def test_percent_on_every_line_and_savings(self):
-        r = q(3, 2)                                   # 5 pieces → −5%
-        self.assertEqual(r["percent"], 5)
+        r = q(3, 2)                                   # 5 pieces → −4%
+        self.assertEqual(r["percent"], 4)
         bodom, stevia = r["lines"]
-        self.assertEqual(bodom["price"], round(87000 * .95))
+        self.assertEqual(bodom["price"], round(87000 * .96))
         self.assertEqual(bodom["original_price"], 87000)
         self.assertEqual(stevia["original_price"], 29040)             # 12% shelf discount first
         self.assertEqual(r["savings"], r["shelf_total"] - r["subtotal"])
@@ -52,9 +52,9 @@ class PriceTest(unittest.TestCase):
 
     def test_ten_pieces_free_courier_counts_as_savings(self):
         r = q(10)
-        self.assertEqual((r["percent"], r["delivery_fee"], r["delivery_saved"]), (10, 0, 25000))
+        self.assertEqual((r["percent"], r["delivery_fee"], r["delivery_saved"]), (9, 0, 25000))
         self.assertTrue(r["free_courier"])
-        self.assertEqual(r["savings"], 870000 - 783000 + 25000)
+        self.assertEqual(r["savings"], 870000 - 791700 + 25000)
 
     def test_outside_city_km_still_paid_with_free_courier(self):
         import courier_zone
@@ -118,7 +118,7 @@ class TextTest(unittest.TestCase):
         r = q(10)
         sub = {"day": 15, "status": "active"}
         uz = o.summary_text(sub, r, "uz", date(2026, 12, 1))
-        self.assertIn("−10%", uz)
+        self.assertIn("−9%", uz)
         self.assertIn("tejaysiz", uz)
         self.assertIn("15.12", uz)
         self.assertIn("экономите", o.summary_text(sub, r, "ru", date(2026, 12, 1)))
