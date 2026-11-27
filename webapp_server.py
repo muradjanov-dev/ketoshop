@@ -1053,6 +1053,83 @@ async def api_courier_quote(request: web.Request):
                   "joined": joined})
 
 
+async def api_savat(request: web.Request):
+    """GET /api/savat — 📦 Oylik savat konstruktori (oylik_savat.py): katalog,
+    tayyor savatlar, mijozning obunasi va oxirgi manzili. Hozircha faqat adminlar."""
+    import oylik_savat
+    uid = request["user_id"]
+    if not oylik_savat.allowed(uid):
+        return _json({"allowed": False})
+    lang = request.get("user_lang", "uz")
+    sub = await oylik_savat.get(uid)
+    return _json({
+        "allowed": True, "lang": lang, "tiers": [{"pieces": p, "percent": d} for p, d in oylik_savat.TIERS],
+        "min_pieces": oylik_savat.MIN_PIECES, "free_courier_pieces": oylik_savat.FREE_COURIER_PIECES,
+        "catalog": await oylik_savat.catalog(lang),
+        "subscription": {"items": sub["items"], "day": sub["day"], "delivery": sub["delivery"],
+                         "status": sub["status"]} if sub else None,
+        "defaults": await oylik_savat.defaults(uid),
+        "test": not oylik_savat.PUBLIC,
+    })
+
+
+async def _savat_body(request: web.Request):
+    import oylik_savat
+    try:
+        body = await request.json()
+    except Exception:
+        return None
+    if not isinstance(body, dict):
+        return None
+    items = oylik_savat.clean_items(body.get("items"))
+    delivery = oylik_savat.clean_delivery(body.get("delivery"))
+    products = await oylik_savat.products_for(items)
+    return body, items, delivery, oylik_savat.price(items, products, delivery)
+
+
+async def api_savat_quote(request: web.Request):
+    """POST /api/savat/quote {items, delivery} — narx, chegirma, tejash (saqlamaydi)."""
+    import oylik_savat
+    if not oylik_savat.allowed(request["user_id"]):
+        return _json({"error": "forbidden"}, status=403)
+    parsed = await _savat_body(request)
+    if parsed is None:
+        return _json({"error": "bad_request"}, status=400)
+    return _json({"ok": True, "quote": parsed[3]})
+
+
+async def api_savat_save(request: web.Request):
+    """POST /api/savat {items, day, delivery} — obunani saqlaydi, botda savat
+    animatsiyasini yuboradi."""
+    import oylik_savat
+    uid = request["user_id"]
+    if not oylik_savat.allowed(uid):
+        return _json({"error": "forbidden"}, status=403)
+    parsed = await _savat_body(request)
+    if parsed is None:
+        return _json({"error": "bad_request"}, status=400)
+    body, items, delivery, quote = parsed
+    try:
+        day = int(body.get("day"))
+    except (TypeError, ValueError):
+        day = 0
+    if not oylik_savat.DAY_MIN <= day <= oylik_savat.DAY_MAX:
+        return _json({"error": "day"}, status=400)
+    if not quote["ready"]:
+        return _json({"error": "too_few", "min_pieces": oylik_savat.MIN_PIECES}, status=400)
+    if not delivery["phone"]:
+        return _json({"error": "phone"}, status=400)
+    if delivery["method"] != "pickup" and not delivery["address"]:
+        return _json({"error": "address"}, status=400)
+    await oylik_savat.save(uid, items, day, delivery)
+    bot = request.app.get("bot")
+    if bot is not None:
+        lang = request.get("user_lang", "uz")
+        import asyncio
+        asyncio.create_task(oylik_savat.send_card(bot, uid, lang))
+    return _json({"ok": True, "quote": quote})
+
+
 async def api_uzpost_quote(request: web.Request):
     """📮 What UzPost «Bir Qadam» costs for this buyer's cart, and the post
     office nearest to their pin (uzpost.py) — the Mini App shows both before
@@ -2397,6 +2474,9 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_get("/api/checkout/phone", api_checkout_phone)
     app.router.add_get("/api/uzpost/quote", api_uzpost_quote)
     app.router.add_get("/api/courier/quote", api_courier_quote)
+    app.router.add_get("/api/savat", api_savat)
+    app.router.add_post("/api/savat/quote", api_savat_quote)
+    app.router.add_post("/api/savat", api_savat_save)
     app.router.add_post("/api/site-feedback", api_site_feedback)
     app.router.add_get("/api/site-feedback/due", api_site_feedback_due)
     app.router.add_post("/api/site-feedback/shown", api_site_feedback_shown)

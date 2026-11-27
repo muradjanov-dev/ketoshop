@@ -265,6 +265,9 @@ async def main():
     # Group link guard first — a non-admin's link in a group is deleted
     # before any other handler can react to it (see link_guard.py).
     dp.include_router(link_guard_router)
+    # 📦 Oylik savat — obuna konstruktori; hozircha faqat adminlar (oylik_savat.py).
+    import oylik_savat
+    dp.include_router(oylik_savat.router)
     # 📱 /start applogin_… — the Android app's login confirmation (app_auth.py),
     # before every private-chat router so the payload is never read as a
     # blogger/ad code or swallowed by another flow.
@@ -456,6 +459,9 @@ async def main():
     # 🔥 07:30 — the daily games' streak reminder (game_reminder.py).
     from game_reminder import scheduler_loop as game_reminder_loop
     asyncio.create_task(game_reminder_loop(bot))
+    # 📦 Oylik savat: kelish kunidan 2 kun oldin eslatma (oylik_savat.py).
+    from oylik_savat import scheduler_loop as oylik_savat_loop
+    asyncio.create_task(oylik_savat_loop(bot))
     # 📞 09:00 — Call Centre operatorlariga ish kuni boshlanishi (faqat xodimlar).
     from call_centre_bot import morning_loop as call_centre_morning_loop
     asyncio.create_task(call_centre_morning_loop(bot))

@@ -60,6 +60,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="reklama_bog", description="🔗 Reklama kampaniyasi ↔ bot havolasi"),
     BotCommand(command="izohlar", description="💬 Instagram/Facebook izohlari: javobsizlar, AI"),
     BotCommand(command="izoh_hisobot", description="📋 AI bugun qayerda javob berdi, qaysilariga bera olmadi"),
+    BotCommand(command="oylik_savat", description="📦 Oylik savat obunasi (sinov, faqat adminlar)"),
     BotCommand(command="kanal_ovoz", description="🗣 Kanal postlari jonli va har xil uzunlikda: holat, sinov"),
     BotCommand(command="izoh_qayta", description="🔁 Bir oy oldingi izohlarga qayta yozish: holat, on/off"),
     BotCommand(command="ig_direct", description="📩 Instagram Direct AI javoblari: holat, on/off, test"),

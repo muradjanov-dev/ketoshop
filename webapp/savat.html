@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Oylik savat</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=Unbounded:wght@600;700;800&display=swap">
+<style>
+/* Oylik savat konstruktori (oylik_savat.py). Kattalar uchun: katta yozuv, katta
+   tugma, har ekranda bitta ish. Ranglar — do'konning «Quyosh» kunduzgi mavzusi. */
+:root {
+  --bg: #FAF6EF; --surface: #FFFDF9; --surface-hi: #F3EDE3; --text: #3A3129; --hint: #8F8275;
+  --line: rgba(80,60,40,.12); --btn: #B5684A; --btn-text: #fff; --leaf: #5E8C5A; --leaf-soft: rgba(110,154,106,.15);
+  --sun: #EBCD86; --sun-soft: rgba(235,205,134,.28); --berry: #B85C67; --basket: #C98A63; --basket-rim: #A65E40;
+  --shadow: 0 6px 20px -10px rgba(58,49,41,.35);
+  --display: 'Unbounded', 'Onest', system-ui, sans-serif; --body: 'Onest', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #1F1B17; --surface: #2A2520; --surface-hi: #342E27; --text: #F2EADF; --hint: #B3A797;
+  --line: rgba(255,240,220,.12); --btn: #D07E5C; --leaf: #8DBB88; --leaf-soft: rgba(141,187,136,.16);
+  --sun: #E2BE6A; --sun-soft: rgba(226,190,106,.18); --berry: #E08A94; --basket: #B97B55; --basket-rim: #8E5236;
+  --shadow: 0 6px 20px -10px rgba(0,0,0,.7); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 17px/1.45 var(--body); -webkit-tap-highlight-color: transparent;
+  padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)); }
+.wrap { max-width: 640px; margin: 0 auto; padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2 { font-family: var(--display); letter-spacing: -.01em; text-wrap: balance; margin: 0; }
+h1 { font-size: 24px; line-height: 1.2; }
+h2 { font-size: 19px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+.hint { color: var(--hint); font-size: 15px; }
+.test { display: inline-block; background: var(--sun-soft); border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 700; }
+[hidden] { display: none !important; }
+
+/* ── start ── */
+.start { display: grid; gap: 14px; padding-block: 20px 8px; }
+.ladder { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.rung { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 10px 6px; text-align: center; }
+.rung b { display: block; font-family: var(--display); font-size: 22px; color: var(--leaf); }
+.rung span { font-size: 13px; color: var(--hint); }
+.choice { display: grid; grid-template-columns: 64px 1fr; gap: 14px; align-items: center; text-align: left; width: 100%;
+  background: var(--surface); border: 2px solid var(--line); border-radius: 22px; padding: 16px; box-shadow: var(--shadow); }
+.choice.star { border-color: var(--sun); }
+.choice .ico { width: 64px; height: 64px; border-radius: 18px; background: var(--sun-soft); display: grid; place-items: center; font-size: 34px; }
+.choice b { font-size: 19px; display: block; }
+.choice small { color: var(--hint); font-size: 15px; }
+
+/* ── basket (sticky) ── */
+.top { position: sticky; top: 0; z-index: 5; background: var(--bg); padding-block: 10px 8px; border-bottom: 1px solid var(--line); }
+.top-row { display: grid; grid-template-columns: 112px 1fr; gap: 12px; align-items: center; }
+.basket { position: relative; width: 112px; height: 96px; }
+.basket svg { position: absolute; left: 0; bottom: 0; width: 112px; height: 70px; }
+.basket .heap { position: absolute; left: 10px; right: 10px; bottom: 44px; height: 52px; display: flex; flex-wrap: wrap-reverse;
+  justify-content: center; align-content: flex-start; gap: 0 2px; }
+.basket .heap img, .basket .heap i { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; border: 2px solid var(--surface);
+  margin-top: -8px; background: var(--surface-hi); font-style: normal; font-size: 11px; font-weight: 800; display: grid; place-items: center; }
+.basket.bump { animation: bump .45s ease; }
+@keyframes bump { 30% { transform: translateY(5px) scale(1.06, .94); } 60% { transform: translateY(-3px); } }
+.count { position: absolute; top: -2px; right: -4px; background: var(--btn); color: var(--btn-text); border-radius: 999px; min-width: 30px; height: 30px;
+  display: grid; place-items: center; font-weight: 800; font-size: 16px; padding-inline: 6px; }
+.nums { min-width: 0; }
+.nums .total { font-family: var(--display); font-size: 24px; font-variant-numeric: tabular-nums; }
+.nums .shelf { color: var(--hint); text-decoration: line-through; font-size: 15px; margin-left: 6px; }
+.nums .save { color: var(--leaf); font-weight: 700; font-size: 15px; }
+.pct { display: inline-block; background: var(--leaf); color: #fff; border-radius: 10px; padding: 1px 8px; font-weight: 800; font-size: 15px; margin-left: 6px; vertical-align: 3px; }
+.bar { position: relative; height: 12px; background: var(--surface-hi); border-radius: 999px; margin: 12px 0 4px; overflow: visible; }
+.bar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: linear-gradient(90deg, var(--sun), var(--leaf)); transition: width .4s ease; }
+.bar .tick { position: absolute; top: -4px; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--line);
+  font-size: 10px; font-weight: 800; display: grid; place-items: center; }
+.bar .tick.on { background: var(--leaf); border-color: var(--leaf); color: #fff; }
+.ticks { position: relative; height: 18px; font-size: 12px; color: var(--hint); }
+.ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.next { font-size: 15px; font-weight: 600; background: var(--sun-soft); border-radius: 12px; padding: 6px 10px; margin-top: 4px; }
+.next.done { background: var(--leaf-soft); color: var(--leaf); }
+
+/* ── catalog ── */
+.chips { display: flex; gap: 8px; overflow-x: auto; padding-block: 12px 6px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { flex: none; border: 2px solid var(--line); background: var(--surface); border-radius: 999px; padding: 9px 16px; font-weight: 700; font-size: 15px; }
+.chip.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.search { width: 100%; font: inherit; font-size: 17px; padding: 12px 16px; border-radius: 16px; border: 2px solid var(--line); background: var(--surface); color: var(--text); }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-block: 12px; }
+.card { background: var(--surface); border: 2px solid var(--line); border-radius: 20px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.card.in { border-color: var(--leaf); }
+.card .ph { aspect-ratio: 1; max-width: 100%; background: var(--surface-hi); position: relative; }
+.card .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card .ph .noimg { position: absolute; inset: 0; display: grid; place-items: center; font-size: 44px; }
+.card .badge { position: absolute; top: 8px; left: 8px; background: var(--sun); color: #3A3129; border-radius: 999px; padding: 2px 9px; font-size: 12px; font-weight: 800; }
+.card .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.card .nm { font-weight: 700; font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
+.card .pr { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 17px; }
+.card .pr s { display: block; color: var(--hint); font-weight: 500; font-size: 14px; }
+.card .act { margin-top: auto; }
+.add { width: 100%; min-height: 50px; border: none; border-radius: 14px; background: var(--btn); color: var(--btn-text); font-weight: 800; font-size: 18px; }
+.qty { display: grid; grid-template-columns: 50px 1fr 50px; align-items: center; background: var(--leaf-soft); border-radius: 14px; min-height: 50px; }
+.qty button { height: 50px; border: none; background: none; font-size: 26px; font-weight: 800; color: var(--leaf); }
+.qty b { text-align: center; font-size: 20px; font-variant-numeric: tabular-nums; }
+.fly { position: fixed; z-index: 50; width: 64px; height: 64px; border-radius: 50%; object-fit: cover; pointer-events: none; box-shadow: var(--shadow); }
+
+/* ── bottom bar ── */
+.dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--surface); border-top: 1px solid var(--line);
+  padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.dock .in { max-width: 640px; margin: 0 auto; display: flex; gap: 10px; }
+.big { flex: 1; min-height: 58px; border: none; border-radius: 18px; background: var(--btn); color: var(--btn-text); font-weight: 800; font-size: 19px; }
+.big:disabled { opacity: .45; }
+.ghost { min-height: 58px; border: 2px solid var(--line); background: var(--surface); border-radius: 18px; padding-inline: 18px; font-weight: 700; }
+
+/* ── step 2 ── */
+.step { display: grid; gap: 16px; padding-block: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 16px; display: grid; gap: 12px; }
+.days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.days button { aspect-ratio: 1; border: 2px solid var(--line); background: var(--surface); border-radius: 12px; font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; }
+.days button.on { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
+.ways { display: grid; gap: 8px; }
+.way { display: flex; gap: 12px; align-items: center; text-align: left; border: 2px solid var(--line); background: var(--surface); border-radius: 16px; padding: 14px; font-size: 17px; font-weight: 700; }
+.way.on { border-color: var(--btn); background: var(--sun-soft); }
+.way span { font-size: 28px; }
+label { font-weight: 700; font-size: 15px; display: grid; gap: 6px; }
+.field { font: inherit; font-size: 17px; padding: 13px 14px; border-radius: 14px; border: 2px solid var(--line); background: var(--bg); color: var(--text); width: 100%; }
+.sum { display: grid; gap: 6px; font-size: 16px; }
+.sum .row { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
+.sum .row.t { font-family: var(--display); font-size: 21px; }
+.win { background: var(--leaf-soft); color: var(--leaf); border-radius: 16px; padding: 14px; text-align: center; font-weight: 800; font-size: 18px; }
+.win small { display: block; font-weight: 600; font-size: 15px; margin-top: 2px; }
+.err { color: var(--berry); font-weight: 700; }
+
+/* ── done ── */
+.done { text-align: center; padding-block: 48px 16px; display: grid; gap: 14px; justify-items: center; }
+.tick-big { width: 96px; height: 96px; border-radius: 50%; background: var(--leaf); color: #fff; display: grid; place-items: center; font-size: 52px; animation: pop .5s ease; }
+@keyframes pop { 0% { transform: scale(.3); opacity: 0; } 70% { transform: scale(1.1); } 100% { transform: scale(1); } }
+.center { text-align: center; padding-block: 60px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><div class="center hint" id="loading">⏳</div></div>
+<div class="dock" id="dock" hidden><div class="in" id="dockIn"></div></div>
+
+<script>
+(function () {
+'use strict';
+const tg = window.Telegram && Telegram.WebApp;
+try { tg && tg.ready(); tg && tg.expand(); } catch (e) {}
+if (tg && tg.colorScheme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+
+const T = {
+  uz: {
+    soon: "📦 Oylik savat tez orada ochiladi.", err: "Ulanib bo'lmadi. Qayta urinib ko'ring.",
+    title: "Oylik savat", lead: "Kerakli mahsulotlarni bir marta yig'ing — har oy o'zi uyingizga keladi. Qancha ko'p bo'lsa, shuncha arzon.",
+    pcs: "ta", free: "+ bepul yetkazish",
+    standart: "Odamlar tanlagan 10 ta", standartSub: "Kanaldagi so'rovda eng ko'p yozilganlar · −10% va bepul yetkazish",
+    mini: "Kichik savat — 5 ta", miniSub: "Eng zarurlari · −5%", own: "O'zim yig'aman", ownSub: "Rasmlarga qarab tanlayman",
+    featured: "⭐ Ko'p oladi", all: "Hammasi", search: "Qidirish: bodom, steviya…", add: "+ Qo'shish",
+    perMonth: "har oy", save: "Har oy {s} tejaysiz", needMore: "Yana {n} ta qo'shing — {p}% chegirma",
+    needFree: "Yana {n} ta qo'shing — {p}% chegirma va bepul yetkazish", minNeed: "Kamida {n} ta mahsulot tanlang",
+    top: "Eng katta chegirma — 11% 🎉", next: "Davom etish →", back: "← Orqaga",
+    dayH: "Har oy qaysi kuni olib kelaylik?", wayH: "Qanday olasiz?", self: "Kuryer uyga olib keladi", pickup: "Do'kondan o'zim olaman",
+    uzpost: "Pochta orqali (viloyatlar)", name: "Ismingiz", phone: "Telefon", address: "Manzil",
+    addressPh: "Shahar, ko'cha, uy", sumH: "Hisob", goods: "Mahsulotlar", discount: "Chegirma", delivery: "Yetkazish",
+    freeW: "bepul", total: "Har oy to'laysiz", yearly: "Yiliga {s} tejaysiz",
+    saveBtn: "✅ Obunani saqlash", saving: "Saqlanmoqda…", doneH: "Savatingiz tayyor!",
+    doneP: "Botga qarang — savatingiz rasmini yubordik. Har oy {d}-sanadan 2 kun oldin eslatamiz.", close: "Yopish",
+    eDay: "Kunni tanlang", ePhone: "Telefon raqamni yozing", eAddr: "Manzilni yozing", eFew: "Kamida 5 ta mahsulot kerak",
+    som: "so'm", test: "🧪 Sinov — faqat adminlar ko'radi", edit: "Savatni o'zgartirish",
+  },
+  ru: {
+    soon: "📦 Ежемесячная корзина скоро откроется.", err: "Не удалось подключиться. Попробуйте ещё раз.",
+    title: "Ежемесячная корзина", lead: "Соберите нужные продукты один раз — каждый месяц они сами приедут к вам. Чем больше, тем выгоднее.",
+    pcs: "шт", free: "+ бесплатная доставка",
+    standart: "10 продуктов, которые выбрали люди", standartSub: "Самые популярные из опроса в канале · −10% и бесплатная доставка",
+    mini: "Маленькая корзина — 5 шт", miniSub: "Самое нужное · −5%", own: "Соберу сам", ownSub: "Выберу по фото",
+    featured: "⭐ Часто берут", all: "Все", search: "Поиск: миндаль, стевия…", add: "+ Добавить",
+    perMonth: "в месяц", save: "Экономия {s} в месяц", needMore: "Добавьте ещё {n} — скидка {p}%",
+    needFree: "Добавьте ещё {n} — скидка {p}% и бесплатная доставка", minNeed: "Выберите минимум {n} товаров",
+    top: "Самая большая скидка — 11% 🎉", next: "Дальше →", back: "← Назад",
+    dayH: "Какого числа привозить каждый месяц?", wayH: "Как получите?", self: "Курьер привезёт домой", pickup: "Заберу из магазина",
+    uzpost: "Почтой (регионы)", name: "Ваше имя", phone: "Телефон", address: "Адрес",
+    addressPh: "Город, улица, дом", sumH: "Расчёт", goods: "Товары", discount: "Скидка", delivery: "Доставка",
+    freeW: "бесплатно", total: "Платите в месяц", yearly: "Экономия в год: {s}",
+    saveBtn: "✅ Сохранить подписку", saving: "Сохраняем…", doneH: "Корзина готова!",
+    doneP: "Загляните в бот — мы отправили фото корзины. Напомним за 2 дня до {d}-го числа.", close: "Закрыть",
+    eDay: "Выберите день", ePhone: "Укажите телефон", eAddr: "Укажите адрес", eFew: "Нужно минимум 5 товаров",
+    som: "сум", test: "🧪 Тест — видят только админы", edit: "Изменить корзину",
+  },
+};
+let L = T.uz;
+const $ = s => document.querySelector(s);
+const app = $('#app'), dock = $('#dock'), dockIn = $('#dockIn');
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => Math.round(+n || 0).toLocaleString('ru-RU').replace(/ |,/g, ' ') + ' ' + L.som;
+const reduced = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const haptic = k => { try { tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred(k || 'light'); } catch (e) {} };
+
+const S = { data: null, items: new Map(), cat: 'featured', q: '', day: 0, delivery: {}, quote: null, seq: 0, timer: null };
+
+function api(path, body) {
+  const headers = { 'Authorization': 'tma ' + ((tg && tg.initData) || '') };
+  if (body) headers['Content-Type'] = 'application/json';
+  return fetch(path, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined })
+    .then(r => r.json().then(j => { if (!r.ok) { const e = new Error(j.error || 'http'); e.data = j; throw e; } return j; }));
+}
+
+/* ── pricing, instantly on the phone; the server's quote replaces it ── */
+function tier(pieces) { for (const t of S.data.tiers) if (pieces >= t.pieces) return t.percent; return 0; }
+function nextTier(pieces) {
+  const up = S.data.tiers.slice().sort((a, b) => a.pieces - b.pieces).find(t => pieces < t.pieces);
+  return up ? { need: up.pieces - pieces, percent: up.percent, free: up.pieces >= S.data.free_courier_pieces } : null;
+}
+const byId = id => S.data.catalog.products.find(p => p.id === id);
+function local() {
+  let pieces = 0, shelf = 0;
+  S.items.forEach((q, id) => { const p = byId(id); if (p) { pieces += q; shelf += p.price * q; } });
+  const pct = tier(pieces);
+  let sub = 0;
+  S.items.forEach((q, id) => { const p = byId(id); if (p) sub += Math.round(p.price * (100 - pct) / 100) * q; });
+  return { pieces, percent: pct, shelf_total: shelf, subtotal: sub, savings: shelf - sub, next: nextTier(pieces) };
+}
+function itemsBody() { return [...S.items].map(([product_id, quantity]) => ({ product_id, quantity })); }
+function requote() {
+  clearTimeout(S.timer);
+  S.timer = setTimeout(() => {
+    const seq = ++S.seq;
+    api('/api/savat/quote', { items: itemsBody(), delivery: S.delivery })
+      .then(r => { if (seq === S.seq) { S.quote = r.quote; paintTop(); paintSummary(); } }).catch(() => {});
+  }, 300);
+}
+
+/* ── start ── */
+function boot() {
+  api('/api/savat').then(d => {
+    if (!d.allowed) { app.innerHTML = `<div class="center"><h2>${esc(T.uz.soon)}</h2></div>`; return; }
+    S.data = d; L = d.lang === 'ru' ? T.ru : T.uz;
+    document.documentElement.lang = d.lang === 'ru' ? 'ru' : 'uz';
+    S.delivery = Object.assign({}, d.defaults, (d.subscription || {}).delivery || {});
+    if (d.subscription) {
+      (d.subscription.items || []).forEach(it => { if (byId(it.product_id)) S.items.set(it.product_id, it.quantity); });
+      S.day = d.subscription.day || 0;
+      builder();
+    } else start();
+  }).catch(() => { app.innerHTML = `<div class="center"><p class="err">${esc(T.uz.err)}</p></div>`; });
+}
+
+function start() {
+  dock.hidden = true;
+  const rungs = S.data.tiers.slice().sort((a, b) => a.pieces - b.pieces).map(t =>
+    `<div class="rung"><b>−${t.percent}%</b><span>${t.pieces}${t.pieces >= 11 ? '+' : ''} ${L.pcs}</span></div>`).join('');
+  app.innerHTML = `<div class="start">
+    ${S.data.test ? `<span class="test">${esc(L.test)}</span>` : ''}
+    <h1>📦 ${esc(L.title)}</h1>
+    <p class="hint" style="margin:0">${esc(L.lead)}</p>
+    <div class="ladder">${rungs}</div>
+    <p class="hint" style="margin:-4px 0 4px;text-align:center">10 ${L.pcs} ${esc(L.free)}</p>
+    <button class="choice star" data-pre="standart"><span class="ico">⭐</span><span><b>${esc(L.standart)}</b><small>${esc(L.standartSub)}</small></span></button>
+    <button class="choice" data-pre="mini"><span class="ico">🧺</span><span><b>${esc(L.mini)}</b><small>${esc(L.miniSub)}</small></span></button>
+    <button class="choice" data-pre="own"><span class="ico">✋</span><span><b>${esc(L.own)}</b><small>${esc(L.ownSub)}</small></span></button>
+  </div>`;
+  app.querySelectorAll('[data-pre]').forEach(b => b.addEventListener('click', () => {
+    const pre = b.dataset.pre;
+    S.items.clear();
+    (S.data.catalog.presets[pre] || []).forEach(id => S.items.set(id, 1));
+    S.cat = pre === 'own' ? 'featured' : 'mine';
+    haptic('medium');
+    builder();
+  }));
+}
+
+/* ── builder ── */
+function builder() {
+  const cats = [['mine', '🧺 ' + (L === T.ru ? 'В корзине' : 'Savatda')], ['featured', L.featured]]
+    .concat(S.data.catalog.categories.map(c => [c.key, c.name])).concat([['all', L.all]]);
+  app.innerHTML = `
+    <div class="top" id="top"></div>
+    <div class="chips" id="chips">${cats.map(([k, n]) => `<button class="chip${S.cat === k ? ' on' : ''}" data-cat="${esc(k)}">${esc(n)}</button>`).join('')}</div>
+    <input class="search" id="q" type="search" placeholder="${esc(L.search)}" value="${esc(S.q)}" aria-label="${esc(L.search)}">
+    <div class="grid" id="grid"></div>`;
+  $('#chips').addEventListener('click', e => {
+    const c = e.target.closest('[data-cat]'); if (!c) return;
+    S.cat = c.dataset.cat; S.q = ''; $('#q').value = '';
+    app.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c));
+    paintGrid();
+  });
+  $('#q').addEventListener('input', e => { S.q = e.target.value.trim().toLowerCase(); paintGrid(); });
+  $('#grid').addEventListener('click', onGrid);
+  paintTop(); paintGrid(); paintDock('builder');
+  requote();
+}
+
+function visible() {
+  const all = S.data.catalog.products;
+  if (S.q) return all.filter(p => p.name.toLowerCase().includes(S.q));
+  if (S.cat === 'mine') return all.filter(p => S.items.has(p.id));
+  if (S.cat === 'featured') return S.data.catalog.featured.map(byId).filter(Boolean);
+  if (S.cat === 'all') return all;
+  return all.filter(p => p.category === S.cat);
+}
+
+function cardHtml(p, pct) {
+  const q = S.items.get(p.id) || 0, star = S.data.catalog.featured.includes(p.id);
+  const now = pct ? Math.round(p.price * (100 - pct) / 100) : p.price;
+  return `<div class="card${q ? ' in' : ''}" data-id="${p.id}">
+    <div class="ph">${p.photo_url ? `<img src="${esc(p.photo_url)}" alt="" loading="lazy">` : '<span class="noimg">🛍</span>'}
+      ${star ? `<span class="badge">⭐</span>` : ''}</div>
+    <div class="body"><div class="nm">${esc(p.name)}</div>
+      <div class="pr">${fmt(now)}${pct ? `<s>${fmt(p.price)}</s>` : ''}</div>
+      <div class="act">${q ? `<div class="qty"><button data-d="-1" aria-label="−">−</button><b>${q}</b><button data-d="1" aria-label="+">+</button></div>`
+        : `<button class="add" data-d="1">${esc(L.add)}</button>`}</div></div></div>`;
+}
+function paintGrid() {
+  const pct = local().percent, list = visible();
+  $('#grid').innerHTML = list.length ? list.map(p => cardHtml(p, pct)).join('') : `<p class="hint" style="grid-column:1/-1;text-align:center">—</p>`;
+}
+function repaintCard(id) {
+  const card = app.querySelector(`.card[data-id="${id}"]`), p = byId(id);
+  if (card && p) card.outerHTML = cardHtml(p, local().percent);
+}
+
+function onGrid(e) {
+  const b = e.target.closest('[data-d]'); if (!b) return;
+  const card = b.closest('.card'), id = +card.dataset.id, p = byId(id), d = +b.dataset.d;
+  const before = local().percent;
+  const q = Math.max(0, Math.min(20, (S.items.get(id) || 0) + d));
+  if (q) S.items.set(id, q); else S.items.delete(id);
+  if (d > 0) { fly(card.querySelector('.ph img, .ph .noimg'), p); haptic('light'); }
+  const after = local().percent;
+  if (after !== before) { paintGrid(); haptic('heavy'); } else repaintCard(id);
+  paintTop(); paintDock('builder'); requote();
+}
+
+function fly(from, p) {
+  const target = $('.basket');
+  if (!from || !target || reduced() || !p.photo_url) { bump(); return; }
+  const a = from.getBoundingClientRect(), b = target.getBoundingClientRect();
+  const img = document.createElement('img');
+  img.src = p.photo_url; img.className = 'fly'; img.alt = '';
+  const x0 = a.left + a.width / 2 - 32, y0 = a.top + a.height / 2 - 32, x1 = b.left + b.width / 2 - 32, y1 = b.top + 20;
+  img.style.left = x0 + 'px'; img.style.top = y0 + 'px';
+  document.body.appendChild(img);
+  const anim = img.animate([
+    { transform: 'translate(0,0) scale(1)', opacity: 1 },
+    { transform: `translate(${(x1 - x0) * .5}px, ${(y1 - y0) * .5 - 90}px) scale(.9)`, opacity: 1, offset: .55 },
+    { transform: `translate(${x1 - x0}px, ${y1 - y0}px) scale(.35)`, opacity: .9 },
+  ], { duration: 650, easing: 'cubic-bezier(.3,.7,.4,1)' });
+  anim.onfinish = () => { img.remove(); bump(); };
+}
+function bump() { const bk = $('.basket'); if (!bk) return; bk.classList.remove('bump'); void bk.offsetWidth; bk.classList.add('bump'); }
+
+function paintTop() {
+  const top = $('#top'); if (!top) return;
+  const lq = local(), sq = S.quote && S.quote.pieces === lq.pieces ? S.quote : null;
+  const total = sq ? sq.subtotal : lq.subtotal, shelf = sq ? sq.shelf_total : lq.shelf_total, pct = lq.percent;
+  const savings = sq ? sq.savings : lq.savings;
+  const imgs = []; S.items.forEach((q, id) => { const p = byId(id); if (p) for (let i = 0; i < q && imgs.length < 9; i++) imgs.push(p); });
+  const extra = lq.pieces - imgs.length;
+  const heap = imgs.map(p => p.photo_url ? `<img src="${esc(p.photo_url)}" alt="">` : '<i>🛍</i>').join('') + (extra > 0 ? `<i>+${extra}</i>` : '');
+  const maxP = 12, ticks = S.data.tiers.map(t => t.pieces).sort((a, b) => a - b);
+  const nx = lq.next;
+  let msg;
+  if (lq.pieces < S.data.min_pieces) msg = `<div class="next">${esc(L.minNeed.replace('{n}', S.data.min_pieces))}</div>`;
+  else if (nx) msg = `<div class="next">${esc((nx.free && pct < 10 ? L.needFree : L.needMore).replace('{n}', nx.need).replace('{p}', nx.percent))}</div>`;
+  else msg = `<div class="next done">${esc(L.top)}</div>`;
+  top.innerHTML = `<div class="top-row">
+      <div class="basket" aria-hidden="true"><div class="heap">${heap}</div>
+        <svg viewBox="0 0 112 70"><path d="M22 8 Q56 -24 90 8" fill="none" stroke="var(--basket-rim)" stroke-width="6" stroke-linecap="round"/>
+          <path d="M6 16 H106 L94 66 H18 Z" fill="var(--basket)"/><rect x="2" y="10" width="108" height="12" rx="6" fill="var(--basket-rim)"/>
+          <path d="M14 34 H98 M17 48 H95 M20 60 H92" stroke="var(--basket-rim)" stroke-width="2.5"/>
+          <path d="M34 22 L38 66 M56 22 V66 M78 22 L74 66" stroke="var(--basket-rim)" stroke-width="2"/></svg>
+        <span class="count">${lq.pieces}</span></div>
+      <div class="nums"><div><span class="total">${fmt(total)}</span>${pct ? `<span class="pct">−${pct}%</span>` : ''}</div>
+        <div>${pct ? `<span class="shelf">${fmt(shelf)}</span>` : ''} <span class="hint">${esc(L.perMonth)}</span></div>
+        ${savings > 0 ? `<div class="save">💚 ${esc(L.save.replace('{s}', fmt(savings)))}</div>` : ''}</div>
+    </div>
+    <div class="bar"><div class="fill" style="width:${Math.min(100, lq.pieces / maxP * 100)}%"></div>
+      ${ticks.map(n => `<span class="tick${lq.pieces >= n ? ' on' : ''}" style="left:${n / maxP * 100}%">${n}</span>`).join('')}</div>
+    <div class="ticks">${ticks.map(n => `<span style="left:${n / maxP * 100}%">−${tier(n)}%</span>`).join('')}</div>
+    ${msg}`;
+}
+
+function paintDock(where) {
+  dock.hidden = false;
+  if (where === 'builder') {
+    const ready = local().pieces >= S.data.min_pieces;
+    dockIn.innerHTML = `<button class="big" id="go" ${ready ? '' : 'disabled'}>${esc(L.next)}</button>`;
+    $('#go').addEventListener('click', () => { haptic('medium'); step2(); });
+  } else if (where === 'step2') {
+    dockIn.innerHTML = `<button class="ghost" id="bk">${esc(L.back)}</button><button class="big" id="sv">${esc(L.saveBtn)}</button>`;
+    $('#bk').addEventListener('click', () => builder());
+    $('#sv').addEventListener('click', saveSub);
+  } else {
+    dockIn.innerHTML = `<button class="big" id="cl">${esc(L.close)}</button>`;
+    $('#cl').addEventListener('click', () => { try { tg.close(); } catch (e) { start(); } });
+  }
+}
+
+/* ── step 2: day, delivery, summary ── */
+function step2() {
+  window.scrollTo(0, 0);
+  const d = S.delivery;
+  const way = (k, ico, txt) => `<button class="way${d.method === k ? ' on' : ''}" data-way="${k}"><span>${ico}</span>${esc(txt)}</button>`;
+  app.innerHTML = `<div class="step">
+    <div class="panel"><h2>📅 ${esc(L.dayH)}</h2>
+      <div class="days" id="days">${Array.from({ length: 28 }, (_, i) => `<button data-day="${i + 1}" class="${S.day === i + 1 ? 'on' : ''}">${i + 1}</button>`).join('')}</div></div>
+    <div class="panel"><h2>🚚 ${esc(L.wayH)}</h2>
+      <div class="ways" id="ways">${way('self', '🚚', L.self)}${way('pickup', '🏪', L.pickup)}${way('uzpost', '📮', L.uzpost)}</div>
+      <label>${esc(L.name)}<input class="field" id="fName" value="${esc(d.name)}" autocomplete="name"></label>
+      <label>${esc(L.phone)}<input class="field" id="fPhone" inputmode="tel" value="${esc(d.phone)}" placeholder="+998 90 123 45 67" autocomplete="tel"></label>
+      <label id="addrWrap"${d.method === 'pickup' ? ' hidden' : ''}>${esc(L.address)}<input class="field" id="fAddr" value="${esc(d.address)}" placeholder="${esc(L.addressPh)}"></label>
+    </div>
+    <div class="panel"><h2>🧾 ${esc(L.sumH)}</h2><div class="sum" id="sum"></div></div>
+    <p class="err" id="err" hidden></p>
+  </div>`;
+  $('#days').addEventListener('click', e => {
+    const b = e.target.closest('[data-day]'); if (!b) return;
+    S.day = +b.dataset.day; haptic('light');
+    app.querySelectorAll('#days button').forEach(x => x.classList.toggle('on', x === b));
+  });
+  $('#ways').addEventListener('click', e => {
+    const b = e.target.closest('[data-way]'); if (!b) return;
+    S.delivery.method = b.dataset.way; haptic('light');
+    app.querySelectorAll('.way').forEach(x => x.classList.toggle('on', x === b));
+    $('#addrWrap').hidden = S.delivery.method === 'pickup';
+    requote();
+  });
+  [['#fName', 'name'], ['#fPhone', 'phone'], ['#fAddr', 'address']].forEach(([s, k]) =>
+    $(s).addEventListener('input', e => { S.delivery[k] = e.target.value; if (k === 'address') { S.delivery.lat = null; S.delivery.lng = null; } }));
+  paintSummary(); paintDock('step2'); requote();
+}
+
+function paintSummary() {
+  const box = $('#sum'); if (!box) return;
+  const q = S.quote, lq = local();
+  if (!q) { box.innerHTML = '<span class="hint">⏳</span>'; return; }
+  const deliv = q.free_courier ? `<s class="hint">${fmt(q.self_fee)}</s> ${esc(L.freeW)}${q.delivery_fee ? ' + ' + fmt(q.delivery_fee) : ''}`
+    : (S.delivery.method === 'pickup' ? esc(L.freeW) : fmt(q.delivery_fee));
+  box.innerHTML = `
+    <div class="row"><span>${esc(L.goods)} (${q.pieces} ${L.pcs})</span><span>${fmt(q.shelf_total)}</span></div>
+    <div class="row" style="color:var(--leaf)"><span>${esc(L.discount)} −${q.percent}%</span><span>−${fmt(q.shelf_total - q.subtotal)}</span></div>
+    <div class="row"><span>${esc(L.delivery)}</span><span>${deliv}</span></div>
+    <div class="row t"><span>${esc(L.total)}</span><span>${fmt(q.total)}</span></div>
+    ${q.savings > 0 ? `<div class="win">💚 ${esc(L.save.replace('{s}', fmt(q.savings)))}<small>${esc(L.yearly.replace('{s}', fmt(q.savings_year)))}</small></div>` : ''}`;
+}
+
+function saveSub() {
+  const err = $('#err'), btn = $('#sv');
+  const show = m => { err.textContent = m; err.hidden = false; haptic('heavy'); };
+  err.hidden = true;
+  if (local().pieces < S.data.min_pieces) return show(L.eFew);
+  if (!S.day) return show(L.eDay);
+  if (!String(S.delivery.phone || '').trim()) return show(L.ePhone);
+  if (S.delivery.method !== 'pickup' && !String(S.delivery.address || '').trim()) return show(L.eAddr);
+  btn.disabled = true; btn.textContent = L.saving;
+  api('/api/savat', { items: itemsBody(), day: S.day, delivery: S.delivery }).then(() => {
+    haptic('heavy');
+    try { tg.HapticFeedback.notificationOccurred('success'); } catch (e) {}
+    app.innerHTML = `<div class="done"><div class="tick-big">✓</div><h1>${esc(L.doneH)}</h1>
+      <p class="hint" style="max-width:34ch">${esc(L.doneP.replace('{d}', S.day))}</p></div>`;
+    paintDock('done');
+  }).catch(e => {
+    btn.disabled = false; btn.textContent = L.saveBtn;
+    const code = e.message;
+    show(code === 'phone' ? L.ePhone : code === 'address' ? L.eAddr : code === 'day' ? L.eDay : code === 'too_few' ? L.eFew : L.err);
+  });
+}
+
+boot();
+})();
+</script>
+</body>
+</html>
