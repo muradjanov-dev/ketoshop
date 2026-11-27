@@ -123,6 +123,9 @@ def parse_location(text) -> tuple[float, float] | None:
     s = str(text or "").strip()
     if not s:
         return None
+    dms = _dms(s)
+    if dms:
+        return dms
     pairs: list[tuple[str, tuple[str, str]]] = []
     for key in ("whatshere%5Bpoint%5D=", "whatshere[point]=", "pt=", "ll="):
         m = re.search(re.escape(key) + _PAIR, s)
@@ -143,14 +146,123 @@ def parse_location(text) -> tuple[float, float] | None:
             return lat, lng
         if _in_uz(lng, lat):
             return lng, lat
-    if re.search(r"(yandex\.[a-z]+/maps/-/|maps\.app\.goo\.gl|goo\.gl/maps)", s):
-        raise Invalid("Qisqa havoladan nuqtani o'qib bo'lmaydi — xaritada «Ulashish» → "
-                      "koordinatalarni (masalan 41.311, 69.279) nusxalab qo'ying")
+    if _short_link(s):
+        raise ShortLink(_short_link(s))
     if pairs:
         raise Invalid("Lokatsiya O'zbekistondan tashqarida chiqdi — koordinatalarni tekshiring")
     if re.search(r"https?://", s):
         raise Invalid("Havolada koordinata topilmadi — masalan 41.311, 69.279 ko'rinishida yozing")
     return None
+
+
+class ShortLink(Invalid):
+    """A short map link: the point is behind a redirect (resolve_location)."""
+
+    def __init__(self, url: str):
+        super().__init__("Qisqa havoladan nuqtani o'qib bo'lmadi — Telegram lokatsiyasini yuboring "
+                         "yoki koordinatani (masalan 41.311, 69.279) yozing")
+        self.url = url
+
+
+_DMS_RE = re.compile(
+    r"(\d{1,2})\s*°\s*(\d{1,2})\s*['′]\s*(\d{1,2}(?:[.,]\d+)?)\s*(?:\"|″|'')?\s*([NS])"
+    r"[\s,;]*"
+    r"(\d{1,3})\s*°\s*(\d{1,2})\s*['′]\s*(\d{1,2}(?:[.,]\d+)?)\s*(?:\"|″|'')?\s*([EW])", re.I)
+
+
+def _dms(s: str) -> tuple[float, float] | None:
+    m = _DMS_RE.search(s)
+    if not m:
+        return None
+    def val(d, mi, se, hemi):
+        v = int(d) + int(mi) / 60 + float(se.replace(",", ".")) / 3600
+        return -v if hemi.upper() in "SW" else v
+    lat, lng = val(*m.group(1, 2, 3, 4)), val(*m.group(5, 6, 7, 8))
+    return (round(lat, 6), round(lng, 6)) if _in_uz(lat, lng) else None
+
+
+# Map services whose links are worth following to their point. Nothing
+# else is fetched — the admin's text never sends the server anywhere else.
+_MAP_HOSTS = re.compile(
+    r"^(?:[\w-]+\.)*(?:yandex\.(?:uz|ru|com|kz)|ya\.ru|google\.[a-z.]+|goo\.gl|"
+    r"2gis\.[a-z]+|maps\.apple\.com|openstreetmap\.org|osm\.org|here\.com|wego\.here\.com)$", re.I)
+_URL_RE = re.compile(r"https?://[^\s<>\"']+")
+
+
+def _short_link(s: str) -> str | None:
+    """The first map-service link in `s` (one a redirect may hide a point behind)."""
+    from urllib.parse import urlsplit
+    for url in _URL_RE.findall(s):
+        host = (urlsplit(url).hostname or "")
+        if _MAP_HOSTS.match(host):
+            return url
+    return None
+
+
+_RESOLVED: dict[str, tuple[float, float] | None] = {}
+
+
+async def _follow(url: str) -> str:
+    """The link's final address plus the start of the page it lands on."""
+    import aiohttp
+    timeout = aiohttp.ClientTimeout(total=8)
+    headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36",
+               "Accept-Language": "uz,ru;q=0.8"}
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        async with session.get(url, allow_redirects=True, max_redirects=8) as resp:
+            final = str(resp.url)
+            if not _MAP_HOSTS.match(resp.url.host or ""):
+                return final
+            body = await resp.content.read(400_000)
+    return final + "\n" + body.decode("utf-8", "ignore")
+
+
+async def resolve_location(text) -> tuple[float, float] | None:
+    """parse_location, plus short or otherwise point-less map links
+    (yandex.uz/maps/-/…, maps.app.goo.gl/…, go.2gis.com/…) followed to the
+    address they open (owner, 2026-11-27: "telegramni lokatsiyasini va
+    boshqa turdagi lokatsiyalarni yuborish imkonli bo'lsin")."""
+    try:
+        point = parse_location(text)
+        if point:
+            return point
+        failure = None
+    except ShortLink as exc:
+        failure = exc
+    except Invalid as exc:
+        if not _short_link(str(text or "")):
+            raise
+        failure = exc
+    url = _short_link(str(text or ""))
+    if not url:
+        return None
+    if url not in _RESOLVED:
+        try:
+            page = await _follow(url)
+        except Exception:
+            page = ""
+        final, _, body = page.partition("\n")
+        point = None
+        for chunk in (final, body):
+            try:
+                point = parse_location(_strip_links(chunk) if chunk is body else chunk)
+            except Invalid:
+                point = None
+            if point:
+                break
+        if len(_RESOLVED) > 500:
+            _RESOLVED.clear()
+        _RESOLVED[url] = point
+    if _RESOLVED[url]:
+        return _RESOLVED[url]
+    raise Invalid("Havoladan lokatsiyani o'qib bo'lmadi — Telegram lokatsiyasini yuboring "
+                  "yoki koordinatani (masalan 41.311, 69.279) yozing") from failure
+
+
+def _strip_links(body: str) -> str:
+    """A page's own text for parse_location — without the map links inside it
+    (it would only follow them again)."""
+    return body.replace("https://", " ").replace("http://", " ")
 
 
 def courier_fee(subtotal: float, delivery: str, lat=None, lng=None) -> dict:

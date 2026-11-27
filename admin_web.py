@@ -1188,6 +1188,15 @@ async def api_manual_order(request: web.Request):
             product = await database.get_product(pid)
             if product:
                 products[pid] = product
+    # A short map link (yandex.uz/maps/-/…, maps.app.goo.gl/…) is followed to
+    # its point first; parse() then reads plain coordinates (2026-11-27).
+    if str(body.get("location") or "").strip():
+        try:
+            point = await manual_order.resolve_location(body["location"])
+        except manual_order.Invalid as exc:
+            return _json({"error": str(exc)}, status=400)
+        if point:
+            body = dict(body, location=f"{point[0]}, {point[1]}")
     try:
         order = manual_order.parse(body, products,
                                    need_customer=not preview or body.get("full") is True)
