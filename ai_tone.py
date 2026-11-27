@@ -147,3 +147,23 @@ def greet_back(reply: str, customer_text: str | None) -> str:
         return reply
     kind = next(k for k, v in match.groupdict().items() if v)
     return f"{_GREETING_BACK[kind]}\n\n{reply}"
+
+
+# Suhbat o'rtasida yangidan salomlashish (egasi, 2026-11-26: "gaplashayotgan mijozi bilan
+# suhbat o'rtasida assalomu alaykum demagin, axir mijoz portreti bor-ku").
+_OPENING = re.compile(
+    r"^\s*(?:as+alomu?\s*alaykum|assalamu\s*alaykum|ассалому?\s*алайкум|здравствуйте|здравствуй|"
+    r"добр(?:ый|ое)\s+(?:день|утро|вечер)|salom|салом|hello)\b[^\n.!?]*[!.]?[ \t]*"
+    r"(?:[^\n]*?(?:xush kelibsiz|хуш келибсиз|добро пожаловать)[^\n]*)?\s*",
+    re.IGNORECASE)
+
+
+def drop_midchat_greeting(reply: str, customer_text: str | None, mid_conversation: bool) -> str:
+    """Suhbat davom etayotgan bo'lsa (yaqinda gaplashgan) va mijoz o'zi salom bermagan
+    bo'lsa — javob boshidagi "Assalomu alaykum! … xush kelibsiz" olib tashlanadi."""
+    if not reply or not mid_conversation or _CUSTOMER_GREETING.match(customer_text or ""):
+        return reply
+    rest = _OPENING.sub("", reply, count=1).lstrip()
+    if not rest or rest == reply.lstrip():
+        return reply
+    return rest[0].upper() + rest[1:]

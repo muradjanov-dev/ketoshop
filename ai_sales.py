@@ -373,7 +373,17 @@ _UZ_CYR_WORDS = {
     "нархи", "нарх", "ха", "ҳа", "раҳмат", "рахмат", "нима", "кандай", "қандай", "учун", "билан",
     "ва", "ёки", "мумкинми", "етказиб", "олиб", "беринг", "яхши", "майли", "хоп", "хўп", "менга",
     "сизларда", "сизда", "борми", "олмоқчиман", "олмокчиман", "буюртма",
+    # 2026-11-26: «Девзира гуруч жигарранг» ruscha deb qolib, javob ruschaga o'tib ketardi.
+    "гуруч", "уни", "ун", "ёғи", "ёги", "жигарранг", "қизил", "кизил", "сариқ", "сарик", "ширин", "мазали",
+    "неча", "нечта", "нечпул", "қачон", "качон", "қаерда", "каерда", "қайси", "кайси", "керакми",
+    "оламан", "оламиз", "бераман", "беринглар", "қилинг", "килинг", "қиламан", "киламан", "эди", "экан",
+    "булади", "бўлади", "булдими", "бўлдими", "қилдим", "килдим", "яна", "ҳам", "хам", "бизга", "сизга",
+    "лекин", "ичида", "мен", "сизлар", "биз", "шунақа", "шунака", "қанақа", "канака", "жуда", "зўр", "зур",
+    "ассалому", "салом", "раҳмат", "ташаккур", "опа", "ака", "ука", "дона", "кило", "грамм",
 }
+# O'zbekcha qo'shimchalar (ruschada deyarli uchramaydi) — so'z ro'yxatida yo'q so'zlar uchun.
+_UZ_CYR_SUFFIX = re.compile(r"(?:ларни|ларга|лардан|лар|дан|ни|ми|ган|миз|сиз|ингиз|моқчи|мокчи|япти|япман|"
+                            r"ман|сиз|чи|гиз|кан|ди)$")
 _UZ_REPLY_LATIN = {
     "va", "bilan", "uchun", "ham", "yoki", "bor", "kerak", "qanday", "nima", "yana", "beramiz",
     "qilamiz", "yetkazamiz", "yetkazib", "yetkazish", "olasiz", "olamiz", "yuboring", "iltimos",
@@ -414,6 +424,7 @@ def customer_language(text: str) -> str | None:
     words = _words(clean)
     ru = sum(w in _RU_WORDS for w in words) + 2 * bool(re.search("[ыщ]", clean.lower()))
     uz = sum(w in _UZ_CYR_WORDS for w in words)
+    uz += 0.5 * sum(1 for w in words if len(w) > 3 and w not in _RU_WORDS and _UZ_CYR_SUFFIX.search(w))
     if ru > uz:
         return "ru"
     if uz > ru:
@@ -448,6 +459,16 @@ def drop_uzbek_lines(reply: str) -> str:
 RU_FIX = ("[TIZIM: mijoz RUSCHA yozyapti — oxirgi javobingni to'liq rus tilida qayta yoz: mahsulot "
           "nomlari ham ruscha (katalogda 'ru:' nomi bo'lsa — o'sha), narxlar 'сум'. Mazmunni "
           "o'zgartirma va vosita chaqirma.]")
+# Teskarisi (egasi, 2026-11-26: "suhbat orasida ruscha bo'lib ketyapti mijoz o'zbekcha yozsa ham").
+UZ_FIX = ("[TIZIM: mijoz O'ZBEKCHA yozyapti — oxirgi javobingni to'liq o'zbek tilida qayta yoz (mijoz "
+          "qaysi yozuvda yozgan bo'lsa — lotin yoki kirill). Mazmunni o'zgartirma va vosita chaqirma.]")
+
+
+def russian_reply(reply: str) -> bool:
+    """Javob asosan ruscha — o'zbekcha yozgan mijozga emas."""
+    words = _words(reply)
+    ru = sum(w in _RU_WORDS for w in words) + 2 * bool(re.search("[ыщ]", (reply or "").lower()))
+    return ru >= 3 and not uzbek_reply(reply)
 
 
 _EMOJI_OR_END = r"(?=\s*(?:[!.?,;:…)]|[\U0001F300-\U0001FAFF\u2600-\u27BF]|$))"
@@ -1072,6 +1093,15 @@ _POLITE_RULES = (
     "qayta so'rama, o'sha javobdan foydalan. Mijoz ikkalasini aytsa ('choy va qahvaga', 'ikkalasiga') — "
     "'qaysi biri?', 'choymi yoki qahvami?' kabi tanlov savoli BERMA, ikkalasiga javob ber. Yangi, foydali "
     "savol topilmasa — savolsiz, bitta foydali taklif bilan yakunla (savol shart emas).\n"
+    "  • SAVOLNI TUSHUN (egasi, 2026-11-26: «Девзира гуруч жигарранг» ga faqat narx ro'yxati berildi — "
+    "'avval tushunarliroq edi'): qisqa so'rovda mijoz NIMANI bilmoqchi ekanini angla (rangi, turi, "
+    "farqi, foydasi, bor-yo'qligi) va BIRINCHI gapda aynan shunga aniq, tushunarli javob ber; narx va "
+    "qadoqlar — undan keyin. Faqat narx ro'yxatini tashlab qo'yma.\n"
+    "  • Suhbat davom etayotgan bo'lsa (oldingi xabarlar, MIJOZ XOTIRASI) — yangidan 'Assalomu alaykum', "
+    "'xush kelibsiz' DEMA; mijozni taniysan, gapni davom ettir. Salomlashish — faqat suhbat boshida yoki "
+    "mijoz o'zi salom bersa (alik ol).\n"
+    "  • Til: mijoz QAYSI tilda va yozuvda yozgan bo'lsa (o'zbek lotin / o'zbek kirill / rus) — shunda "
+    "javob ber, bot sozlamasidagi til emas. O'zbekcha yozganga ruscha javob berma.\n"
     "  • Mijoz gina qilsa yoki takrorlashga majbur bo'lsa ('necha marta aytaman', 'aytdim-ku', 'yana?', "
     "'tushunmadingizmi', 'bitta gapni ... takrorlash') — bu BIZGA gina: uni so'zma-so'z talqin qilma, qoida "
     "yoki 'necha marta' haqida tushuntirma. Birinchi gapda samimiy, qisqa uzr ('Kechirasiz, siz aytgandingiz — "
@@ -3082,7 +3112,14 @@ async def _respond(bot: Bot, message: Message, user_text: str, tools=None) -> st
     reply_text = ""
     done: set[str] = set()     # shu xabarda muvaffaqiyatli ishlagan vositalar
     corrected: set[str] = set()   # har tuzatish turi bir martadan
-    russian = (session.get("cust_lang") or ("ru" if lang == "ru" else None)) == "ru"
+    # Javob tili — mijozning HOZIRGI xabaridan (egasi, 2026-11-26: "suhbat orasida ruscha bo'lib
+    # ketyapti mijoz o'zbekcha yozsa ham"). Aniqlab bo'lmasa — shu suhbatdagi oldingisi; bot
+    # sozlamasidagi tilga faqat mijoz hali hech narsa yozmagan bo'lsa (kontakt, lokatsiya).
+    spoken = customer_language(getattr(message, "text", None) or "")
+    if spoken:
+        session["cust_lang"] = spoken
+    known = session.get("cust_lang")
+    russian = known == "ru" if known else (lang == "ru" and not _CYR_CHAR.search(getattr(message, "text", "") or ""))
     for attempt in range(MAX_TURNS):
         if turn.refused:
             logger.warning("AI sales refusal for user %s", user_id)
@@ -3103,6 +3140,9 @@ async def _respond(bot: Bot, message: Message, user_text: str, tools=None) -> st
                 if (fix is None and "lang" not in corrected and russian and not session.get("card")
                         and uzbek_reply(reply_text)):
                     fix, kind = RU_FIX, "lang"
+                if (fix is None and "lang" not in corrected and known in ("uz_cyr", "lat")
+                        and not session.get("card") and russian_reply(reply_text)):
+                    fix, kind = UZ_FIX, "lang"
                 # To'qilgan narx yoki o'zi qo'shgan jami (egasi, 2026-11-02). Karta
                 # chiqadigan javob baribir kodning jumlasi bilan almashadi (_answer).
                 if fix is None and "price" not in corrected and not session.get("card"):
@@ -3259,6 +3299,7 @@ async def _answer(bot: Bot, message: Message, user_text: str, late: bool = False
         # Ketma-ket "Ha, ..." va har safar "Savatga qo'shamizmi?" — robotning
         # belgisi (egasi, 2026-11-08). Oldingi javobdagi qolip qaytarilmaydi.
         reply = ai_tone.greet_back(ai_tone.vary(reply, session.get("last_reply")), user_text)
+        reply = ai_tone.drop_midchat_greeting(reply, user_text, await mid_conversation(user_id, session))
     if not reply:
         return
     session = _sessions.get(user_id)
@@ -5254,6 +5295,20 @@ def _group_thread_hint(turns: list[dict]) -> str:
             "haqida EMAS.]")
 
 
+MIDCHAT_HOURS = 12
+
+
+async def mid_conversation(user_id: int, session: dict | None = None) -> bool:
+    """Shu mijoz bilan yaqinda (MIDCHAT_HOURS) gaplashganmiz — bot, sayt yoki guruhda.
+    Unda javob yangidan "Assalomu alaykum" bilan boshlanmaydi (egasi, 2026-11-26)."""
+    if session and session.get("last_reply"):
+        return True
+    try:
+        return bool(await ai_dialog.recent(user_id, limit=1, hours=MIDCHAT_HOURS))
+    except Exception:
+        return False
+
+
 async def _escalate_complaint(bot, user, channel: str, text: str, reply: str | None) -> None:
     """Shikoyat bo'lsa — adminlarga kartochka (complaints.py). Hech qachon xato ko'tarmaydi."""
     try:
@@ -5302,6 +5357,7 @@ async def _group_answer(bot: Bot, message: Message, text: str, late_background: 
                                                          customer_names(message.from_user, text))))
     reply = ai_tone.vary(reply, None)          # "... farqini ham aytib beramiz" — bo'sh va'da
     reply = ai_tone.greet_back(reply, question)   # salom berganga salom qaytadi
+    reply = ai_tone.drop_midchat_greeting(reply, question, bool(turns))   # yaqinda gaplashgan — salomsiz
     await message.reply(reply)
     await _escalate_complaint(bot, message.from_user, "group", question, reply)
     now = time.time()
