@@ -2779,7 +2779,10 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
                        secondary_phone: str | None = None,
                        keto_redeem: int = 0,
                        pickup_map_url: str | None = None,
-                       post_office: str | None = None) -> tuple[int, list[dict]]:
+                       post_office: str | None = None,
+                       clear_cart: bool = True) -> tuple[int, list[dict]]:
+    """clear_cart=False: an order that did not come from the cart (📦 Oylik savat,
+    oylik_savat.py) leaves the buyer's cart as it is."""
     if not items:
         raise ValueError("Cannot create order with empty items")
     seller_id = items[0].get("seller_id")
@@ -2852,7 +2855,8 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
                 await conn.execute("INSERT INTO keto_ledger (user_id, order_id, amount, kind, note) VALUES ($1, $2, $3, 'redeem', $4)", user_id, order_id, -keto_redeem, f"Buyurtma #{order_id} uchun chegirma")
                 await conn.execute("UPDATE users SET keto_balance = keto_balance - $1 WHERE user_id = $2", keto_redeem, user_id)
 
-            await conn.execute("DELETE FROM cart WHERE user_id = $1", user_id)
+            if clear_cart:
+                await conn.execute("DELETE FROM cart WHERE user_id = $1", user_id)
 
     return order_id, low_stock
 

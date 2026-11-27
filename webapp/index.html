@@ -7305,6 +7305,19 @@ async function checkStartGate(manual) {
   // re-render text if it actually differs from our local guess.
   const langPromise = api('/api/lang').then(langData => {
     if (langData.is_admin) Birdsong.admin();
+    // 📦 Oylik savat — sinov, faqat adminlarga (oylik_savat.py, 2026-11-27).
+    if (langData.is_admin && !document.getElementById('osav-entry')) {
+      const home = document.getElementById('page-home');
+      if (home) {
+        const a = document.createElement('a');
+        a.id = 'osav-entry';
+        a.href = '/static/savat.html';
+        a.textContent = '📦 Oylik savat — sinov (faqat adminlar)';
+        a.style.cssText = 'display:block;margin:10px 16px 0;padding:14px 16px;border-radius:16px;'
+          + 'background:var(--pop-soft);color:var(--text);font-weight:800;text-decoration:none;text-align:center';
+        home.insertBefore(a, home.firstChild);
+      }
+    }
     if (langData.lang && L[langData.lang] && langData.lang !== lang) {
       lang = langData.lang;
       t = buildActiveLocale();
