@@ -9035,6 +9035,16 @@ async def reset_meta_comments_open() -> int:
     return int(result.split()[-1]) if result else 0
 
 
+async def reset_meta_comments_stuck_sending() -> int:
+    """Faqat ishga tushishda (hech narsa yuborilmayotgan payt): deploy yuborish o'rtasida
+    to'xtatgan "sending" izohlar — javob ketmagan — qayta navbatga (2026-11-27: 19 ta qotgan)."""
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE meta_comments SET status = 'new', ai_confident = NULL "
+            "WHERE status = 'sending' AND COALESCE(reply_text, '') = ''")
+    return int(result.split()[-1]) if result else 0
+
+
 async def mark_meta_comment_followup(key: int, text: str) -> None:
     async with pool.acquire() as conn:
         await conn.execute(

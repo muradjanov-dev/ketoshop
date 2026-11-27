@@ -380,6 +380,10 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
     """ingest → AI → kartochka / o'zi yuborish; adminning tugmalari."""
 
     async def asyncSetUp(self):
+        import ig_guard              # kunduzi/tunda bir xil — himoya bu oqim testining mavzusi emas
+        p = patch.object(ig_guard, "writable", AsyncMock(return_value=True))
+        p.start()
+        self.addCleanup(p.stop)
         self.db = FakeDB()
         self.bot = FakeBot()
         self.public, self.private, self.hidden = [], [], []

@@ -96,6 +96,8 @@ RECHECK_KEY_F = "meta_comments_recheck_2026_11_24f"
 # Egasi, 2026-11-27: "birinchi o'rinda instagramdagi barcha direct va izohdagi xabarlarga javob
 # yozib chiq, scam bo'lmaydigan holatda" — pauza paytida javobsiz qolganlar ig_guard tezligida qayta.
 RECHECK_KEY_G = "meta_comments_recheck_2026_11_27g"
+# Himoya bloklagan, AI ko'rgan deb belgilangani uchun qayta urinilmagan izohlar (2026-11-27).
+RECHECK_KEY_H = "meta_comments_recheck_2026_11_27h"
 MAX_ADS = 100
 TEXT_MAX = 1500
 REPLY_MAX = 900                       # Instagram izohi ~2200 belgi; javob qisqa
@@ -571,7 +573,11 @@ async def auto_send(bot: Bot | None, key: int, delay: float | None = None, notif
     except GraphError as e:
         await database.claim_meta_comment(key, ("sending",), "new")
         if guarded(e):
-            return                       # Instagram himoyasi — keyingi aylanmada jim qayta
+            # Instagram himoyasi (tun / soatlik chegara / pauza) — keyingi aylanmada qayta.
+            # ai_confident NULL bo'lmasa catch_up uni ko'rmas va izoh abadiy javobsiz qolardi
+            # (2026-11-27: 21 ta izoh shunday qolib ketgan).
+            await database.update_meta_comment(key, ai_confident=None)
+            return
         row = await database.update_meta_comment(key, note=f"❌ AI yubora olmadi: {e}")
         if notify:
             await send_cards(bot, row)
@@ -709,6 +715,10 @@ async def catch_up(bot: Bot | None) -> dict:
     stats = {"auto": 0, "approve": 0, "spam": 0, "empty": 0, "repeat": 0, "retry": 0}
     if _catch_lock.locked():
         stats["busy"] = 1
+        return stats
+    import ig_guard
+    if not await ig_guard.writable():
+        stats["guard"] = 1           # tun / pauza / soatlik chegara — AI'ni behuda chaqirmaymiz
         return stats
     async with _catch_lock:
         sem = asyncio.Semaphore(CATCH_UP_PARALLEL)
@@ -1165,7 +1175,11 @@ async def scheduler_loop(bot: Bot) -> None:
             if await database.claim_release_notes(key):
                 n = await database.reset_meta_comments_unconfident()
                 logger.info("comments: %d unanswerable comment(s) queued for a re-check (%s)", n, key)
-        for key in (RECHECK_KEY_F, RECHECK_KEY_G):
+        # Ishga tushishda hech narsa yuborilmayapti — deploy paytida "sending"da qotgan izohlar qaytadi.
+        n = await database.reset_meta_comments_stuck_sending()
+        if n:
+            logger.info("comments: %d comment(s) stuck in 'sending' put back in the queue", n)
+        for key in (RECHECK_KEY_F, RECHECK_KEY_G, RECHECK_KEY_H):
             if await database.claim_release_notes(key):
                 n = await database.reset_meta_comments_open()
                 logger.info("comments: %d open comment(s) queued for a re-answer (%s)", n, key)
