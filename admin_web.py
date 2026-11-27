@@ -1156,8 +1156,10 @@ MANUAL_ORDER_BY = "🖥 Admin sayt"
 @require_auth
 async def api_manual_order(request: web.Request):
     """POST /admin/api/manual-order — the bot's «📝 Qo'lda buyurtma» from the
-    dashboard (owner, 2026-11-09). Body: {name, phone, address, items:
-    [{product_id, quantity, price?}], payment, delivery, status}. Checked by
+    dashboard (owner, 2026-11-09). Body: {name, phone, address, location?,
+    items: [{product_id, quantity, price?}], payment, delivery, status}.
+    location — a map link or "lat, lng" (2026-11-27): kept for the courier
+    board and 🧭 route, and the Ketoshop courier's fee is read from it. Checked by
     manual_order.parse — the bot's rules — and saved with add_manual_order,
     so stock is untouched and the order is source='manual' like the bot's.
     Every admin gets the same «Qo'lda buyurtma» card the bot sends.
@@ -1195,6 +1197,8 @@ async def api_manual_order(request: web.Request):
     summary = {"name": order["customer_name"], "phone": order["phone"], "address": order["address"],
                "items": order["items"], "subtotal": order["subtotal"],
                "uzpost_fee": order["uzpost_fee"], "uzpost_kg": order["uzpost_kg"],
+               "latitude": order["latitude"], "longitude": order["longitude"],
+               "courier": order["courier"], "courier_fee": order["courier_fee"],
                "total": order["total"]}
     if preview:
         return _json({"ok": True, "preview": True, **summary})
@@ -1209,6 +1213,8 @@ async def api_manual_order(request: web.Request):
         payment_method=order["payment_method"],
         delivery_method=order["delivery_method"],
         status=order["status"],
+        latitude=order["latitude"],
+        longitude=order["longitude"],
     )
     logger.info("Manual order #%s saved from the admin site (%d line(s), %s so'm)",
                 order_id, len(order["items"]), order["total"])
