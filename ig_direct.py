@@ -541,6 +541,8 @@ def finalize_dm(customer_text: str | None, reply: str | None, lang: str) -> str:
         text = rest[0].upper() + rest[1:]
     text = comment_ai._natural_polite(text, customer_text)
     text = comment_ai._plural(text)
+    import ai_leak                     # ichki ma'lumot Direct'ga chiqmasin (2026-11-27)
+    text = ai_leak.strip(text)
     text = telegram_links(text)
     return in_lang(text, lang).strip()
 
