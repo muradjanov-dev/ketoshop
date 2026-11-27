@@ -257,6 +257,25 @@ async def card_line(lang: str) -> str:
     return _loc(_CARD, lang, name=name)
 
 
+async def ai_line() -> str:
+    """AI (bot, sayt, Instagram) uchun aksiya qatori yoki '' — card_line bilan bir shart:
+    aksiya ishlayapti va sovg'a omborda bor. gift_lines qoidasi: botdan yoki saytdan
+    berilgan HAR BIR buyurtmaga bitta paket, summadan qat'i nazar."""
+    if not await is_active():
+        return ""
+    prod = await gift_product()
+    if not prod or float(prod.get("quantity") or 0) < 1:
+        return ""
+    row = await _state()
+    until = ((row["ends_at"] + TZ_OFFSET).strftime("%d.%m") if row and row.get("ends_at") else "")
+    return (f"Sovg'a aksiyasi: Telegram bot yoki sayt orqali berilgan HAR BIR buyurtmaga {prod['name']} "
+            f"bepul qo'shiladi — summadan qat'i nazar"
+            + (f", {until} gacha" if until else "")
+            + ". Bitta buyurtmaga bitta sovg'a; ikki alohida buyurtma — ikki sovg'a. Sovg'a savat va "
+              "buyurtma kartasida o'zi chiqadi, mijoz hech narsa qilmaydi. Admin qo'lda kiritgan "
+              "buyurtmaga avtomatik qo'shilmaydi.")
+
+
 def _loc(entry: dict, lang: str, **fmt) -> str:
     text = (entry.get("ru") if lang == "ru" else entry.get("uz")) or entry.get("uz", "")
     text = text.format(**fmt)

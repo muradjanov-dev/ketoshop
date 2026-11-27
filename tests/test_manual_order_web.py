@@ -57,7 +57,9 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(second["price"], 81000.0)
         self.assertEqual(second["original_price"], 90000.0)
         self.assertEqual(second["discount_percent"], 10)
-        self.assertEqual(order["total"], 2 * 120000 + 81000)
+        # Ketoshop's courier, no location: the city fee (2026-11-27).
+        self.assertEqual(order["courier_fee"], 25000)
+        self.assertEqual(order["total"], 2 * 120000 + 81000 + 25000)
         self.assertEqual(order["uzpost_fee"], 0)
 
     def test_no_price_means_todays_shelf_price(self):
@@ -132,13 +134,13 @@ class ApiTest(unittest.IsolatedAsyncioTestCase):
         status, data = await self.post(GOOD)
         self.assertEqual(status, 200, data)
         self.assertEqual(data["id"], 901)
-        self.assertEqual(data["total"], 321000)
+        self.assertEqual(data["total"], 346000)
         kwargs = self.saved.await_args.kwargs
         self.assertEqual(kwargs["admin_user_id"], admin_web.WEB_SELLER_ID)
         self.assertEqual(kwargs["customer_name"], "Dilnoza")
         self.assertEqual(kwargs["phone"], "+998901234567")
         self.assertEqual(kwargs["address"], "Toshkent, Chilonzor 5")
-        self.assertEqual(kwargs["total"], 321000)
+        self.assertEqual(kwargs["total"], 346000)
         self.assertEqual((kwargs["payment_method"], kwargs["delivery_method"], kwargs["status"]),
                          ("cash", "self", "delivered"))
         self.assertEqual([i["product_id"] for i in kwargs["items_data"]], [11, 12])
@@ -206,7 +208,7 @@ function el(id,extra={}){
     addEventListener(t,f){n.handlers[t]=f;},focus(){},querySelector(){return null;},querySelectorAll(){return [];},...extra};
   nodes['#'+id]=n;return n;
 }
-['moOpenBtn','moClear','moSearch','moLines','moName','moPhone','moAddress','moCalc','moSave','moForm','moModal'].forEach(id=>el(id));
+['moOpenBtn','moClear','moSearch','moLines','moName','moPhone','moAddress','moLocation','moLocNote','moCalc','moSave','moForm','moModal'].forEach(id=>el(id));
 // The result list, read back out of the HTML the page wrote into it.
 el('moResults',{
   querySelectorAll(){return [...this.innerHTML.matchAll(/data-pid="(\d+)"( class="on")?/g)].map(m=>({dataset:{pid:m[1]},

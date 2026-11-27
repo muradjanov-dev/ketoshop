@@ -1801,6 +1801,9 @@ body.kuryer-mode .kb-admin-only{display:none!important}
       <div><label for="moPhone">Telefon *</label><input id="moPhone" inputmode="tel" maxlength="30" placeholder="+998 90 123 45 67" required></div>
       <div class="full"><label for="moAddress">Manzil *</label><input id="moAddress" maxlength="500" required
         placeholder="Shahar, ko'cha, uy — do'kondan olib ketgan bo'lsa «Olib ketdi»"></div>
+      <div class="full"><label for="moLocation">📍 Lokatsiya <span style="font-weight:500;color:var(--ink-3)">— xarita havolasi yoki koordinata; kuryer narxi shundan hisoblanadi</span></label>
+        <input id="moLocation" maxlength="1000" placeholder="https://yandex.uz/maps/?ll=69.279,41.311 … yoki 41.311, 69.279">
+        <div class="hint" id="moLocNote" style="margin-top:4px"></div></div>
     </div>
     <label for="moSearch">Mahsulot qo'shish</label>
     <div class="mo-pick">
@@ -4772,17 +4775,37 @@ function moRender(){
 }
 function moTotals(){
   const sub=MO.lines.reduce((s,l)=>s+moLinePrice(l)*moLineQty(l),0);
-  const pv=MO.preview, uz=$('#moDelivery').value==='uzpost', ready=pv&&!pv.error;
-  const fee=uz&&ready?Number(pv.uzpost_fee)||0:0;
+  const pv=MO.preview, dl=$('#moDelivery').value, uz=dl==='uzpost', self=dl==='self', ready=pv&&!pv.error;
+  const fee=uz&&ready?Number(pv.uzpost_fee)||0:0, cfee=self&&ready?Number(pv.courier_fee)||0:0;
   let h=`<div class="line"><span class="lab">Mahsulotlar (${MO.lines.length} ta qator)</span><span class="tnum">${fmt(sub)}</span></div>`;
   if(uz&&MO.lines.length)h+=`<div class="line"><span class="lab">📮 UzPost${ready&&pv.uzpost_kg?' ('+moQty(pv.uzpost_kg)+' kg)':''}</span>
     <span class="tnum">${ready?fmt(fee):'hisoblanmoqda…'}</span></div>`;
-  h+=`<div class="line" style="font-weight:800;font-size:15px"><span>Jami</span><span class="tnum">${fmt(sub+fee)}</span></div>`;
+  if(self&&MO.lines.length)h+=`<div class="line"><span class="lab">🚚 Kuryer${ready?' — '+moCourierNote(pv):''}</span>
+    <span class="tnum">${ready?fmt(cfee):'hisoblanmoqda…'}</span></div>`;
+  h+=`<div class="line" style="font-weight:800;font-size:15px"><span>Jami</span><span class="tnum">${fmt(sub+fee+cfee)}</span></div>`;
   if(pv&&pv.error)h+=`<div class="line" style="color:var(--red);font-weight:700">⚠️ ${esc(pv.error)}</div>`;
   $('#moCalc').innerHTML=h;
 }
+/* "shahar ichida" / "shahardan 5 km: 25 000 + 5 × 3 000" — the server's courier_fee breakdown. */
+function moCourierNote(pv){
+  const c=pv.courier||{};
+  if(pv.latitude==null)return 'lokatsiya yo\'q, shahar ichi deb';
+  let t=c.km?`shahardan ${c.km} km: ${fmt(c.base)} + ${c.km} × 3 000`:'shahar ichida';
+  if(!c.base)t+=` (${fmt(c.free_from)} dan asosiy narx bepul)`;
+  if(c.far)t+=' ⚠️ 40 km dan uzoq';
+  return t;
+}
+function moLocNote(){
+  const pv=MO.preview, box=$('#moLocNote'), v=$('#moLocation').value.trim();
+  if(!v){box.innerHTML='';return;}
+  if(pv&&!pv.error&&pv.latitude!=null){
+    const ll=`${pv.latitude.toFixed(6)}, ${pv.longitude.toFixed(6)}`;
+    box.innerHTML=`✅ ${esc(ll)} · <a href="https://yandex.uz/maps/?pt=${pv.longitude},${pv.latitude}&z=16&l=map" target="_blank" rel="noopener">xaritada ko'rish</a>`;
+  }else if(pv&&pv.error)box.innerHTML='';
+}
 function moBody(extra){
   return {...extra,name:$('#moName').value.trim(),phone:$('#moPhone').value.trim(),address:$('#moAddress').value.trim(),
+    location:$('#moLocation').value.trim(),
     payment:$('#moPayment').value,delivery:$('#moDelivery').value,status:$('#moStatus').value,
     items:MO.lines.map(l=>({product_id:l.pid,quantity:String(l.qty).trim(),price:String(l.price).trim()===''?null:String(l.price).trim()}))};
 }
@@ -4795,13 +4818,14 @@ function moSchedulePreview(){
     const seq=++MO.seq;
     try{
       const r=await api('/admin/api/manual-order',{method:'POST',body:JSON.stringify(moBody({preview:true}))});
-      if(seq===MO.seq){MO.preview=r;moTotals();}
-    }catch(err){if(seq===MO.seq){MO.preview={error:err.message};moTotals();}}
+      if(seq===MO.seq){MO.preview=r;moTotals();moLocNote();}
+    }catch(err){if(seq===MO.seq){MO.preview={error:err.message};moTotals();moLocNote();}}
   },350);
 }
 function moReset(){
   MO.lines=[];MO.preview=null;MO.seq++;clearTimeout(MO.timer);
-  ['#moName','#moPhone','#moAddress','#moSearch','#moPayment','#moDelivery','#moStatus'].forEach(s=>{$(s).value='';});
+  ['#moName','#moPhone','#moAddress','#moLocation','#moSearch','#moPayment','#moDelivery','#moStatus'].forEach(s=>{$(s).value='';});
+  moLocNote();
   moSearch();moRender();
 }
 function openManualOrder(){
@@ -4857,6 +4881,7 @@ $('#moLines').addEventListener('click',e=>{
 });
 $('#moDelivery').addEventListener('change',()=>{moTotals();moSchedulePreview();});
 $('#moAddress').addEventListener('input',()=>{if($('#moDelivery').value==='uzpost')moSchedulePreview();});
+$('#moLocation').addEventListener('input',()=>{$('#moLocNote').innerHTML='';moSchedulePreview();});
 $('#moForm').addEventListener('submit',async e=>{
   e.preventDefault();
   const btn=$('#moSave');
@@ -4869,8 +4894,11 @@ $('#moForm').addEventListener('submit',async e=>{
     const label=id=>{const s=$(id);return s.options[s.selectedIndex].text;};
     const lines=pv.items.map(it=>`• ${it.name} — ${moQty(it.quantity)} × ${fmt(it.price)}`
       +(it.discount_percent?` (−${it.discount_percent}%)`:'')).join('\n');
-    const msg=`Buyurtma saqlansinmi?\n\n👤 ${pv.name}, ${pv.phone}\n📍 ${pv.address}\n\n${lines}\n`
+    const msg=`Buyurtma saqlansinmi?\n\n👤 ${pv.name}, ${pv.phone}\n📍 ${pv.address}`
+      +(pv.latitude!=null&&!String(pv.address).startsWith('📍')?`\n🗺 ${pv.latitude.toFixed(6)}, ${pv.longitude.toFixed(6)}`:'')
+      +`\n\n${lines}\n`
       +(pv.uzpost_fee?`📮 UzPost: ${fmt(pv.uzpost_fee)}\n`:'')
+      +($('#moDelivery').value==='self'?`🚚 Kuryer: ${fmt(pv.courier_fee)} (${moCourierNote(pv)})\n`:'')
       +`\nJami: ${fmt(pv.total)}\n${label('#moPayment')} · ${label('#moDelivery')} · ${label('#moStatus')}`;
     if(!window.confirm(msg))return;
     const r=await api('/admin/api/manual-order',{method:'POST',body:JSON.stringify(moBody({}))});
