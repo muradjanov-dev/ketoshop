@@ -1014,6 +1014,19 @@ async def _promo_text() -> str:
         return ""
 
 
+async def _gift_text() -> str:
+    """Har buyurtmaga sovg'a (gift_campaign.py — Eritritol 100gr). U promotions dan
+    alohida yuradi, shuning uchun AI uni ko'rmay "hozir aksiya yo'q" degan edi
+    (egasi, 2026-11-27: "nega sovg'a aksiya yo'q deyapsan??? bor-ku faollari").
+    Faqat aksiya ishlayotgan va sovg'a omborda bor bo'lsa chiqadi."""
+    try:
+        import gift_campaign
+        return await gift_campaign.ai_line()
+    except Exception:
+        logger.warning("Gift campaign state could not be loaded for AI", exc_info=True)
+        return ""
+
+
 async def _bot_discount_text() -> str:
     """Bot orqali o'zi buyurtma berganga chegirma (bot_discount.py). Faqat
     faol bo'lsa chiqadi; aniq narxni baribir savatni_korish beradi."""
@@ -1035,7 +1048,7 @@ async def _dynamic_block(catalog: str) -> str:
     o'rgatilgan bilimlar. Qoidalar (o'zgarmas) alohida — kesh shunday yaxshi
     ishlaydi."""
     parts = ["KATALOG\n" + catalog]
-    promo = await _promo_text()
+    promo = "\n".join(p for p in (await _promo_text(), await _gift_text()) if p)
     parts.append("FAOL AKSIYA:\n" + promo if promo else "FAOL AKSIYA: hozir yo'q.")
     discount = await _bot_discount_text()
     if discount:
@@ -1487,6 +1500,21 @@ def _sales_rules() -> str:
         "bo'lsa «✅ Tasdiqlash» ni bosing 😊'.\n"
         "- SO'RAMA: ism, qo'shimcha telefon, Keto tangachalar, to'lov turi — kartada tugmasi bor "
         "(💵 naqd / 💳 karta, Keto). Mijoz o'zi aytsa — tolov_turi yoki qoshimcha_telefon ga yoz.\n"
+        "- QISQA VA MANTIQLI (egasi, 2026-11-27: \"buyurtma bo'yicha suhbatni juda cho'zib "
+        "yuboryapsan ... notabiiy, mantiqsiz narsalarni so'rama\"). Buyurtma ustida gap ketayotganda "
+        "faqat buyurtmani yakunlash uchun KERAK bo'lgan bitta narsani so'ra. Bilib turgan narsani "
+        "(mahsulot, miqdor, manzil, raqam — savat, MIJOZ XOTIRASI, MIJOZ PAPKASI) qayta so'rama. "
+        "Avval mijozning savoliga aniq javob ber, keyin bir qadam oldinga yur — har javob uni "
+        "buyurtma kartasiga yaqinlashtirsin. Buyurtma paytida ism, yosh, maqsad, 'qanday murojaat "
+        "qilaylik', 'yoshingizga qarab tanlaymiz' kabi savollar YO'Q. Mavzuga aloqasiz tavsiya "
+        "qo'shma.\n"
+        "- Mijoz qisqa yoki tushunarsiz yozsa ('endi-chi?', 'etinchi', 'xo'sh?') — oldingi gapga "
+        "bog'lab tushun ('endi-chi?' = 'hozir-chi, endi qanday?'), mavzuni o'zgartirma. Baribir "
+        "tushunmasang — bitta qisqa aniqlashtiruvchi savol ber.\n"
+        "- QAYTA BUYURTMA ('yana shuni', 'qaytadan buyurtma'): oxirgi buyurtmadagi mahsulotlarni "
+        "savatga sol, xotiradagi manzil va raqamni ko'rsatib BITTA xabarda 'shu manzilga "
+        "yuboraylikmi?' de; 'ha' desa — darhol buyurtma_kartasi (oldingi_manzil=true). Sovg'a "
+        "aksiyasi bo'lsa — har yangi buyurtmaga o'z sovg'asi qo'shiladi, buni bir jumlada ayt.\n"
         "- NARX VA JAMI: hech qachon o'zing qo'shma, ko'paytirma va eski suhbatdan yoki xotiradan "
         "olma. Bir nechta mahsulot narxi yoki jami kerak bo'lsa — avval hisob ni (savatdagisi "
         "uchun savatni_korish ni) chaqir va raqamlarni FAQAT o'shandan ko'chir. Mahsulot nomini "
@@ -3043,12 +3071,24 @@ async def _portrait(user_id: int) -> dict | None:
         return None
 
 
-async def _portrait_hint(user_id: int, session: dict) -> str:
+# Buyurtma ustida gap ketayotgan xabar — bunda ism yoki yosh so'ralmaydi (egasi, 2026-11-27:
+# mijoz qayta buyurtma va sovg'a haqida so'radi, AI esa "Yoshingiz nechida?" dedi).
+_ORDER_TALK = re.compile(
+    r"buyurtm|zakaz|заказ|буюртм|rasmiylasht|расмийлашт|оформ|tasdiql|тасдиқл|подтвер|qayta|қайта|"
+    r"savat|сават|корзин|sov[gğĝ]|совғ|подар|aksiya|акци|to[ʻ'’`]?lov|тўлов|оплат|[cç]h?ek|чек|manzil|манзил|адрес|"
+    r"yetkaz|етказ|dostavka|доставк|kuryer|курьер|qachon|қачон|когда",
+    re.IGNORECASE)
+
+
+async def _portrait_hint(user_id: int, session: dict, user_text: str = "") -> str:
     """Shu xabarda mijozdan ism yoki yoshni so'rash imkoni — model uchun ko'rsatma
     yoki "". Qoidalar customer_portrait da: birinchi javobda yo'q, bir xabarda
-    bitta, har maydon bir marta (imkon berilgan zahoti bazada belgilanadi)."""
+    bitta, har maydon bir marta (imkon berilgan zahoti bazada belgilanadi).
+    Buyurtma, savat, sovg'a, to'lov yoki narx haqidagi xabarda — so'ralmaydi."""
     session.pop("portrait_ask", None)
     if not customer_portrait.ask_allowed(session) or await ai_card_open(session.get("fsm")):
+        return ""
+    if _ORDER_TALK.search(user_text or "") or _ORDER_TALK.search(session.get("last_reply") or ""):
         return ""
     try:
         field = await customer_portrait.claim_question(user_id)
@@ -3119,7 +3159,7 @@ async def _respond(bot: Bot, message: Message, user_text: str, tools=None) -> st
         if opening:
             user_text = f"{opening}\n\n[MIJOZ XABARI]\n{user_text}"
     else:
-        hint = await _portrait_hint(user_id, session)
+        hint = await _portrait_hint(user_id, session, user_text)
         if hint:
             user_text = f"{hint}\n\n{user_text}"
         news = await _dialog_news(user_id, session)
