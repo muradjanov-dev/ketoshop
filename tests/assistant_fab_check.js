@@ -1,5 +1,6 @@
-// «Yordamchi» button: only on home and catalog, tucked away while scrolling
-// down (owner, 2026-11-17: "o'yinlarda va ko'p joyda chiqib xalaqit beryapti").
+// «Yordamchi» button: only on home and catalog (owner, 2026-11-17: "o'yinlarda va ko'p
+// joyda chiqib xalaqit beryapti"), and it stays put while scrolling (owner, 2026-11-27:
+// "pastga tushganda yo'q bo'lib tepaga chiqqanda yana paydo bo'lmasin ... qotib tursin").
 // Runs the real Assistant module from webapp/index.html against a tiny DOM stub.
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
@@ -44,14 +45,14 @@ vm.createContext(ctx);
 vm.runInContext(src, ctx);
 const A = ctx.Assistant;
 const hidden = () => els['asst-fab'].classList.contains('hidden');
-const scrollTo = y => { ctx.window.scrollY = y; scrollListener(); };
+const scrollTo = y => { ctx.window.scrollY = y; if (scrollListener) scrollListener(); };
 const go = page => { ctx.activePage = page; A.sync(); };
 
 els['asst-fab'] = el();
 els['asst-fab'].classList.add('hidden');   // the page starts it hidden
 A.start();
 assert.equal(hidden(), false, 'shown on the catalog');
-assert.ok(scrollListener, 'listens to scrolling');
+assert.equal(scrollListener, null, 'does not react to scrolling');
 
 for (const page of ['games', 'cart', 'checkout', 'cheque', 'order-success', 'orders', 'profile', 'fav']) {
   go(page);
@@ -60,21 +61,17 @@ for (const page of ['games', 'cart', 'checkout', 'cheque', 'order-success', 'ord
 go('home');
 assert.equal(hidden(), false, 'shown on home');
 
-scrollTo(40);
-assert.equal(hidden(), false, 'a little scroll near the top keeps it');
-scrollTo(400);
-assert.equal(hidden(), true, 'scrolling down tucks it away');
-scrollTo(405);
-assert.equal(hidden(), true, 'tiny moves change nothing');
-scrollTo(300);
-assert.equal(hidden(), false, 'scrolling up brings it back');
-scrollTo(900);
-assert.equal(hidden(), true);
+for (const y of [40, 400, 405, 300, 900, 0, 1500]) {
+  scrollTo(y);
+  assert.equal(hidden(), false, `stays in view at scroll ${y}`);
+}
 go('catalog');
-assert.equal(hidden(), false, 'a new page starts with it in view');
+assert.equal(hidden(), false, 'shown on the catalog');
+scrollTo(1200);
+assert.equal(hidden(), false, 'still in view after scrolling the catalog');
 
 go('games');
 scrollTo(0);
-assert.equal(hidden(), true, 'scrolling up in a game does not bring it back');
+assert.equal(hidden(), true, 'never shown in games');
 
 console.log('assistant_fab_check: ok');
