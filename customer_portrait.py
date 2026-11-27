@@ -266,7 +266,8 @@ def ask_hint(field: str) -> str:
             + " Sotuvchi suhbat orasida so'raganidek tabiiy yoz: izoh, ogohlantirish, maxfiylik haqida gap "
               "va so'rovnoma ohangi yo'q; bosim qilma, buyurtma uchun kerak dema. Mijoz norozi, shoshayotgan "
               "yoki buyurtma rasmiylashtirilayotgan bo'lsa — so'rama. Javob bermasa yoki aytgisi kelmasa — "
-              "qayta so'rama.]")
+              "qayta so'rama. Javob bersa — keyingi xabarda shunga tayanib aniq tavsiya ber yoki "
+              "suhbatni davom ettir; 'yoshingizga mos tavsiya qilamiz' deb yangi savol berma.]")
 
 
 # Mijozning O'Z ismi / yoshi haqidagi savol (ikkinchi shaxs: "ismingiz",

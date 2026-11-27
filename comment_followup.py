@@ -93,15 +93,22 @@ async def new_products_text() -> str:
 
 
 async def offers_text() -> str:
-    """Hozirgi aksiya (bo'lsa) — AI boshqa chegirma o'ylab topmasin."""
+    """Hozirgi aksiya (bo'lsa) — AI boshqa chegirma o'ylab topmasin. Har buyurtmaga
+    sovg'a (gift_campaign) ham shu yerda (2026-11-27)."""
     import promotions
+    gift = ""
+    try:
+        import gift_campaign
+        gift = await gift_campaign.ai_line()
+    except Exception:
+        logger.warning("follow-up: gift campaign unavailable", exc_info=True)
     try:
         promo = await promotions.get_active()
     except Exception:
         logger.warning("follow-up: promotion unavailable", exc_info=True)
-        return ""
+        promo = None
     if not promo:
-        return ""
+        return f"- {gift}" if gift else ""
     lines = [promotions.promo_name(promo, "uz")]
     if promo.get("conditions"):
         lines.append(promotions.promo_conditions(promo, "uz"))
@@ -110,6 +117,7 @@ async def offers_text() -> str:
             lines.append(promotions.rule_line(rule, "uz"))
         except Exception:
             continue
+    lines.append(gift)
     return "\n".join(f"- {line}" for line in lines if line)
 
 
