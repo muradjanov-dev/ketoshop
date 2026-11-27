@@ -2378,8 +2378,25 @@ async function boot(){
   CAT_MAP={};CATEGORIES.forEach(c=>CAT_MAP[c.key]=c.name_uz);
   renderCatOptions();
   lastCatValue=CATEGORIES[0]?.key||null;
-  showShell();await Promise.all([loadDashboard(),loadProducts(),loadSets(),loadPromos(),loadKeto(),loadBloggers(),loadPickup()]);
+  showShell();
+  // Open where the admin was (owner, 2026-11-27: "raqam ko'raman deb kirib ortga
+  // qaytsa yana bosh dashboardga qaytib qolyapti"), and load that tab first —
+  // the other tabs' data follows once it is on screen instead of before it.
+  switchView(startView());
+  setTimeout(()=>{
+    Promise.allSettled([loadProducts(),loadSets(),loadPromos(),loadKeto(),loadBloggers(),loadPickup()]);
+  },1200);
 }
+function startView(){
+  const fromHash=(location.hash||'').slice(1);
+  if(VIEWS.includes(fromHash))return fromHash;
+  try{const saved=localStorage.getItem('ketoshop_admin_view');if(VIEWS.includes(saved))return saved;}catch(e){}
+  return 'dashboard';
+}
+window.addEventListener('hashchange',()=>{
+  const v=(location.hash||'').slice(1);
+  if(VIEWS.includes(v)&&!document.querySelector('#view-'+v+'.active'))switchView(v);
+});
 
 async function loadPickup(){
   const d=await api('/admin/api/pickup');
@@ -2817,7 +2834,12 @@ $('#dashCustomDateBtn').addEventListener('click', () => {
 const VIEWS=['dashboard','faollik','izohlar','mijozlar','order-costs','courier','products','sets','promos','keto','bloggers','reklama','retention','expenses','pickup'];
 function switchView(v){
   if(!VIEWS.includes(v))v='dashboard';
-  if(!window.KURYER_MODE)localStorage.setItem('ketoshop_admin_view',v);
+  if(!window.KURYER_MODE){
+    try{localStorage.setItem('ketoshop_admin_view',v);}catch(e){}
+    // #courier in the address: a reload or a return from a 📞 call reopens
+    // this tab, not the dashboard (owner, 2026-11-27).
+    try{if(location.hash!=='#'+v)history.replaceState(null,'','#'+v);}catch(e){}
+  }
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
   document.querySelectorAll('.view').forEach(s=>s.classList.toggle('active',s.id==='view-'+v));
   // the Kanban needs the full width; every other tab keeps the 1200px column
@@ -5017,6 +5039,10 @@ const KB_POLL_MS=12000;
 
 let KB_BOARD=null, KB_COURIERS=[], KB_TIMER=null, KB_AUTO=true, KB_SCOPE='all';
 let KB_DRAG=null, KB_BUSY=new Set(), KB_DETAIL_ID=null, KB_LOADED=false;
+/* 2026-11-27 (owner: "kuryer panelga juda sekin kiryapti"): the tab opened on
+   «Hammasi» — ~580 KB, 400 finished orders, fetched again every poll. It now
+   opens on the live board (~50 KB); «Hammasi» is one tap and is remembered. */
+KB_SCOPE='active';
 let KB_COUNTS={};
 // The last board actually painted, and when the courier last touched it — a
 // poll neither repaints an unchanged board nor pulls one out from under a
@@ -5228,12 +5254,28 @@ function kbSkeleton(){
       <div class="tx"><h3>&nbsp;</h3></div></div>
       <div class="kb-body">${'<div class="kb-skel"></div>'.repeat(3)}</div></div>`).join('');
 }
+/* The last board this tab saw, painted at once while the fresh one loads —
+   coming back from a phone call or reopening the tab shows cards, not a
+   skeleton. sessionStorage: gone when the browser tab closes. */
+const KB_CACHE_KEY='ketoshop_kb_board_';
+function kbCacheRead(){
+  try{
+    const c=JSON.parse(sessionStorage.getItem(KB_CACHE_KEY+KB_SCOPE)||'null');
+    return c&&Date.now()-c.at<30*60*1000?c.board:null;
+  }catch(e){return null;}
+}
+function kbCacheWrite(board){
+  try{sessionStorage.setItem(KB_CACHE_KEY+KB_SCOPE,JSON.stringify({at:Date.now(),board}));}catch(e){}
+}
 async function loadCourier(opts){
   const silent=opts&&opts.silent;
-  if(!KB_LOADED&&!silent)kbSkeleton();
+  if(!KB_LOADED&&!silent){
+    const cached=kbCacheRead();
+    if(cached){KB_BOARD=cached;renderKanban();}else kbSkeleton();
+  }
   try{
     const d=await api('/admin/api/courier/board?scope='+KB_SCOPE);
-    KB_BOARD=d;KB_LOADED=true;
+    KB_BOARD=d;KB_LOADED=true;kbCacheWrite(d);
     if(silent&&kbUserBusy())return;   // painted by the next quiet tick
     renderKanban();
     if(KB_DETAIL_ID&&$('#kbModal').classList.contains('open'))kbRenderDetail(KB_DETAIL_ID);
@@ -5849,11 +5891,11 @@ $('#kbTestBtn').addEventListener('click',async()=>{
 });
 $('#kbSearch').addEventListener('input',()=>renderKanban());
 try{
-  if(localStorage.getItem(KB_SCOPE_KEY)==='active'){
-    KB_SCOPE='active';
-    $$('#kbScope button').forEach(x=>x.classList.toggle('active',x.dataset.scope==='active'));
-  }
+  // Only a choice made after the default changed counts (the old default
+  // stored nothing, so 'all' here was picked on purpose).
+  if(localStorage.getItem(KB_SCOPE_KEY)==='all')KB_SCOPE='all';
 }catch(e){}
+$$('#kbScope button').forEach(x=>x.classList.toggle('active',x.dataset.scope===KB_SCOPE));
 try{
   if(localStorage.getItem('ketoshop_kb_auto')==='0'){
     KB_AUTO=false;$('#kbAutoBtn').classList.remove('on');$('#kbAutoLab').textContent='To’xtatilgan';

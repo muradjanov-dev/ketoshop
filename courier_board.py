@@ -283,6 +283,33 @@ async def fill_post_offices(orders: list[dict]) -> int:
     return done
 
 
+_fill_state = {"at": 0.0, "task": None}
+FILL_EVERY = 60          # seconds between UzPost look-ups from the board
+
+
+def _fill_in_background(orders: list[dict]) -> None:
+    """fill_post_offices without making the board wait for UzPost (its API
+    can take up to HTTP_TIMEOUT per call). At most once a minute; the board
+    shows the office from the next poll on."""
+    import asyncio
+    import time
+    task = _fill_state["task"]
+    if (task is not None and not task.done()) or time.monotonic() - _fill_state["at"] < FILL_EVERY:
+        return
+    if not any(o.get("delivery_method") == "uzpost" and not (o.get("post_office") or "").strip()
+               and o.get("latitude") is not None for o in orders):
+        return
+    _fill_state["at"] = time.monotonic()
+    pending = [dict(o) for o in orders]
+
+    async def run():
+        try:
+            await fill_post_offices(pending)
+        except Exception:
+            logger.warning("post office fill failed", exc_info=True)
+    _fill_state["task"] = asyncio.create_task(run())
+
+
 async def board_snapshot(delivered_hours: int = DELIVERED_WINDOW_HOURS,
                          scope: str = "active") -> dict:
     """The whole board in one payload: every column with its cards, counts and
@@ -294,7 +321,7 @@ async def board_snapshot(delivered_hours: int = DELIVERED_WINDOW_HOURS,
     Bekor qilindi column to put them in).
     """
     orders = await database.get_courier_board_orders(delivered_hours, scope)
-    await fill_post_offices(orders)
+    _fill_in_background(orders)
     shown = [c for c in COLUMNS if c.get("scope") in (None, scope)]
     buckets: dict[str, list[dict]] = {c["key"]: [] for c in shown}
     for order in orders:
