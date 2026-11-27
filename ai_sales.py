@@ -1124,6 +1124,10 @@ def _keto_knowledge() -> str:
     )
 
 
+import courier_zone                          # noqa: E402 — kuryer narxi shahar chegarasiga qarab
+from handlers.cart import SELF_DELIVERY_FEE as SELF_DELIVERY_FEE_   # noqa: E402
+
+
 def _shop_knowledge() -> str:
     """Yetkazish va to'lov shartlari — checkout bilan bir xil manbadan
     (config.FREE_DELIVERY_FROM, handlers/cart.SELF_DELIVERY_FEE)."""
@@ -1131,8 +1135,12 @@ def _shop_knowledge() -> str:
     first_kg = uzpost.FIRST_KG + uzpost.SURCHARGE      # mijoz to'laydigan: tarif + 3 000
     return (
         "YETKAZISH VA TO'LOV (do'kon qoidalari — boshqacha va'da berma)\n"
-        f"- Toshkent bo'ylab Ketoshop kuryeri: {_fmt(SELF_DELIVERY_FEE)} so'm; mahsulotlar "
-        f"{_fmt(FREE_DELIVERY_FROM)} so'mdan oshsa — bepul. 24 soat ichida yetkaziladi. "
+        f"- Ketoshop kuryeri: Toshkent SHAHRI ichida {_fmt(SELF_DELIVERY_FEE)} so'm; shahar chegarasidan "
+        f"tashqarida (viloyatga {courier_zone.MAX_KM_OUTSIDE} km gacha) — {_fmt(SELF_DELIVERY_FEE)} + har km "
+        f"uchun {_fmt(courier_zone.PER_KM)} so'm (masalan 5 km — {_fmt(SELF_DELIVERY_FEE + 5 * courier_zone.PER_KM)}). "
+        "Aniq narx lokatsiya kelgach hisoblanadi — tizim xabarida yozilgan bo'ladi, mijozga OLDINDAN ayt. "
+        f"Mahsulotlar {_fmt(FREE_DELIVERY_FROM)} so'mdan oshsa — asosiy {_fmt(SELF_DELIVERY_FEE)} bepul "
+        "(km haqi qoladi). 24 soat ichida yetkaziladi. "
         "To'lov naqd (kuryerga) yoki karta orqali oldindan.\n"
         "- 'QACHON YETKAZASIZLAR?' deb so'rashsa (egasi, 2026-10-13): zarur va shoshilinch "
         "buyurtmani Yandex Taxi orqali tez yetkazib beramiz; juda shoshilinch bo'lmasa — 1 kun "
@@ -1161,8 +1169,8 @@ def _shop_knowledge() -> str:
         "yoki karta. Faqat Toshkentdagi mijozga taklif qil — viloyatdagiga emas.\n"
         "- Yetkazish usullarini taklif qilganda shunday ro'yxat qil (narxlari bilan, har biri "
         "alohida qatorda):\n"
-        f"  🚚 Toshkent bo'ylab kuryer — {_fmt(SELF_DELIVERY_FEE)} so'm ({_fmt(FREE_DELIVERY_FROM)} "
-        "so'mdan bepul), 24 soat ichida\n"
+        f"  🚚 Kuryer — Toshkent shahri ichida {_fmt(SELF_DELIVERY_FEE)} so'm ({_fmt(FREE_DELIVERY_FROM)} "
+        f"so'mdan bepul), shahardan tashqarida + har km {_fmt(courier_zone.PER_KM)} so'm, 24 soat ichida\n"
         "  🏪 Do'kondan olib ketish — bepul\n"
         f"  📮 Viloyatlarga UzPost — ~{_fmt(first_kg)} so'mdan (og'irlikka qarab), 1 ish kunida "
         "pochta bo'limiga\n"
@@ -2389,7 +2397,7 @@ async def _tool_card(message: Message, args: dict) -> str:
                 "manzilni matn bilan yozsin).")
     in_tashkent = lat is not None and lng is not None and _is_tashkent(float(lat), float(lng))
     if delivery == "self" and lat is not None and not in_tashkent:
-        return ("Xato: lokatsiya Toshkentdan tashqarida — Ketoshop kuryeri faqat Toshkent "
+        return (f"Xato: lokatsiya Toshkent shahridan {courier_zone.MAX_KM_OUTSIDE} km dan uzoqda — Ketoshop kuryeri faqat Toshkent "
                 "bo'ylab. Viloyatga UzPost (narxi bilan), BTS yoki EMU pochtani taklif qil.")
     if delivery == uzpost.METHOD and in_tashkent:
         return ("Xato: lokatsiya Toshkentda — UzPost faqat viloyatlarga. Toshkentda kuryer, "
@@ -4652,8 +4660,15 @@ async def on_location(message: Message, bot: Bot, state: FSMContext | None = Non
     _session(message.from_user.id)["location"] = (lat, lng, pin)
     _session(message.from_user.id)["keyboard"] = "menu"   # lokatsiya keldi — menyu qaytsin
     try:
-        from handlers.cart import _is_tashkent
-        where = "Toshkent ichida" if _is_tashkent(lat, lng) else "Toshkentdan TASHQARIDA (viloyat)"
+        km = courier_zone.billable_km(lat, lng)
+        if courier_zone.inside_city(lat, lng):
+            where = f"Toshkent shahri ichida — kuryer {_fmt(SELF_DELIVERY_FEE_)} so'm"
+        elif courier_zone.courier_ok(lat, lng):
+            where = (f"Toshkent shahridan {km} km TASHQARIDA — kuryer {_fmt(SELF_DELIVERY_FEE_)} + {km} × "
+                     f"{_fmt(courier_zone.PER_KM)} = {_fmt(SELF_DELIVERY_FEE_ + km * courier_zone.PER_KM)} so'm; "
+                     "buni mijozga OLDINDAN ayt")
+        else:
+            where = "Toshkentdan uzoqda (viloyat) — kuryer bormaydi, UzPost/BTS/EMU"
     except Exception:
         where = "hududi noma'lum"
     # Koordinata modelga kerak emas (mijozga "41.311081, 69.240562" deb o'qib berardi) —

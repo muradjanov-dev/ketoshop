@@ -102,7 +102,8 @@ def goods_subtotal(items: list[dict]) -> float:
 
 
 def delivery_fee_for(method: str | None, subtotal: float,
-                     items: list[dict] | None = None, far: bool = False) -> int:
+                     items: list[dict] | None = None, far: bool = False,
+                     lat=None, lng=None) -> int:
     """What the buyer pays for delivery through the bot. Ketoshop's own
     courier and UzPost «Bir Qadam» are charged by us — UzPost by the parcel's
     weight (`items`) and region (`far`), with no free threshold (uzpost.py);
@@ -111,7 +112,11 @@ def delivery_fee_for(method: str | None, subtotal: float,
         return uzpost.buyer_fee(items or [], far)
     if method != "self":
         return 0
-    return 0 if subtotal >= FREE_DELIVERY_FROM else SELF_DELIVERY_FEE
+    # Shahar ichida 25 000; chegaradan tashqarida + har km 3 000 (courier_zone.py,
+    # egasi 2026-11-26). 800 000 dan bepul — faqat asosiy 25 000.
+    import courier_zone
+    base = 0 if subtotal >= FREE_DELIVERY_FROM else SELF_DELIVERY_FEE
+    return base + courier_zone.extra_fee(lat, lng)
 
 
 def charged_delivery_fee(total, keto_redeemed, items: list[dict]) -> int:
@@ -230,9 +235,10 @@ UZBEKISTAN_BOUNDS = {
 
 
 def _is_tashkent(lat: float, lng: float) -> bool:
-    """Check if coordinates are within Tashkent area"""
-    return (TASHKENT_BOUNDS["lat_min"] <= lat <= TASHKENT_BOUNDS["lat_max"]
-            and TASHKENT_BOUNDS["lng_min"] <= lng <= TASHKENT_BOUNDS["lng_max"])
+    """Ketoshop kuryeri boradigan hudud: Toshkent shahri va chegaradan
+    courier_zone.MAX_KM_OUTSIDE km gacha (2026-11-26; ilgari taxminiy to'rtburchak)."""
+    import courier_zone
+    return courier_zone.courier_ok(lat, lng)
 
 
 def _is_in_uzbekistan(lat: float, lng: float) -> bool:
@@ -1826,7 +1832,8 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     # the goods before any Keto is applied below, and before the 10% bot
     # discount (owner, 2026-10-08: the discount must not cost free delivery).
     delivery_fee = delivery_fee_for(delivery_method, items_subtotal + bot_saved,
-                                    items_data, bool(data.get("uzpost_far")))
+                                    items_data, bool(data.get("uzpost_far")),
+                                    data.get("latitude"), data.get("longitude"))
     total += delivery_fee
 
     # Keto-as-discount (opt-in, off by default — see gamification.is_redemption_enabled).
@@ -1887,6 +1894,13 @@ async def _build_order_summary(user_id: int, data: dict, lang: str):
     payment_label = get_text("btn_pay_cash", lang) if payment_method == "cash" else get_text("btn_pay_online", lang)
     delivery_label = get_delivery_method_name(delivery_method, lang)
     delivery_fee_block = delivery_fee_text(delivery_method, delivery_fee, lang)
+    if delivery_method == "self":
+        import courier_zone      # shahardan tashqarida — mijoz hisobni oldindan ko'radi
+        extra = courier_zone.extra_fee(data.get("latitude"), data.get("longitude"))
+        line = courier_zone.breakdown_text(delivery_fee - extra, data.get("latitude"),
+                                           data.get("longitude"), lang)
+        if line:
+            delivery_fee_block += "\n" + line
     if delivery_method == uzpost.METHOD:
         delivery_fee_block += get_text(
             "uzpost_summary_line", lang, kg=uzpost.fmt_kg(uzpost.parcel_kg(items_data)),
@@ -2784,8 +2798,16 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
                                            kg=uzpost.fmt_kg(uzpost.parcel_kg(items)),
                                            office=_escape_html(office or get_text("uzpost_office_admin_picks", admin_lang)))
         else:
-            delivery_fee = delivery_fee_for(data.get("delivery_method"), goods_subtotal(items))
+            delivery_fee = delivery_fee_for(data.get("delivery_method"), goods_subtotal(items),
+                                            lat=data.get("latitude"), lng=data.get("longitude"))
             delivery_fee_block = delivery_fee_text(data.get("delivery_method"), delivery_fee, admin_lang)
+            if data.get("delivery_method") == "self":
+                import courier_zone
+                extra = courier_zone.extra_fee(data.get("latitude"), data.get("longitude"))
+                line = courier_zone.breakdown_text(delivery_fee - extra, data.get("latitude"),
+                                                   data.get("longitude"), admin_lang)
+                if line:
+                    delivery_fee_block += "\n" + line
         try:
             text = get_text("new_order_notification", admin_lang,
                 order_id=order_id,
