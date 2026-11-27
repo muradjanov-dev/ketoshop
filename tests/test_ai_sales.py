@@ -286,7 +286,7 @@ class AiRecipeLimitTest(unittest.TestCase):
         out = _run(ai_sales._run_tool(None, _FakeMessage(), "retsept", {"mahsulot_id": 30}))
         self.assertTrue(out.startswith("OK:"), out)
         self.assertNotIn("Masalliqlar:", out)
-        self.assertIn("BITTA qisqa retsept", out)
+        self.assertIn("BITTA qisqa, aniq retsept", out)
 
     def test_rules_route_recipes_through_the_tool_and_the_group_to_the_bot(self):
         rules = ai_sales._sales_rules()
