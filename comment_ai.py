@@ -360,6 +360,19 @@ izoh yozuvida. Havola YOZMA — uni o'zimiz oxiriga qo'shamiz. Spam va haqoratga
 RULES = RULES.replace("{kanal}", CHANNEL)
 
 
+# Egasi, 2026-11-27: "izohlarga ham foydali va pp va keto retseptlarni saytimizdan olishlari
+# mumkinligini eslatib qo'ygin orada" — har javobda emas, taxminan har uchinchisida.
+RECIPE_HINT_SHARE = 0.35
+RECIPE_HINT = ("[ESLATMA: shu javobda (o'rinli bo'lsa — shikoyat, sog'liq va spamda emas) bir gap bilan ayt: "
+               "saytimizda foydali PP va keto retseptlar bor, bepul — Telegram'da «ketoshop_uz» deb qidirib, "
+               "do'konimizdagi «Retseptlar» bo'limidan olsa bo'ladi. O'z so'zing bilan, qisqa.]")
+
+
+def _recipe_hint() -> str:
+    import random
+    return ("\n\n" + RECIPE_HINT) if random.random() < RECIPE_HINT_SHARE else ""
+
+
 def comment_prompt(c: dict) -> str:
     platform = "Instagram" if c.get("platform") == "ig" else "Facebook"
     where = f"reklama «{c['ad_name']}»" if c.get("ad_name") else ("reklama" if c.get("ad_id") else "post")
@@ -367,7 +380,7 @@ def comment_prompt(c: dict) -> str:
     caption = (c.get("post_caption") or "").strip()
     post = f"POST MATNI:\n{caption[:700]}\n\n" if caption else ""
     return (f"{platform} · {where}\nIzoh muallifi: {who}\n\n{post}"
-            f"IZOH:\n{(c.get('text') or '').strip()[:1500]}")
+            f"IZOH:\n{(c.get('text') or '').strip()[:1500]}" + _recipe_hint())
 
 
 def kb_block(kb: dict, catalog: str) -> str:
@@ -811,7 +824,7 @@ def followup_prompt(c: dict, days_ago: int) -> str:
             f"ESKI IZOH:\n{(c.get('text') or '').strip()[:1000]}\n\n"
             f"O'SHANDA BIZ YOZGAN JAVOB:\n{ours[:500] or '— (javob bermaganmiz: kechikkanimiz uchun qisqa uzr so‘ra, savoli bo‘lsa javob ber)'}"
             + (f"\n\nOLDINGI QAYTA XABARIMIZ:\n{(c.get('followup_text') or '').strip()[:500]}"
-               if (c.get("followup_text") or "").strip() else ""))
+               if (c.get("followup_text") or "").strip() else "") + _recipe_hint())
 
 
 async def followup(comment: dict, kb: dict, days_ago: int, new_products: str, offers: str) -> str | None:

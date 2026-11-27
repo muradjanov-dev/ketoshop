@@ -53,3 +53,17 @@ class DiscountCatalogTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecipeHintTest(unittest.TestCase):
+    """Egasi, 2026-11-27: izohlarda ora-orada saytdagi PP va keto retseptlarni eslatish."""
+
+    def test_hint_appears_only_sometimes(self):
+        from unittest.mock import patch
+        c = {"platform": "ig", "text": "narxi qancha?"}
+        with patch("random.random", return_value=0.1):
+            self.assertIn("retseptlar", comment_ai.comment_prompt(c))
+        with patch("random.random", return_value=0.9):
+            self.assertNotIn("ESLATMA", comment_ai.comment_prompt(c))
+        with patch("random.random", return_value=0.1):
+            self.assertIn("Retseptlar", comment_ai.followup_prompt(dict(c, reply_text="..."), 40))
