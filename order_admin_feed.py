@@ -96,6 +96,9 @@ _T = {
     "map": {"uz": "🗺 <a href=\"{url}\">Yandex xaritada ochish</a>",
             "ru": "🗺 <a href=\"{url}\">Открыть в Яндекс Картах</a>"},
     "delivery": {"uz": "🚚 Yetkazib berish: {delivery}", "ru": "🚚 Доставка: {delivery}"},
+    "post_index": {"uz": "📮 Indeks: <b>{office}</b>", "ru": "📮 Индекс: <b>{office}</b>"},
+    "post_index_unknown": {"uz": "📮 ⚠️ Indeks aniqlanmagan — mijozdan so'rang",
+                           "ru": "📮 ⚠️ Индекс не определён — уточните у клиента"},
 }
 
 
@@ -190,6 +193,11 @@ def customer_lines(order: dict, lang: str, *, history: str = "", contact: str = 
     lines.extend(location_lines(order, lang))
     if order.get("delivery_method"):
         lines.append(_t("delivery", lang, delivery=get_delivery_method_name(order["delivery_method"], lang)))
+    if order.get("delivery_method") == "uzpost":
+        # The post index on every UzPost card (owner, 2026-11-27).
+        import uzpost
+        office, known = uzpost.index_line(order.get("post_office"), order.get("address"))
+        lines.append(_t("post_index", lang, office=esc(office)) if known else _t("post_index_unknown", lang))
     # A cancelled order is not "paid on delivery" any more — no payment line.
     if order.get("payment_method") and order.get("status") != "cancelled":
         # address_note + cheque: an AI card order still waiting for its money

@@ -2793,7 +2793,8 @@ async def _notify_sellers(bot: Bot, order_id: int, items: list, data: dict, lang
             # What the buyer actually paid for the parcel, and where it goes.
             delivery_fee = charged_delivery_fee(data.get("total"), keto_used, items)
             delivery_fee_block = delivery_fee_text(uzpost.METHOD, delivery_fee, admin_lang)
-            office = (saved_order or {}).get("post_office") or data.get("post_office_line")
+            office = (saved_order or {}).get("post_office") or data.get("post_office_line") \
+                or uzpost.index_in_text(data.get("address"))
             delivery_fee_block += get_text("uzpost_admin_line", admin_lang,
                                            kg=uzpost.fmt_kg(uzpost.parcel_kg(items)),
                                            office=_escape_html(office or get_text("uzpost_office_admin_picks", admin_lang)))

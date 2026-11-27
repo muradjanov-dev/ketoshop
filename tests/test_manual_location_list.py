@@ -147,7 +147,7 @@ class SaveTest(unittest.TestCase):
              patch.object(database, "_snapshot_order_costs", AsyncMock(side_effect=lambda conn, items: items)):
             run(database.add_manual_order(1, "B", "+998", "📍", ITEMS, 1, "cash", "self", "pending",
                                           latitude=41.3, longitude=69.2))
-            self.assertEqual(seen["args"][-2:], (41.3, 69.2))
+            self.assertEqual(seen["args"][-3:], (41.3, 69.2, None))
             self.assertIn("latitude, longitude", seen["sql"])
             run(database.add_manual_order(1, "B", "+998", "Chilonzor", ITEMS, 1, "cash", "self", "pending"))
             self.assertEqual(seen["args"][-2:], (None, None))

@@ -4898,6 +4898,7 @@ $('#moForm').addEventListener('submit',async e=>{
       +(pv.latitude!=null&&!String(pv.address).startsWith('📍')?`\n🗺 ${pv.latitude.toFixed(6)}, ${pv.longitude.toFixed(6)}`:'')
       +`\n\n${lines}\n`
       +(pv.uzpost_fee?`📮 UzPost: ${fmt(pv.uzpost_fee)}\n`:'')
+      +($('#moDelivery').value==='uzpost'?`📮 Indeks: ${pv.post_office||'⚠️ aniqlanmadi — lokatsiya qo\'ying yoki manzilga indeksni yozing'}\n`:'')
       +($('#moDelivery').value==='self'?`🚚 Kuryer: ${fmt(pv.courier_fee)} (${moCourierNote(pv)})\n`:'')
       +`\nJami: ${fmt(pv.total)}\n${label('#moPayment')} · ${label('#moDelivery')} · ${label('#moStatus')}`;
     if(!window.confirm(msg))return;

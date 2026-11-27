@@ -297,6 +297,27 @@ def map_url(office: dict) -> str:
     return f"https://yandex.uz/maps/?pt={office['lng']:.6f},{office['lat']:.6f}&z=17&l=map"
 
 
+_INDEX_RE = re.compile(r"(?<!\d)(1\d{5}|2[0-3]\d{4})(?!\d)")
+
+
+def index_in_text(text) -> str | None:
+    """A 6-digit Uzbek postal index the buyer or admin typed ("… 140100 …")."""
+    m = _INDEX_RE.search(str(text or ""))
+    return m.group(1) if m else None
+
+
+def index_line(post_office, address=None) -> tuple[str | None, bool]:
+    """(what to show, known) for an UzPost order — the saved office line
+    ("141600 — Urgut Pochtamt, …"), else an index read from the address,
+    else (None, False). Owner, 2026-11-27: "pochta indeksi pochtali
+    buyurtmalarda har doyim ko'rinsin"."""
+    office = str(post_office or "").strip()
+    if office:
+        return office, True
+    idx = index_in_text(address)
+    return (idx, True) if idx else (None, False)
+
+
 def office_line(office: dict | None) -> str:
     """One line for the order record and the admin card:
     "141600 — Urgut Pochtamt, Самарқанд, Ургут, А.Навоий шох кучаси 17"."""

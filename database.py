@@ -2911,8 +2911,11 @@ async def add_manual_order(admin_user_id: int, customer_name: str, phone: str,
                             address: str, items_data: list[dict], total: float,
                             payment_method: str, delivery_method: str | None,
                             status: str, address_note: str | None = None,
-                            latitude: float | None = None, longitude: float | None = None) -> int:
+                            latitude: float | None = None, longitude: float | None = None,
+                            post_office: str | None = None) -> int:
     """Insert an admin-entered offline order.
+
+    post_office: UzPost «indeks — bo'lim, manzil» (2026-11-27), as bot orders keep it.
 
     latitude/longitude: when the admin gave the address as a Telegram location
     (2026-11-06) — the courier board's map and 🧭 navigation read them.
@@ -2932,17 +2935,17 @@ async def add_manual_order(admin_user_id: int, customer_name: str, phone: str,
                 """INSERT INTO orders (user_id, customer_name, phone, address, items, total,
                                         payment_method, delivery_method, address_note, status,
                                         source, confirmed_at, shipped_at, delivered_at,
-                                        latitude, longitude)
+                                        latitude, longitude, post_office)
                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'manual',
                            CASE WHEN $10 IN ('confirmed','shipped','delivered') THEN CURRENT_TIMESTAMP END,
                            CASE WHEN $10 IN ('shipped','delivered')             THEN CURRENT_TIMESTAMP END,
                            CASE WHEN $10 = 'delivered'                          THEN CURRENT_TIMESTAMP END,
-                           $11, $12)
+                           $11, $12, $13)
                    RETURNING id""",
                 admin_user_id, customer_name, phone, address,
                 json.dumps(items_data, ensure_ascii=False), total,
                 payment_method, delivery_method, address_note, status,
-                latitude, longitude,
+                latitude, longitude, post_office,
             )
             return order_id
 
