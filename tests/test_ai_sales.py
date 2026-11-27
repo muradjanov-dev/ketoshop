@@ -1652,7 +1652,7 @@ class AiOrderCardTest(unittest.TestCase):
         self.assertIn("Yana nima olamiz? 😊", out)
         self.assertIn("yetkazish usullarini narxi bilan", out)
         rules = ai_sales._sales_rules()
-        for expected in ("🏪 Do'kondan olib ketish — bepul", "🚚 Toshkent bo'ylab kuryer — 25 000",
+        for expected in ("🏪 Do'kondan olib ketish — bepul", "🚚 Kuryer — Toshkent shahri ichida 25 000",
                          "📦 Viloyatlarga BTS / EMU"):
             self.assertIn(expected, rules)
 

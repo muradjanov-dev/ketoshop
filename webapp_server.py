@@ -1036,6 +1036,20 @@ async def api_cart_clear(request: web.Request):
     return _json({"ok": True})
 
 
+async def api_courier_quote(request: web.Request):
+    """Ketoshop kuryeri narxi shu pin uchun (courier_zone.py, egasi 2026-11-26): shahar
+    ichida 25 000, chegaradan tashqarida + har km 3 000. Sayt checkout'i narxni oldindan
+    ko'rsatadi; buyurtma narxini server baribir qayta hisoblaydi."""
+    import courier_zone
+    try:
+        lat, lng = float(request.query["lat"]), float(request.query["lng"])
+    except (KeyError, ValueError):
+        return _json({"error": "invalid_location"}, status=400)
+    km = courier_zone.billable_km(lat, lng)
+    return _json({"ok": courier_zone.courier_ok(lat, lng), "inside": courier_zone.inside_city(lat, lng),
+                  "km": km, "extra": km * courier_zone.PER_KM, "per_km": courier_zone.PER_KM})
+
+
 async def api_uzpost_quote(request: web.Request):
     """📮 What UzPost «Bir Qadam» costs for this buyer's cart, and the post
     office nearest to their pin (uzpost.py) — the Mini App shows both before
@@ -1175,7 +1189,8 @@ async def api_checkout(request: web.Request):
         pickup_snapshot["post_office"] = uzpost.office_line(office) or None
         total += delivery_fee_for(delivery_method, subtotal + bot_saved, items_data, far)
     elif delivery_method != "pickup":
-        total += delivery_fee_for(delivery_method, subtotal + bot_saved)
+        total += delivery_fee_for(delivery_method, subtotal + bot_saved,
+                                  lat=latitude, lng=longitude)
 
     # Preview of the Keto reward this order will earn once delivered (see
     # gamification.py) — shown on the order-success screen so the buyer
@@ -2376,6 +2391,7 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_post("/api/checkout", api_checkout)
     app.router.add_get("/api/checkout/phone", api_checkout_phone)
     app.router.add_get("/api/uzpost/quote", api_uzpost_quote)
+    app.router.add_get("/api/courier/quote", api_courier_quote)
     app.router.add_post("/api/site-feedback", api_site_feedback)
     app.router.add_get("/api/site-feedback/due", api_site_feedback_due)
     app.router.add_post("/api/site-feedback/shown", api_site_feedback_shown)

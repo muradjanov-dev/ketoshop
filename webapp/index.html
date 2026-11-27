@@ -5579,6 +5579,7 @@ const L = {
     total: 'Jami',
     subtotal: 'Mahsulotlar summasi',
     deliveryFeeLabel: 'Yetkazib berish narxi',
+    courierKmLine: '📍 Shahardan {km} km tashqarida: +{extra} UZS (har km {per} so\'m)',
     deliveryFreeLabel: 'Yetkazib berish',
     deliveryFreeValue: 'BEPUL',
     freeDeliveryHint: "Yana {left} so'mlik mahsulot qo'shsangiz — Toshkent bo'ylab yetkazib berish bepul!",
@@ -5832,6 +5833,7 @@ const L = {
     total: 'Итого',
     subtotal: 'Сумма товаров',
     deliveryFeeLabel: 'Стоимость доставки',
+    courierKmLine: '📍 {km} км за городом: +{extra} UZS ({per} сум за км)',
     deliveryFreeLabel: 'Доставка',
     deliveryFreeValue: 'БЕСПЛАТНО',
     freeDeliveryHint: 'Добавьте товаров ещё на {left} сум — и доставка по Ташкенту бесплатно!',
@@ -10598,7 +10600,7 @@ function renderCheckoutPage() {
     const lng = parseFloat(document.getElementById('inp-lng').value);
     if (!isNaN(lat) && !isNaN(lng)) {
       const prev = document.querySelector('.del-opt[data-method].active')?.dataset.method;
-      renderDeliveryOptions(isInTashkent(lat, lng));
+      renderDeliveryOptions(courierQuote ? courierQuote.ok : isInTashkent(lat, lng));
       if (prev) {
         const restored = document.querySelector('.del-opt[data-method="' + prev + '"]');
         if (restored) {
@@ -10808,6 +10810,8 @@ async function setSelectedLocation(lat, lng) {
   btn.classList.add('set');
   document.getElementById('location-icon').textContent = '✅';
   renderDeliveryOptions(isInTashkent(lat, lng));
+  // Kuryer narxi shu pin uchun (shahardan tashqarida + har km) — serverdan (courier_zone.py).
+  loadCourierQuote(lat, lng).then(ok => { if (ok !== null) renderDeliveryOptions(ok); });
 
   // Reverse geocode only as a *suggestion*. OSM coverage in Uzbekistan is
   // sparse, so Nominatim often snaps to a far road — the buyer must be able
@@ -11857,11 +11861,20 @@ function isInTashkent(lat, lng) {
 const SELF_DELIVERY_FEE = 25000;
 // Free across Tashkent from this products total — handlers/cart.py FREE_DELIVERY_FROM.
 const FREE_DELIVERY_FROM = 800000;
+// Shahardan tashqarida har km uchun qo'shimcha (egasi, 2026-11-26) — /api/courier/quote.
+let courierQuote = null;
+async function loadCourierQuote(lat, lng) {
+  try {
+    courierQuote = await api('/api/courier/quote?lat=' + encodeURIComponent(lat) + '&lng=' + encodeURIComponent(lng));
+    return !!courierQuote.ok;
+  } catch (e) { courierQuote = null; return null; }
+}
 function deliveryFee(method) {
   if (method === 'pickup') return 0;
   if (method === 'uzpost') return uzpostQuote ? uzpostQuote.fee : 0;
   if (method !== 'self') return 0;
-  return cartData.total >= FREE_DELIVERY_FROM ? 0 : SELF_DELIVERY_FEE;
+  const extra = courierQuote ? (courierQuote.extra || 0) : 0;
+  return (cartData.total >= FREE_DELIVERY_FROM ? 0 : SELF_DELIVERY_FEE) + extra;
 }
 
 // Render delivery options for the checkout page based on whether the user is in Tashkent.
@@ -11989,6 +12002,10 @@ function refreshCheckoutTotal() {
   }
   if (fee > 0) {
     html += '<div class="ct-line"><span>' + t.deliveryFeeLabel + '</span><span>' + formatPrice(fee) + ' UZS</span></div>';
+    if (method === 'self' && courierQuote && courierQuote.km > 0) {
+      html += '<div class="ct-line"><span>' + t.courierKmLine.replace('{km}', courierQuote.km)
+        .replace('{extra}', formatPrice(courierQuote.extra)).replace('{per}', formatPrice(courierQuote.per_km)) + '</span></div>';
+    }
     const left = FREE_DELIVERY_FROM - cartData.total;
     if (method === 'self' && left <= 300000) {
       html += '<div class="ct-line"><span>' + t.freeDeliveryHint.replace('{left}', formatPrice(left)) + '</span></div>';

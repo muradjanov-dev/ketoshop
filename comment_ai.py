@@ -108,8 +108,11 @@ def default_kb() -> dict:
     def som(n):
         return f"{int(n):,}".replace(",", " ")
 
-    delivery = (f"Toshkent ichida kuryer — {som(SELF_DELIVERY_FEE)} so'm, {som(FREE_DELIVERY_FROM)} "
-                "so'mdan ortiq buyurtmaga bepul, 24 soat ichida; shoshilinch bo'lsa Yandex Taxi orqali; "
+    import courier_zone
+    delivery = (f"Toshkent shahri ichida kuryer — {som(SELF_DELIVERY_FEE)} so'm, {som(FREE_DELIVERY_FROM)} "
+                "so'mdan ortiq buyurtmaga bepul, 24 soat ichida; shahardan tashqarida — har km uchun "
+                f"+{som(courier_zone.PER_KM)} so'm (aniq narx manzil bo'yicha botda hisoblanadi); "
+                "shoshilinch bo'lsa Yandex Taxi orqali; "
                 "viloyatlarga pochta orqali yuboramiz; do'kondan o'zi olib ketish bepul.")
     return {
         "manzil": (f"{SHOP_STREET}, mo'ljal: {SHOP_LANDMARK}. Ish vaqti (kelib olib ketish uchun): "

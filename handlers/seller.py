@@ -1562,7 +1562,8 @@ async def render_order_card(callback: CallbackQuery, order_id: int, ret: str = "
     if order.get("delivery_method") == "self":
         subtotal = goods_subtotal(items)
         charged = float(order.get("total") or 0) + float(order.get("keto_redeemed") or 0) - subtotal
-        delivery_fee = SELF_DELIVERY_FEE if charged >= SELF_DELIVERY_FEE - 1 else 0
+        # Shahardan tashqarida 25 000 + km (courier_zone) — to'langan summa o'zi.
+        delivery_fee = int(round(charged)) if charged >= SELF_DELIVERY_FEE - 1 else 0
         # "BEPUL" only for an order that really crossed the threshold — an
         # AI-created order carries no fee in its total either.
         if delivery_fee or subtotal >= FREE_DELIVERY_FROM:
