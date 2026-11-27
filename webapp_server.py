@@ -1046,8 +1046,11 @@ async def api_courier_quote(request: web.Request):
     except (KeyError, ValueError):
         return _json({"error": "invalid_location"}, status=400)
     km = courier_zone.billable_km(lat, lng)
+    import joint_delivery    # shu joyga hali yo'lga chiqmagan buyurtma — yetkazish bepul, birga
+    joined = await joint_delivery.waive("self", request.get("user_id"), lat, lng)
     return _json({"ok": courier_zone.courier_ok(lat, lng), "inside": courier_zone.inside_city(lat, lng),
-                  "km": km, "extra": km * courier_zone.PER_KM, "per_km": courier_zone.PER_KM})
+                  "km": km, "extra": km * courier_zone.PER_KM, "per_km": courier_zone.PER_KM,
+                  "joined": joined})
 
 
 async def api_uzpost_quote(request: web.Request):
@@ -1189,8 +1192,10 @@ async def api_checkout(request: web.Request):
         pickup_snapshot["post_office"] = uzpost.office_line(office) or None
         total += delivery_fee_for(delivery_method, subtotal + bot_saved, items_data, far)
     elif delivery_method != "pickup":
-        total += delivery_fee_for(delivery_method, subtotal + bot_saved,
-                                  lat=latitude, lng=longitude)
+        import joint_delivery    # shu manzilga hali yo'lga chiqmagan buyurtma bor — yetkazish bitta
+        if not await joint_delivery.waive(delivery_method, user_id, latitude, longitude, address):
+            total += delivery_fee_for(delivery_method, subtotal + bot_saved,
+                                      lat=latitude, lng=longitude)
 
     # Preview of the Keto reward this order will earn once delivered (see
     # gamification.py) — shown on the order-success screen so the buyer

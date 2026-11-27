@@ -103,6 +103,8 @@ async def init_db():
         await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_map_url TEXT")
         # 📮 UzPost «Bir Qadam» office the parcel goes to (uzpost.office_line).
         await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS post_office TEXT")
+        # 🔗 Shu manzilga hali yo'lga chiqmagan buyurtma bilan birga yetkaziladi (joint_delivery.py).
+        await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_joined_with INTEGER")
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS order_line_cost_audit (
                 id BIGSERIAL PRIMARY KEY,
@@ -2841,6 +2843,10 @@ async def create_order(user_id: int, customer_name: str, phone: str, address: st
                 latitude, longitude, delivery_method, address_note, secondary_phone, keto_redeem,
                 pickup_map_url, post_office
             )
+            # Bitta manzilga bitta yetkazish (joint_delivery.py): narx olinmagan bo'lsa belgilanadi.
+            import joint_delivery
+            await joint_delivery.mark_created(conn, order_id, user_id, delivery_method, latitude, longitude,
+                                              address, total, keto_redeem, items)
 
             if keto_redeem > 0:
                 await conn.execute("INSERT INTO keto_ledger (user_id, order_id, amount, kind, note) VALUES ($1, $2, $3, 'redeem', $4)", user_id, order_id, -keto_redeem, f"Buyurtma #{order_id} uchun chegirma")
@@ -4918,6 +4924,7 @@ async def get_unbooked_delivery_orders(methods: list[str], since, limit: int = 2
                   AND o.delivery_method = ANY($1::text[])
                   AND COALESCE(o.delivered_at, o.created_at) >= $2
                   AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.delivery_order_id = o.id)
+                  AND o.delivery_joined_with IS NULL     -- birga yetkazilgan: kuryer bitta bordi
                   AND ($4::text IS NULL OR COALESCE(o.address, '') !~* $4)
                 ORDER BY o.id
                 LIMIT $3""",
