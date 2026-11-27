@@ -126,6 +126,18 @@ def _trim(now: float) -> None:
         _sent.popleft()
 
 
+async def writable() -> bool:
+    """Hozir yozish mumkinmi (pauza yo'q, kunduzi, soatlik/kunlik chegara to'lmagan) — navbatni
+    behuda AI bilan qayta ishlamaslik uchun oldindan tekshiruv."""
+    if await paused_until():
+        return False
+    if not HOURS[0] <= _now_tk().hour < HOURS[1]:
+        return False
+    now = time.time()
+    _trim(now)
+    return sum(1 for t in _sent if now - t < 3600) < HOURLY and len(_sent) < DAILY
+
+
 async def before_write() -> None:
     """POST oldidan: pauza, tun, chegaralar — Blocked; aks holda navbat kutadi."""
     if await paused_until():

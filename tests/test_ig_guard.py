@@ -124,3 +124,29 @@ class SafePaceTest(unittest.TestCase):
         follow.assert_awaited_once_with(True)
         direct.assert_awaited_once_with(True)
         resume.assert_awaited_once()
+
+
+class StuckCommentsTest(unittest.TestCase):
+    """2026-11-27: himoya bloklagan izohlar va "sending"da qotganlar abadiy javobsiz qolardi."""
+
+    def test_guard_block_puts_the_comment_back_for_catch_up(self):
+        import database
+        row = {"id": 5, "status": "new", "ai_draft": "Javob", "text": "narxi?", "platform": "ig",
+               "comment_id": "c5"}
+        update = AsyncMock(return_value=row)
+        with patch.object(database, "get_meta_comment", AsyncMock(return_value=row)), \
+                patch.object(mc, "is_repeat", AsyncMock(return_value=False)), \
+                patch.object(mc, "identity", AsyncMock(return_value={"page_token": "T"})), \
+                patch.object(mc, "our_existing_reply", AsyncMock(return_value=None)), \
+                patch.object(database, "claim_meta_comment", AsyncMock(return_value=True)), \
+                patch.object(mc, "thank_in_direct", AsyncMock(return_value=False)), \
+                patch.object(mc, "reply_public", AsyncMock(side_effect=mc.GraphError(4, "ig_guard: tunda"))), \
+                patch.object(database, "update_meta_comment", update), \
+                patch.object(mc, "send_cards", AsyncMock()) as cards:
+            _run(mc.auto_send(None, 5, delay=0))
+        update.assert_awaited_once_with(5, ai_confident=None)
+        cards.assert_not_awaited()
+
+    def test_catch_up_waits_while_writing_is_not_allowed(self):
+        with patch.object(ig_guard, "writable", AsyncMock(return_value=False)):
+            self.assertEqual(_run(mc.catch_up(None)).get("guard"), 1)
