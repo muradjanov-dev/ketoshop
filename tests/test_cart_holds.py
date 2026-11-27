@@ -318,7 +318,8 @@ class MessagesTest(unittest.TestCase):
         with patch.object(database, "release_expired_holds", AsyncMock(return_value=[notice])), \
              patch.object(database, "pending_release_notices", AsyncMock(return_value=[notice])), \
              patch.object(database, "mark_release_notice_sent", AsyncMock(return_value=True)), \
-             patch.object(database, "get_user_languages", AsyncMock(return_value={ALI: "uz"})):
+             patch.object(database, "get_user_languages", AsyncMock(return_value={ALI: "uz"})), \
+             patch.object(cr, "recently_paying", AsyncMock(return_value=False)):
             with patch.object(cr, "_quiet", return_value=True):
                 stats = run(cr.run_once(bot))
             self.assertEqual((stats["released"], stats["sent"]), (1, 0))   # released at night, told later
@@ -327,6 +328,36 @@ class MessagesTest(unittest.TestCase):
                 stats = run(cr.run_once(bot))
             self.assertEqual(stats["sent"], 1)
             self.assertIn("sotuvga qaytarildi", bot.send_message.call_args.args[1])
+            self.assertIn("xavotir olmang", bot.send_message.call_args.args[1])
+
+    def test_buyer_who_just_paid_is_not_told_admins_are(self):
+        # Egasi, 2026-11-27: "men to'lov qilgan edim-ku, nega savatimdagi mahsulotlar sotuvga qaytarildi".
+        import cart_reservations as cr
+        bot = AsyncMock()
+        notice = {"id": 6, "user_id": ALI, "items": [{"name": "Lasos tushonkasi", "quantity": 2, "unit": "piece"}]}
+        with patch.object(database, "release_expired_holds", AsyncMock(return_value=[notice])), \
+             patch.object(database, "pending_release_notices", AsyncMock(return_value=[notice])), \
+             patch.object(database, "mark_release_notice_sent", AsyncMock(return_value=True)), \
+             patch.object(database, "get_user_languages", AsyncMock(return_value={ALI: "uz"})), \
+             patch.object(database, "get_user", AsyncMock(return_value={"full_name": "Салима"})), \
+             patch.object(cr, "recently_paying", AsyncMock(return_value=True)), \
+             patch.object(cr, "ADMIN_IDS", [1]), \
+             patch.object(cr, "_quiet", return_value=False), patch.object(cr, "SEND_DELAY", 0):
+            stats = run(cr.run_once(bot))
+        self.assertEqual((stats["sent"], stats["held_back"]), (0, 1))
+        chats = [c.args[0] for c in bot.send_message.call_args_list]
+        self.assertEqual(chats, [1])                                   # faqat admin
+        self.assertIn("Lasos tushonkasi", bot.send_message.call_args.args[1])
+
+    def test_recent_order_or_pending_checkout_counts_as_paying(self):
+        import cart_reservations as cr
+        from datetime import datetime
+        with patch.object(database, "get_user_orders", AsyncMock(return_value=[
+                {"status": "confirmed", "created_at": datetime.utcnow()}])):
+            self.assertTrue(run(cr.recently_paying(ALI)))
+        with patch.object(database, "get_user_orders", AsyncMock(return_value=[])), \
+                patch.object(database, "get_pending_checkout", AsyncMock(return_value={"data": {}})):
+            self.assertTrue(run(cr.recently_paying(ALI)))
 
 
 class BotCardTest(unittest.TestCase):
