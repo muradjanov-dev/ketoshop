@@ -106,6 +106,26 @@ def _cut(text: str, pattern: re.Pattern) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
+# Maqtov bilan boshlash (egasi, 2026-11-27: "faqat zo'r deb ikki marotaba bitta mijoz bilan
+# xabar yozishni boshlapsan bu notabiiy, bir xillikdan qoch") — ketma-ket ikkinchisida olinadi.
+_PRAISE_OPENER = re.compile(
+    r"^\s*(?:zo['ʻ’`]?r|зўр|зор|ajoyib|ажойиб|super|супер|juda\s+yaxshi|жуда\s+яхши|a['ʻ’`]?lo|аъло|"
+    r"barakalla|баракалла|qoyil|қойил|zo['ʻ’`]?r\s+savol|yaxshi\s+savol|яхши\s+савол|ajoyib\s+savol|"
+    r"отлично|замечательно|прекрасно|класс|хороший\s+вопрос|great|awesome|nice)\b[^\w«\"'(]*",
+    re.IGNORECASE)
+
+
+def starts_with_praise(text: str | None) -> bool:
+    return bool(_PRAISE_OPENER.match(text or ""))
+
+
+def _drop_praise(text: str) -> str:
+    rest = text[_PRAISE_OPENER.match(text).end():]
+    if len(re.findall(r"\w+", rest.split("\n", 1)[0])) < 2:
+        return text
+    return rest[:1].upper() + rest[1:]
+
+
 def vary(reply: str, previous: str | None) -> str:
     """"... ham aytib beramiz" va'dasini doim, oldingi javobda ham bo'lgan
     qolipni esa takror bo'lganda shu javobdan oladi."""
@@ -117,6 +137,8 @@ def vary(reply: str, previous: str | None) -> str:
     if previous:
         if starts_with_yes(previous) and starts_with_yes(out):
             out = _drop_yes(out)
+        if starts_with_praise(previous) and starts_with_praise(out):
+            out = _drop_praise(out)
         for pattern in (_CART_ASK, _OFFER):
             if pattern.search(previous) and pattern.search(out):
                 out = _cut(out, pattern)

@@ -759,7 +759,11 @@ def rules() -> str:
     phone = (SUPPORT_PHONES or "").split(",")[0].strip() or SUPPORT_PHONES
     return (DM_RULES.replace("{shop}", SHOP_LINK).replace("{bot}", BOT_LINK)
             .replace("{channel_link}", CHANNEL_LINK).replace("{channel}", CHANNEL)
-            .replace("{address}", SHOP_ADDRESS_URL).replace("{phone}", phone))
+            .replace("{address}", SHOP_ADDRESS_URL).replace("{phone}", phone)
+            + "\n\nSAMIMIYLIK (egasi, 2026-11-27: \"zo'r deb ikki marotaba ... boshlapsan bu notabiiy, "
+              "bir xillikdan qoch\"): javobni 'Zo'r', 'Ajoyib', 'Juda yaxshi' kabi maqtov so'zi bilan "
+              "boshlama va oldingi xabarimizdagi kirish so'zini takrorlama. Mijozning gapiga to'g'ridan-to'g'ri, "
+              "iliq va har safar boshqacha javob ber.")
 
 
 NONTEXT = "[matnsiz xabar: rasm, ovoz, stiker, storis yoki ulashilgan post]"
@@ -881,6 +885,11 @@ async def compose(conv: dict, pending: list[dict], *, first_contact: bool, catal
         return Plan("closed", intent=intent, lang=lang)
     human = bool(data.get("needs_human")) or intent in HUMAN_INTENTS
     reply = finalize_dm(joined, data.get("reply"), lang)
+    # Ketma-ket "Zo'r…", "Ha, …" bilan boshlamaslik (egasi, 2026-11-27) — oldingi javobimizga qarab.
+    previous = next((m["text"] for m in reversed(conv["messages"]) if m["ours"] and m.get("text")), None)
+    if reply:
+        import ai_tone
+        reply = ai_tone.vary(reply, previous)
     if human:
         plan = _holding(lang, first_contact, intent if intent in HUMAN_INTENTS else "unsure", intent)
         if reply:

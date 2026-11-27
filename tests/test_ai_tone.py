@@ -181,3 +181,18 @@ class AnswerPipelineTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PraiseOpenerTest(unittest.TestCase):
+    """Egasi, 2026-11-27: "faqat zo'r deb ikki marotaba bitta mijoz bilan xabar yozishni boshlapsan"."""
+
+    def test_second_praise_opener_is_dropped(self):
+        prev = "Zo'r! Bodom uni 500gr bor, 87 000 so'm."
+        self.assertEqual(ai_tone.vary("Zo'r, choyga steviya ozgina solinadi.", prev),
+                         "Choyga steviya ozgina solinadi.")
+        self.assertEqual(ai_tone.vary("Отлично! Стевия есть в наличии.", "Отлично, записал."),
+                         "Стевия есть в наличии.")
+
+    def test_first_praise_is_kept(self):
+        self.assertEqual(ai_tone.vary("Zo'r tanlov, bodom uni bor.", "Assalomu alaykum!"),
+                         "Zo'r tanlov, bodom uni bor.")
