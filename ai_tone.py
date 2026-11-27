@@ -189,3 +189,14 @@ def drop_midchat_greeting(reply: str, customer_text: str | None, mid_conversatio
     if not rest or rest == reply.lstrip():
         return reply
     return rest[0].upper() + rest[1:]
+
+
+# 5 soatdan keyin — salom bilan (egasi, 2026-11-27: "5 soatdan keyin gaplashsang salom ber").
+_OPENING_GREETING = {"uz": "Assalomu alaykum!", "uz_cyr": "Ассалому алайкум!", "ru": "Здравствуйте!"}
+
+
+def greet_first(reply: str, lang: str, needed: bool) -> str:
+    """Uzoq tanaffusdan keyin (yoki birinchi marta) javob salomsiz bo'lsa — qisqa salom qo'shadi."""
+    if not reply or not needed or _REPLY_GREETING.match(reply):
+        return reply
+    return f"{_OPENING_GREETING.get(lang, _OPENING_GREETING['uz'])} {reply[0].upper()}{reply[1:]}"

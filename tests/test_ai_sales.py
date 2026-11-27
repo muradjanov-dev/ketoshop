@@ -1848,6 +1848,7 @@ class AiNaturalToneTest(unittest.TestCase):
         import ai_stats
         _patch(self, ai_stats, "record_turn", AsyncMock())
         _patch(self, database, "get_user_language", AsyncMock(return_value="uz"))
+        _patch(self, ai_sales, "mid_conversation", AsyncMock(return_value=True))  # salom qoidasi alohida (test_person_folder)
         _patch(self, ai_sales, "_respond", AsyncMock(return_value="Ha, bor — 68 000 so‘m 😊"))
         ai_sales._sessions.clear()
         message = _FakeMessage("eritritol bormi")
