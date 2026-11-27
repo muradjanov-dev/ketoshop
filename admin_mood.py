@@ -375,6 +375,115 @@ def facts(text: str) -> dict:
     return out
 
 
+# Umumiy o'zbekona hazil qatorlari (egasi, 2026-11-27: "yanada kulgili va kayfiyatni ko'taruvchi
+# iboralar qo'sh, yana 100 xil, o'zbeklarga va jargon va faqat o'zbeklar tushunadigan gap va
+# hazillar ham bo'lsin"). Har qanday xabar turiga (xatolardan tashqari) o'zbekcha xabarlarda
+# shu turning o'z qatorlari bilan aralash tushadi.
+FUN_UZ = [
+    "😎 Ishlar besh — beshdan ham zo'r, olti!",
+    '🫖 Choy sovib qolmasin, ish esa qizib turaversin!',
+    "🍚 Kechqurun osh bo'lsa, bugun ishlar ham joyida bo'ladi!",
+    "💪 Gap yo'q — siz bilan bu do'kon tog'ni ham ko'taradi!",
+    "😂 Qo'shni xola so'radi: «Ketoshop yana kengaydimi?» — Ha, xola, kengayapmiz!",
+    '🚐 Damasdek ixcham, lekin Kobaltdek ishonchli jamoa!',
+    '🥇 Bugun ham chempionlar jamoasi navbatchilikda!',
+    "🧿 Ko'z tegmasin, ishlarimiz yurishib ketdi!",
+    "🎶 Ish qo'shiq bilan — kayfiyat esa to'ydagidek!",
+    '🍞 Non issiq, ish shirin — yana nima kerak?',
+    '😄 Boshliq kulsa — demak, bugun hammasi joyida!',
+    "🫡 Qoyil qildingiz — shapka olib ta'zim!",
+    "🍉 Yozda tarvuz, qishda kepak — bizda har fasl zo'r!",
+    "🚀 Ketvordik! Endi to'xtatib bo'lmaydi!",
+    '🍯 Bu jamoa asaldek shirin, lekin qandsiz — keto-shirin!',
+    '😅 Telefon jiringlayapti — yangi baraka kelyapti!',
+    "🧠 Bosh joyida, qo'l ishda, ko'ngil xotirjam!",
+    '🌞 Erta turgan ishni bitirar, Ketoshop jamoasi esa ikki barobar!',
+    "🤝 Bitta qo'l bilan qars chiqmaydi — shuning uchun biz jamoamiz!",
+    '🏃 Chopqir otdek ishlaymiz, lekin dam olishni ham unutmang!',
+    "🥟 Somsadek qizg'in kun — ichi to'la baraka!",
+    '😂 Kalkulyator ham hayron: buncha buyurtma qayerdan?',
+    '🧃 Bir qultum suv iching — ish yana kutib turadi!',
+    "🎯 Nishonga aniq tegdi — xuddi bazmda qo'ylangan osh kabi!",
+    "🪴 Sabr qilsang, g'o'radan holva bitar — biz esa keto-holva qilamiz!",
+    "📦 Qutilar to'lyapti, ko'ngillar ham!",
+    "😁 Kim aytdi «ish zerikarli» deb? Bizda har kuni to'y!",
+    '🦁 Sherlar ishlayapti — mushuklar dam olsin!',
+    "🍵 Ko'k choy, issiq non, yaxshi xabar — o'zbekona baxt!",
+    '🎉 Bugungi ish — ertangi maqtov!',
+    "😎 Shoshilmang, lekin to'xtamang — bizning shiorimiz!",
+    "🌙 Kechasi ham uyg'oq — Ketoshop hech qachon uxlamaydi!",
+    "🧂 Himalay tuzidek — ozgina, lekin ta'm beradi!",
+    "😂 Navbat Chorsu bozoridagidek uzun bo'lsin — buyurtmaga!",
+    "🚕 Kuryer yo'lda, xursandchilik ham!",
+    '🏆 Bu hafta MVP — siz!',
+    '🥳 Har bir buyurtma — kichik bayram, katta baraka!',
+    "😌 Ko'ngil tinch bo'lsa, ish ham o'z-o'zidan yuradi.",
+    '🔥 Qozon qaynayapti — ishlar ham!',
+    "🍏 Olma pishsa o'zi tushadi, mijoz esa o'zi qaytib keladi!",
+    "😄 Mehmon otangdan ulug' — mijoz esa undan ham!",
+    "🛠 Usta bo'lsang, ish o'zi topiladi — bizda esa ish ko'p!",
+    "💚 Sog'lom ovqat — sog'lom el, sog'lom el — gullagan yurt!",
+    "🧳 Qopni to'ldiramiz, ko'ngilni ham!",
+    '😂 Hatto tandir ham hayron: bizning nonlar glyutensiz!',
+    "🌟 Yulduzlar bizni ko'rib, o'zlarini sozlayapti!",
+    "🤗 Bitta tabassum — o'nta buyurtmaga teng!",
+    "🎈 Kayfiyat — havo shari: siz uni ko'tarib turibsiz!",
+    "😜 «Keyinroq» degan so'z bizda yo'q — «hozir» bor!",
+    '🍬 Shakarsiz, lekin shirin — bizning ishimiz kabi!',
+    "🏡 Uyga ham baraka, do'konga ham!",
+    '😂 Qayin ona ham maqtaydigan xizmat — mana bu daraja!',
+    "🧮 Hisob-kitob aniq, ko'ngil to'q!",
+    "🥗 Salatdek yangi, oshdek to'yimli kun!",
+    '🫶 Mijoz xursand — biz ham xursand, hamma xursand!',
+    '🚦 Yashil chiroq yondi — oldinga!',
+    "😎 Bugun omad bizning tomonda — buyurtmalarni ko'ring!",
+    "🐎 Ot aylanib qozig'ini topar — mijoz ham Ketoshopni!",
+    "🍲 Mastava issiq, ish tez, ko'ngil to'q!",
+    "😂 Ishimiz shunchalik ko'pki, soat ham charchab qoldi!",
+    "📈 Grafik yuqoriga — xuddi kelinning sepidek to'lib boryapti!",
+    '🧘 Chuqur nafas — keyin yana zarb bilan!',
+    '🌻 Kungaboqar quyoshga, biz esa mijozga qaraymiz!',
+    "😁 «Zo'r-ku!» deydigan kun bugun!",
+    '🧁 Keto-tort kabi: shakarsiz, lekin bayramona!',
+    "🥜 Yong'oqdek mustahkam jamoa!",
+    '🤣 Kuryerimiz shunday tez-ki, GPS ortda qolyapti!',
+    "🏔 Tog'ni ham ko'chiramiz — faqat avval choy ichib olamiz!",
+    "🎁 Har kuni sovg'a — mijozga ham, jamoaga ham!",
+    '😇 Duo olgan ish yurishadi — mijozlarimiz duo qilyapti!',
+    "🚴 Sekin yursang ham, to'xtamasang yetasan!",
+    "😂 Qo'shni do'kon hayron: «Bular nima sotyapti o'zi?»",
+    "🍳 Ertalabki tuxumdek — kun ham to'liq, ham foydali!",
+    "💼 Biznes — bu biznes, lekin kayfiyat birinchi o'rinda!",
+    "🌈 Yomg'irdan keyin kamalak — qiyin kundan keyin zo'r savdo!",
+    "😄 Bir kun ko'rmasak, mijozlar sog'inib qoladi!",
+    "🪙 Tiyin-tiyin yig'ilib, so'm bo'ladi — so'm-so'm yig'ilib, Ketoshop!",
+    '🎬 Bu kino emas — bu Ketoshopning real hayoti!',
+    "😂 Ombordagi qoplar ham bizni ko'rib tik turibdi!",
+    '🍇 Uzumdek shirin, keto kabi foydali kun!',
+    '🫵 Ha, aynan siz — bugungi qahramon!',
+    '😎 Ish qilsang — qoyilmaqom qil, deydi ustoz!',
+    "🧺 Savat to'la, ko'ngil to'la!",
+    "🤭 Tushlikka keto-somsa bo'lsa, ish yanada yurishadi!",
+    '🏅 Har bir yetkazilgan quti — kichik medal!',
+    "🕊 Tinchlik, xotirjamlik va ko'p buyurtma!",
+    "😂 Bugun shunchalik ish ko'pki, hatto mushuk ham yordam bermoqchi!",
+    "🌄 Har tong — yangi imkoniyat, har buyurtma — yangi do'st!",
+    "🥤 Ayronday sovuqqon, oshdek qizg'in — ideal jamoa!",
+    "😃 Ko'ngil xush bo'lsa, ko'cha ham gulzor!",
+    "🛒 Savat aravachasi g'ildiragi aylanyapti — biz ham!",
+    "😆 Hazil-hazil bilan bugungi rejani bajarib qo'ydik!",
+    '🌰 Bodom unidan ham mayin, tosh devordan ham mustahkam jamoa!',
+    "🎺 Karnay-surnay chalinsin — yana bir zo'r kun!",
+    '😌 Ishdan keyin oila, choy va xotirjamlik — siz bunga loyiqsiz!',
+    "🔑 Muvaffaqiyat kaliti — sizning cho'ntagingizda!",
+    "😂 Bizning tezlikni ko'rib, Yandex ham o'ylanib qoldi!",
+    '🫓 Patir non kabi — qatlam-qatlam baraka!',
+    "🌳 Ekkaning ko'karadi — bugungi mehnat ertaga meva beradi!",
+    "🥰 Siz bo'lmasangiz, bu do'kon shunchaki do'kon bo'lardi — siz bilan oila!",
+]
+FUN_SHARE = 0.5          # aniq xabarga bog'langan qator (#raqam, summa) bilan teng ehtimol
+
+
 def cheer_line(text: str, lang: str = "uz", rng: random.Random | None = None) -> str:
     kind = classify(text)
     found = facts(text)
@@ -386,9 +495,11 @@ def cheer_line(text: str, lang: str = "uz", rng: random.Random | None = None) ->
     fitting = [p for p in pool if usable(p)]
     # Prefer a line that talks about THIS message; fall back to the rest.
     specific = [p for p in fitting if "{" in p]
+    general = [p for p in fitting if "{" not in p] or fitting
+    if lang != "ru" and kind != "error":
+        general = general + FUN_UZ          # o'zbekona hazillar — xato xabarlarida emas
     rnd = rng or random
-    tpl = rnd.choice(specific) if specific and rnd.random() < 0.75 else rnd.choice(
-        [p for p in fitting if "{" not in p] or fitting)
+    tpl = rnd.choice(specific) if specific and rnd.random() < FUN_SHARE else rnd.choice(general)
     if lang == "uz_cyr":
         from translit import lat_to_cyr
         tpl = lat_to_cyr(tpl)

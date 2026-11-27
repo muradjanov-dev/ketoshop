@@ -107,3 +107,23 @@ class StockAlertTextTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FunLinesTest(unittest.TestCase):
+    def test_hundred_uzbek_lines_are_safe_and_used(self):
+        import random
+        import admin_mood
+        self.assertEqual(len(admin_mood.FUN_UZ), 100)
+        self.assertEqual(len(set(admin_mood.FUN_UZ)), 100)
+        for line in admin_mood.FUN_UZ:
+            self.assertFalse(any(c in line for c in "<>&{}"), line)
+        seen = {admin_mood.cheer_line("Buyurtma #12 bekor qilindi", "uz", random.Random(i)) for i in range(400)}
+        self.assertTrue(seen & set(admin_mood.FUN_UZ))
+
+    def test_errors_and_russian_stay_without_uzbek_jokes(self):
+        import random
+        import admin_mood
+        fun = set(admin_mood.FUN_UZ)
+        for i in range(200):
+            self.assertNotIn(admin_mood.cheer_line("Backup xato bilan tugadi", "uz", random.Random(i)), fun)
+            self.assertNotIn(admin_mood.cheer_line("Заказ #5 отменён", "ru", random.Random(i)), fun)
