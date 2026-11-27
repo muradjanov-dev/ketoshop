@@ -985,4 +985,6 @@ def finalize(comment_text: str | None, reply: str | None) -> str:
     text = _natural_polite(text, comment_text)
     text = _plural(text)
     text = _say_telegram(text, comment_text)
+    import ai_leak                     # ichki ma'lumot ochiq izohga chiqmasin (2026-11-27)
+    text = ai_leak.strip(text)
     return in_script_of(comment_text, text).strip()
