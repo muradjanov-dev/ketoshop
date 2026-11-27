@@ -1,6 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+/* Has this phone been here before? Read first, before this visit stores
+   anything (2026-11-27: the assistant's bubble only on the very first visit). */
+window.__ksReturning = (function () {
+  try {
+    return ['ketoshop_asst_seen', 'ketoshop_lang', 'ketoshop_theme', 'ketoshop_music_piece', 'ketoshop_birds']
+      .some(function (k) { return localStorage.getItem(k) !== null; });
+  } catch (e) { return true; }
+})();
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Ketoshop</title>
@@ -4020,6 +4030,16 @@
   .asst-fab svg { width: 27px; height: 27px; }
   .asst-fab:active { transform: scale(.92); }
   .asst-fab.hidden { opacity: 0; transform: scale(.6); pointer-events: none; }
+  /* Returning visitors (2026-11-27): no bubble — the button calls softly for 53 s, once a visit. */
+  .asst-fab.nudge { animation: asstNudge 2.6s ease-in-out infinite; }
+  @keyframes asstNudge {
+    0%, 100% { box-shadow: var(--shadow-pop), 0 10px 24px -10px rgba(0,0,0,.5), 0 0 0 0 rgba(110,154,106,.55); transform: scale(1); }
+    40% { box-shadow: var(--shadow-pop), 0 10px 24px -10px rgba(0,0,0,.5), 0 0 0 12px rgba(110,154,106,0); transform: scale(1.07); }
+    55% { transform: scale(1) rotate(-6deg); }
+    70% { transform: scale(1) rotate(6deg); }
+    85% { transform: scale(1) rotate(0); }
+  }
+  @media (prefers-reduced-motion: reduce) { .asst-fab.nudge { animation: none; } }
   .asst-fab-label {
     position: absolute;
     left: 50%;
@@ -8319,6 +8339,7 @@ const Assistant = (() => {
 
   function open(src) {
     hideIntro();
+    stopNudge();
     render();
     $('asst-modal').classList.add('show');
     sync();
@@ -8401,15 +8422,38 @@ const Assistant = (() => {
     applyText();
     wire();
     sync();
-    let shown = false;
-    try { shown = sessionStorage.getItem('ketoshop_asst_intro') === '1'; } catch (_) {}
-    if (!shown) {
-      try { sessionStorage.setItem('ketoshop_asst_intro', '1'); } catch (_) {}
-      setTimeout(playIntro, INTRO_FIRST);
-    }
+    // Owner, 2026-11-27: "harid qilishga qo'ymayapti ... xalaqit qilyapti ... faqat
+    // birinchi marotaba saytga kirganlarga ochiq chiqar keyin kirganlarga esa shundoq
+    // iconcani animatsiya qildirib qo'y 53 soniya bittagina bildirish berib keyin bo'ldi".
+    // The very first visit: the typed bubble once. Every later visit: no bubble —
+    // the button breathes for NUDGE_MS, once a visit, then stays still.
+    const firstVisit = !window.__ksReturning;
+    try { localStorage.setItem('ketoshop_asst_seen', '1'); } catch (_) {}
+    let thisVisit = false;
+    try { thisVisit = sessionStorage.getItem('ketoshop_asst_intro') === '1'; } catch (_) {}
+    if (thisVisit) return;
+    try { sessionStorage.setItem('ketoshop_asst_intro', '1'); } catch (_) {}
+    if (firstVisit) setTimeout(playIntro, INTRO_FIRST);
+    else setTimeout(nudge, NUDGE_AFTER);
   }
 
-  return { start, open, close, send, sync, hideIntro, applyText, rich, cardsHtml };
+  const NUDGE_AFTER = 2500, NUDGE_MS = 53000;
+  let nudgeTimer = null;
+  function nudge() {
+    const fab = $('asst-fab');
+    if (!fab || reduced()) return;
+    trk(() => Trk.ev('assistant', 'nudge', null, activePage));
+    fab.classList.add('nudge');
+    clearTimeout(nudgeTimer);
+    nudgeTimer = setTimeout(stopNudge, NUDGE_MS);
+  }
+  function stopNudge() {
+    clearTimeout(nudgeTimer);
+    const fab = $('asst-fab');
+    if (fab) fab.classList.remove('nudge');
+  }
+
+  return { start, open, close, send, sync, hideIntro, applyText, rich, cardsHtml, nudge, stopNudge };
 })();
 
 const DockHint = (() => {
