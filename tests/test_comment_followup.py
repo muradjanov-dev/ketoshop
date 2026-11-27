@@ -171,11 +171,11 @@ class SendOneTest(unittest.IsolatedAsyncioTestCase):
 
 class PaceTest(unittest.TestCase):
     def test_everyone_waiting_but_at_a_human_pace(self):
-        # Egasi, 2026-11-26: "suspicious action deb keldi ... akauntni 100% xavfsiz holatda".
-        self.assertGreaterEqual(cf.GAP, 600)                            # ≥ 10 daqiqa orasida
+        # Egasi, 2026-11-26: "har 1 daqiqada"; ig_guard umumiy tezlikni ushlaydi.
+        self.assertGreaterEqual(cf.GAP, 60)
         self.assertGreater(cf.GAP_MAX, cf.GAP)                          # random, not a machine rhythm
-        self.assertLessEqual(cf.DAILY, 15)
-        self.assertEqual(cf.HOURS, (10, 21))
+        self.assertLessEqual(cf.DAILY, 200)
+        self.assertEqual(cf.HOURS, (9, 22))
 
     def test_resumes_by_itself_after_an_instagram_block(self):
         # Egasi, 2026-11-16: "to'xtab qolsa avtomatik davom etishi kerak ochilgandan keyin".

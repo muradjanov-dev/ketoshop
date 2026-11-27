@@ -4559,6 +4559,10 @@ async def _cheque_filter(message: Message, state: FSMContext | None = None):
         order_id = None
     if order_id is None and not in_session:
         return False
+    if order_id is None and not await _maybe_cheque(user.id, message):
+        # Egasi, 2026-11-26: pishiriq rasmlari kelmadi — chek bo'lishi kutilmagan rasmda
+        # "Bu to'lov chekimi?" so'ralmaydi; support_relay uni adminlarga olib boradi.
+        return False
     return {"cheque_order": order_id}
 
 
@@ -4600,6 +4604,23 @@ _OFF_TOPIC = re.compile(
 
 def off_topic_request(text: str) -> bool:
     return bool(_OFF_TOPIC.search(text or ""))
+
+
+_CHEQUE_WORDS = re.compile(r"chek|чек|to'?lov|тўлов|тулов|оплат|перевод|payme|click|karta|карта", re.IGNORECASE)
+
+
+async def _maybe_cheque(user_id: int, message: Message) -> bool:
+    """Buyurtmasiz rasm chek bo'lishi mumkinmi: AI karta raqamini bergan (sessiyada chek
+    kutilmoqda), to'lov qadamida qolgan checkout bor, yoki izohda to'lov so'zi."""
+    session = _sessions.get(user_id) or {}
+    if session.get("awaiting_cheque") or session.get("cheque_unlinked"):
+        return True
+    if _CHEQUE_WORDS.search(_APOSTROPHE_RE.sub("'", getattr(message, "caption", None) or "")):
+        return True
+    try:
+        return bool(await database.get_pending_checkout(user_id))
+    except Exception:
+        return False
 
 
 def off_topic_reply(lang: str) -> str:
