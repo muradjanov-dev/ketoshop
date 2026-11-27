@@ -74,6 +74,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="ai_balans", description="💳 OpenAI balansi — $1 qolganda ogohlantirish"),
     BotCommand(command="ig_pauza", description="🛡 Instagram himoyasi: holat, to'xtatish, davom"),
     BotCommand(command="ai_tekshiruv", description="🧠 AI suhbatlarini tekshirish va darslar"),
+    BotCommand(command="ai_sinov", description="🧪 AI sinovi: 1 oy oldingi va hozirgi versiya"),
     BotCommand(command="ai_mavzu", description="💬 Mijoz suhbatlari shu guruh mavzusiga (topic ichida yozing)"),
     BotCommand(command="yurist_mavzu", description="⚖️ Yurist-agentni shu guruh mavzusiga ulash (topic ichida yozing)"),
     BotCommand(command="yurist_yangi", description="⚖️ Yurist bilan yangi suhbat"),
