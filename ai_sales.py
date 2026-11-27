@@ -1535,6 +1535,12 @@ def _sales_rules() -> str:
         "kabi bo'sh gap yozma va o'rniga yangi ochiq savol ('qaysi biri kerak?') berma — mijoz "
         "nima kerakligini avval aytgan bo'lsa (masalan 'Steviya 5 kg'), shuni davom ettir. "
         "Javobni ishlatmaydigan savolni umuman so'rama.\n"
+        "- REPLY KONTEKST (egasi, 2026-11-27): '[MIJOZ SHU XABARGA REPLY QILIB YOZDI ...]' bo'lsa — savol "
+        "AYNAN o'sha post, rasm yoki video haqida ('bu qancha?', 'bormi?' — o'sha mahsulot). Mahsulotni "
+        "matn va rasm tavsifidan aniqla, katalogdan top va shu haqda javob ber; umumiy javob berma. "
+        "Ikki-uch mahsulot bo'lsa va qaysi biri noaniq bo'lsa — bitta qisqa savol: 'Postdagi X ni "
+        "nazarda tutyapsizmi?'.\n"
+        "- OXIRGI CHORA — MATN BILAN SO'RASH (egasi, 2026-11-27): post, rasm, video yoki ovozli xabardan nima haqida gap ketayotganini avval o'zing aniqlashga harakat qil (matn, rasm tavsifi, suhbat papkasi). Umuman iloji bo'lmasa — FAQAT shunda muloyim so'ra: 'Kechirasiz, qaysi mahsulot haqida so'rayotganingizni aniq ko'ra olmadim 🙏 Nomini yozib yuborsangiz, darhol aytib beramiz'. Buyruq ohangida emas, bir marta; mijoz yozgach — shu bilan davom et.\n"
         "- QAYTA BUYURTMA ('yana shuni', 'qaytadan buyurtma'): oxirgi buyurtmadagi mahsulotlarni "
         "savatga sol, xotiradagi manzil va raqamni ko'rsatib BITTA xabarda 'shu manzilga "
         "yuboraylikmi?' de; 'ha' desa — darhol buyurtma_kartasi (oldingi_manzil=true). Sovg'a "
@@ -3393,6 +3399,17 @@ async def _reply(bot: Bot, message: Message, user_text: str) -> None:
                  lambda msg, text: _answer(bot, msg, text))
 
 
+async def _reply_context(bot, message, lead: str | None = None) -> str:
+    """Mijoz reply qilgan post/xabar (matni, rasm yoki video muqovasi) — post_context.py.
+    Hech qachon xato ko'tarmaydi: kontekstsiz bo'lsa ham javob ketadi."""
+    try:
+        import post_context
+        return await post_context.reply_block(bot, message, lead)
+    except Exception:
+        logger.warning("reply context failed", exc_info=True)
+        return ""
+
+
 async def _answer(bot: Bot, message: Message, user_text: str, late: bool = False) -> None:
     """late=True — AI ishlamay qolgan paytdagi javobsiz savolga kechikkan
     javob (missed_replies.py): xato bo'lsa adminlarga qayta kartochka emas,
@@ -3406,7 +3423,9 @@ async def _answer(bot: Bot, message: Message, user_text: str, late: bool = False
     gina = frustration_hint(user_text)       # "necha marta aytaman" — uzr va eslash (2026-11-26)
     try:
         async with _typing(bot, message.chat.id):
-            reply = await _respond(bot, message, f"{gina}\n{user_text}" if gina else user_text)
+            # Qaysi postga/xabarga reply qilgani — rasm va video muqovasi bilan (2026-11-27).
+            ctx = "" if late else await _reply_context(bot, message)
+            reply = await _respond(bot, message, "\n".join(p for p in (ctx, gina, user_text) if p))
     except Exception:
         logger.exception("AI sales turn failed for user %s", user_id)
         ai_provider.reset(_session(user_id).setdefault("ai", {}))
@@ -5228,6 +5247,7 @@ def _group_rules() -> str:
         "eng mosini tavsiya qil. Adabiy, grammatik to'g'ri o'zbek tilida yoz.\n"
         "- QISQA: 2-3 jumla. Guruhda uzun matn o'qilmaydi. HTML/markdown yo'q.\n"
         '- ODAMDEK JAVOB (egasi, 2026-11-27: "steviyani nima ekanini bilar eding-ku, nega noaniq javob beryapsan? odamga o\'xshab javob ber, do\'stim"). Tajribali sotuvchi do\'st kabi: AVVAL to\'g\'ridan javob (\'Ha, bo\'ladi\' / \'Yo\'q\'), keyin bitta amaliy maslahat — qancha, qanday, nimaga e\'tibor. Hamma biladigan narsani tushuntirma (\'faqat shirinlik beradi, qalinlik bermaydi\' kabi); \'lekin\', \'shuning uchun ... qulayroq\' bilan cheklov va ogohlantirish zanjiri tuzma. Mijoz so\'ramagan boshqa mahsulotni o\'rniga taklif qilma — u tanlagan mahsulot bilan qanday qilishni ayt. Misol: \'Steviya bilan murabbo qilsa bo\'ladimi?\' → \'Ha, bo\'ladi 😊 Steviya juda shirin — 1 kg mevaga taxminan 1/3–1/2 choy qoshiq yetadi, tatib ko\'rib qo\'shasiz. Qalinroq bo\'lsin desangiz, biroz ko\'proq qaynatasiz yoki 1–2 osh qoshiq chia qo\'shasiz. Qaysi mevadan qilmoqchisiz?\'\n'
+        "- OXIRGI CHORA — MATN BILAN SO'RASH (egasi, 2026-11-27): post, rasm, video yoki ovozli xabardan nima haqida gap ketayotganini avval o'zing aniqlashga harakat qil (matn, rasm tavsifi, suhbat papkasi). Umuman iloji bo'lmasa — FAQAT shunda muloyim so'ra: 'Kechirasiz, qaysi mahsulot haqida so'rayotganingizni aniq ko'ra olmadim 🙏 Nomini yozib yuborsangiz, darhol aytib beramiz'. Buyruq ohangida emas, bir marta; mijoz yozgach — shu bilan davom et.\n"
         "- O'qish oson bo'lsin: variantlar alohida qatorda ('•' bilan), savol yoki botga "
         "yo'naltirish — alohida qatorda, hammasi bitta bo'lakka yopishmasin.\n"
         "- Kim qaysi til va yozuvda yozsa, o'shanda javob ber: o'zbekcha kirill — kirillda, "
@@ -5482,7 +5502,10 @@ async def _group_answer(bot: Bot, message: Message, text: str, late_background: 
     if late_background is not None:
         pass
     elif _is_channel_post(replied):
-        background = f"[Kanal postiga izoh. Post matni: «{_short(replied.text or replied.caption or '', 700)}»]"
+        # Post matni + rasm yoki video muqovasi (post_context.py, 2026-11-27): matnsiz video post
+        # ham endi nima haqida ekani ma'lum.
+        background = (await _reply_context(bot, message, "Kanal postiga izoh — savol shu post haqida")
+                      or f"[Kanal postiga izoh. Post matni: «{_short(replied.text or replied.caption or '', 700)}»]")
     elif replied is not None and _addressed_to_bot(message):
         background = f"[Sening oldingi javobingga reply: «{_short(replied.text or '', 400)}»]"
     text = f"{background}\n{question}" if background else question    # statistika uchun, avvalgidek
