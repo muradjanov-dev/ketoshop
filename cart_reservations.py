@@ -110,6 +110,11 @@ def release_text(items: list[dict], lang: str) -> str:
         _t(f"Hali kerak bo'lsa — qayta qo'shing: omborda bo'lsa, yana {hours} soat siz uchun band qilinadi.",
            f"Если ещё нужны — добавьте снова: если они есть на складе, мы снова закрепим их за вами на {hours} ч.",
            lang),
+        "",
+        _t("Buyurtma bergan yoki to'lov qilgan bo'lsangiz — xavotir olmang, buyurtmangiz o'z joyida. "
+           "Savol bo'lsa, shu yerga yozing 🙏",
+           "Если вы уже оформили заказ или оплатили — не переживайте, заказ на месте. "
+           "Если есть вопрос — напишите сюда 🙏", lang),
     ])
 
 
@@ -175,6 +180,60 @@ async def _send(bot: Bot, user_id: int, text: str, markup) -> bool:
     return False
 
 
+PAYING_HOURS = 48
+_PAY_WORDS = (r"(chek|чек|to'?lov|тўлов|тулов|оплат|перевод|pul o'?tkaz|пул ўтказ|пул утказ|"
+              r"to'?ladim|тўладим|туладим|оплатил|karta|карта|zakaz|заказ|buyurtma|буюртма)")
+
+
+async def recently_paying(user_id: int) -> bool:
+    """Oxirgi PAYING_HOURS da: buyurtma bergan, to'lov qadamida qolgan yoki to'lov/chek/buyurtma
+    haqida yozgan (bot, sayt yordamchisi, operatorga) — "sotuvga qaytarildi" uni chalg'itadi."""
+    from datetime import datetime, timedelta
+    since = datetime.utcnow() - timedelta(hours=PAYING_HOURS)
+    try:
+        for o in await database.get_user_orders(user_id):
+            created = o.get("created_at")
+            if o.get("status") != "cancelled" and isinstance(created, datetime) and created >= since:
+                return True
+        if await database.get_pending_checkout(user_id):
+            return True
+        async with database.pool.acquire() as conn:
+            hit = await conn.fetchval(
+                f"""SELECT 1 FROM support_messages WHERE user_id = $1 AND direction = 'in'
+                       AND created_at > NOW() - INTERVAL '{PAYING_HOURS} hours'
+                       AND (text ~* $2 OR text LIKE '🖼%') LIMIT 1""", user_id, _PAY_WORDS)
+            if hit:
+                return True
+            if await conn.fetchval("SELECT to_regclass('ai_dialog')"):
+                hit = await conn.fetchval(
+                    f"""SELECT 1 FROM ai_dialog WHERE user_id = $1
+                           AND created_at > (NOW() AT TIME ZONE 'UTC') - INTERVAL '{PAYING_HOURS} hours'
+                           AND question ~* $2 LIMIT 1""", user_id, _PAY_WORDS)
+                if hit:
+                    return True
+    except Exception:
+        logger.warning("paying check failed for %s — notice held back", user_id, exc_info=True)
+        return True                  # shubhada — mijozni chalg'itmaymiz
+    return False
+
+
+async def _tell_admins_paying(bot: Bot, notice: dict) -> None:
+    items = ", ".join(f"{i.get('name')} ×{_qty(i.get('quantity'))}" for i in notice["items"][:8])
+    try:
+        user = await database.get_user(notice["user_id"]) or {}
+    except Exception:
+        user = {}
+    text = (f"🛒 <b>Savat broni tugadi — mijozga xabar yuborilmadi</b>\n"
+            f"👤 {html.escape(user.get('full_name') or '—')} · <code>{notice['user_id']}</code>\n"
+            f"Yaqinda buyurtma bergan yoki to'lov/chek haqida yozgan. Savatda edi: {html.escape(items)}\n"
+            "👉 To'lov qilgan bo'lsa — buyurtmasi rasmiylashtirilganini tekshiring.")
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, text, parse_mode=ParseMode.HTML, disable_notification=True)
+        except Exception:
+            logger.info("paying-hold note to %s failed", admin_id)
+
+
 async def run_once(bot: Bot) -> dict:
     """Release what expired (any hour — stock must not stay locked overnight),
     then tell buyers (daytime only). Returns counters."""
@@ -199,6 +258,13 @@ async def run_once(bot: Bot) -> dict:
     langs = await database.get_user_languages([n["user_id"] for n in notices])
     for n in notices:
         if not await database.mark_release_notice_sent(n["id"]):
+            continue
+        # Egasi, 2026-11-27 (Salima opa: "men to'lov qilgan edim-ku, nega savatimdagi mahsulotlar
+        # sotuvga qaytarildi?"): yaqinda buyurtma bergan / to'lov haqida yozgan mijozga bu xabar
+        # bormaydi — adminlarga "tekshiring" boradi.
+        if await recently_paying(n["user_id"]):
+            stats["held_back"] = stats.get("held_back", 0) + 1
+            await _tell_admins_paying(bot, n)
             continue
         lang = langs.get(n["user_id"], "uz")
         if await _send(bot, n["user_id"], release_text(n["items"], lang), release_keyboard(lang)):
