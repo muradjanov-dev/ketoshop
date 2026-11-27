@@ -13,9 +13,16 @@ typed on the site is indistinguishable from one typed in the bot:
     like the bot's «manual_discount_price_too_high»;
   * UzPost adds the buyer's parcel fee to the total (uzpost.buyer_fee, the
     region read from the typed address), like handlers.admin._manual_uzpost;
+  * Ketoshop's courier adds the buyer's courier fee (handlers.cart.
+    delivery_fee_for): 25 000 in the city (free from 800 000), plus 3 000 a
+    km past the city line read from the location (owner, 2026-11-27:
+    "qo'lda buyurtma kiritganda lokatsiyani ham kiritish imkoni bo'lsin va
+    dostavkani shundan kelib chiqib hisoblasin");
   * stock is never touched — database.add_manual_order already says why.
 """
 from __future__ import annotations
+
+import re
 
 import phone_utils
 
@@ -94,6 +101,79 @@ def uzpost_fee(items: list[dict], address: str, delivery: str) -> tuple[int, flo
     return uzpost.buyer_fee(items, far), uzpost.parcel_kg(items)
 
 
+# Uzbekistan's box — tells a "lat, lng" pair from a "lng, lat" one.
+_LAT = (37.0, 46.0)
+_LNG = (55.0, 74.0)
+# Decimals required: "Chilonzor 5, 12-uy" is a street, not a point.
+_PAIR = r"(-?\d{1,3}\.\d+)\s*(?:,|%2C|\s)\s*(-?\d{1,3}\.\d+)"
+
+
+def _in_uz(lat: float, lng: float) -> bool:
+    return _LAT[0] <= lat <= _LAT[1] and _LNG[0] <= lng <= _LNG[1]
+
+
+def parse_location(text) -> tuple[float, float] | None:
+    """A location the admin pasted → (lat, lng), or None when the text holds
+    none. Takes "41.31, 69.27", a Yandex Maps link (ll= / pt= / whatshere —
+    those are lng,lat), a Google Maps link (@lat,lng / q=lat,lng) or a
+    Telegram-style "📍 41.31, 69.27 — street". The order of the two numbers
+    is read from Uzbekistan's box, so a swapped pair still lands right.
+    Raises Invalid for a short link (it hides the point) or a point outside
+    Uzbekistan."""
+    s = str(text or "").strip()
+    if not s:
+        return None
+    pairs: list[tuple[str, tuple[str, str]]] = []
+    for key in ("whatshere%5Bpoint%5D=", "whatshere[point]=", "pt=", "ll="):
+        m = re.search(re.escape(key) + _PAIR, s)
+        if m:
+            pairs.append(("lnglat", (m.group(1), m.group(2))))
+    for m in re.finditer(r"[@=:/]" + _PAIR, s):
+        pairs.append(("latlng", (m.group(1), m.group(2))))
+    m = re.search(_PAIR, s)
+    if m:
+        pairs.append(("latlng", (m.group(1), m.group(2))))
+    for order, (a, b) in pairs:
+        try:
+            x, y = float(a), float(b)
+        except ValueError:
+            continue
+        lat, lng = (y, x) if order == "lnglat" else (x, y)
+        if _in_uz(lat, lng):
+            return lat, lng
+        if _in_uz(lng, lat):
+            return lng, lat
+    if re.search(r"(yandex\.[a-z]+/maps/-/|maps\.app\.goo\.gl|goo\.gl/maps)", s):
+        raise Invalid("Qisqa havoladan nuqtani o'qib bo'lmaydi — xaritada «Ulashish» → "
+                      "koordinatalarni (masalan 41.311, 69.279) nusxalab qo'ying")
+    if pairs:
+        raise Invalid("Lokatsiya O'zbekistondan tashqarida chiqdi — koordinatalarni tekshiring")
+    if re.search(r"https?://", s):
+        raise Invalid("Havolada koordinata topilmadi — masalan 41.311, 69.279 ko'rinishida yozing")
+    return None
+
+
+def courier_fee(subtotal: float, delivery: str, lat=None, lng=None) -> dict:
+    """The buyer's courier fee for Ketoshop's own courier, by the bot's rule
+    (handlers.cart.delivery_fee_for); {} for any other method.
+    {fee, base, km, extra, far} — far: past the 40 km the courier goes."""
+    if delivery != "self":
+        return {}
+    import courier_zone
+    from handlers.cart import FREE_DELIVERY_FROM, SELF_DELIVERY_FEE, delivery_fee_for
+    base = 0 if subtotal >= FREE_DELIVERY_FROM else SELF_DELIVERY_FEE
+    km = courier_zone.billable_km(lat, lng)
+    known = lat is not None and lng is not None
+    return {
+        "fee": delivery_fee_for("self", subtotal, lat=lat, lng=lng),
+        "base": base,
+        "km": km,
+        "extra": km * courier_zone.PER_KM,
+        "far": known and not courier_zone.courier_ok(lat, lng),
+        "free_from": FREE_DELIVERY_FROM,
+    }
+
+
 def items_total(items: list[dict]) -> float:
     return sum(float(it["price"]) * float(it["quantity"]) for it in items)
 
@@ -110,6 +190,9 @@ def parse(body: dict, products: dict[int, dict], *, need_customer: bool = True) 
     raw_phone = str(body.get("phone") or "").strip()
     phone = phone_utils.normalize_uz_phone(raw_phone)
     address = str(body.get("address") or "").strip()
+    point = parse_location(body.get("location"))
+    if point and not address:
+        address = f"📍 {point[0]:.6f}, {point[1]:.6f}"
     if need_customer:
         if not name:
             raise Invalid("Mijoz ismini kiriting")
@@ -152,6 +235,8 @@ def parse(body: dict, products: dict[int, dict], *, need_customer: bool = True) 
 
     fee, kg = uzpost_fee(items, address, delivery)
     subtotal = items_total(items)
+    lat, lng = point if point else (None, None)
+    courier = courier_fee(subtotal, delivery, lat, lng)
     return {
         "customer_name": name,
         "phone": phone or raw_phone,
@@ -163,5 +248,9 @@ def parse(body: dict, products: dict[int, dict], *, need_customer: bool = True) 
         "subtotal": subtotal,
         "uzpost_fee": fee,
         "uzpost_kg": kg,
-        "total": subtotal + fee,
+        "latitude": lat,
+        "longitude": lng,
+        "courier": courier,
+        "courier_fee": courier.get("fee", 0),
+        "total": subtotal + fee + courier.get("fee", 0),
     }

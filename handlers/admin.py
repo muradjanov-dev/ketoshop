@@ -2870,7 +2870,21 @@ async def manual_address(message: Message, state: FSMContext):
     address = (message.text or "").strip()
     if not address:
         return
-    await state.update_data(address=address, latitude=None, longitude=None, items=[])
+    # A pasted map link or "41.31, 69.27" is a location too (2026-11-27) —
+    # the courier fee is read from it.
+    import manual_order
+    try:
+        point = manual_order.parse_location(address)
+    except manual_order.Invalid as exc:
+        await message.answer("⚠️ " + html.escape(str(exc)), parse_mode="HTML")
+        return
+    lat, lng = point if point else (None, None)
+    if point and _re.fullmatch(r"[\s\d.,°NSEW+-]+|https?://\S+", address):
+        address = f"📍 {lat:.6f}, {lng:.6f}"
+    await state.update_data(address=address, latitude=lat, longitude=lng, items=[])
+    if point:
+        await message.answer(get_text("manual_location_saved", lang, address=html.escape(address)),
+                             parse_mode="HTML")
     await state.set_state(AdminStates.manual_pick_category)
     await _show_manual_category_picker(message, state, lang)
 
@@ -3463,6 +3477,21 @@ async def manual_delivery(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+def _manual_courier(data: dict) -> int:
+    """The buyer's Ketoshop-courier fee for a manual order (2026-11-27): the
+    bot's rule (handlers.cart.delivery_fee_for) — 25 000 in the city, free
+    from 800 000, plus 3 000 a km past the city line from the location."""
+    if data.get("delivery") != "self":
+        return 0
+    from handlers.cart import delivery_fee_for
+    return delivery_fee_for("self", _items_total(data.get("items") or []),
+                            lat=data.get("latitude"), lng=data.get("longitude"))
+
+
+def _manual_fee(data: dict) -> int:
+    return _manual_uzpost(data)[0] + _manual_courier(data)
+
+
 async def _show_manual_confirm(target, state: FSMContext, lang: str) -> None:
     """Render the final 'Saqlaysizmi?' screen. `target` may be a Message
     (rarely) or a CallbackQuery message — reused both on first arrival
@@ -3482,7 +3511,19 @@ async def _show_manual_confirm(target, state: FSMContext, lang: str) -> None:
     if fee:
         import uzpost
         delivery_label += "\n" + get_text("manual_uzpost_line", lang, kg=uzpost.fmt_kg(kg), fee=_fmt_price(fee))
-    total_str = _fmt_price(_items_total(items) + fee)
+    courier = _manual_courier(data)
+    if data.get("delivery") == "self":
+        import courier_zone
+        lat, lng = data.get("latitude"), data.get("longitude")
+        base = courier - courier_zone.extra_fee(lat, lng)
+        line = courier_zone.breakdown_text(base, lat, lng, lang) or get_text(
+            "manual_courier_line", lang, fee=_fmt_price(courier))
+        if lat is None:
+            line += "\n" + get_text("manual_courier_no_location", lang)
+        elif not courier_zone.courier_ok(lat, lng):
+            line += "\n" + get_text("manual_courier_far", lang)
+        delivery_label += "\n" + line
+    total_str = _fmt_price(_items_total(items) + fee + courier)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=get_text("btn_manual_add_more", lang), callback_data="manualconfirm:addmore")],
@@ -3546,7 +3587,7 @@ async def manual_save(callback: CallbackQuery, state: FSMContext):
         phone=data["phone"],
         address=data["address"],
         items_data=items,
-        total=_items_total(items) + _manual_uzpost(data)[0],
+        total=_items_total(items) + _manual_fee(data),
         payment_method=data["payment"],
         delivery_method=data["delivery"],
         status=data["status"],

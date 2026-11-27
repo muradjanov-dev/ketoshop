@@ -1023,6 +1023,19 @@ TEXTS = {
         "uz": "📮 ~{kg} kg · yetkazish {fee} so'm (jamiga qo'shildi)",
         "ru": "📮 ~{kg} кг · доставка {fee} сум (включена в итог)",
     },
+    # Manual order, Ketoshop courier (2026-11-27): the fee on the confirm screen.
+    "manual_courier_line": {
+        "uz": "🚚 Kuryer: {fee} so'm (jamiga qo'shildi)",
+        "ru": "🚚 Курьер: {fee} сум (включено в итог)",
+    },
+    "manual_courier_no_location": {
+        "uz": "ℹ️ Lokatsiya yo'q — shahar ichi deb hisoblandi",
+        "ru": "ℹ️ Локации нет — посчитано как по городу",
+    },
+    "manual_courier_far": {
+        "uz": "⚠️ Shahardan 40 km dan uzoq — kuryer bormasligi mumkin",
+        "ru": "⚠️ Дальше 40 км от города — курьер может не поехать",
+    },
     "uzpost_office_unknown": {
         "uz": "📮 Eng yaqin pochta bo'limini admin aniqlab, sizga yozadi.",
         "ru": "📮 Ближайшее почтовое отделение уточнит администратор и напишет вам.",

@@ -201,7 +201,7 @@ class ListTest(unittest.TestCase):
         run(admin._show_manual_confirm(target, state, "uz"))
         text = target.edit_text.await_args.args[0]
         self.assertIn("• Qizil guruch (Devzira) 1000gr — 1", text)
-        self.assertIn("Jami: 114 000 so'm", text)
+        self.assertIn("Jami: 139 000 so'm", text)
         self.assertIn("Saqlaysizmi?", text)
 
 
