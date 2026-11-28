@@ -101,7 +101,64 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--sun); outli
 .qty { display: grid; grid-template-columns: 50px 1fr 50px; align-items: center; background: var(--leaf-soft); border-radius: 14px; min-height: 50px; }
 .qty button { height: 50px; border: none; background: none; font-size: 26px; font-weight: 800; color: var(--leaf); }
 .qty b { text-align: center; font-size: 20px; font-variant-numeric: tabular-nums; }
-.fly { position: fixed; z-index: 50; width: 64px; height: 64px; border-radius: 50%; object-fit: cover; pointer-events: none; box-shadow: var(--shadow); }
+.fly { position: fixed; z-index: 50; width: 72px; height: 72px; border-radius: 50%; object-fit: cover; pointer-events: none;
+  box-shadow: 0 10px 26px -6px rgba(58,49,41,.55); border: 3px solid var(--surface); background: var(--surface-hi);
+  display: grid; place-items: center; font-size: 34px; }
+.trail { position: fixed; z-index: 49; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--sun); pointer-events: none; }
+.plus { position: fixed; z-index: 51; font-family: var(--display); font-weight: 800; font-size: 22px; color: var(--leaf); pointer-events: none;
+  text-shadow: 0 2px 0 var(--surface); }
+.plus.minus { color: var(--berry); }
+.note { position: fixed; left: 50%; z-index: 52; transform: translateX(-50%); width: max-content; max-width: min(380px, calc(100% - 32px)); background: var(--text); color: var(--bg);
+  border-radius: 14px; padding: 10px 16px; font-weight: 700; font-size: 16px; display: flex; gap: 10px; align-items: center; pointer-events: none;
+  box-shadow: var(--shadow); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+.note img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; flex: none; }
+.cheer { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 53; pointer-events: none; width: min(360px, calc(100% - 32px));
+  background: var(--leaf); color: #fff; border-radius: 20px; padding: 14px 20px; font-family: var(--display); font-size: 20px; font-weight: 800;
+  text-align: center; box-shadow: var(--shadow); }
+.cheer small { display: block; font-family: var(--body); font-size: 14px; font-weight: 600; opacity: .9; }
+.count.pulse { animation: pop .4s ease; }
+.next.pulse { animation: glow 1.2s ease; }
+@keyframes glow { 0%, 100% { box-shadow: none; } 30% { box-shadow: 0 0 0 4px var(--sun); } }
+
+/* ── how the products are laid out: 2 / 4 / 8 / list (remembered) ── */
+.tools { display: flex; gap: 8px; align-items: center; padding-top: 10px; }
+.tools .search { flex: 1; min-width: 0; }
+.views { display: flex; gap: 4px; background: var(--surface); border: 2px solid var(--line); border-radius: 14px; padding: 3px; flex: none; }
+.views button { border: none; background: none; border-radius: 10px; min-width: 40px; height: 40px; font-weight: 800; font-size: 15px; color: var(--hint); }
+.views button.on { background: var(--text); color: var(--bg); }
+.grid.v4 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.grid.v4 .card { border-radius: 14px; }
+.grid.v4 .body { padding: 6px 6px 8px; gap: 4px; }
+.grid.v4 .nm { font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.grid.v4 .pr { font-size: 13px; }
+.grid.v4 .pr s { font-size: 11px; }
+.grid.v4 .add { min-height: 38px; font-size: 22px; border-radius: 10px; }
+.grid.v4 .add span { display: none; }
+.grid.v4 .qty { grid-template-columns: 1fr 1fr 1fr; min-height: 38px; border-radius: 10px; }
+.grid.v4 .qty button { height: 38px; font-size: 20px; }
+.grid.v4 .qty b { font-size: 15px; }
+.grid.v4 .badge { top: 4px; left: 4px; padding: 0 5px; font-size: 10px; }
+.grid.v8 { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 5px; }
+.grid.v8 .card { border-radius: 10px; border-width: 2px; cursor: pointer; }
+.grid.v8 .body, .grid.v8 .badge { display: none; }
+.grid.v8 .ph .noimg { font-size: 20px; }
+.tile-q { position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; border-radius: 999px; background: var(--leaf); color: #fff;
+  font-size: 11px; font-weight: 800; display: grid; place-items: center; padding-inline: 4px; }
+.tile-x { position: absolute; bottom: 1px; left: 1px; width: 18px; height: 18px; border: none; border-radius: 50%; background: var(--berry); color: #fff;
+  font-size: 12px; font-weight: 800; line-height: 1; padding: 0; }
+.v8-hint { grid-column: 1 / -1; text-align: center; font-size: 14px; color: var(--hint); margin: 0 0 4px; }
+.grid.list { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.grid.list .card { flex-direction: row; align-items: center; border-radius: 16px; }
+.grid.list .ph { width: 76px; flex: none; }
+.grid.list .badge { top: 4px; left: 4px; padding: 0 5px; font-size: 10px; }
+.grid.list .body { flex-direction: row; align-items: center; gap: 10px; padding: 8px 10px; min-width: 0; }
+.grid.list .txt { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.grid.list .nm { font-size: 15.5px; }
+.grid.list .pr { font-size: 15px; }
+.grid.list .act { margin: 0; flex: none; width: 128px; }
+.grid.list .add { min-height: 44px; font-size: 16px; }
+.grid.list .qty { grid-template-columns: 40px 1fr 40px; min-height: 44px; }
+.grid.list .qty button { height: 44px; font-size: 22px; }
 
 /* ── bottom bar ── */
 .dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--surface); border-top: 1px solid var(--line);
@@ -156,7 +213,10 @@ const T = {
     pcs: "ta", free: "+ bepul yetkazish",
     standart: "Odamlar tanlagan 10 ta", standartSub: "Kanaldagi so'rovda eng ko'p yozilganlar · −9% va bepul yetkazish",
     mini: "Kichik savat — 5 ta", miniSub: "Eng zarurlari · −4%", own: "O'zim yig'aman", ownSub: "Rasmlarga qarab tanlayman",
-    featured: "⭐ Ko'p oladi", all: "Hammasi", search: "Qidirish: bodom, steviya…", add: "+ Qo'shish",
+    featured: "⭐ Ko'p oladi", all: "Hammasi", search: "Qidirish: bodom, steviya…", add: "Savatga qo'shish", addWord: "Qo'shish",
+    added: "savatga tushdi ✓", removed: "bittasi olindi", cheer: "Zo'r! Endi −{p}% chegirma", viewLab: "Ko'rinish",
+    v8Hint: "Rasmni bosing — savatga tushadi. Kamaytirish uchun qizil «−».",
+    viewNames: { v2: "Katta rasmlar (2 ta)", v4: "4 tadan", v8: "8 tadan, faqat rasm", list: "Ro'yxat" },
     perMonth: "har oy", save: "Har oy {s} tejaysiz", needMore: "Yana {n} ta qo'shing — {p}% chegirma",
     needFree: "Yana {n} ta qo'shing — {p}% chegirma va bepul yetkazish", minNeed: "Kamida {n} ta mahsulot tanlang",
     top: "Eng katta chegirma — 10% 🎉", next: "Davom etish →", back: "← Orqaga",
@@ -175,7 +235,10 @@ const T = {
     pcs: "шт", free: "+ бесплатная доставка",
     standart: "10 продуктов, которые выбрали люди", standartSub: "Самые популярные из опроса в канале · −9% и бесплатная доставка",
     mini: "Маленькая корзина — 5 шт", miniSub: "Самое нужное · −4%", own: "Соберу сам", ownSub: "Выберу по фото",
-    featured: "⭐ Часто берут", all: "Все", search: "Поиск: миндаль, стевия…", add: "+ Добавить",
+    featured: "⭐ Часто берут", all: "Все", search: "Поиск: миндаль, стевия…", add: "Добавить в корзину", addWord: "Добавить",
+    added: "в корзине ✓", removed: "одну убрали", cheer: "Отлично! Теперь скидка −{p}%", viewLab: "Вид",
+    v8Hint: "Нажмите на фото — оно попадёт в корзину. Убрать — красный «−».",
+    viewNames: { v2: "Крупные фото (по 2)", v4: "По 4", v8: "По 8, только фото", list: "Список" },
     perMonth: "в месяц", save: "Экономия {s} в месяц", needMore: "Добавьте ещё {n} — скидка {p}%",
     needFree: "Добавьте ещё {n} — скидка {p}% и бесплатная доставка", minNeed: "Выберите минимум {n} товаров",
     top: "Самая большая скидка — 10% 🎉", next: "Дальше →", back: "← Назад",
@@ -197,7 +260,9 @@ const fmt = n => Math.round(+n || 0).toLocaleString('ru-RU').replace(/ |,/g, ' 
 const reduced = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const haptic = k => { try { tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred(k || 'light'); } catch (e) {} };
 
-const S = { data: null, items: new Map(), cat: 'featured', q: '', day: 0, delivery: {}, quote: null, seq: 0, timer: null };
+const S = { data: null, items: new Map(), cat: 'featured', q: '', day: 0, delivery: {}, quote: null, seq: 0, timer: null, view: 'v2' };
+const VIEWS = [['v2', '▦ 2'], ['v4', '4'], ['v8', '8'], ['list', '☰']].map(([k, ico]) => [k, ico, k]);
+try { const v = localStorage.getItem('ketoshop_savat_view'); if (VIEWS.some(x => x[0] === v)) S.view = v; } catch (e) {}
 
 function api(path, body) {
   const headers = { 'Authorization': 'tma ' + ((tg && tg.initData) || '') };
@@ -281,8 +346,10 @@ function builder() {
   app.innerHTML = `
     <div class="top" id="top"></div>
     <div class="chips" id="chips">${cats.map(([k, n]) => `<button class="chip${S.cat === k ? ' on' : ''}" data-cat="${esc(k)}">${esc(n)}</button>`).join('')}</div>
-    <input class="search" id="q" type="search" placeholder="${esc(L.search)}" value="${esc(S.q)}" aria-label="${esc(L.search)}">
-    <div class="grid" id="grid"></div>`;
+    <div class="tools"><input class="search" id="q" type="search" placeholder="${esc(L.search)}" value="${esc(S.q)}" aria-label="${esc(L.search)}">
+      <div class="views" id="views" role="group" aria-label="${esc(L.viewLab)}">${VIEWS.map(([k, ico, lab]) =>
+        `<button data-view="${k}" class="${S.view === k ? 'on' : ''}" aria-label="${esc(L.viewNames[k])}" title="${esc(L.viewNames[k])}">${ico}</button>`).join('')}</div></div>
+    <div class="grid ${S.view}" id="grid"></div>`;
   $('#chips').addEventListener('click', e => {
     const c = e.target.closest('[data-cat]'); if (!c) return;
     S.cat = c.dataset.cat; S.q = ''; $('#q').value = '';
@@ -290,7 +357,18 @@ function builder() {
     paintGrid();
   });
   $('#q').addEventListener('input', e => { S.q = e.target.value.trim().toLowerCase(); paintGrid(); });
+  $('#views').addEventListener('click', e => {
+    const b = e.target.closest('[data-view]'); if (!b) return;
+    S.view = b.dataset.view; haptic('light');
+    try { localStorage.setItem('ketoshop_savat_view', S.view); } catch (err) {}
+    app.querySelectorAll('#views button').forEach(x => x.classList.toggle('on', x === b));
+    $('#grid').className = 'grid ' + S.view;
+    paintGrid();
+  });
   $('#grid').addEventListener('click', onGrid);
+  $('#grid').addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.card[data-d]')) { e.preventDefault(); onGrid(e); }
+  });
   paintTop(); paintGrid(); paintDock('builder');
   requote();
 }
@@ -307,17 +385,25 @@ function visible() {
 function cardHtml(p, pct) {
   const q = S.items.get(p.id) || 0, star = S.data.catalog.featured.includes(p.id);
   const now = pct ? Math.round(p.price * (100 - pct) / 100) : p.price;
+  const photo = p.photo_url ? `<img src="${esc(p.photo_url)}" alt="" loading="lazy">` : '<span class="noimg">🛍</span>';
+  if (S.view === 'v8') {
+    // Photos only: a tap puts one in the basket, the green number says how many.
+    return `<div class="card${q ? ' in' : ''}" data-id="${p.id}" data-d="1" role="button" tabindex="0" aria-label="${esc(p.name)} — ${esc(L.add)}">
+      <div class="ph">${photo}${q ? `<span class="tile-q">${q}</span><button class="tile-x" data-d="-1" aria-label="−">−</button>` : ''}</div></div>`;
+  }
+  const act = q ? `<div class="qty"><button data-d="-1" aria-label="−">−</button><b>${q}</b><button data-d="1" aria-label="+">+</button></div>`
+    : `<button class="add" data-d="1" aria-label="${esc(L.add)}">+<span> ${esc(L.addWord)}</span></button>`;
+  const price = `<div class="pr">${fmt(now)}${pct ? `<s>${fmt(p.price)}</s>` : ''}</div>`;
+  const body = S.view === 'list'
+    ? `<div class="body"><div class="txt"><div class="nm">${esc(p.name)}</div>${price}</div><div class="act">${act}</div></div>`
+    : `<div class="body"><div class="nm">${esc(p.name)}</div>${price}<div class="act">${act}</div></div>`;
   return `<div class="card${q ? ' in' : ''}" data-id="${p.id}">
-    <div class="ph">${p.photo_url ? `<img src="${esc(p.photo_url)}" alt="" loading="lazy">` : '<span class="noimg">🛍</span>'}
-      ${star ? `<span class="badge">⭐</span>` : ''}</div>
-    <div class="body"><div class="nm">${esc(p.name)}</div>
-      <div class="pr">${fmt(now)}${pct ? `<s>${fmt(p.price)}</s>` : ''}</div>
-      <div class="act">${q ? `<div class="qty"><button data-d="-1" aria-label="−">−</button><b>${q}</b><button data-d="1" aria-label="+">+</button></div>`
-        : `<button class="add" data-d="1">${esc(L.add)}</button>`}</div></div></div>`;
+    <div class="ph">${photo}${star ? `<span class="badge">⭐</span>` : ''}</div>${body}</div>`;
 }
 function paintGrid() {
   const pct = local().percent, list = visible();
-  $('#grid').innerHTML = list.length ? list.map(p => cardHtml(p, pct)).join('') : `<p class="hint" style="grid-column:1/-1;text-align:center">—</p>`;
+  const hint = S.view === 'v8' && list.length ? `<p class="v8-hint">${esc(L.v8Hint)}</p>` : '';
+  $('#grid').innerHTML = list.length ? hint + list.map(p => cardHtml(p, pct)).join('') : `<p class="hint" style="grid-column:1/-1;text-align:center">—</p>`;
 }
 function repaintCard(id) {
   const card = app.querySelector(`.card[data-id="${id}"]`), p = byId(id);
@@ -326,33 +412,104 @@ function repaintCard(id) {
 
 function onGrid(e) {
   const b = e.target.closest('[data-d]'); if (!b) return;
+  e.stopPropagation();
   const card = b.closest('.card'), id = +card.dataset.id, p = byId(id), d = +b.dataset.d;
+  const had = S.items.get(id) || 0;
+  if (d > 0 && had >= 20) return;
   const before = local().percent;
-  const q = Math.max(0, Math.min(20, (S.items.get(id) || 0) + d));
+  const q = Math.max(0, Math.min(20, had + d));
   if (q) S.items.set(id, q); else S.items.delete(id);
-  if (d > 0) { fly(card.querySelector('.ph img, .ph .noimg'), p); haptic('light'); }
+  const ph = card.querySelector('.ph img, .ph .noimg');
+  // Where the photo starts — read before the card is redrawn (a redrawn card
+  // is a new element; the old one would report 0,0).
+  const from = ph ? ph.getBoundingClientRect() : null;
   const after = local().percent;
-  if (after !== before) { paintGrid(); haptic('heavy'); } else repaintCard(id);
+  if (after !== before) paintGrid(); else repaintCard(id);
   paintTop(); paintDock('builder'); requote();
+  if (d > 0) {
+    haptic('light');
+    fly(from, p, () => {
+      floatSign('+1'); note(p, L.added);
+      if (after > before) cheer(after);
+    });
+  } else {
+    haptic('light');
+    floatSign('−1', true); note(p, L.removed);
+  }
 }
 
-function fly(from, p) {
+/* The product photo lifts off the card, flies along an arc into the basket
+   leaving a few dots behind, the basket bounces, «+1» rises from it and a line
+   at the bottom says what went in. Kattalar uchun: sekinroq, katta va aniq. */
+function fly(from, p, done) {
   const target = $('.basket');
-  if (!from || !target || reduced() || !p.photo_url) { bump(); return; }
-  const a = from.getBoundingClientRect(), b = target.getBoundingClientRect();
-  const img = document.createElement('img');
-  img.src = p.photo_url; img.className = 'fly'; img.alt = '';
-  const x0 = a.left + a.width / 2 - 32, y0 = a.top + a.height / 2 - 32, x1 = b.left + b.width / 2 - 32, y1 = b.top + 20;
-  img.style.left = x0 + 'px'; img.style.top = y0 + 'px';
-  document.body.appendChild(img);
-  const anim = img.animate([
-    { transform: 'translate(0,0) scale(1)', opacity: 1 },
-    { transform: `translate(${(x1 - x0) * .5}px, ${(y1 - y0) * .5 - 90}px) scale(.9)`, opacity: 1, offset: .55 },
-    { transform: `translate(${x1 - x0}px, ${y1 - y0}px) scale(.35)`, opacity: .9 },
-  ], { duration: 650, easing: 'cubic-bezier(.3,.7,.4,1)' });
-  anim.onfinish = () => { img.remove(); bump(); };
+  if (!from || !target || reduced()) { bump(); done && done(); return; }
+  const a = from, b = target.getBoundingClientRect();
+  if (!a.width) { bump(); done && done(); return; }
+  const el = p.photo_url ? document.createElement('img') : document.createElement('div');
+  if (p.photo_url) { el.src = p.photo_url; el.alt = ''; } else el.textContent = '🛍';
+  el.className = 'fly';
+  const S0 = 72, x0 = a.left + a.width / 2 - S0 / 2, y0 = a.top + a.height / 2 - S0 / 2;
+  const x1 = b.left + b.width / 2 - S0 / 2, y1 = b.top + 24 - S0 / 2;
+  const dx = x1 - x0, dy = y1 - y0, lift = Math.min(160, Math.abs(dy) * .45 + 60);
+  el.style.left = x0 + 'px'; el.style.top = y0 + 'px';
+  document.body.appendChild(el);
+  const pt = t => ({ x: dx * t, y: dy * t - lift * 4 * t * (1 - t) });
+  const frames = [{ transform: 'translate(0,0) scale(1)', offset: 0 },
+    { transform: 'translate(0,-14px) scale(1.25)', offset: .14 }];
+  for (const t of [.35, .55, .75, .9]) {
+    const q = pt(t);
+    frames.push({ transform: `translate(${q.x}px, ${q.y}px) scale(${1.25 - .85 * t}) rotate(${t * 20}deg)`, offset: .14 + t * .86 });
+  }
+  frames.push({ transform: `translate(${dx}px, ${dy}px) scale(.3) rotate(20deg)`, offset: 1 });
+  const anim = el.animate(frames, { duration: 900, easing: 'ease-in-out' });
+  [.3, .5, .7].forEach((t, i) => setTimeout(() => {
+    const q = pt(t), dot = document.createElement('div');
+    dot.className = 'trail';
+    dot.style.left = (x0 + S0 / 2 + q.x) + 'px'; dot.style.top = (y0 + S0 / 2 + q.y) + 'px';
+    document.body.appendChild(dot);
+    dot.animate([{ opacity: .9, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(.2)' }], { duration: 500 }).onfinish = () => dot.remove();
+  }, 230 + i * 160));
+  anim.onfinish = () => { el.remove(); bump(); done && done(); };
 }
-function bump() { const bk = $('.basket'); if (!bk) return; bk.classList.remove('bump'); void bk.offsetWidth; bk.classList.add('bump'); }
+function bump() {
+  const bk = $('.basket'); if (!bk) return;
+  bk.classList.remove('bump'); void bk.offsetWidth; bk.classList.add('bump');
+  const c = bk.querySelector('.count'); if (c) { c.classList.remove('pulse'); void c.offsetWidth; c.classList.add('pulse'); }
+}
+function floatSign(text, minus) {
+  const bk = $('.basket'); if (!bk) return;
+  const r = bk.getBoundingClientRect(), s = document.createElement('div');
+  s.className = 'plus' + (minus ? ' minus' : ''); s.textContent = text;
+  s.style.left = (r.right - 10) + 'px'; s.style.top = (r.top + 4) + 'px';
+  document.body.appendChild(s);
+  s.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: 'translateY(-34px)', opacity: 0 }],
+    { duration: reduced() ? 10 : 900, easing: 'ease-out' }).onfinish = () => s.remove();
+}
+let noteTimer = null;
+function note(p, verb) {
+  document.querySelectorAll('.note').forEach(n => n.remove());
+  clearTimeout(noteTimer);
+  const n = document.createElement('div');
+  n.className = 'note'; n.setAttribute('role', 'status');
+  n.innerHTML = (p.photo_url ? `<img src="${esc(p.photo_url)}" alt="">` : '<span>🛍</span>') + `<span>${esc(p.name)} — ${esc(verb)}</span>`;
+  document.body.appendChild(n);
+  if (!reduced()) n.animate([{ opacity: 0, transform: 'translate(-50%, 12px)' }, { opacity: 1, transform: 'translate(-50%, 0)' }], { duration: 220 });
+  noteTimer = setTimeout(() => { n.remove(); }, 1800);
+}
+function cheer(pct) {
+  document.querySelectorAll('.cheer').forEach(n => n.remove());
+  const n = document.createElement('div');
+  n.className = 'cheer'; n.setAttribute('role', 'status');
+  const nx = local().next;
+  n.innerHTML = `🎉 ${esc(L.cheer.replace('{p}', pct))}` + (nx ? `<small>${esc((nx.free && local().pieces < S.data.free_courier_pieces ? L.needFree : L.needMore).replace('{n}', nx.need).replace('{p}', nx.percent))}</small>` : `<small>${esc(L.top)}</small>`);
+  document.body.appendChild(n);
+  try { tg.HapticFeedback.notificationOccurred('success'); } catch (e) {}
+  if (!reduced()) n.animate([{ opacity: 0, transform: 'translate(-50%, -24px) scale(.9)' }, { opacity: 1, transform: 'translate(-50%, 0) scale(1.04)', offset: .6 },
+    { opacity: 1, transform: 'translate(-50%, 0) scale(1)' }], { duration: 450, easing: 'ease-out' });
+  const hint = $('.next'); if (hint) { hint.classList.remove('pulse'); void hint.offsetWidth; hint.classList.add('pulse'); }
+  setTimeout(() => n.remove(), 2600);
+}
 
 function paintTop() {
   const top = $('#top'); if (!top) return;
