@@ -113,19 +113,22 @@ class PostTest(unittest.IsolatedAsyncioTestCase):
              patch.object(database, "release_release_notes", side_effect=release):
             await self.posts._tick(self.bot)
 
-    async def test_every_third_day_daytime_and_restart_does_not_duplicate(self):
+    async def test_every_15th_day_daytime_and_restart_does_not_duplicate(self):
         for now in (datetime(2026, 10, 22, 12), datetime(2026, 10, 23, 9, 59)):
             await self.tick(now)
         self.bot.send_message.assert_not_awaited()
         await self.tick(datetime(2026, 10, 23, 10))
         await self.tick(datetime(2026, 10, 23, 11))  # another process/restart
-        await self.tick(datetime(2026, 10, 24, 10))
-        await self.tick(datetime(2026, 10, 25, 10))
+        for day in (24, 26, 29, 31):                 # the old 3-day rhythm is gone
+            await self.tick(datetime(2026, 10, day, 10))
+        await self.tick(datetime(2026, 11, 6, 10))
         self.assertEqual(self.bot.send_message.await_count, 1)
-        await self.tick(datetime(2026, 10, 26, 10))
+        await self.tick(datetime(2026, 11, 7, 10))   # 23.10 + 15 days
         self.assertEqual(self.bot.send_message.await_count, 2)
-        await self.tick(datetime(2026, 10, 29, 22))  # no late-night catch-up
+        await self.tick(datetime(2026, 11, 22, 22))  # no late-night catch-up
         self.assertEqual(self.bot.send_message.await_count, 2)
+        await self.tick(datetime(2026, 12, 7, 10))   # next one after this deploy
+        self.assertEqual(self.bot.send_message.await_count, 3)
 
     async def test_channel_payload_shows_amount_sold_hides_stock_and_opens_shop(self):
         await self.tick(datetime(2026, 10, 23, 10))

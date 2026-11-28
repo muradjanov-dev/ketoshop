@@ -1,4 +1,5 @@
-"""30-day TOP-10 to the channel every three days at 10:00 Tashkent.
+"""30-day TOP-10 to the channel every 15 days at 10:00 Tashkent (was every 3;
+owner, 2026-11-28: "bu e'lon har 15 kunda 1 chiqsin").
 
 Starts 23 October 2026. Names and the amount sold in those 30 days are
 public (owner, 2026-11-06: "Количествасиниям ёзиш керак"); stock is not.
@@ -23,7 +24,7 @@ from translit import lat_to_cyr
 
 logger = logging.getLogger(__name__)
 START = date(2026, 10, 23)
-EVERY_DAYS = 3
+EVERY_DAYS = 15
 SEND_HOUR = 10
 LAST_HOUR = 22
 CHECK_EVERY = 300
