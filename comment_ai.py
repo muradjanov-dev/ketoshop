@@ -332,6 +332,9 @@ FAKTLAR
   qolishsin ("aksiya {sana} gacha — ulgurib qoling 🌿"). Mahsulot aksiyada bo'lmasa ham, narx, bor-yo'qligi
   yoki mahsulot so'ralganda CHEGIRMADAGILARdan 1–2 tasini bir gap bilan eslatsang bo'ladi. Faqat ro'yxatdagi
   chegirmalar; muddat yo'q bo'lsa sana o'ylab topma, "tez tugaydi" kabi yolg'on shoshilish yo'q.
+- BIR NECHTA QADOQ (egasi, 2026-11-28): "BIR MAHSULOTNING BIR NECHTA QADOG'I AKSIYADA" ro'yxatidagi
+  mahsulot (masalan Steviya) haqida gap ketsa yoki uning aksiyasini eslatsang — faqat bittasini emas,
+  ko'rsatilgan IKKALA qadog'ini birga ayt (masalan "Steviya 5 kg −52% va 2 kg −50%").
 - Bitta odam bir xil matnni boshqalarni belgilab (@...) ko'p marta yozgan bo'lsa — mazmuniga bir marta
   javob ber; reklama yoki tarqatma bo'lsa — spam.
 - Tibbiy va'da berma ("davolaydi", "kasallikka yordam beradi", "qandni tushiradi" kabi). Sog'liq savoliga —
@@ -452,6 +455,31 @@ def discount_note(p: dict) -> str:
     return f" (CHEGIRMA −{int(pct)}%: avval {_som(p.get('price'))} so'm{when})"
 
 
+_PACK = re.compile(r"\d+(?:[.,]\d+)?\s*(?:kg|кг|gr|гр|g|г|ml|мл|l|л|gramm)?\b", re.IGNORECASE)
+
+
+def family(name: str | None) -> str:
+    """Bir mahsulotning qadoqlari uchun umumiy nom: "Steviya 2 kg", "STEVIYA 5kg" → "steviya"."""
+    return " ".join(_PACK.sub(" ", (name or "").lower()).split())
+
+
+def sale_families(items: list[tuple[float, str]]) -> list[str]:
+    """(foiz, nom) ro'yxatidan: bir nechta qadog'i aksiyada bo'lgan mahsulotlar, kattasi birinchi
+    (egasi, 2026-11-28: "nega izohlarda faqat 2 kg lik steviyani aksiyasini aytyapsan, 5 kg ni ham ayt")."""
+    groups: dict[str, list[tuple[float, str]]] = {}
+    for pct, name in items:
+        groups.setdefault(family(name), []).append((pct, name))
+    lines = []
+    for packs in groups.values():
+        if len(packs) < 2:
+            continue
+        packs.sort(key=lambda x: -x[0])
+        lines.append("- " + ", ".join(f"{name} −{int(pct)}%" for pct, name in packs)
+                     + " → eng katta chegirmali IKKITASINI birga ayt: "
+                     + " va ".join(name for _, name in packs[:2]))
+    return lines
+
+
 async def catalog_text() -> str:
     """Jonli katalog: faol, chakana mahsulotlar va bugungi narxi (chegirma bilan)."""
     global _catalog_cache
@@ -461,6 +489,7 @@ async def catalog_text() -> str:
     import manual_order
     products = await database.admin_list_products(include_inactive=False)
     rows, sale = [], []
+    sale_pct: list[tuple[float, str]] = []
     for p in sorted(products, key=lambda p: (p.get("category") or "", p.get("name") or "")):
         if p.get("b2b_only"):
             continue
@@ -470,10 +499,18 @@ async def catalog_text() -> str:
         note = discount_note(p)
         rows.append(f"- {p.get('name')} — {price} so'm{note}{stock}{product_facts(p)}")
         if note and in_stock:
-            sale.append(f"- {p.get('name')} — {price} so'm{note}")
+            pct = float(database.active_discount(p.get("discount_percent"), p.get("discount_until")) or 0)
+            sale.append((pct, f"- {p.get('name')} — {price} so'm{note}"))
+            sale_pct.append((pct, p.get("name") or ""))
     text = "\n".join(rows)
     # Egasi, 2026-11-26: aksiyadagini oddiy narx deb aytmasin, boshqa aksiyadagilarni ham aytsin.
-    text += "\n\nCHEGIRMADAGILAR (hozir, sotuvda)\n" + ("\n".join(sale) if sale else "hozir yo'q")
+    # 2026-11-28: eng katta chegirma birinchi; bir mahsulotning bir nechta qadog'i — birga.
+    sale.sort(key=lambda x: -x[0])
+    text += ("\n\nCHEGIRMADAGILAR (hozir, sotuvda; eng katta chegirma birinchi)\n"
+             + ("\n".join(line for _, line in sale) if sale else "hozir yo'q"))
+    families = sale_families(sale_pct)
+    if families:
+        text += "\n\nBIR MAHSULOTNING BIR NECHTA QADOG'I AKSIYADA\n" + "\n".join(families)
     _catalog_cache = (time.monotonic(), text)
     return text
 
