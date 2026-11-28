@@ -45,7 +45,8 @@ logger = logging.getLogger(__name__)
 PUBLIC = os.getenv("OYLIK_SAVAT_PUBLIC", "0").strip() == "1"
 
 # (kamida shuncha dona, chegirma %) — kattasidan boshlab.
-TIERS = ((11, 10), (10, 9), (8, 7), (5, 4))
+# 2026-11-28: "7% -> 6%, 9 > 7%, 10 -> 9%, 10+ uchun 10%" — 8 ta 6%, yangi 9 ta 7%.
+TIERS = ((11, 10), (10, 9), (9, 7), (8, 6), (5, 4))
 MIN_PIECES = 5
 FREE_COURIER_PIECES = 10
 MAX_LINES = 40
@@ -526,7 +527,7 @@ TEXTS = {
         "paused": "⏸ Hozir to'xtatilgan",
         "none": ("📦 <b>Oylik savat</b>\n\nKerakli mahsulotlarni bir marta yig'ing, har oy o'zi uyingizga "
                  "keladi. Qancha ko'p bo'lsa, shuncha arzon:\n"
-                 "• 5 ta — −4%\n• 8 ta — −7%\n• 10 ta — −9% va bepul yetkazish\n• 11 ta va ko'p — −10%"),
+                 "• 5 ta — −4%\n• 8 ta — −6%\n• 9 ta — −7%\n• 10 ta — −9% va bepul yetkazish\n• 11 ta va ko'p — −10%"),
         "btn_build": "📦 Savatni yig'ish",
         "btn_order": "✅ Olib keling",
         "btn_edit": "✏️ O'zgartirish",
@@ -554,7 +555,7 @@ TEXTS = {
         "paused": "⏸ Сейчас на паузе",
         "none": ("📦 <b>Ежемесячная корзина</b>\n\nСоберите нужные продукты один раз — каждый месяц они "
                  "сами приедут к вам. Чем больше, тем выгоднее:\n"
-                 "• 5 шт — −4%\n• 8 шт — −7%\n• 10 шт — −9% и бесплатная доставка\n• 11 шт и больше — −10%"),
+                 "• 5 шт — −4%\n• 8 шт — −6%\n• 9 шт — −7%\n• 10 шт — −9% и бесплатная доставка\n• 11 шт и больше — −10%"),
         "btn_build": "📦 Собрать корзину",
         "btn_order": "✅ Привезите",
         "btn_edit": "✏️ Изменить",

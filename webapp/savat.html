@@ -40,7 +40,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--sun); outli
 
 /* ── start ── */
 .start { display: grid; gap: 14px; padding-block: 20px 8px; }
-.ladder { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ladder { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.ladder .rung b { font-size: 18px; }
 .rung { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 10px 6px; text-align: center; }
 .rung b { display: block; font-family: var(--display); font-size: 22px; color: var(--leaf); }
 .rung span { font-size: 13px; color: var(--hint); }
