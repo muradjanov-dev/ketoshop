@@ -314,6 +314,8 @@ async def main():
     dp.include_router(ai_review_router)
     from ai_eval import router as ai_eval_router
     dp.include_router(ai_eval_router)
+    from ig_milestones import router as ig_milestones_router
+    dp.include_router(ig_milestones_router)
     dp.include_router(webapp_data_router)
     # 📞 /callcentre — operator va adminlar uchun CRM eshigi (call_centre_bot.py).
     from call_centre_bot import router as call_centre_router
@@ -464,6 +466,9 @@ async def main():
     asyncio.create_task(recover_photos_loop(bot))
     from ai_review import scheduler_loop as ai_review_loop
     asyncio.create_task(ai_review_loop(bot))
+    # Instagram: har 50 ta AI javobida adminlarga hisobot (izohlar va Direct alohida).
+    from ig_milestones import scheduler_loop as ig_milestones_loop
+    asyncio.create_task(ig_milestones_loop(bot))
     # 🔥 07:30 — the daily games' streak reminder (game_reminder.py).
     from game_reminder import scheduler_loop as game_reminder_loop
     asyncio.create_task(game_reminder_loop(bot))
