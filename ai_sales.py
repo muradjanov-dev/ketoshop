@@ -1541,6 +1541,10 @@ def _sales_rules() -> str:
         "Ikki-uch mahsulot bo'lsa va qaysi biri noaniq bo'lsa — bitta qisqa savol: 'Postdagi X ni "
         "nazarda tutyapsizmi?'.\n"
         "- OXIRGI CHORA — MATN BILAN SO'RASH (egasi, 2026-11-27): post, rasm, video yoki ovozli xabardan nima haqida gap ketayotganini avval o'zing aniqlashga harakat qil (matn, rasm tavsifi, suhbat papkasi). Umuman iloji bo'lmasa — FAQAT shunda muloyim so'ra: 'Kechirasiz, qaysi mahsulot haqida so'rayotganingizni aniq ko'ra olmadim 🙏 Nomini yozib yuborsangiz, darhol aytib beramiz'. Buyruq ohangida emas, bir marta; mijoz yozgach — shu bilan davom et.\n"
+        "- ISHONCHLI MANBA (egasi, 2026-11-28): steviya, eritritol, alluloza kabi mahsulotlarning xavfsizligi, "
+        "sog'liqqa ta'siri, diabet, homiladorlik, bolalar yoki kunlik miqdori so'ralsa va aniq fakt kerak "
+        "bo'lsa — ishonchli_manba vositasini chaqir, javobda manbani qisqa keltir ('Manba: FDA — havola'). "
+        "Oddiy savolda (narx, bormi, retsept) chaqirma va manba qo'shma.\n"
         "- QAYTA BUYURTMA ('yana shuni', 'qaytadan buyurtma'): oxirgi buyurtmadagi mahsulotlarni "
         "savatga sol, xotiradagi manzil va raqamni ko'rsatib BITTA xabarda 'shu manzilga "
         "yuboraylikmi?' de; 'ha' desa — darhol buyurtma_kartasi (oldingi_manzil=true). Sovg'a "
@@ -1662,6 +1666,23 @@ _TOOL_SPECS = [
             "type": "object",
             "properties": {"mahsulot_id": {"type": "integer", "description": "Katalogdagi id"}},
             "required": ["mahsulot_id"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "name": "ishonchli_manba",
+        "description": "Mijoz shirinlashtirgich yoki sog'lom mahsulot (steviya, eritritol, alluloza, ksilit, "
+                       "psillium, kepak, bodom uni...) xavfsizligi, sog'liqqa ta'siri, diabet, homiladorlik, "
+                       "bolalar, kunlik miqdor yoki ilmiy fakt haqida so'rasa va aniq ma'lumot kerak bo'lsa — "
+                       "ishonchli manbalardan (WHO, FDA, EFSA, PubMed, Mayo Clinic...) qisqa javob va manba "
+                       "havolasi qaytaradi. Narx, buyurtma, retsept va oddiy savollarda CHAQIRMA.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"savol": {"type": "string",
+                                     "description": "Aniq savol, mahsulot nomi bilan (masalan 'eritritol "
+                                                    "diabetga zararlimi')"}},
+            "required": ["savol"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -3086,6 +3107,14 @@ async def _run_tool(bot: Bot, message: Message, name: str, args: dict) -> str:
         return await _tool_info(user_id, args)
     if name == "retsept":
         return await _tool_recipe(user_id, args)
+    if name == "ishonchli_manba":
+        import trusted_sources
+        found = await trusted_sources.lookup(str(args.get("savol") or ""))
+        if not found:
+            return ("Ishonchli manbadan aniq javob topilmadi. O'z bilimingdan ehtiyotkor, qisqa javob ber "
+                    "(to'qima, tibbiy va'da yo'q); kasallik bo'lsa shifokor bilan maslahatni ayt.")
+        return ("ISHONCHLI MANBA (shuni o'z so'zing bilan qisqa ayt; manbani bitta qatorda keltir — tashkilot "
+                "nomi va havola):\n" + found)
     if name == "lokatsiya_tugmasi":
         _session(user_id)["keyboard"] = "location"
         return ("OK: javobing ostida '📍 Lokatsiyani yuborish' va '📞 Raqamni yuborish' "
