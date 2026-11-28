@@ -270,6 +270,9 @@ async def main():
     # Group link guard first — a non-admin's link in a group is deleted
     # before any other handler can react to it (see link_guard.py).
     dp.include_router(link_guard_router)
+    # 💬 «Peshqadam mijozlarimiz fikri» — admin-approved quotes to the channel (mijozlar_fikri.py).
+    import mijozlar_fikri
+    dp.include_router(mijozlar_fikri.router)
     dp.include_router(channel_comments.router)
     # 📦 Oylik savat — obuna konstruktori; hozircha faqat adminlar (oylik_savat.py).
     import oylik_savat
@@ -472,6 +475,9 @@ async def main():
     # 🔥 07:30 — the daily games' streak reminder (game_reminder.py).
     from game_reminder import scheduler_loop as game_reminder_loop
     asyncio.create_task(game_reminder_loop(bot))
+    # 💬 Every 2 days the best customer quote goes to the admins for ✅ (mijozlar_fikri.py).
+    from mijozlar_fikri import scheduler_loop as quotes_loop
+    asyncio.create_task(quotes_loop(bot))
     # 🖼 Shop photos made light and ready before buyers open them (photo_thumbs.py).
     from photo_thumbs import warm_loop as photo_warm_loop
     asyncio.create_task(photo_warm_loop(bot))
