@@ -7481,7 +7481,7 @@ async def set_backup_date(d):
 # outside a live process, and web_images (raw image bytes — would make the
 # backup huge; product_media/photo_id Telegram file_ids already cover product
 # photos for restore purposes).
-_BACKUP_EXCLUDE_TABLES = {"fsm_state", "web_images"}
+_BACKUP_EXCLUDE_TABLES = {"fsm_state", "web_images", "photo_thumbs"}   # photo_thumbs: rebuilt from the originals
 
 
 async def dump_all_tables() -> dict:

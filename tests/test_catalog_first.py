@@ -63,9 +63,9 @@ class TilesEndpointTest(unittest.TestCase):
         d, tiles = self.call()
         self.assertEqual(d["total"], 13)                          # products only, sets separate
         self.assertEqual(d["categories"]["sweeteners"], {"count": 8, "photo_url": "/api/photo/AgACfile"})
-        self.assertEqual(d["categories"]["oils"]["photo_url"], "/img/7")
+        self.assertEqual(d["categories"]["oils"]["photo_url"], "/p/img/7")
         self.assertIsNone(d["categories"]["salt"]["photo_url"])
-        self.assertEqual(d["categories"]["sets"], {"count": 2, "photo_url": "/img/9"})
+        self.assertEqual(d["categories"]["sets"], {"count": 2, "photo_url": "/p/img/9"})
         self.assertEqual(d["discounts"], {"count": 4, "photo_url": "https://cdn.example/x.jpg"})
         tiles.assert_awaited_once()                               # the second call came from the cache
 

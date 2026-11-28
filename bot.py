@@ -472,6 +472,9 @@ async def main():
     # 🔥 07:30 — the daily games' streak reminder (game_reminder.py).
     from game_reminder import scheduler_loop as game_reminder_loop
     asyncio.create_task(game_reminder_loop(bot))
+    # 🖼 Shop photos made light and ready before buyers open them (photo_thumbs.py).
+    from photo_thumbs import warm_loop as photo_warm_loop
+    asyncio.create_task(photo_warm_loop(bot))
     # 📦 Oylik savat: kelish kunidan 2 kun oldin eslatma (oylik_savat.py).
     from oylik_savat import scheduler_loop as oylik_savat_loop
     asyncio.create_task(oylik_savat_loop(bot))

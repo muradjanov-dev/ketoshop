@@ -2154,10 +2154,10 @@ def photo_url(ref) -> str | None:
     showed in the shop, and in the cart it turned into "/api/photo//img/7"."""
     if not ref:
         return None
-    ref = str(ref).strip()
-    if ref.startswith(("/", "http://", "https://")):
-        return ref
-    return f"/api/photo/{ref}"
+    # A light, ready-made copy for the shop (photo_thumbs.py, 2026-11-28:
+    # "sayt rasmlari sekin ochilyapti"): /p/tg/<file_id>, /p/img/<N>.
+    import photo_thumbs
+    return photo_thumbs.url_for(ref)
 
 
 def _serialize_product(p: dict, lang: str, bot_price: float | None = None) -> dict:
@@ -2494,6 +2494,8 @@ def create_webapp(bot: Bot, storage=None) -> web.Application:
     app.router.add_get("/api/keto/status", api_keto_status)
     app.router.add_post("/api/assistant", api_assistant)
     app.router.add_get("/api/photo/{file_id}", api_photo)
+    import photo_thumbs
+    photo_thumbs.setup(app)              # /p/<tg|img>/<ref> — light copies, cached for a year
 
     # Admin website (/admin) + uploaded-image serving (/img/{id}).
     # Its own password auth (see admin_web.py); auth_middleware ignores these

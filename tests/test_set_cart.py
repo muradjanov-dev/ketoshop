@@ -115,7 +115,7 @@ class SetDetailTest(_Patched):
         self.assertEqual([i["out_of_stock"] for i in d["items"]], [False, False, False])
         self.assertEqual([i["quantity"] for i in d["items"]], [1, 1, 2])
         self.assertEqual(d["items"][0]["photo_url"], "/api/photo/AgADfile")
-        self.assertEqual(d["items"][1]["photo_url"], "/img/9")
+        self.assertEqual(d["items"][1]["photo_url"], "/p/img/9")
         self.assertEqual(d["original_total"], 98000 + 85000 + 2 * 42000)
         self.assertEqual(d["description"], "Boshlash uchun")
         self.stock.assert_awaited_once()
