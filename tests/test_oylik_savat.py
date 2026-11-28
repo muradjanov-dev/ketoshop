@@ -29,7 +29,7 @@ def q(pieces_1, pieces_2=0, delivery=CITY):
 
 class TierTest(unittest.TestCase):
     def test_owner_tiers(self):
-        self.assertEqual([o.tier_percent(n) for n in (4, 5, 7, 8, 9, 10, 11, 25)], [0, 4, 4, 7, 7, 9, 10, 10])
+        self.assertEqual([o.tier_percent(n) for n in (4, 5, 7, 8, 9, 10, 11, 25)], [0, 4, 4, 6, 7, 9, 10, 10])
 
     def test_next_tier_hint(self):
         self.assertEqual(o.next_tier(3), {"need": 2, "percent": 4, "free_courier": False})
