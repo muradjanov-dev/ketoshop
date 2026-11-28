@@ -127,3 +127,41 @@ class TextTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CatalogTest(unittest.TestCase):
+    """2026-11-28: /api/savat was a 500 for everyone — pick(MINI) ran after
+    raw_name had been dropped. The catalog must build both preset lists."""
+
+    def test_catalog_builds_both_presets(self):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        import database
+        rows = [
+            {"id": 1, "name": "Bodom uni 500gr", "name_ru": None, "price": 87000, "discount_percent": 0,
+             "discount_until": None, "unit": "dona", "quantity": 5, "category": "keto_flour",
+             "image_url": "/img/3", "photo_id": None},
+            {"id": 2, "name": "Eritritol 500gr", "name_ru": None, "price": 68000, "discount_percent": 15,
+             "discount_until": None, "unit": "dona", "quantity": 50, "category": "sweeteners",
+             "image_url": None, "photo_id": None},
+        ]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=rows)
+
+        class Ctx:
+            async def __aenter__(self):
+                return conn
+
+            async def __aexit__(self, *exc):
+                return False
+        pool = MagicMock()
+        pool.acquire = lambda: Ctx()
+        with patch.object(database, "pool", pool), \
+                patch.object(database, "get_categories", AsyncMock(return_value=[
+                    {"key": "keto_flour", "name_uz": "Unlar", "name_ru": None},
+                    {"key": "sweeteners", "name_uz": "Shirinlatgichlar", "name_ru": None}])):
+            cat = asyncio.run(o.catalog("uz"))
+        self.assertEqual(cat["presets"]["mini"], [1, 2])
+        self.assertEqual(cat["featured"], [1, 2])
+        self.assertTrue(all("raw_name" not in p for p in cat["products"]))
+        self.assertEqual([c["key"] for c in cat["categories"]], ["keto_flour", "sweeteners"])

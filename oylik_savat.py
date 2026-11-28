@@ -309,14 +309,17 @@ async def catalog(lang: str) -> dict:
             if hit:
                 ids.append(hit)
         return ids
+    # Both lists before raw_name is dropped (2026-11-28: pick(MINI) after the
+    # pop raised KeyError — every /api/savat was a 500, «Ulanib bo'lmadi»).
     featured = pick(FEATURED)
+    mini = pick(MINI)
     for p in products:
         p.pop("raw_name", None)
     used = sorted({p["category"] for p in products}, key=lambda k: order.get(k, 999))
     return {"products": products,
             "categories": [{"key": k, "name": names.get(k, k)} for k in used],
             "featured": featured,
-            "presets": {"mini": pick(MINI), "standart": featured}}
+            "presets": {"mini": mini, "standart": featured}}
 
 
 async def defaults(user_id: int) -> dict:
