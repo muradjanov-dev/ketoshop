@@ -10,11 +10,12 @@ from webapp_server import photo_url
 
 
 class PhotoUrlTest(unittest.TestCase):
-    def test_telegram_file_id_goes_through_the_proxy(self):
-        self.assertEqual(photo_url("AgACAgIAAxkBAAIB"), "/api/photo/AgACAgIAAxkBAAIB")
+    def test_telegram_file_id_gets_the_light_copy(self):
+        # photo_thumbs.py (2026-11-28): a small ready-made copy, not the original.
+        self.assertEqual(photo_url("AgACAgIAAxkBAAIB"), "/p/tg/AgACAgIAAxkBAAIB")
 
-    def test_uploaded_set_image_is_served_as_is(self):
-        self.assertEqual(photo_url("/img/7"), "/img/7")
+    def test_uploaded_set_image_gets_the_light_copy(self):
+        self.assertEqual(photo_url("/img/7"), "/p/img/7")
         self.assertEqual(photo_url("https://keto.standart-eko.uz/img/7"),
                          "https://keto.standart-eko.uz/img/7")
 

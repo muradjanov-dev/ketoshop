@@ -195,7 +195,7 @@ class ProductMediaTests(unittest.IsolatedAsyncioTestCase):
     async def test_mini_app_also_shows_admin_uploaded_product_image(self):
         p = product(photo_id="old-photo")
         result = webapp_server._serialize_product(p, "uz")
-        self.assertEqual(result["photo_url"], "/img/3")
+        self.assertEqual(result["photo_url"], "/p/img/3")
         self.assertEqual(result["description"], p["description"])
 
     async def test_bot_photo_replacement_clears_previous_web_image(self):
