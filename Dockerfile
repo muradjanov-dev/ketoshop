@@ -6,6 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# ffmpeg — reels ovozi va kadrlarini ajratish uchun (video_brief.py, 2026-11-28).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 # Dependencies before source, so an edit to a handler does not re-resolve pip.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

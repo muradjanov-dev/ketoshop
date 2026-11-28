@@ -629,6 +629,12 @@ async def post_context(row: dict) -> tuple[str, str]:
                                     {"fields": "caption,media_type,media_url,thumbnail_url"})
                 caption = data.get("caption") or ""
                 image = data.get("thumbnail_url") or (data.get("media_url") if data.get("media_type") == "IMAGE" else "") or ""
+                if data.get("media_type") == "VIDEO" and data.get("media_url"):
+                    # Reels: ovozi va kadrlaridan mazmun — bir video bir marta (video_brief.py, 2026-11-28).
+                    import video_brief
+                    summary = await video_brief.brief(media, data["media_url"], caption)
+                    if summary:
+                        caption = (caption + "\n\n" if caption else "") + "VIDEO MAZMUNI (ovozi va kadrlaridan): " + summary
             else:
                 data = await _graph(session, "GET", media, ident["page_token"], {"fields": "message,full_picture"})
                 caption, image = data.get("message") or "", data.get("full_picture") or ""
