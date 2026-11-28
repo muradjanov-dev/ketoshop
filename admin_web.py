@@ -1529,6 +1529,17 @@ async def api_ai_totals(request: web.Request):
 
 
 @require_auth
+async def api_ig_direct(request: web.Request):
+    """GET /admin/api/ig-direct?days=7 — Instagram Direct: holatlar va javobsiz qolganlar. Faqat o'qiydi."""
+    import ig_direct
+    try:
+        days = max(1, min(60, int(request.query.get("days") or 7)))
+    except ValueError:
+        return _json({"error": "days raqam bo'lsin"}, status=400)
+    return _json(await ig_direct.open_report(days))
+
+
+@require_auth
 async def api_ai_usage(request: web.Request):
     """GET /admin/api/ai-usage?days=7 — AI sarfi kun va model (vazifa) bo'yicha. Faqat o'qiydi."""
     try:
@@ -2653,6 +2664,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/channel-comments", api_channel_comments)
     app.router.add_get("/admin/api/ai-totals", api_ai_totals)
     app.router.add_get("/admin/api/ai-usage", api_ai_usage)
+    app.router.add_get("/admin/api/ig-direct", api_ig_direct)
     app.router.add_get("/admin/api/portraits/{user_id:\\d+}", api_portrait_card)
     app.router.add_get("/admin/api/site-analytics/user/{user_id:\\d+}", api_site_user)
     app.router.add_get("/admin/api/promos", api_promos_list)

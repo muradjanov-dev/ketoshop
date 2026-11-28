@@ -55,6 +55,11 @@ class SendOneTest(unittest.IsolatedAsyncioTestCase):
         async def mark3(key, text):
             self.marked3.append((key, text))
 
+        self.monthly, self.marked_m = [], []
+
+        async def mark_m(key, text):
+            self.marked_m.append((key, text))
+
         for p in [
             patch.object(database, "get_meta_comments_state", AsyncMock(side_effect=lambda: dict(self.state))),
             patch.object(database, "meta_comment_followup_stats", AsyncMock(side_effect=lambda d: self.stats)),
@@ -71,6 +76,11 @@ class SendOneTest(unittest.IsolatedAsyncioTestCase):
             patch.object(database, "meta_comment_followup3_candidates",
                          AsyncMock(side_effect=lambda d, n: self.round3[:n])),
             patch.object(database, "mark_meta_comment_followup3", mark3),
+            patch.object(database, "meta_comment_monthly_stats",
+                         AsyncMock(return_value={"today": 0, "total": 0})),
+            patch.object(database, "meta_comment_monthly_candidates",
+                         AsyncMock(side_effect=lambda d, n: self.monthly[:n])),
+            patch.object(database, "mark_meta_comment_monthly", mark_m),
             patch.object(mc, "load_token", AsyncMock()), patch.object(mc, "token", lambda: "T"),
             patch.object(mc, "identity", AsyncMock(return_value={"page_token": "T"})),
             patch.object(mc, "reply_public", reply_public),
@@ -110,6 +120,31 @@ class SendOneTest(unittest.IsolatedAsyncioTestCase):
         with patch.object(mc, "token", lambda: ""):
             self.assertEqual(await cf.send_one(None, NOON), "no_token")
         self.assertEqual((self.sent, self.marked), ([], []))
+
+    async def test_monthly_round_after_the_three_rounds(self):
+        # 1-3 bosqich navbati bo'sh — oylik eslatma, oldingi xabarimiz AI'ga beriladi.
+        self.candidates = []
+        seen = {}
+
+        async def compose(r, kb=None, extra=None, second=False):
+            seen.update(r)
+            return "Bilasizmi? Bu oy yangi retseptlar qo'shdik 🌿"
+        old = dict(row(7, "c7"), followup3_text="3-xabar", monthly_last_text="o'tgan oydagi xabar")
+        self.monthly = [old]
+        with patch.object(cf, "compose", compose):
+            result = await cf.send_one(None, NOON)
+        self.assertEqual(result, "sent")
+        self.assertEqual(self.marked_m, [(7, "Bilasizmi? Bu oy yangi retseptlar qo'shdik 🌿")])
+        self.assertEqual(seen["followup_text"], "o'tgan oydagi xabar")
+        self.assertEqual(seen["round"], "monthly")
+        self.assertEqual(self.marked + self.marked2 + self.marked3, [])
+
+    async def test_monthly_counts_toward_daily_cap(self):
+        self.candidates = []
+        self.monthly = [row(8, "c8")]
+        with patch.object(database, "meta_comment_monthly_stats",
+                          AsyncMock(return_value={"today": cf.DAILY, "total": 9})):
+            self.assertEqual(await cf.send_one(None, NOON), "cap")
 
     async def test_quiet_at_night(self):
         # Egasi, 2026-11-16: "instagram bloklash xavfiga yaqinlashmasin" — tunda ommaviy javob yo'q.
