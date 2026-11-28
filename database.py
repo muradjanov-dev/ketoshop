@@ -8989,6 +8989,79 @@ async def meta_comment_followup3_candidates(min_days: int, limit: int = 10) -> l
     return [_comment_row(r) for r in rows]
 
 
+# ── Oylik qayta xabar (egasi, 2026-11-28: "nahotki 3-4 oy avval yozganlarimizga ham qayta yoza
+# olmasak? 1 oyda kamida bitta ... qayta yozishimiz kerak eslatib va tavsiya berib") ──────────
+# 3 bosqichdan keyin har odamga oyiga bitta: biz bilan oxirgi aloqasi (izohi, har qanday qayta
+# xabarimiz) `days` kundan eski bo'lsa. Har yuborish meta_comment_followup_log ga (o'chirilmaydi).
+
+async def _ensure_followup_log(conn) -> None:
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS meta_comment_followup_log (
+            id SERIAL PRIMARY KEY,
+            username TEXT NOT NULL,
+            comment_row INTEGER,
+            text TEXT NOT NULL DEFAULT '',
+            sent_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC')
+        )
+    """)
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_mc_followup_log_user "
+                       "ON meta_comment_followup_log (lower(username), sent_at)")
+
+
+async def meta_comment_monthly_candidates(days: int, limit: int = 10) -> list[dict]:
+    async with pool.acquire() as conn:
+        await _ensure_followup_log(conn)
+        rows = await conn.fetch(
+            """WITH touch AS (
+                   SELECT lower(username) AS u,
+                          MAX(GREATEST(COALESCE(created_at, received_at, TIMESTAMP 'epoch'),
+                                       COALESCE(followup_at, TIMESTAMP 'epoch'),
+                                       COALESCE(followup2_at, TIMESTAMP 'epoch'),
+                                       COALESCE(followup3_at, TIMESTAMP 'epoch'))) AS t,
+                          BOOL_OR(followup3_at IS NOT NULL) AS done3
+                     FROM meta_comments
+                    WHERE username IS NOT NULL AND username <> ''
+                    GROUP BY 1),
+               logs AS (
+                   SELECT lower(username) AS u, MAX(sent_at) AS t,
+                          (ARRAY_AGG(text ORDER BY sent_at DESC) FILTER (WHERE text <> ''))[1] AS last_text
+                     FROM meta_comment_followup_log GROUP BY 1)
+               SELECT * FROM (
+                   SELECT DISTINCT ON (lower(m.username)) m.*, logs.last_text AS monthly_last_text
+                     FROM meta_comments m
+                     JOIN touch ON touch.u = lower(m.username)
+                     LEFT JOIN logs ON logs.u = touch.u
+                    WHERE touch.done3
+                      AND GREATEST(touch.t, COALESCE(logs.t, TIMESTAMP 'epoch'))
+                          <= (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)
+                      AND COALESCE(m.category, '') <> 'spam' AND COALESCE(m.status, '') <> 'hidden'
+                    ORDER BY lower(m.username), COALESCE(m.created_at, m.received_at) DESC
+               ) t
+               ORDER BY COALESCE(t.created_at, t.received_at) DESC
+               LIMIT $2""", days, limit)
+    return [_comment_row(r) for r in rows]
+
+
+async def mark_meta_comment_monthly(key: int, text: str) -> None:
+    async with pool.acquire() as conn:
+        await _ensure_followup_log(conn)
+        await conn.execute(
+            "INSERT INTO meta_comment_followup_log (username, comment_row, text) "
+            "SELECT username, id, $2 FROM meta_comments WHERE id = $1", key, text)
+
+
+async def meta_comment_monthly_stats() -> dict:
+    async with pool.acquire() as conn:
+        await _ensure_followup_log(conn)
+        row = await conn.fetchrow(
+            """SELECT COUNT(*) FILTER (WHERE text <> ''
+                         AND sent_at >= date_trunc('day', NOW() AT TIME ZONE 'Asia/Tashkent') - INTERVAL '5 hours')
+                          AS today,
+                      COUNT(*) FILTER (WHERE text <> '') AS total
+                 FROM meta_comment_followup_log""")
+    return dict(row) if row else {"today": 0, "total": 0}
+
+
 async def mark_meta_comment_followup3(key: int, text: str) -> None:
     async with pool.acquire() as conn:
         await conn.execute(

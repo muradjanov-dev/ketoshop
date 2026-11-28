@@ -314,6 +314,27 @@ async def day_stats() -> dict:
     return {k: int(v or 0) for k, v in dict(row).items()} if row else {}
 
 
+async def open_report(days: int = 7) -> dict:
+    """Admin API uchun (egasi, 2026-11-28: "Direct'dagi javobsiz xabarlarni ham tekshir"): oxirgi
+    `days` kun holatlar bo'yicha soni va javobsiz qolganlar (new/sending — AI navbatida; held —
+    adminga topshirilgan, odam javobi kutilmoqda; expired/unavailable — 24 soat o'tib ketgan)."""
+    async with database.pool.acquire() as conn:
+        await _ensure(conn)
+        counts = await conn.fetch(
+            "SELECT status, COUNT(*) AS n FROM ig_dm_messages "
+            "WHERE created_at > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1) GROUP BY status", days)
+        rows = await conn.fetch(
+            """SELECT conversation_id, username, text, status, note, intent, created_at
+                 FROM ig_dm_messages
+                WHERE status IN ('new', 'sending', 'held', 'expired', 'unavailable')
+                  AND created_at > (NOW() AT TIME ZONE 'UTC') - make_interval(days => $1)
+                ORDER BY created_at DESC LIMIT 100""", days)
+    return {"days": days, "by_status": {r["status"]: int(r["n"]) for r in counts},
+            "open": [dict(r, created_at=r["created_at"].isoformat() if r["created_at"] else None) for r in rows],
+            "today": await day_stats(), "state": {k: (v.isoformat() if hasattr(v, "isoformat") else v)
+                                                  for k, v in (await get_state()).items()}}
+
+
 async def recent_replies(limit: int = 3) -> list[dict]:
     async with database.pool.acquire() as conn:
         await _ensure(conn)
