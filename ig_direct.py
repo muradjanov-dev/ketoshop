@@ -807,7 +807,7 @@ async def ask_ai(instructions: str, user: str) -> dict | None:
         resp = await _openai_client[1].responses.create(
             model=model, instructions=instructions,
             input=[{"role": "user", "content": [{"type": "input_text", "text": user}]}],
-            reasoning={"effort": "low"}, max_output_tokens=MAX_TOKENS,
+            reasoning={"effort": "low"}, max_output_tokens=MAX_TOKENS, prompt_cache_key="ketoshop-direct",
             text={"format": {"type": "json_schema", "name": "direct_javob", "schema": SCHEMA, "strict": True}})
     except (openai.RateLimitError, openai.APIStatusError, openai.APIConnectionError) as e:
         logger.warning("ig direct AI error (%s): %s", model, e)

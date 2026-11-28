@@ -9730,6 +9730,18 @@ async def get_ai_usage_today() -> list[dict]:
         return [dict(r) for r in rows]
 
 
+async def get_ai_usage_days(days: int = 7) -> list[dict]:
+    """Oxirgi N kun (Toshkent) sarfi — kun va model (" · izohlar", " · direct" ... teglari bilan)."""
+    days = max(1, min(90, int(days)))
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT day, model, provider, requests, input_tokens, cached_tokens,
+                       output_tokens, cost_usd
+                  FROM ai_usage WHERE day > {_AI_DAY} - $1::int
+                 ORDER BY day DESC, cost_usd DESC""", days)
+        return [dict(r, day=r["day"].isoformat(), cost_usd=float(r["cost_usd"] or 0)) for r in rows]
+
+
 async def get_ai_usage_month() -> dict:
     """Oy boshidan bugungacha jami — kunlik hisobotdagi 'oyda' qatori uchun."""
     async with pool.acquire() as conn:

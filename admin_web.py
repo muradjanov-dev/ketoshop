@@ -1529,6 +1529,16 @@ async def api_ai_totals(request: web.Request):
 
 
 @require_auth
+async def api_ai_usage(request: web.Request):
+    """GET /admin/api/ai-usage?days=7 — AI sarfi kun va model (vazifa) bo'yicha. Faqat o'qiydi."""
+    try:
+        days = int(request.query.get("days") or 7)
+    except ValueError:
+        return _json({"error": "days raqam bo'lsin"}, status=400)
+    return _json({"rows": await database.get_ai_usage_days(days)})
+
+
+@require_auth
 async def api_portrait_card(request: web.Request):
     """GET /admin/api/portraits/{user_id} — one customer's full card."""
     found = await portrait_web.card(int(request.match_info["user_id"]))
@@ -2642,6 +2652,7 @@ def setup_admin_routes(app: web.Application):
     app.router.add_get("/admin/api/ai-dialogs", api_ai_dialogs)
     app.router.add_get("/admin/api/channel-comments", api_channel_comments)
     app.router.add_get("/admin/api/ai-totals", api_ai_totals)
+    app.router.add_get("/admin/api/ai-usage", api_ai_usage)
     app.router.add_get("/admin/api/portraits/{user_id:\\d+}", api_portrait_card)
     app.router.add_get("/admin/api/site-analytics/user/{user_id:\\d+}", api_site_user)
     app.router.add_get("/admin/api/promos", api_promos_list)
