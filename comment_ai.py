@@ -52,7 +52,7 @@ CATEGORY_LABELS = {
     "boshqa": "❓ Boshqa savol",
 }
 # Shu turlarga ikkinchi, chuqurroq o'tish (reasoning "medium").
-COMPLEX = {"salomatlik", "shikoyat", "boshqa"}
+COMPLEX = {"salomatlik", "shikoyat"}   # "boshqa" chiqarildi (2026-11-28: sarf) — ikki marta to'lamaymiz
 
 AI_MODES = ("avto", "tasdiq", "off")
 
@@ -287,6 +287,9 @@ TURLAR
 - boshqa — yuqoridagilarga kirmaydigan savol yoki fikr.
 
 QANDAY YOZISH — muloyim, jonli odamdek, biroz hamdardlik bilan
+- QISQA (egasi, 2026-11-28: "izohlarga qisqaroq javob yoz imkon qadar, imkon bo'lmasa mayli uzunroq"):
+  odatda 1–2 qisqa gap, 200 belgigacha. Savol murakkab bo'lsa (salomatlik, shikoyat, bir nechta savol) —
+  3–4 gapgacha, undan ortiq emas. Muqaddima, takror va ortiqcha emoji yo'q.
 - Iliq, samimiy va sodda yoz — do'konimiz jamoasi yozgandek. Har javob o'ziga xos bo'lsin:
   shablon gaplar va har safar bir xil boshlanish bo'lmasin, "Ha," bilan boshlama.
 - Odamni eshitganingni qisqa va tabiiy ko'rsat: savoliga qiziqish, tashvishiga tushunish ("Tushunaman,
@@ -654,6 +657,7 @@ async def _ask_openai(key: str, model: str, instructions: str, user: str, effort
             model=model, instructions=instructions,
             input=[{"role": "user", "content": content}],
             reasoning={"effort": effort}, max_output_tokens=MAX_TOKENS,
+            prompt_cache_key="ketoshop-izoh" if schema is None else "ketoshop-izoh-qayta",
             text={"format": {"type": "json_schema", "name": "izoh_javob" if schema is None else "izoh_qayta",
                              "schema": schema or SCHEMA, "strict": True}},
         )
@@ -809,7 +813,7 @@ MANIPULYATSIYASIZ
 - "Sotib oling", "buyurtma bering" deb buyurma — faqat taklif va savol. Ortiqcha maqtov va mubolag'a yo'q.
 - Avval foyda: xabarda albatta bitta foydali narsa bo'lsin (maslahat, retsept g'oyasi, qanday ishlatish);
   mahsulot — faqat o'rinli bo'lsa, qo'shimcha sifatida.
-- Bir xabarda ko'pi bilan bitta savol. 2–4 qisqa gap, 1–2 emoji. Har xabar o'ziga xos bo'lsin, shablon emas.
+- Bir xabarda ko'pi bilan bitta savol. 1–3 qisqa gap (imkon qadar qisqa), 1 emoji. Har xabar o'ziga xos bo'lsin, shablon emas.
 - Faqat KATALOG, YANGI MAHSULOTLAR, AKSIYA va BILIM BAZASIdagi faktlar. Narxni faqat so'ralgan mahsulotga ayt.
 - Tabiiy yoz: "iltimos" faqat aniq bir ish so'raganda va o'rinli bo'lsa, ko'pi bilan bir marta; taklif va
   ma'lumotda kerak emas. "Iltimos", "agar xohlasangiz", "imkoningiz bo'lsa" ni bir gapda qo'shma.

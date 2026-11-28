@@ -284,6 +284,9 @@ class OpenAIProvider:
             "input": items,
             "reasoning": {"effort": self.effort},
             "max_output_tokens": max_tokens,
+            # Kesh (egasi, 2026-11-28: "keshdan ol qulay bo'lsa va arzon bo'lsa") — bir xil qoidalar va
+            # katalog prefiksi bitta kesh kalitida: qayta o'qilgan tokenlar ~20 barobar arzon.
+            "prompt_cache_key": "ketoshop-sotuv",
         }
         if tools:
             kwargs["tools"] = self.render_tools(tools)
