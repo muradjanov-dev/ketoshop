@@ -243,7 +243,11 @@ function boot() {
       S.day = d.subscription.day || 0;
       builder();
     } else start();
-  }).catch(() => { app.innerHTML = `<div class="center"><p class="err">${esc(T.uz.err)}</p></div>`; });
+  }).catch(e => {
+    // The reason under the message, so a screenshot says what failed.
+    const why = e && e.data && e.data.error ? e.data.error : (e && e.message) || '';
+    app.innerHTML = `<div class="center"><p class="err">${esc(T.uz.err)}</p><p class="hint">${esc(why)}</p></div>`;
+  });
 }
 
 function start() {
