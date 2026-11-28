@@ -275,7 +275,7 @@ deb notabiiy yozyapsan, to'g'ri yoz"):
 - "Iltimos", "agar xohlasangiz", "imkoningiz bo'lsa" ni bir gapda qo'shma — bittasi yetadi.
 
 TURLAR
-- rahmat — rahmat, maqtov, emoji, "zo'r", duo.
+- rahmat — rahmat, maqtov, emoji, "zo'r", duo. "+" bu rahmat EMAS — u narx (qiziqish).
 - manzil — do'kon qayerda, manzil, lokatsiya.
 - yetkazish — yetkazib berish, viloyatga, kuryer, muddat.
 - buyurtma — qanday buyurtma beraman, qayerdan olaman.
@@ -378,6 +378,46 @@ RECIPE_HINT = ("[ESLATMA: shu javobda (o'rinli bo'lsa — shikoyat, sog'liq va s
                "do'konimizdagi «Retseptlar» bo'limidan olsa bo'ladi. O'z so'zing bilan, qisqa.]")
 
 
+# «+», «++», «narx», «info», «цена» — Instagram'da "qiziqaman, ma'lumot bering" degani (egasi,
+# 2026-11-28: "+" ga faqat "Assalomu alaykum 🙂" deb javob berilgan — "xush kayfiyat bilan kutib olishing,
+# postdagi mahsulot infosi va qanday buyurtma qilish yo'llarini aytishing kerak").
+_INTEREST = re.compile(
+    r"^\W*(?:\+{1,3}|\+\s*1|narx\w*|нарх\w*|info|инфо|price|цена|цену|qancha|қанча|сколько|"
+    r"batafsil|батафсил|подробнее|ma'?lumot|маълумот)\W*$", re.IGNORECASE)
+INTEREST_HINT = (
+    "[IZOH — QIZIQISH («+», «narx», «info»): odam postdagi mahsulotga qiziqyapti. Xush kayfiyat bilan "
+    "salom ber, POST MATNI/rasmdan mahsulotni katalogdan top va nomi + narxini ayt (chegirma bo'lsa — "
+    "eski → yangi, foizi), keyin qanday buyurtma qilish: Telegram'da «ketoshop_uz» deb qidirsangiz "
+    "do'konimiz chiqadi yoki Direct'ga yozsangiz havolasini yuboramiz. Faqat salom bilan cheklanma. "
+    "dm ga ham shu mahsulot haqida batafsil yoz (narx, qanday buyurtma). Toifa — narx.]")
+ORDER_LINE = {
+    "lat": "Buyurtma uchun Telegram'da «ketoshop_uz» deb qidirsangiz do'konimiz chiqadi, yoki Direct'ga "
+           "yozsangiz havolasini yuboramiz 😊",
+    "cyr": "Буюртма учун Телеграмда «ketoshop_uz» деб қидирсангиз дўконимиз чиқади, ёки Директга "
+           "ёзсангиз ҳаволасини юборамиз 😊",
+    "ru": "Для заказа найдите «ketoshop_uz» в Telegram или напишите нам в Direct — пришлём ссылку 😊",
+}
+
+
+def is_interest(text: str | None) -> bool:
+    return bool(_INTEREST.match((text or "").strip()))
+
+
+def ensure_order_path(comment_text: str | None, reply: str) -> str:
+    """Qiziqish izohiga javobda na narx, na buyurtma yo'li bo'lsa — buyurtma yo'lini qo'shadi."""
+    if not is_interest(comment_text) or not reply:
+        return reply
+    if re.search(r"\d", reply) or re.search(r"telegram|телеграм|direct|директ|бот|bot|sayt|сайт", reply, re.I):
+        return reply
+    script = "ru" if re.search(r"[ыщэюя]", reply, re.I) and not is_cyrillic_uz(reply) else (
+        "cyr" if re.search(r"[а-яўқғҳ]", reply, re.I) else "lat")
+    return f"{reply.rstrip()} {ORDER_LINE[script]}"
+
+
+def is_cyrillic_uz(text: str) -> bool:
+    return bool(re.search(r"[ўқғҳ]", text or "", re.I))
+
+
 def _recipe_hint() -> str:
     import random
     return ("\n\n" + RECIPE_HINT) if random.random() < RECIPE_HINT_SHARE else ""
@@ -388,9 +428,10 @@ def comment_prompt(c: dict) -> str:
     where = f"reklama «{c['ad_name']}»" if c.get("ad_name") else ("reklama" if c.get("ad_id") else "post")
     who = c.get("username") or "mijoz"
     caption = (c.get("post_caption") or "").strip()
-    post = f"POST MATNI:\n{caption[:700]}\n\n" if caption else ""
+    post = f"POST MATNI:\n{caption[:2500]}\n\n" if caption else ""
     return (f"{platform} · {where}\nIzoh muallifi: {who}\n\n{post}"
-            f"IZOH:\n{(c.get('text') or '').strip()[:1500]}"
+            + (INTEREST_HINT + "\n" if is_interest(c.get("text")) else "")
+            + f"IZOH:\n{(c.get('text') or '').strip()[:1500]}"
             + (("\n\n" + c["folder"]) if c.get("folder") else "") + _recipe_hint())
 
 
@@ -879,7 +920,7 @@ def followup_prompt(c: dict, days_ago: int) -> str:
     platform = "Instagram" if c.get("platform") == "ig" else "Facebook"
     where = f"reklama «{c['ad_name']}»" if c.get("ad_name") else ("reklama" if c.get("ad_id") else "post")
     caption = (c.get("post_caption") or "").strip()
-    post = f"POST MATNI:\n{caption[:700]}\n\n" if caption else ""
+    post = f"POST MATNI:\n{caption[:2500]}\n\n" if caption else ""
     ours = (c.get("reply_text") or "").strip()
     return (f"{platform} · {where}\nIzoh muallifi: {c.get('username') or 'mijoz'}\n"
             f"Izoh yozilgan: taxminan {days_ago} kun oldin\n\n{post}"
@@ -1047,6 +1088,7 @@ def finalize(comment_text: str | None, reply: str | None) -> str:
     text = _natural_polite(text, comment_text)
     text = _plural(text)
     text = _say_telegram(text, comment_text)
+    text = ensure_order_path(comment_text, text)
     import ai_leak                     # ichki ma'lumot ochiq izohga chiqmasin (2026-11-27)
     text = ai_leak.strip(text)
     return in_script_of(comment_text, text).strip()
