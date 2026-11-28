@@ -71,7 +71,13 @@ class RankingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_id[7], {"": 3.0, "кг": 51.5})
         self.assertEqual(by_id[8], {"": 2.0})
         self.assertEqual(by_id[9], {"банка": 2.0})
-        self.assertEqual(channel_bestsellers.sold_text(by_id[7]), "3 та + 51,5 кг")
+        self.assertEqual(channel_bestsellers.sold_text(by_id[7]), "3 та + 51,5 кг")      # unit unknown: apart
+        # 2026-11-28: merged into one number.
+        self.assertEqual(channel_bestsellers.sold_text(by_id[7], "Kepak", "kg"), "54,5 кг")
+        self.assertEqual(channel_bestsellers.sold_text({"": 53.0, "кг": 5.0}, "Himalay tuz 1000gr", "kg"), "58 та")
+        self.assertEqual(channel_bestsellers.sold_text({"": 10.0, "кг": 300.0}, "Makkajo'xori uni 500gr", "kg"), "610 та")
+        self.assertEqual(channel_bestsellers.sold_text({"": 4.0, "банка": 2.0}, "Asal 700gr", "dona"), "4 та + 2 банка")
+        self.assertEqual(channel_bestsellers.sold_text({"": 3.0, "кг": 2.0}, "Chia", "dona"), "3 та + 2 кг")
         self.assertEqual(channel_bestsellers.sold_text({"": 1250.0}), "1 250 та")
         self.assertEqual(channel_bestsellers.sold_text({}), "")
 

@@ -41,11 +41,40 @@ def _amount(value: float) -> str:
     return f"{value:.1f}".replace(".", ",")
 
 
-def sold_text(sold: dict) -> str:
-    """ "37 та", "50 кг", or "12 та + 50 кг" — packs first, weights after."""
-    parts = [f"{_amount(qty)} {unit or 'та'}"
-             for unit, qty in sorted((sold or {}).items(), key=lambda kv: (kv[0] != "", kv[0]))
-             if qty > 0]
+_TO_KG = {"кг": 1.0, "г": 0.001, "гр": 0.001, "л": 1.0, "мл": 0.001}
+
+
+def merged(sold: dict, name: str | None = None, unit: str | None = None) -> dict:
+    """Packs and kilos as ONE number (owner, 2026-11-28: «53 та + 5 кг» → yes,
+    merge). The kilos (wholesale / fractional lines) become packs when the
+    name says the pack size («Ҳималай туз 1000гр»: 53 + 5/1 = 58 та); a
+    product sold by the kilo with no size in its name (unit kg: one «та» is
+    one kilo) becomes kilos («Кепак»: 190 + 226 = 416 кг). Anything else
+    stays apart."""
+    sold = {k: v for k, v in (sold or {}).items() if v > 0}
+    packs = sold.get("", 0.0)
+    kilos = sum(q * _TO_KG[u] for u, q in sold.items() if u in _TO_KG)
+    if not packs or not kilos:
+        return sold
+    rest = {u: q for u, q in sold.items() if u and u not in _TO_KG}
+    import uzpost
+    pack = uzpost.pack_kg(name)
+    if pack:
+        return {"": packs + kilos / pack, **rest}
+    if unit in ("kg", "кг"):
+        return {"кг": packs + kilos, **rest}
+    return sold
+
+
+def sold_text(sold: dict, name: str | None = None, unit: str | None = None) -> str:
+    """ "37 та", "50 кг", "58 та" (packs and kilos merged — see merged())."""
+    parts = []
+    for u, qty in sorted(merged(sold, name, unit).items(), key=lambda kv: (kv[0] != "", kv[0])):
+        if qty <= 0:
+            continue
+        if u == "" and qty >= 1:
+            qty = round(qty)               # whole packs read better: 57,6 та → 58 та
+        parts.append(f"{_amount(qty)} {u or 'та'}")
     return " + ".join(parts)
 
 
@@ -59,7 +88,7 @@ def build_text(products: list[dict]) -> str:
         name = lat_to_cyr(name[:119] + "…" if len(name) > 120 else name)
         while len(html.escape(name, quote=False)) > 300:
             name = name[:-2] + "…"
-        amount = sold_text(product.get("sold"))
+        amount = sold_text(product.get("sold"), product.get("name"), product.get("unit"))
         lines.append(f"{rank}. {html.escape(name, quote=False)}" + (f" — <b>{amount}</b>" if amount else ""))
     lines += ["", "🌿 Ўзингизга мос маҳсулотларни дўконимиздан танланг!", "@ketoshop_uz"]
     return "\n".join(lines)

@@ -5956,7 +5956,7 @@ async def get_channel_bestsellers(limit: int = 10) -> list[dict]:
         if not quantities:
             return []
         products = await conn.fetch(
-            """SELECT id, name FROM products
+            """SELECT id, name, unit FROM products
                 WHERE is_active = 1 AND quantity > 0
                   AND b2b_only IS NOT TRUE AND id = ANY($1::int[])""",
             list(quantities),
