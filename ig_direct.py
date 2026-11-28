@@ -678,8 +678,14 @@ def discount_message(items: list[dict], lang: str) -> str:
 
 def discount_block(items: list[dict]) -> str:
     """AI uchun (nima chegirmada ekanini bilsin, o'ylab topmasin)."""
-    return "\n".join(f"- {p.get('name')} — {_som(p['old'])} → {_som(p['new'])} so'm (−{p['d']}%)"
+    text = "\n".join(f"- {p.get('name')} — {_som(p['old'])} → {_som(p['new'])} so'm (−{p['d']}%)"
                      for p in items) or "hozir yo'q"
+    # Bir mahsulotning bir nechta qadog'i aksiyada — birga aytilsin (2026-11-28: Steviya 2 kg va 5 kg).
+    families = comment_ai.sale_families([(p["d"], p.get("name") or "") for p in items])
+    if families:
+        text += ("\nBIR MAHSULOTNING BIR NECHTA QADOG'I AKSIYADA (faqat bittasini emas, ikkalasini birga ayt):\n"
+                 + "\n".join(families))
+    return text
 
 
 # ─────────────────────────────── AI ─────────────────────────────────────────
